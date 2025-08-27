@@ -191,8 +191,86 @@ async function fetchWithScrapingBee(url) {
   return await response.text();
 }
 
-async function parseProductHTML(html, url, productId) {
-  const retailer = getRetailerName(url);
+async function parseProductHTML// Extract JSON-LD structured data
+function extractJSONLD(html) {
+  try {
+    const scripts = html.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi) || [];
+    
+    for (const script of scripts) {
+      const match = script.match(/>([^<]+)</);
+      if (!match) continue;
+      
+      try {
+        const data = JSON.parse(match[1].trim());
+        
+        if (data['@type'] === 'Product' || data.type === 'Product') {
+          return {
+            name: data.name,
+            price: data.offers?.price || data.offers?.[0]?.price,
+            image: Array.isArray(data.image) ? data.image[0] : data.image
+          };
+        }
+        
+        if (Array.isArray(data)) {
+          const product = data.find(item => item['@type'] === 'Product');
+          if (product) {
+            return {
+              name: product.name,
+              price: product.offers?.price,
+              image: Array.isArray(product.image) ? product.image[0] : product.image
+            };
+          }
+        }
+      } catch (e) {
+        // Continue
+      }
+    }
+  } catch (e) {
+    console.log('  JSON-LD extraction error:', e.message);
+  }
+  return null;
+}
+
+// Extract Open Graph data
+function extractOpenGraph(html) {
+  const og = {};
+  
+  const titleMatch = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)/i);
+  const priceMatch = html.match(/<meta[^>]*property=["']product:price:amount["'][^>]*content=["']([^"']+)/i);
+  const imageMatch = html.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)/i);
+  
+  if (titleMatch) og.title = titleMatch[1];
+  if (priceMatch) og.price = parseFloat(priceMatch[1]);
+  if (imageMatch) og.image = imageMatch[1];
+  
+  return og;
+}
+
+// Generic HTML parsing as final fallback
+function parseGenericHTML(html) {
+  const result = {};
+  
+  // Get title from multiple sources
+  const titleMatch = html.match(/<h1[^>]*>([^<]{5,200})</i) ||
+                    html.match(/<title>([^<]{5,100})</i) ||
+                    html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)/i);
+  
+  if (titleMatch) {
+    result.name = titleMatch[1].trim();
+  }
+  
+  // Find prices
+  const priceMatches = html.match(/\$[\d,]+\.?\d*/g) || [];
+  const prices = priceMatches
+    .map(p => parseFloat(p.replace(/[$,]/g, '')))
+    .filter(p => p > 10 && p < 100000);
+  
+  if (prices.length > 0) {
+    result.price = prices[0];
+  }
+  
+  return result;
+}
   
   let product = {
     id: productId,
