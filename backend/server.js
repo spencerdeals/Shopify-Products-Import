@@ -1,940 +1,713 @@
-import express from 'express';
-import { join } from 'path';
-import { readFileSync } from 'fs';
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
-import fetch from 'node-fetch';
-import dotenv from 'dotenv';
-
-dotenv.config();
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+// ScrapingBee integration
+async function scrapingBeeRequest(url) {
+  if (!SCRAPINGBEE_API_KEY) {
+    throw new Error('ScrapingBee API key not configured');
+  }
+  
+  const scrapingBeeUrl = 'https://app.scrapingbee.com/api/v1/';
+  const params = new URLSearchParams({
+    api_key: SCRAPINGBEE_API_KEY,
+    url: url,
+    render_js: 'true',
+    premium_proxy: 'true',
+    country_code: 'us',
+    wait: '2000',
+    waitconst express = require('express');
+const puppeteer = require('puppeteer');
+const cors = require('cors');
+const rateLimit = require('express-rate-limit');
+const axios = require('axios');
+const { URL } = require('url');
+require('dotenv').config();
 
 const app = express();
-const PORT = process.env.PORT || 8080;
+const PORT = process.env.PORT || 3000;
 
-// ScrapingBee Config
-const SCRAPINGBEE_API_KEY = process.env.SCRAPINGBEE_API_KEY;
-const SCRAPINGBEE_URL = 'https://app.scrapingbee.com/api/v1/';
-
-// Shopify Config
-const SHOPIFY_STORE_DOMAIN = 'spencer-deals-ltd.myshopify.com';
+// Configuration
+const SHOPIFY_DOMAIN = process.env.SHOPIFY_DOMAIN;
 const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN;
-const SHOPIFY_API_VERSION = '2024-10';
+const SCRAPINGBEE_API_KEY = process.env.SCRAPINGBEE_API_KEY;
+const SCRAPING_TIMEOUT = 30000;
+const MAX_CONCURRENT_SCRAPES = 3;
+const BERMUDA_DUTY_RATE = 0.265;
+const USE_SCRAPINGBEE = !!SCRAPINGBEE_API_KEY;
 
-app.use(express.json());
-app.use(express.static(join(__dirname, '../frontend')));
+// Middleware
+app.use(cors());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.static('public'));
 
-app.get('/health', (req, res) => {
-  res.status(200).json({ 
-    status: 'healthy', 
-    timestamp: new Date().toISOString(),
-    service: 'bermuda-import-calculator' 
-  });
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100
 });
+app.use('/api/', limiter);
 
-app.get('/', (req, res) => {
-  try {
-    const htmlPath = join(__dirname, '../frontend/index.html');
-    const html = readFileSync(htmlPath, 'utf8');
-    res.send(html);
-  } catch (error) {
-    console.error('Error serving main page:', error);
-    res.status(500).send('Server error');
-  }
-});
+// Utilities
+function generateProductId() {
+  return Date.now() + Math.random().toString(36).substr(2, 9);
+}
 
-// Shopify Customer Authentication
-app.post('/api/auth/customer', async (req, res) => {
-  try {
-    const { email, firstName, lastName, phone } = req.body;
-    
-    if (!email) {
-      return res.status(400).json({ error: 'Email is required' });
-    }
+function detectRetailer(url) {
+  const domain = new URL(url).hostname.toLowerCase();
+  if (domain.includes('amazon.com')) return 'Amazon';
+  if (domain.includes('wayfair.com')) return 'Wayfair';
+  if (domain.includes('target.com')) return 'Target';
+  if (domain.includes('bestbuy.com')) return 'Best Buy';
+  if (domain.includes('walmart.com')) return 'Walmart';
+  if (domain.includes('homedepot.com')) return 'Home Depot';
+  if (domain.includes('lowes.com')) return 'Lowes';
+  if (domain.includes('costco.com')) return 'Costco';
+  if (domain.includes('macys.com')) return 'Macys';
+  if (domain.includes('ikea.com')) return 'IKEA';
+  return 'Unknown Retailer';
+}
 
-    console.log(`Creating/finding customer: ${email}`);
-    
-    // Try to find existing customer first
-    let customer = await findCustomerByEmail(email);
-    
-    if (!customer) {
-      // Create new customer
-      customer = await createShopifyCustomer({
-        email,
-        first_name: firstName || '',
-        last_name: lastName || '',
-        phone: phone || '',
-        verified_email: true,
-        tags: 'bermuda-import-calculator'
-      });
-      console.log(`Created new customer: ${customer.id}`);
-    } else {
-      console.log(`Found existing customer: ${customer.id}`);
-    }
-    
-    res.json({ 
-      success: true, 
-      customer: {
-        id: customer.id,
-        email: customer.email,
-        first_name: customer.first_name,
-        last_name: customer.last_name
-      }
-    });
+function categorizeProduct(name, url) {
+  const text = (name + ' ' + url).toLowerCase();
+  if (/furniture|sofa|chair|table|desk|bed|mattress|dresser|cabinet/.test(text)) return 'furniture';
+  if (/tv|laptop|phone|computer|electronics|camera|speaker|headphone/.test(text)) return 'electronics';
+  if (/appliance|refrigerator|washing|dryer|dishwasher|microwave|oven/.test(text)) return 'appliances';
+  if (/clothing|shirt|pants|dress|shoes|jacket|apparel/.test(text)) return 'clothing';
+  if (/book|magazine|journal|novel/.test(text)) return 'books';
+  if (/toy|game|puzzle|doll|action|play/.test(text)) return 'toys';
+  if (/sport|fitness|exercise|gym|bike|golf/.test(text)) return 'sports';
+  if (/decor|vase|picture|artwork|candle|pillow|curtain/.test(text)) return 'home-decor';
+  return 'general';
+}
 
-  } catch (error) {
-    console.error('Customer auth error:', error);
-    res.status(500).json({ 
-      error: 'Failed to authenticate customer',
-      message: error.message 
-    });
-  }
-});
+function estimateWeight(dimensions, category) {
+  const volume = dimensions.length * dimensions.width * dimensions.height;
+  const cubicFeet = volume / 1728;
+  const densityFactors = {
+    'furniture': 8, 'electronics': 15, 'appliances': 20, 'clothing': 3,
+    'books': 25, 'toys': 5, 'sports': 10, 'home-decor': 6, 'general': 8
+  };
+  const density = densityFactors[category] || 8;
+  const estimatedWeight = Math.max(1, cubicFeet * density);
+  return Math.round(estimatedWeight * 10) / 10;
+}
 
-// Create Draft Order
-app.post('/api/create-draft-order', async (req, res) => {
-  try {
-    const { customerId, products, deliveryFees, totals, originalUrls } = req.body;
-    
-    if (!customerId) {
-      return res.status(400).json({ error: 'Customer ID is required' });
-    }
-
-    console.log(`Creating draft order for customer: ${customerId}`);
-    
-    // Build line items from products
-    const lineItems = products.map(product => ({
-      title: product.name,
-      price: product.finalPrice.toString(),
-      quantity: product.quantity,
-      sku: `IMPORT-${product.id}`,
-      properties: [
-        {
-          name: 'Original URL',
-          value: product.url
-        },
-        {
-          name: 'Retailer', 
-          value: product.retailer
-        },
-        {
-          name: 'Category',
-          value: product.category
-        }
-      ]
-    }));
-
-    // Add delivery fees as line items
-    Object.entries(deliveryFees || {}).forEach(([retailer, fee]) => {
-      if (fee > 0) {
-        lineItems.push({
-          title: `${retailer} - USA Delivery Fee`,
-          price: fee.toString(),
-          quantity: 1,
-          sku: 'DELIVERY-FEE'
-        });
-      }
-    });
-
-    // Add duty as line item
-    lineItems.push({
-      title: 'Bermuda Import Duty (26.5%)',
-      price: totals.dutyAmount.toString(),
-      quantity: 1,
-      sku: 'BERMUDA-DUTY'
-    });
-
-    // Create note with all URLs and details
-    const noteContent = [
-      'BERMUDA IMPORT CALCULATOR QUOTE',
-      '=====================================',
-      '',
-      'ORIGINAL PRODUCT URLS:',
-      ...originalUrls.map((url, index) => `${index + 1}. ${url}`),
-      '',
-      'QUOTE BREAKDOWN:',
-      `Product Total: $${totals.totalItemCost.toFixed(2)}`,
-      `Delivery Fees: $${totals.totalDeliveryFees.toFixed(2)}`,
-      `Import Duty: $${totals.dutyAmount.toFixed(2)}`,
-      `Ocean Freight: $${totals.totalShippingCost.toFixed(2)}`,
-      `TOTAL: $${totals.grandTotal.toFixed(2)}`,
-      '',
-      `Generated: ${new Date().toISOString()}`,
-      'Via: Bermuda Import Calculator'
-    ].join('\n');
-
-    const draftOrder = {
-      draft_order: {
-        customer: {
-          id: customerId
-        },
-        line_items: lineItems,
-        shipping_line: {
-          title: 'Ocean Freight & Handling',
-          price: totals.totalShippingCost.toString()
-        },
-        note: noteContent,
-        tags: 'bermuda-import,quote',
-        currency: 'USD'
-      }
+function estimateDimensions(category, name = '') {
+  const text = name.toLowerCase();
+  const dimMatch = text.match(/(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)/);
+  if (dimMatch) {
+    return {
+      length: Math.max(1, parseFloat(dimMatch[1])),
+      width: Math.max(1, parseFloat(dimMatch[2])), 
+      height: Math.max(1, parseFloat(dimMatch[3]))
     };
-
-    const shopifyOrder = await createShopifyDraftOrder(draftOrder);
-    
-    console.log(`Draft order created: ${shopifyOrder.id}`);
-    
-    res.json({ 
-      success: true, 
-      draftOrderId: shopifyOrder.id,
-      draftOrderNumber: shopifyOrder.name,
-      orderUrl: `https://admin.shopify.com/store/spencer-deals-ltd/draft_orders/${shopifyOrder.id}`
-    });
-
-  } catch (error) {
-    console.error('Draft order creation error:', error);
-    res.status(500).json({ 
-      error: 'Failed to create draft order',
-      message: error.message 
-    });
   }
-});
-
-// Shopify API Functions
-async function findCustomerByEmail(email) {
-  const url = `https://${SHOPIFY_STORE_DOMAIN}/admin/api/${SHOPIFY_API_VERSION}/customers/search.json?query=email:${encodeURIComponent(email)}`;
-  
-  const response = await fetch(url, {
-    method: 'GET',
-    headers: {
-      'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN,
-      'Content-Type': 'application/json'
-    }
-  });
-
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Shopify customer search failed: ${response.status} ${error}`);
-  }
-
-  const data = await response.json();
-  return data.customers.length > 0 ? data.customers[0] : null;
+  const estimates = {
+    'furniture': { length: 48, width: 24, height: 36 },
+    'electronics': { length: 20, width: 12, height: 8 },
+    'appliances': { length: 28, width: 28, height: 36 },
+    'clothing': { length: 12, width: 10, height: 2 },
+    'books': { length: 9, width: 6, height: 1 },
+    'toys': { length: 12, width: 8, height: 6 },
+    'sports': { length: 24, width: 12, height: 12 },
+    'home-decor': { length: 12, width: 12, height: 12 },
+    'general': { length: 18, width: 12, height: 8 }
+  };
+  return estimates[category] || estimates.general;
 }
 
-async function createShopifyCustomer(customerData) {
-  const url = `https://${SHOPIFY_STORE_DOMAIN}/admin/api/${SHOPIFY_API_VERSION}/customers.json`;
-  
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ customer: customerData })
-  });
-
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Shopify customer creation failed: ${response.status} ${error}`);
-  }
-
-  const data = await response.json();
-  return data.customer;
+function calculateShippingCost(dimensions, weight) {
+  const volume = dimensions.length * dimensions.width * dimensions.height;
+  const cubicFeet = volume / 1728;
+  const weightRate = weight * 0.85;
+  const volumeRate = cubicFeet * 12;
+  const baseCost = Math.max(weightRate, volumeRate);
+  const handlingFee = 15;
+  const totalShippingCost = baseCost + handlingFee;
+  return Math.max(25, Math.round(totalShippingCost * 100) / 100);
 }
 
-async function createShopifyDraftOrder(draftOrderData) {
-  const url = `https://${SHOPIFY_STORE_DOMAIN}/admin/api/${SHOPIFY_API_VERSION}/draft_orders.json`;
-  
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(draftOrderData)
-  });
-
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Shopify draft order creation failed: ${response.status} ${error}`);
+// ScrapingBee integration
+async function scrapingBeeRequest(url) {
+  if (!SCRAPINGBEE_API_KEY) {
+    throw new Error('ScrapingBee API key not configured');
   }
-
-  const data = await response.json();
-  return data.draft_order;
-}
-
-// Original scraping functionality
-app.post('/api/scrape', async (req, res) => {
+  
   try {
-    const { urls } = req.body;
-    
-    if (!urls || !Array.isArray(urls)) {
-      return res.status(400).json({ error: 'URLs array is required' });
-    }
-
-    console.log(`\n============ Robust Scraping ${urls.length} URLs ============`);
-    let products = [];
-
-    for (let i = 0; i < urls.length; i++) {
-      const url = urls[i];
-      console.log(`\n[${i + 1}/${urls.length}] Processing: ${url}`);
-      
-      try {
-        const productData = await robustScrapeProduct(url, i + 1);
-        products.push(productData);
-        
-        const priceStatus = productData.needsManualPrice ? 'Manual entry needed' : `$${productData.price}`;
-        console.log(`✓ Success: ${productData.name.substring(0, 50)}... [${productData.retailer}] - ${priceStatus}`);
-      } catch (error) {
-        console.error(`✗ Failed:`, error.message);
-        const fallbackData = createFallbackProduct(url, i + 1);
-        products.push(fallbackData);
-      }
-    }
-
-    // Group products by retailer
-    const groupedProducts = groupProductsByRetailer(products);
-    const successfulPrices = products.filter(p => !p.needsManualPrice).length;
-    
-    console.log(`\n✓ Completed: ${products.length} products from ${Object.keys(groupedProducts).length} retailers`);
-    console.log(`  Prices found: ${successfulPrices}/${products.length}, Manual entry needed: ${products.length - successfulPrices}`);
-    
-    res.json({ 
-      success: true, 
-      products: products,
-      groupedProducts: groupedProducts,
-      retailers: Object.keys(groupedProducts),
-      scraped: products.filter(p => !p.isFallback).length,
-      pricesFound: successfulPrices,
-      count: products.length,
-      timestamp: new Date().toISOString()
+    const scrapingBeeUrl = 'https://app.scrapingbee.com/api/v1/';
+    const params = new URLSearchParams({
+      api_key: SCRAPINGBEE_API_KEY,
+      url: url,
+      render_js: 'true',
+      premium_proxy: 'true',
+      country_code: 'us',
+      wait: '2000',
+      wait_for: '.product-title, h1, [data-test="product-title"], #productTitle',
+      block_ads: 'true',
+      block_resources: 'false'
     });
 
-  } catch (error) {
-    console.error('API error:', error);
-    res.status(500).json({ 
-      error: 'Failed to process products',
-      message: error.message 
+    const response = await axios.get(`${scrapingBeeUrl}?${params.toString()}`, {
+      timeout: SCRAPING_TIMEOUT
     });
-  }
-});
 
-function groupProductsByRetailer(products) {
-  const grouped = {};
-  
-  products.forEach(product => {
-    const retailer = product.retailer;
-    if (!grouped[retailer]) {
-      grouped[retailer] = {
-        retailer: retailer,
-        products: [],
-        deliveryFee: 0
-      };
-    }
-    grouped[retailer].products.push(product);
-  });
-  
-  return grouped;
-}
-
-async function robustScrapeProduct(url, productId) {
-  try {
-    const urlType = analyzeURL(url);
-    console.log(`  URL type: ${urlType.type} (${urlType.retailer})`);
-    
-    const html = await fetchWithScrapingBee(url, urlType);
-    console.log(`  HTML received: ${html.length} bytes`);
-    
-    let productUrl = url;
-    let htmlToProcess = html;
-    
-    if (urlType.type === 'category' || urlType.type === 'search') {
-      const firstProductUrl = extractFirstProductURL(html, urlType.retailer);
-      if (firstProductUrl) {
-        console.log(`  Found first product: ${firstProductUrl.substring(0, 80)}...`);
-        productUrl = firstProductUrl;
-      } else {
-        console.log(`  No individual products found, using category page data`);
-      }
-    }
-    
-    const product = await parseUniversalProduct(htmlToProcess, productUrl, productId, urlType);
-    return product;
-    
+    return response.data;
   } catch (error) {
-    console.error('  Robust scraping failed:', error.message);
+    console.error('ScrapingBee request failed:', error.message);
     throw error;
   }
 }
 
-function analyzeURL(url) {
-  const retailer = getRetailerName(url);
-  const lowerUrl = url.toLowerCase();
+async function parseScrapingBeeHTML(html, url) {
+  const retailer = detectRetailer(url);
   
-  if (lowerUrl.includes('/pdp/') || lowerUrl.includes('/dp/') || lowerUrl.includes('/product/') || lowerUrl.includes('/p/')) {
-    return { type: 'product', retailer, confidence: 'high' };
-  }
-  
-  if (lowerUrl.includes('/search') || lowerUrl.includes('/s/') || lowerUrl.includes('q=')) {
-    return { type: 'search', retailer, confidence: 'medium' };
-  }
-  
-  if (lowerUrl.includes('/category/') || lowerUrl.includes('/c/') || lowerUrl.includes('/browse/') || lowerUrl.includes('/sb')) {
-    return { type: 'category', retailer, confidence: 'medium' };
-  }
-  
-  return { type: 'unknown', retailer, confidence: 'low' };
-}
-
-async function fetchWithScrapingBee(url, urlType) {
-  const retailer = urlType.retailer;
-  console.log(`  Using ScrapingBee for ${retailer} ${urlType.type} page...`);
-  
-  const params = new URLSearchParams({
-    'api_key': SCRAPINGBEE_API_KEY,
-    'url': url,
-    'render_js': 'false',
-    'premium_proxy': 'true',
-    'country_code': 'us',
-    'block_ads': 'true'
-  });
-  
-  if (urlType.type === 'product') {
-    params.set('render_js', 'true');
-    params.set('wait', '3000');
-  }
-  
-  const scrapingBeeUrl = `${SCRAPINGBEE_URL}?${params}`;
-  
-  const response = await fetch(scrapingBeeUrl, {
-    method: 'GET',
-    headers: {
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      'Accept-Language': 'en-US,en;q=0.9'
-    }
-  });
-
-  if (!response.ok) {
-    const error = await response.text();
-    console.error('  ScrapingBee error:', error.substring(0, 200));
-    throw new Error(`ScrapingBee error: ${response.status}`);
-  }
-
-  return await response.text();
-}
-
-function extractFirstProductURL(html, retailer) {
-  const patterns = {
-    'Wayfair': [
-      /href=["']([^"']*\/pdp\/[^"']+)/i,
-      /href=["']([^"']*product[^"']+)/i
-    ],
-    'Amazon': [
-      /href=["']([^"']*\/dp\/[^"']+)/i,
-      /href=["']([^"']*\/gp\/product\/[^"']+)/i
-    ],
-    'Walmart': [
-      /href=["']([^"']*\/ip\/[^"']+)/i
-    ],
-    'Target': [
-      /href=["']([^"']*\/p\/[^"']+)/i
-    ]
-  };
-  
-  const retailerPatterns = patterns[retailer] || patterns['Amazon'];
-  
-  for (const pattern of retailerPatterns) {
-    const match = html.match(pattern);
-    if (match) {
-      let productUrl = match[1];
-      
-      if (productUrl.startsWith('/')) {
-        const baseUrl = new URL(html.match(/https?:\/\/[^\/]+/)?.[0] || 'https://www.wayfair.com');
-        productUrl = baseUrl.origin + productUrl;
-      }
-      
-      return productUrl;
-    }
-  }
-  
-  return null;
-}
-
-async function parseUniversalProduct(html, url, productId, urlType) {
-  const retailer = urlType.retailer;
-  
-  let product = {
-    id: productId,
-    url: url,
-    retailer: retailer,
-    name: null,
-    image: null,
-    dimensions: null,
-    price: null,
-    quantity: 1,
-    category: 'General',
-    needsManualPrice: true,
-    weight: null,
-    pageType: urlType.type
-  };
-  
-  console.log(`  Parsing ${retailer} ${urlType.type} page...`);
-  
-  const structuredData = extractStructuredData(html);
-  if (structuredData) {
-    console.log('  ✓ Found structured data');
-    product.name = structuredData.name || product.name;
-    product.image = structuredData.image || product.image;
-    product.price = structuredData.price || product.price;
-  }
-  
-  const universalData = extractUniversalContent(html, retailer);
-  console.log(`  Universal extraction: name=${!!universalData.name}, image=${!!universalData.image}, price=${!!universalData.price}, dimensions=${!!universalData.dimensions}`);
-  
-  product.name = product.name || universalData.name;
-  product.image = product.image || universalData.image;
-  product.dimensions = product.dimensions || universalData.dimensions;
-  
-  const priceResult = extractConfidentPrice(html, retailer, structuredData);
-  if (priceResult.confident) {
-    product.price = priceResult.price;
-    product.needsManualPrice = false;
-    product.priceStatus = 'found';
-    console.log(`  ✓ Confident price: $${priceResult.price} (${priceResult.source})`);
-  } else {
-    product.price = null;
-    product.needsManualPrice = true;
-    product.priceStatus = 'manual_required';
-    product.priceMessage = priceResult.reason || 'Price could not be determined automatically';
-    console.log(`  ⚠ Price uncertain - manual entry required (${priceResult.reason})`);
-  }
-  
-  product.name = cleanProductName(product.name) || `${retailer} Product`;
-  product.category = determineCategory(product.name);
-  
-  if (!product.dimensions) {
-    product.dimensions = getEstimatedDimensions(product.name, product.category);
-    product.dimensions.estimated = true;
-    product.dimensions.source = 'category estimate + 20% buffer';
-  } else {
-    product.dimensions.length = Math.ceil(product.dimensions.length * 1.2);
-    product.dimensions.width = Math.ceil(product.dimensions.width * 1.2);  
-    product.dimensions.height = Math.ceil(product.dimensions.height * 1.2);
-    product.dimensions.source += ' + 20% buffer';
-  }
-  
-  product.weight = product.weight || estimateWeight(product.name, product.category);
-  
-  if (!product.image) {
-    product.image = `https://placehold.co/200x200/667eea/FFFFFF/png?text=${encodeURIComponent(retailer)}`;
-  }
-  
-  if (product.image && product.image.startsWith('/')) {
-    const baseUrl = new URL(url);
-    product.image = baseUrl.origin + product.image;
-  }
-  
-  product.shippingCost = calculateShippingCost(product.dimensions, product.weight);
-  console.log(`  💰 Calculated shipping: $${product.shippingCost} (${product.dimensions.length}" x ${product.dimensions.width}" x ${product.dimensions.height}", ${product.weight}lbs)`);
-  
-  return product;
-}
-
-function extractStructuredData(html) {
+  // Use cheerio-like parsing or regex to extract data from HTML
   const result = {};
   
-  try {
-    const scripts = html.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi) || [];
-    
-    for (const script of scripts) {
-      const match = script.match(/>([^<]+)</);
-      if (!match) continue;
-      
-      try {
-        const data = JSON.parse(match[1].trim());
-        
-        if (data['@type'] === 'Product' || (Array.isArray(data) && data.find(item => item['@type'] === 'Product'))) {
-          const product = Array.isArray(data) ? data.find(item => item['@type'] === 'Product') : data;
-          result.name = product.name;
-          result.image = Array.isArray(product.image) ? product.image[0] : product.image;
-          result.price = product.offers?.price || product.offers?.[0]?.price;
-          break;
-        }
-      } catch (e) {
-        continue;
-      }
-    }
-  } catch (e) {
-    // Continue
-  }
-  
-  const ogTitle = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)/i);
-  const ogImage = html.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)/i);
-  const ogPrice = html.match(/<meta[^>]*property=["']product:price:amount["'][^>]*content=["']([^"']+)/i);
-  
-  if (ogTitle) result.name = result.name || ogTitle[1];
-  if (ogImage) result.image = result.image || ogImage[1];
-  if (ogPrice) result.price = result.price || parseFloat(ogPrice[1]);
-  
-  return Object.keys(result).length > 0 ? result : null;
-}
-
-function extractUniversalContent(html, retailer) {
-  const result = {};
-  
+  // Name extraction patterns
   const namePatterns = [
-    /<h1[^>]*>([^<]{10,200})<\/h1>/i,
-    /<title>([^<]{10,100})<\/title>/i,
-    /<span[^>]*class=["'][^"']*title[^"']*["'][^>]*>([^<]{10,150})<\/span>/i,
-    /<div[^>]*class=["'][^"']*name[^"']*["'][^>]*>([^<]{10,150})<\/div>/i
+    /<h1[^>]*id="productTitle"[^>]*>([^<]+)</i,
+    /<h1[^>]*data-enzyme-id="ProductTitle"[^>]*>([^<]+)</i,
+    /<h1[^>]*data-test="product-title"[^>]*>([^<]+)</i,
+    /<h1[^>]*class="[^"]*sku-title[^"]*"[^>]*>([^<]+)</i,
+    /<h1[^>]*>([^<]+)</i
   ];
   
   for (const pattern of namePatterns) {
     const match = html.match(pattern);
-    if (match) {
-      let name = match[1].trim();
-      name = name.replace(/\s*[-|]\s*(Wayfair|Amazon|Walmart|Target).*$/i, '');
-      name = name.replace(/\s*\|\s*.*$/, '');
-      if (name.length > 10) {
-        result.name = name;
+    if (match && match[1]) {
+      result.name = match[1].trim().replace(/&#x27;/g, "'").replace(/&quot;/g, '"');
+      break;
+    }
+  }
+  
+  // Price extraction patterns
+  const pricePatterns = [
+    /class="a-price-whole">([0-9,]+)/i,
+    /class="a-price[^"]*"[^>]*>\s*<span[^>]*class="a-offscreen"[^>]*>\$([0-9,.]+)/i,
+    /data-enzyme-id="PriceDisplay"[^>]*>[\s\S]*?\$([0-9,.]+)/i,
+    /data-test="product-price"[^>]*>[\s\S]*?\$([0-9,.]+)/i,
+    /class="pricing-price__range"[^>]*>[\s\S]*?\$([0-9,.]+)/i,
+    /data-testid="price-current"[^>]*>[\s\S]*?\$([0-9,.]+)/i
+  ];
+  
+  for (const pattern of pricePatterns) {
+    const match = html.match(pattern);
+    if (match && match[1]) {
+      const priceStr = match[1].replace(/,/g, '');
+      const price = parseFloat(priceStr);
+      if (!isNaN(price) && price > 0) {
+        result.price = price;
         break;
       }
     }
   }
   
+  // Image extraction patterns
   const imagePatterns = [
-    /<img[^>]*(?:class|id)=["'][^"']*(?:product|main|primary|hero)[^"']*["'][^>]*src=["']([^"']+)/i,
-    /<img[^>]*src=["']([^"']*(?:product|main|item)[^"']*\.(?:jpg|jpeg|png|webp))/i,
-    /<img[^>]*data-[^>]*=["']([^"']+\.(?:jpg|jpeg|png|webp))/i
+    /<img[^>]*id="landingImage"[^>]*src="([^"]+)"/i,
+    /<img[^>]*data-enzyme-id="ProductImageCarousel"[^>]*src="([^"]+)"/i,
+    /<img[^>]*data-test="hero-image-carousel"[^>]*src="([^"]+)"/i,
+    /<img[^>]*class="[^"]*primary-image[^"]*"[^>]*src="([^"]+)"/i,
+    /<img[^>]*data-testid="hero-image"[^>]*src="([^"]+)"/i
   ];
   
   for (const pattern of imagePatterns) {
     const match = html.match(pattern);
-    if (match && !match[1].includes('placeholder') && !match[1].includes('icon')) {
+    if (match && match[1]) {
       result.image = match[1];
       break;
     }
   }
   
-  result.dimensions = extractDimensionsFromHTML(html);
-  
-  return result;
-}
-
-function extractConfidentPrice(html, retailer, structuredData) {
-  const results = [];
-  
-  if (structuredData && structuredData.price > 0) {
-    results.push({
-      price: structuredData.price,
-      source: 'JSON-LD structured data',
-      confidence: 95
-    });
-  }
-  
-  const retailerPrice = extractRetailerPrice(html, retailer);
-  if (retailerPrice > 0) {
-    results.push({
-      price: retailerPrice,
-      source: `${retailer} specific selector`,
-      confidence: 85
-    });
-  }
-  
-  const genericPrices = extractGenericPrices(html);
-  genericPrices.forEach(price => {
-    results.push({
-      price: price,
-      source: 'generic price pattern',
-      confidence: 60
-    });
-  });
-  
-  const validResults = results.filter(result => 
-    result.price >= 5 && result.price <= 25000
-  );
-  
-  if (validResults.length === 0) {
-    return { confident: false, reason: 'No valid prices found' };
-  }
-  
-  const bestResult = validResults.sort((a, b) => b.confidence - a.confidence)[0];
-  
-  const agreeingPrices = validResults.filter(r => 
-    Math.abs(r.price - bestResult.price) < (bestResult.price * 0.05)
-  );
-  
-  const confident = bestResult.confidence >= 80 || agreeingPrices.length >= 2;
-  
-  if (confident) {
-    return {
-      confident: true,
-      price: bestResult.price,
-      source: bestResult.source,
-      confidence: bestResult.confidence
-    };
-  } else {
-    return {
-      confident: false,
-      reason: `Low confidence (${bestResult.confidence}%), needs verification`,
-      foundPrice: bestResult.price
-    };
-  }
-}
-
-function extractRetailerPrice(html, retailer) {
-  const patterns = {
-    'Wayfair': [
-      /data-cy="price-current"[^>]*>.*?\$([0-9,]+(?:\.\d{2})?)/is,
-      /class="[^"]*price-current[^"]*"[^>]*>.*?\$([0-9,]+(?:\.\d{2})?)/is
-    ],
-    'Amazon': [
-      /class="[^"]*a-price-whole[^"]*"[^>]*>([0-9,]+)/i,
-      /id="priceblock_dealprice"[^>]*>.*?\$([0-9,]+(?:\.\d{2})?)/is
-    ],
-    'Target': [
-      /data-test="product-price"[^>]*>.*?\$([0-9,]+(?:\.\d{2})?)/is
-    ],
-    'Walmart': [
-      /itemprop="price"[^>]*>.*?\$([0-9,]+(?:\.\d{2})?)/is
-    ]
-  };
-  
-  const retailerPatterns = patterns[retailer] || [];
-  
-  for (const pattern of retailerPatterns) {
-    const match = html.match(pattern);
-    if (match) {
-      const price = parseFloat(match[1].replace(/,/g, ''));
-      if (price > 0) return price;
-    }
-  }
-  
-  return 0;
-}
-
-function extractGenericPrices(html) {
-  const patterns = [
-    /\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g
-  ];
-  
-  const prices = [];
-  
-  for (const pattern of patterns) {
-    const matches = Array.from(html.matchAll(pattern));
-    matches.forEach(match => {
-      const price = parseFloat(match[1].replace(/,/g, ''));
-      if (price >= 10 && price <= 10000) {
-        prices.push(price);
-      }
-    });
-  }
-  
-  const priceCounts = {};
-  prices.forEach(price => {
-    priceCounts[price] = (priceCounts[price] || 0) + 1;
-  });
-  
-  return Object.entries(priceCounts)
-    .sort(([,a], [,b]) => b - a)
-    .slice(0, 3)
-    .map(([price]) => parseFloat(price));
-}
-
-function extractDimensionsFromHTML(html) {
-  console.log('  Looking for dimensions...');
-  
-  const patterns = [
-    /(?:overall|product|assembled|item|package|shipping|box)\s*dimensions?[^:]*:\s*(\d+(?:\.\d+)?)["\s]*(?:[LlWwHhxX×])\s*[×x]\s*(\d+(?:\.\d+)?)["\s]*(?:[LlWwHhxX])\s*[×x]\s*(\d+(?:\.\d+)?)["\s]*(?:[LlWwHh])/i,
-    /(\d+(?:\.\d+)?)["\s]*[×x]\s*(\d+(?:\.\d+)?)["\s]*[×x]\s*(\d+(?:\.\d+)?)\s*(?:inches|in|")/i,
-    /(\d+(?:\.\d+)?)["\s]*[LWHlwh]\s*[×x]\s*(\d+(?:\.\d+)?)["\s]*[LWHlwh]\s*[×x]\s*(\d+(?:\.\d+)?)["\s]*[LWHlwh]/i,
-    /(?:size|measure)[^:]*:\s*(\d+(?:\.\d+)?)\s*[×x]\s*(\d+(?:\.\d+)?)\s*[×x]\s*(\d+(?:\.\d+)?)/i
-  ];
-  
-  for (const pattern of patterns) {
-    const match = html.match(pattern);
-    if (match) {
-      const dims = [
-        parseFloat(match[1]),
-        parseFloat(match[2]), 
-        parseFloat(match[3])
-      ].sort((a, b) => b - a);
-      
-      if (dims[0] >= 1 && dims[0] <= 300 && dims[2] >= 1) {
-        console.log(`  ✓ Found dimensions: ${dims[0]}" x ${dims[1]}" x ${dims[2]}"`);
-        return {
-          length: dims[0],
-          width: dims[1], 
-          height: dims[2],
-          source: 'scraped from page'
-        };
-      }
-    }
-  }
-  
-  return null;
-}
-
-function getEstimatedDimensions(productName, category) {
-  const name = productName.toLowerCase();
-  
-  const specificDimensions = {
-    'sectional': { length: 100, width: 70, height: 30 },
-    'sofa': { length: 70, width: 30, height: 30 },
-    'loveseat': { length: 50, width: 30, height: 30 },
-    'chair': { length: 27, width: 27, height: 33 },
-    'recliner': { length: 30, width: 32, height: 35 },
-    'ottoman': { length: 20, width: 15, height: 15 },
-    'coffee table': { length: 40, width: 20, height: 15 },
-    'dining table': { length: 60, width: 30, height: 25 },
-    'desk': { length: 50, width: 25, height: 25 },
-    'dresser': { length: 50, width: 15, height: 30 },
-    'nightstand': { length: 20, width: 15, height: 20 },
-    'tv': { length: 42, width: 3, height: 23 },
-    'refrigerator': { length: 30, width: 30, height: 58 },
-    'washer': { length: 23, width: 25, height: 32 },
-    'dryer': { length: 23, width: 25, height: 32 }
-  };
-  
-  for (const [key, dims] of Object.entries(specificDimensions)) {
-    if (name.includes(key)) {
-      return {
-        length: Math.ceil(dims.length * 1.2),
-        width: Math.ceil(dims.width * 1.2),
-        height: Math.ceil(dims.height * 1.2),
-        estimated: true
+  // Dimension extraction for Wayfair
+  if (retailer === 'Wayfair') {
+    const dimPattern = /(\d+\.?\d*)["′]\s*W\s*x\s*(\d+\.?\d*)["′]\s*D\s*x\s*(\d+\.?\d*)["′]\s*H/i;
+    const dimMatch = html.match(dimPattern);
+    if (dimMatch) {
+      result.dimensions = {
+        length: parseFloat(dimMatch[2]), // D = length
+        width: parseFloat(dimMatch[1]),  // W = width  
+        height: parseFloat(dimMatch[3])  // H = height
       };
     }
   }
   
-  const categoryDefaults = {
-    'Furniture': { length: 48, width: 25, height: 25 },
-    'Electronics': { length: 20, width: 15, height: 10 },
-    'Appliances': { length: 25, width: 25, height: 30 },
-    'Outdoor': { length: 40, width: 40, height: 30 },
-    'General': { length: 15, width: 12, height: 8 }
-  };
-  
-  const baseDims = categoryDefaults[category] || categoryDefaults['General'];
-  
-  return {
-    length: Math.ceil(baseDims.length * 1.2),
-    width: Math.ceil(baseDims.width * 1.2), 
-    height: Math.ceil(baseDims.height * 1.2),
-    estimated: true
-  };
+  return result;
 }
 
-function estimateWeight(productName, category) {
-  const name = productName.toLowerCase();
-  
-  const weights = {
-    'sectional': 200, 'sofa': 120, 'loveseat': 80, 'chair': 40,
-    'recliner': 70, 'ottoman': 20, 'coffee table': 50, 'dining table': 100,
-    'desk': 80, 'dresser': 120, 'bed': 80, 'mattress': 60,
-    'tv': 30, 'refrigerator': 250, 'washer': 160, 'dryer': 100
-  };
-  
-  for (const [key, weight] of Object.entries(weights)) {
-    if (name.includes(key)) return weight;
+// Scrapers
+const scrapers = {
+  async scrapeAmazon(page, url) {
+    await page.goto(url, { waitUntil: 'networkidle2' });
+    return await page.evaluate(() => {
+      const result = {};
+      result.name = document.querySelector('#productTitle')?.textContent?.trim() || 'Amazon Product';
+      const priceSelectors = ['.a-price .a-offscreen', '.a-price-whole', '#priceblock_dealprice', '#priceblock_ourprice'];
+      for (const selector of priceSelectors) {
+        const priceEl = document.querySelector(selector);
+        if (priceEl) {
+          const price = priceEl.textContent.replace(/[^0-9.]/g, '');
+          if (price && !isNaN(parseFloat(price))) {
+            result.price = parseFloat(price);
+            break;
+          }
+        }
+      }
+      result.image = document.querySelector('#landingImage')?.src || document.querySelector('.a-dynamic-image')?.src;
+      const details = Array.from(document.querySelectorAll('#feature-bullets ul li span, .a-unordered-list li span')).map(el => el.textContent).join(' ');
+      const dimMatch = details.match(/(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*inches/i);
+      if (dimMatch) {
+        result.dimensions = {
+          length: parseFloat(dimMatch[1]),
+          width: parseFloat(dimMatch[2]),
+          height: parseFloat(dimMatch[3])
+        };
+      }
+      return result;
+    });
+  },
+
+  async scrapeWayfair(page, url) {
+    await page.goto(url, { waitUntil: 'networkidle2' });
+    return await page.evaluate(() => {
+      const result = {};
+      result.name = document.querySelector('[data-enzyme-id="ProductTitle"]')?.textContent?.trim() || document.querySelector('h1')?.textContent?.trim() || 'Wayfair Product';
+      const priceEl = document.querySelector('[data-enzyme-id="PriceDisplay"] .sr-only, [data-enzyme-id="PriceDisplay"]') || document.querySelector('.BasePriceBlock-price');
+      if (priceEl) {
+        const price = priceEl.textContent.replace(/[^0-9.]/g, '');
+        if (price && !isNaN(parseFloat(price))) {
+          result.price = parseFloat(price);
+        }
+      }
+      result.image = document.querySelector('[data-enzyme-id="ProductImageCarousel"] img')?.src || document.querySelector('.ProductImageCarousel img')?.src;
+      const specs = Array.from(document.querySelectorAll('[data-enzyme-id="ProductSpecifications"] dd, .Specifications dd')).map(el => el.textContent);
+      const dimText = specs.find(spec => spec.match(/\d+\.?\d*["′]\s*W\s*x\s*\d+\.?\d*["′]\s*D\s*x\s*\d+\.?\d*["′]\s*H/i));
+      if (dimText) {
+        const dimMatch = dimText.match(/(\d+\.?\d*)["′]\s*W\s*x\s*(\d+\.?\d*)["′]\s*D\s*x\s*(\d+\.?\d*)["′]\s*H/i);
+        if (dimMatch) {
+          result.dimensions = {
+            length: parseFloat(dimMatch[2]),
+            width: parseFloat(dimMatch[1]),
+            height: parseFloat(dimMatch[3])
+          };
+        }
+      }
+      return result;
+    });
+  },
+
+  async scrapeTarget(page, url) {
+    await page.goto(url, { waitUntil: 'networkidle2' });
+    return await page.evaluate(() => {
+      const result = {};
+      result.name = document.querySelector('[data-test="product-title"]')?.textContent?.trim() || 'Target Product';
+      const priceEl = document.querySelector('[data-test="product-price"]') || document.querySelector('.Price-characteristic');
+      if (priceEl) {
+        const price = priceEl.textContent.replace(/[^0-9.]/g, '');
+        if (price && !isNaN(parseFloat(price))) {
+          result.price = parseFloat(price);
+        }
+      }
+      result.image = document.querySelector('[data-test="hero-image-carousel"] img')?.src;
+      return result;
+    });
+  },
+
+  async scrapeBestBuy(page, url) {
+    await page.goto(url, { waitUntil: 'networkidle2' });
+    return await page.evaluate(() => {
+      const result = {};
+      result.name = document.querySelector('.sku-title h1')?.textContent?.trim() || 'Best Buy Product';
+      const priceEl = document.querySelector('.pricing-price__range .sr-only') || document.querySelector('.pricing-price__range');
+      if (priceEl) {
+        const price = priceEl.textContent.replace(/[^0-9.]/g, '');
+        if (price && !isNaN(parseFloat(price))) {
+          result.price = parseFloat(price);
+        }
+      }
+      result.image = document.querySelector('.primary-image')?.src;
+      return result;
+    });
+  },
+
+  async scrapeWalmart(page, url) {
+    await page.goto(url, { waitUntil: 'networkidle2' });
+    return await page.evaluate(() => {
+      const result = {};
+      result.name = document.querySelector('[data-testid="product-title"]')?.textContent?.trim() || 'Walmart Product';
+      const priceEl = document.querySelector('[data-testid="price-current"]') || document.querySelector('.price-current');
+      if (priceEl) {
+        const price = priceEl.textContent.replace(/[^0-9.]/g, '');
+        if (price && !isNaN(parseFloat(price))) {
+          result.price = parseFloat(price);
+        }
+      }
+      result.image = document.querySelector('[data-testid="hero-image"]')?.src;
+      return result;
+    });
+  },
+
+  async scrapeGeneric(page, url) {
+    await page.goto(url, { waitUntil: 'networkidle2' });
+    return await page.evaluate(() => {
+      const result = {};
+      const nameSelectors = ['h1', '.product-title', '.product-name', '[class*="title"]'];
+      for (const selector of nameSelectors) {
+        const el = document.querySelector(selector);
+        if (el && el.textContent.trim()) {
+          result.name = el.textContent.trim();
+          break;
+        }
+      }
+      result.name = result.name || 'Product';
+      const priceSelectors = ['[class*="price"]:not([class*="old"])', '[class*="cost"]', '[data-price]', '.money'];
+      for (const selector of priceSelectors) {
+        const els = document.querySelectorAll(selector);
+        for (const el of els) {
+          const text = el.textContent || el.getAttribute('data-price') || '';
+          const price = text.replace(/[^0-9.]/g, '');
+          if (price && !isNaN(parseFloat(price)) && parseFloat(price) > 0) {
+            result.price = parseFloat(price);
+            break;
+          }
+        }
+        if (result.price) break;
+      }
+      const imgSelectors = ['.product-image img', '.main-image img', '[class*="hero"] img'];
+      for (const selector of imgSelectors) {
+        const img = document.querySelector(selector);
+        if (img && img.src) {
+          result.image = img.src;
+          break;
+        }
+      }
+      return result;
+    });
   }
-  
-  const categoryWeights = {
-    'Furniture': 60, 'Electronics': 15, 'Appliances': 80,
-    'Outdoor': 65, 'General': 12
-  };
-  
-  return categoryWeights[category] || 12;
-}
+};
 
-function calculateShippingCost(dimensions, weight) {
-  const CONTAINER_COST = 6000;
-  const USABLE_CUBIC_FEET = 1172; 
-  const COST_PER_CUBIC_FOOT = CONTAINER_COST / USABLE_CUBIC_FEET;
+async function scrapeProduct(url, browser) {
+  const retailer = detectRetailer(url);
   
-  const cubicInches = dimensions.length * dimensions.width * dimensions.height;
-  const cubicFeet = cubicInches / 1728;
-  
-  let chargeableCubicFeet = Math.max(0.5, cubicFeet);
-  let shipping = chargeableCubicFeet * COST_PER_CUBIC_FOOT;
-  
-  if (weight > 150) shipping += 50;
-  else if (weight > 70) shipping += 25;
-  
-  return Math.round(shipping * 100) / 100;
-}
+  // Try ScrapingBee first if API key is available
+  if (USE_SCRAPINGBEE) {
+    try {
+      console.log(`Trying ScrapingBee for ${retailer}: ${url}`);
+      const html = await scrapingBeeRequest(url);
+      const productData = await parseScrapingBeeHTML(html, url);
+      
+      if (productData.name) {
+        const category = categorizeProduct(productData.name || '', url);
+        const dimensions = productData.dimensions || estimateDimensions(category, productData.name);
+        const weight = estimateWeight(dimensions, category);
+        const shippingCost = calculateShippingCost(dimensions, weight);
 
-function getRetailerName(url) {
-  const hostname = new URL(url).hostname.toLowerCase();
-  
-  const retailers = {
-    'amazon': 'Amazon', 'wayfair': 'Wayfair', 'walmart': 'Walmart',
-    'target': 'Target', 'homedepot': 'Home Depot', 'lowes': 'Lowes',
-    'bestbuy': 'Best Buy', 'ikea': 'IKEA', 'costco': 'Costco',
-    'ebay': 'eBay', 'overstock': 'Overstock'
-  };
-  
-  for (const [key, name] of Object.entries(retailers)) {
-    if (hostname.includes(key)) return name;
+        return {
+          id: generateProductId(),
+          name: productData.name || 'Unknown Product',
+          price: productData.price || null,
+          image: productData.image || 'https://placehold.co/120x120/4CAF50/FFFFFF/png?text=No+Image',
+          retailer: retailer,
+          category: category,
+          dimensions: dimensions,
+          weight: weight,
+          shippingCost: shippingCost,
+          url: url,
+          needsManualPrice: !productData.price,
+          priceMessage: !productData.price ? 'Price could not be detected automatically' : null,
+          quantity: 1,
+          scraped: true,
+          method: 'ScrapingBee'
+        };
+      }
+    } catch (error) {
+      console.log(`ScrapingBee failed for ${url}, falling back to Puppeteer:`, error.message);
+    }
   }
-  
-  return 'Online Store';
+
+  // Fallback to Puppeteer
+  const page = await browser.newPage();
+  try {
+    console.log(`Using Puppeteer for ${retailer}: ${url}`);
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
+    await page.setViewport({ width: 1366, height: 768 });
+    await page.setRequestInterception(true);
+    page.on('request', (req) => {
+      if (req.resourceType() === 'stylesheet' || req.resourceType() === 'font' || req.resourceType() === 'media') {
+        req.abort();
+      } else {
+        req.continue();
+      }
+    });
+
+    let productData;
+    switch (retailer) {
+      case 'Amazon': productData = await scrapers.scrapeAmazon(page, url); break;
+      case 'Wayfair': productData = await scrapers.scrapeWayfair(page, url); break;
+      case 'Target': productData = await scrapers.scrapeTarget(page, url); break;
+      case 'Best Buy': productData = await scrapers.scrapeBestBuy(page, url); break;
+      case 'Walmart': productData = await scrapers.scrapeWalmart(page, url); break;
+      default: productData = await scrapers.scrapeGeneric(page, url); break;
+    }
+
+    const category = categorizeProduct(productData.name || '', url);
+    const dimensions = productData.dimensions || estimateDimensions(category, productData.name);
+    const weight = estimateWeight(dimensions, category);
+    const shippingCost = calculateShippingCost(dimensions, weight);
+
+    return {
+      id: generateProductId(),
+      name: productData.name || 'Unknown Product',
+      price: productData.price || null,
+      image: productData.image || 'https://placehold.co/120x120/4CAF50/FFFFFF/png?text=No+Image',
+      retailer: retailer,
+      category: category,
+      dimensions: dimensions,
+      weight: weight,
+      shippingCost: shippingCost,
+      url: url,
+      needsManualPrice: !productData.price,
+      priceMessage: !productData.price ? 'Price could not be detected automatically' : null,
+      quantity: 1,
+      scraped: true,
+      method: 'Puppeteer'
+    };
+  } catch (error) {
+    console.error(`Both ScrapingBee and Puppeteer failed for ${url}:`, error.message);
+    const retailer = detectRetailer(url);
+    return {
+      id: generateProductId(),
+      name: `${retailer} Product`,
+      price: null,
+      image: 'https://placehold.co/120x120/DC3545/FFFFFF/png?text=Failed',
+      retailer: retailer,
+      category: 'general',
+      dimensions: estimateDimensions('general'),
+      weight: 5,
+      shippingCost: 25,
+      url: url,
+      needsManualPrice: true,
+      priceMessage: 'Scraping failed - please enter price manually',
+      quantity: 1,
+      scraped: false,
+      error: error.message,
+      method: 'Failed'
+    };
+  } finally {
+    await page.close();
+  }
 }
 
-function determineCategory(productName) {
-  const name = productName.toLowerCase();
-  
-  if (/sofa|chair|table|desk|bed|dresser|cabinet|shelf/i.test(name)) return 'Furniture';
-  if (/tv|television|laptop|computer|monitor|tablet/i.test(name)) return 'Electronics';
-  if (/refrigerator|washer|dryer|dishwasher|microwave/i.test(name)) return 'Appliances';
-  if (/grill|patio|outdoor|fire pit/i.test(name)) return 'Outdoor';
-  
-  return 'General';
-}
+// Routes
+app.get('/health', (req, res) => {
+  res.json({ status: 'OK', timestamp: new Date().toISOString() });
+});
 
-function cleanProductName(name) {
-  if (!name) return null;
-  
-  return name
-    .replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
-    .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-    .replace(/\s+/g, ' ').substring(0, 200).trim();
-}
+app.post('/api/scrape', async (req, res) => {
+  try {
+    const { urls } = req.body;
+    if (!urls || !Array.isArray(urls) || urls.length === 0) {
+      return res.status(400).json({ success: false, error: 'URLs array is required' });
+    }
+    if (urls.length > 20) {
+      return res.status(400).json({ success: false, error: 'Maximum 20 URLs allowed per request' });
+    }
 
-function createFallbackProduct(url, productId) {
-  const retailer = getRetailerName(url);
-  const dimensions = getEstimatedDimensions('general item', 'General');
-  const weight = 15;
-  
-  return {
-    id: productId,
-    url: url,
-    retailer: retailer,
-    name: `Product from ${retailer}`,
-    price: null,
-    image: `https://placehold.co/200x200/667eea/FFFFFF/png?text=${encodeURIComponent(retailer)}`,
-    dimensions: dimensions,
-    weight: weight,
-    quantity: 1,
-    category: 'General',
-    shippingCost: calculateShippingCost(dimensions, weight),
-    needsManualPrice: true,
-    priceStatus: 'manual_required',
-    priceMessage: 'Unable to scrape product information',
-    isFallback: true,
-    pageType: 'unknown'
-  };
-}
+    const validUrls = urls.filter(url => {
+      try { new URL(url); return true; } catch { return false; }
+    });
+
+    if (validUrls.length === 0) {
+      return res.status(400).json({ success: false, error: 'No valid URLs provided' });
+    }
+
+    console.log(`Starting to scrape ${validUrls.length} products...`);
+    console.log(`Using ${USE_SCRAPINGBEE ? 'ScrapingBee + Puppeteer fallback' : 'Puppeteer only'}`);
+    
+    const browser = await puppeteer.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+    });
+
+    try {
+      const products = [];
+      for (let i = 0; i < validUrls.length; i += MAX_CONCURRENT_SCRAPES) {
+        const batch = validUrls.slice(i, i + MAX_CONCURRENT_SCRAPES);
+        const batchPromises = batch.map(url => 
+          Promise.race([
+            scrapeProduct(url, browser),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), SCRAPING_TIMEOUT))
+          ])
+        );
+        const batchResults = await Promise.allSettled(batchPromises);
+        batchResults.forEach(result => {
+          if (result.status === 'fulfilled') {
+            products.push(result.value);
+          }
+        });
+      }
+
+      const groupedProducts = {};
+      products.forEach(product => {
+        if (!groupedProducts[product.retailer]) {
+          groupedProducts[product.retailer] = { retailer: product.retailer, products: [] };
+        }
+        groupedProducts[product.retailer].products.push(product);
+      });
+
+      const stats = {
+        count: products.length,
+        scraped: products.filter(p => p.scraped).length,
+        pricesFound: products.filter(p => p.price).length,
+        retailers: Object.keys(groupedProducts)
+      };
+
+      console.log(`Scraping completed:`, stats);
+      res.json({
+        success: true,
+        products: products,
+        groupedProducts: groupedProducts,
+        ...stats
+      });
+    } finally {
+      await browser.close();
+    }
+  } catch (error) {
+    console.error('Scraping error:', error);
+    res.status(500).json({ success: false, error: error.message || 'Scraping failed' });
+  }
+});
+
+app.post('/apps/instant-import/create-draft-order', async (req, res) => {
+  try {
+    const { customer, products, deliveryFees, totals, originalUrls, quote } = req.body;
+    if (!customer || !products || !Array.isArray(products)) {
+      return res.status(400).json({ success: false, message: 'Customer and products are required' });
+    }
+
+    const lineItems = products.map(product => {
+      const title = `${product.name} (${product.retailer})`;
+      const properties = [
+        { name: 'Product URL', value: product.url },
+        { name: 'Retailer', value: product.retailer },
+        { name: 'Category', value: product.category },
+        { name: 'Dimensions', value: `${product.dimensions.length}" x ${product.dimensions.width}" x ${product.dimensions.height}"` },
+        { name: 'Weight', value: `${product.weight} lbs` },
+        { name: 'Ocean Freight Cost', value: `$${product.shippingCost}` }
+      ];
+      return {
+        title: title,
+        price: product.price || 0,
+        quantity: product.quantity || 1,
+        properties: properties,
+        custom: true,
+        taxable: false
+      };
+    });
+
+    if (deliveryFees && Object.keys(deliveryFees).length > 0) {
+      Object.entries(deliveryFees).forEach(([retailer, fee]) => {
+        if (fee > 0) {
+          lineItems.push({
+            title: `USA Delivery Fee - ${retailer}`,
+            price: fee,
+            quantity: 1,
+            custom: true,
+            taxable: false
+          });
+        }
+      });
+    }
+
+    if (totals && totals.dutyAmount > 0) {
+      lineItems.push({
+        title: 'Bermuda Import Duty (26.5%)',
+        price: totals.dutyAmount,
+        quantity: 1,
+        custom: true,
+        taxable: false
+      });
+    }
+
+    const customerNote = `
+BERMUDA IMPORT QUOTE - ${new Date().toLocaleDateString()}
+
+CUSTOMER: ${customer.name} (${customer.email})
+
+COST BREAKDOWN:
+• Product Cost: $${(totals.totalItemCost || 0).toFixed(2)}
+• USA Delivery Fees: $${(totals.totalDeliveryFees || 0).toFixed(2)}
+• Bermuda Duty (26.5%): $${(totals.dutyAmount || 0).toFixed(2)}
+• Ocean Freight: $${(totals.totalShippingCost || 0).toFixed(2)}
+• TOTAL: $${(totals.grandTotal || 0).toFixed(2)}
+
+FREIGHT FORWARDER: Sealine Freight - Elizabeth, NJ 07201-614
+
+ORIGINAL URLS:
+${originalUrls ? originalUrls.map((url, i) => `${i+1}. ${url}`).join('\n') : 'No URLs provided'}
+
+This quote was generated using the SDL Instant Import Calculator.
+Contact customer to finalize import arrangements.
+    `.trim();
+
+    const shopifyData = {
+      draft_order: {
+        line_items: lineItems,
+        customer: {
+          email: customer.email,
+          first_name: customer.name.split(' ')[0] || customer.name,
+          last_name: customer.name.split(' ').slice(1).join(' ') || ''
+        },
+        note: customerNote,
+        email: customer.email,
+        invoice_sent_at: null,
+        invoice_url: null,
+        name: `#IMP${Date.now().toString().slice(-6)}`,
+        status: 'open',
+        tags: 'instant-import,bermuda-freight,quote'
+      }
+    };
+
+    console.log('Creating Shopify draft order...');
+    const response = await axios.post(
+      `https://${SHOPIFY_DOMAIN}/admin/api/2023-10/draft_orders.json`,
+      shopifyData,
+      {
+        headers: {
+          'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    const draftOrder = response.data.draft_order;
+    console.log(`Draft order created: ${draftOrder.name}`);
+
+    res.json({
+      success: true,
+      draftOrderId: draftOrder.id,
+      draftOrderNumber: draftOrder.name,
+      orderUrl: `https://${SHOPIFY_DOMAIN}/admin/draft_orders/${draftOrder.id}`,
+      invoiceUrl: draftOrder.invoice_url,
+      totalPrice: draftOrder.total_price,
+      message: 'Draft order created successfully'
+    });
+  } catch (error) {
+    console.error('Draft order creation error:', error.response?.data || error.message);
+    res.status(500).json({
+      success: false,
+      message: error.response?.data?.errors || error.message || 'Failed to create draft order'
+    });
+  }
+});
+
+app.use((error, req, res, next) => {
+  console.error('Unhandled error:', error);
+  res.status(500).json({ success: false, error: 'Internal server error' });
+});
 
 app.listen(PORT, () => {
-  console.log(`
-╔════════════════════════════════════════╗
-║  Bermuda Ocean Freight Calculator     ║
-║  Running on port ${PORT}                  ║
-║  ScrapingBee: ${SCRAPINGBEE_API_KEY ? '✓ Connected' : '✗ Missing'}         ║
-║  Shopify: ${SHOPIFY_ACCESS_TOKEN ? '✓ Connected' : '✗ Missing'}            ║
-║  Store: spencer-deals-ltd              ║
-╚════════════════════════════════════════╝
-  `);
+  console.log(`Bermuda Import Calculator Backend running on port ${PORT}`);
+  console.log(`Shopify domain: ${SHOPIFY_DOMAIN}`);
+  console.log(`ScrapingBee: ${USE_SCRAPINGBEE ? 'Enabled' : 'Disabled'}`);
+  console.log('Ready to process import quotes!');
 });
+
+module.exports = app;
