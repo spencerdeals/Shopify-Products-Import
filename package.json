@@ -1,15 +1,11 @@
 {
-  "name": "bermuda-import-calculator",
-  "version": "2.0.0",
+  "name": "bermuda-calculator",
+  "version": "1.0.0",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
-  "dependencies": {
-    "express": "^4.18.2",
-    "cors": "^2.8.5",
-    "axios": "^1.6.0",
-    "express-rate-limit": "^7.1.5",
-    "dotenv": "^16.3.1"
+  "engines": {
+    "node": ">=14.0.0"
   }
 }
