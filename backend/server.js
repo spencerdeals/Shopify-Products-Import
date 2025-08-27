@@ -51,14 +51,29 @@ function detectRetailer(url) {
 
 function categorizeProduct(name, url) {
   const text = (name + ' ' + url).toLowerCase();
-  if (/furniture|sofa|chair|table|desk|bed|mattress|dresser|cabinet/.test(text)) return 'furniture';
-  if (/tv|laptop|phone|computer|electronics|camera|speaker|headphone/.test(text)) return 'electronics';
-  if (/appliance|refrigerator|washing|dryer|dishwasher|microwave|oven/.test(text)) return 'appliances';
-  if (/clothing|shirt|pants|dress|shoes|jacket|apparel/.test(text)) return 'clothing';
-  if (/book|magazine|journal|novel/.test(text)) return 'books';
-  if (/toy|game|puzzle|doll|action|play/.test(text)) return 'toys';
-  if (/sport|fitness|exercise|gym|bike|golf/.test(text)) return 'sports';
-  if (/decor|vase|picture|artwork|candle|pillow|curtain/.test(text)) return 'home-decor';
+  
+  // Enhanced categorization with more specific keywords
+  if (/\b(sofa|sectional|loveseat|couch|chair|recliner|ottoman|table|desk|dresser|nightstand|bookshelf|cabinet|wardrobe|armoire|bed|frame|headboard|mattress|dining|kitchen|office)\b/.test(text)) return 'furniture';
+  
+  if (/\b(tv|television|monitor|laptop|computer|tablet|phone|smartphone|camera|speaker|headphone|earbuds|router|gaming|console|xbox|playstation|nintendo)\b/.test(text)) return 'electronics';
+  
+  if (/\b(refrigerator|fridge|washer|dryer|dishwasher|microwave|oven|stove|range|freezer|ac|air.conditioner|heater|vacuum)\b/.test(text)) return 'appliances';
+  
+  if (/\b(shirt|pants|dress|jacket|coat|shoes|boots|sneakers|clothing|apparel|jeans|sweater|hoodie|shorts|skirt)\b/.test(text)) return 'clothing';
+  
+  if (/\b(book|novel|textbook|magazine|journal|encyclopedia|bible|dictionary)\b/.test(text)) return 'books';
+  
+  if (/\b(toy|game|puzzle|doll|action.figure|lego|playset|board.game|video.game|stuffed|plush)\b/.test(text)) return 'toys';
+  
+  if (/\b(exercise|fitness|gym|bike|bicycle|treadmill|weights|dumbbells|yoga|golf|tennis|basketball|football|soccer)\b/.test(text)) return 'sports';
+  
+  if (/\b(decor|decoration|vase|picture|frame|artwork|painting|candle|lamp|mirror|pillow|curtain|rug|carpet)\b/.test(text)) return 'home-decor';
+  
+  // Additional categories for better estimation
+  if (/\b(tool|hardware|drill|saw|hammer|screwdriver|wrench|toolbox)\b/.test(text)) return 'tools';
+  
+  if (/\b(garden|plant|pot|soil|fertilizer|hose|mower|outdoor)\b/.test(text)) return 'garden';
+  
   return 'general';
 }
 
@@ -76,34 +91,106 @@ function estimateWeight(dimensions, category) {
 
 function estimateDimensions(category, name = '') {
   const text = name.toLowerCase();
+  
+  // Try to extract dimensions from product name first
   const dimMatch = text.match(/(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)/);
   if (dimMatch) {
-    return {
+    const dims = {
       length: Math.max(1, parseFloat(dimMatch[1]) * 1.2),
       width: Math.max(1, parseFloat(dimMatch[2]) * 1.2), 
       height: Math.max(1, parseFloat(dimMatch[3]) * 1.2)
     };
+    
+    // Sanity check: dimensions should be reasonable
+    if (dims.length > 120 || dims.width > 120 || dims.height > 120) {
+      console.warn(`Unrealistic dimensions found: ${dims.length}x${dims.width}x${dims.height}, using category defaults`);
+    } else {
+      return dims;
+    }
   }
   
+  // Enhanced category-based estimates with realistic size ranges
   const baseEstimates = {
-    'furniture': { length: 48, width: 24, height: 36 },
-    'electronics': { length: 20, width: 12, height: 8 },
-    'appliances': { length: 28, width: 28, height: 36 },
-    'clothing': { length: 12, width: 10, height: 2 },
-    'books': { length: 9, width: 6, height: 1 },
-    'toys': { length: 12, width: 8, height: 6 },
-    'sports': { length: 24, width: 12, height: 12 },
-    'home-decor': { length: 12, width: 12, height: 12 },
-    'general': { length: 18, width: 12, height: 8 }
+    'furniture': { 
+      length: Math.random() * 30 + 36, // 36-66 inches
+      width: Math.random() * 20 + 20,  // 20-40 inches  
+      height: Math.random() * 24 + 30  // 30-54 inches
+    },
+    'electronics': { 
+      length: Math.random() * 15 + 12, // 12-27 inches
+      width: Math.random() * 8 + 8,    // 8-16 inches
+      height: Math.random() * 6 + 4    // 4-10 inches
+    },
+    'appliances': { 
+      length: Math.random() * 12 + 24, // 24-36 inches
+      width: Math.random() * 12 + 24,  // 24-36 inches
+      height: Math.random() * 20 + 30  // 30-50 inches
+    },
+    'clothing': { 
+      length: Math.random() * 6 + 12,  // 12-18 inches
+      width: Math.random() * 6 + 10,   // 10-16 inches
+      height: Math.random() * 2 + 2    // 2-4 inches
+    },
+    'books': { 
+      length: Math.random() * 3 + 8,   // 8-11 inches
+      width: Math.random() * 2 + 5,    // 5-7 inches
+      height: Math.random() * 1 + 1    // 1-2 inches
+    },
+    'toys': { 
+      length: Math.random() * 8 + 8,   // 8-16 inches
+      width: Math.random() * 6 + 6,    // 6-12 inches
+      height: Math.random() * 4 + 4    // 4-8 inches
+    },
+    'sports': { 
+      length: Math.random() * 20 + 18, // 18-38 inches
+      width: Math.random() * 10 + 8,   // 8-18 inches
+      height: Math.random() * 8 + 6    // 6-14 inches
+    },
+    'home-decor': { 
+      length: Math.random() * 8 + 8,   // 8-16 inches
+      width: Math.random() * 8 + 8,    // 8-16 inches
+      height: Math.random() * 8 + 8    // 8-16 inches
+    },
+    'general': { 
+      length: Math.random() * 12 + 15, // 15-27 inches
+      width: Math.random() * 8 + 10,   // 10-18 inches
+      height: Math.random() * 6 + 6    // 6-12 inches
+    }
   };
   
   const base = baseEstimates[category] || baseEstimates.general;
   
+  // Apply 1.3x buffer for packaging (increased from 1.2x)
   return {
-    length: base.length * 1.2,
-    width: base.width * 1.2,
-    height: base.height * 1.2
+    length: Math.round(base.length * 1.3 * 100) / 100,
+    width: Math.round(base.width * 1.3 * 100) / 100,
+    height: Math.round(base.height * 1.3 * 100) / 100
   };
+}
+
+// Add dimension validation function
+function validateDimensions(dimensions, category, name) {
+  const { length, width, height } = dimensions;
+  
+  // Check for obviously wrong dimensions
+  if (length <= 0 || width <= 0 || height <= 0) {
+    console.warn(`Invalid dimensions for ${name}: ${length}x${width}x${height}`);
+    return estimateDimensions(category, name);
+  }
+  
+  // Check for unrealistic dimensions (over 10 feet in any direction)
+  if (length > 120 || width > 120 || height > 120) {
+    console.warn(`Unrealistic dimensions for ${name}: ${length}x${width}x${height}, using estimates`);
+    return estimateDimensions(category, name);
+  }
+  
+  // Check for suspiciously small dimensions for furniture
+  if (category === 'furniture' && (length < 12 || width < 12)) {
+    console.warn(`Suspiciously small furniture dimensions for ${name}: ${length}x${width}x${height}`);
+    // Don't override, but flag for manual review in draft order
+  }
+  
+  return dimensions;
 }
 
 function calculateShippingCost(dimensions, weight, orderTotal = 0) {
@@ -419,7 +506,8 @@ async function scrapeProduct(url, browser) {
       
       if (productData.name) {
         const category = categorizeProduct(productData.name || '', url);
-        const dimensions = productData.dimensions || estimateDimensions(category, productData.name);
+        const rawDimensions = productData.dimensions || estimateDimensions(category, productData.name);
+        const dimensions = validateDimensions(rawDimensions, category, productData.name);
         const weight = estimateWeight(dimensions, category);
         const shippingCost = calculateShippingCost(dimensions, weight, 0);
 
@@ -438,7 +526,8 @@ async function scrapeProduct(url, browser) {
           priceMessage: !productData.price ? 'Price could not be detected automatically' : null,
           quantity: 1,
           scraped: true,
-          method: 'ScrapingBee'
+          method: 'ScrapingBee',
+          estimateWarning: !productData.dimensions ? 'ESTIMATED DIMENSIONS - Manual verification recommended' : null
         };
       }
     } catch (error) {
@@ -471,7 +560,8 @@ async function scrapeProduct(url, browser) {
     }
 
     const category = categorizeProduct(productData.name || '', url);
-    const dimensions = productData.dimensions || estimateDimensions(category, productData.name);
+    const rawDimensions = productData.dimensions || estimateDimensions(category, productData.name);
+    const dimensions = validateDimensions(rawDimensions, category, productData.name);
     const weight = estimateWeight(dimensions, category);
     const shippingCost = calculateShippingCost(dimensions, weight, 0);
 
@@ -490,7 +580,8 @@ async function scrapeProduct(url, browser) {
       priceMessage: !productData.price ? 'Price could not be detected automatically' : null,
       quantity: 1,
       scraped: true,
-      method: 'Puppeteer'
+      method: 'Puppeteer',
+      estimateWarning: !productData.dimensions ? 'ESTIMATED DIMENSIONS - Manual verification recommended' : null
     };
   } catch (error) {
     console.error(`Both ScrapingBee and Puppeteer failed for ${url}:`, error.message);
