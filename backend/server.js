@@ -282,16 +282,16 @@ async function parseUniversalProduct(html, url, productId, urlType) {
   product.image = product.image || universalData.image;
   product.dimensions = product.dimensions || universalData.dimensions;
   
-  // 3. Simple price extraction (no timeouts, no complexity)
-  if (!product.price || product.price === 0) {
-    const simplePrice = extractSimplePrice(html);
-    if (simplePrice > 0) {
-      product.price = simplePrice;
-      product.needsManualPrice = false;
-      console.log(`  ✓ Simple price: $${simplePrice}`);
-    }
-  } else {
+  // 3. Confident price extraction only
+  const priceResult = extractConfidentPrice(html, retailer, structuredData);
+  if (priceResult.confident) {
+    product.price = priceResult.price;
     product.needsManualPrice = false;
+    console.log(`  ✓ Confident price: $${priceResult.price} (${priceResult.source})`);
+  } else {
+    product.price = 0;
+    product.needsManualPrice = true;
+    console.log(`  ⚠ Price uncertain - manual entry required (${priceResult.reason})`);
   }
   
   // Clean up and finalize
@@ -330,6 +330,136 @@ async function parseUniversalProduct(html, url, productId, urlType) {
   console.log(`  💰 Calculated shipping: $${product.shippingCost} (${product.dimensions.length}" x ${product.dimensions.width}" x ${product.dimensions.height}", ${product.weight}lbs)`);
   
   return product;
+}
+
+// Confident price extraction with reliability scoring
+function extractConfidentPrice(html, retailer, structuredData) {
+  const results = [];
+  
+  // 1. Structured data (highest confidence)
+  if (structuredData && structuredData.price > 0) {
+    results.push({
+      price: structuredData.price,
+      source: 'JSON-LD structured data',
+      confidence: 95
+    });
+  }
+  
+  // 2. Retailer-specific selectors (high confidence)
+  const retailerPrice = extractRetailerPrice(html, retailer);
+  if (retailerPrice > 0) {
+    results.push({
+      price: retailerPrice,
+      source: `${retailer} specific selector`,
+      confidence: 85
+    });
+  }
+  
+  // 3. Generic price patterns (medium confidence)
+  const genericPrices = extractGenericPrices(html);
+  genericPrices.forEach(price => {
+    results.push({
+      price: price,
+      source: 'generic price pattern',
+      confidence: 60
+    });
+  });
+  
+  // Filter and validate results
+  const validResults = results.filter(result => 
+    result.price >= 5 && result.price <= 25000 // Reasonable range
+  );
+  
+  if (validResults.length === 0) {
+    return { confident: false, reason: 'No valid prices found' };
+  }
+  
+  // Use highest confidence result
+  const bestResult = validResults.sort((a, b) => b.confidence - a.confidence)[0];
+  
+  // Only confident if score is 80+ or multiple sources agree
+  const agreeingPrices = validResults.filter(r => 
+    Math.abs(r.price - bestResult.price) < (bestResult.price * 0.05) // Within 5%
+  );
+  
+  const confident = bestResult.confidence >= 80 || agreeingPrices.length >= 2;
+  
+  if (confident) {
+    return {
+      confident: true,
+      price: bestResult.price,
+      source: bestResult.source,
+      confidence: bestResult.confidence
+    };
+  } else {
+    return {
+      confident: false,
+      reason: `Low confidence (${bestResult.confidence}%), needs verification`,
+      foundPrice: bestResult.price
+    };
+  }
+}
+
+// Retailer-specific price extraction
+function extractRetailerPrice(html, retailer) {
+  const patterns = {
+    'Wayfair': [
+      /data-cy="price-current"[^>]*>.*?\$([0-9,]+(?:\.\d{2})?)/is,
+      /class="[^"]*price-current[^"]*"[^>]*>.*?\$([0-9,]+(?:\.\d{2})?)/is
+    ],
+    'Amazon': [
+      /class="[^"]*a-price-whole[^"]*"[^>]*>([0-9,]+)/i,
+      /id="priceblock_dealprice"[^>]*>.*?\$([0-9,]+(?:\.\d{2})?)/is
+    ],
+    'Target': [
+      /data-test="product-price"[^>]*>.*?\$([0-9,]+(?:\.\d{2})?)/is
+    ],
+    'Walmart': [
+      /itemprop="price"[^>]*>.*?\$([0-9,]+(?:\.\d{2})?)/is
+    ]
+  };
+  
+  const retailerPatterns = patterns[retailer] || [];
+  
+  for (const pattern of retailerPatterns) {
+    const match = html.match(pattern);
+    if (match) {
+      const price = parseFloat(match[1].replace(/,/g, ''));
+      if (price > 0) return price;
+    }
+  }
+  
+  return 0;
+}
+
+// Generic price extraction
+function extractGenericPrices(html) {
+  const patterns = [
+    /\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g
+  ];
+  
+  const prices = [];
+  
+  for (const pattern of patterns) {
+    const matches = Array.from(html.matchAll(pattern));
+    matches.forEach(match => {
+      const price = parseFloat(match[1].replace(/,/g, ''));
+      if (price >= 10 && price <= 10000) {
+        prices.push(price);
+      }
+    });
+  }
+  
+  // Return most common prices (likely to be actual product prices)
+  const priceCounts = {};
+  prices.forEach(price => {
+    priceCounts[price] = (priceCounts[price] || 0) + 1;
+  });
+  
+  return Object.entries(priceCounts)
+    .sort(([,a], [,b]) => b - a)
+    .slice(0, 3)
+    .map(([price]) => parseFloat(price));
 }
 
 // Extract structured data (JSON-LD, meta tags)
@@ -419,29 +549,6 @@ function extractUniversalContent(html, retailer) {
   result.dimensions = extractDimensionsFromHTML(html);
   
   return result;
-}
-
-// Simple price extraction without complexity
-function extractSimplePrice(html) {
-  const pricePatterns = [
-    /\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g
-  ];
-  
-  for (const pattern of pricePatterns) {
-    const matches = Array.from(html.matchAll(pattern));
-    if (matches.length > 0) {
-      const prices = matches
-        .map(match => parseFloat(match[1].replace(/,/g, '')))
-        .filter(price => price >= 10 && price <= 10000) // Reasonable range
-        .sort((a, b) => a - b);
-      
-      if (prices.length > 0) {
-        return prices[0]; // Return lowest reasonable price
-      }
-    }
-  }
-  
-  return 0;
 }
 
 // Enhanced dimension extraction
