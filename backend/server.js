@@ -28,6 +28,9 @@ console.log('=====================');
 app.use(cors());
 app.use(express.json({ limit: '5mb' }));
 
+// Fix for Railway X-Forwarded-For warning
+app.set('trust proxy', true);
+
 // Serve frontend static files
 app.use(express.static(path.join(__dirname, '../frontend')));
 app.use(express.static(path.join(__dirname, '../web')));
@@ -65,7 +68,8 @@ app.get('/', (req, res) => {
 // Rate limiter (after health check)
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 50
+  max: 50,
+  trustProxy: true
 });
 app.use('/api/', limiter);
 
@@ -203,6 +207,400 @@ function estimateDimensions(category, name = '') {
   };
 }
 
+// ===== NEW INTELLIGENT ESTIMATION FUNCTIONS START HERE =====
+
+// Enhanced product context extraction
+async function extractFullProductContext(html, url) {
+  const context = {
+    title: '',
+    description: '',
+    bulletPoints: [],
+    specifications: {},
+    price: 0,
+    weight: 0,
+    brand: '',
+    modelNumber: '',
+    category: ''
+  };
+
+  // Title extraction (multiple patterns)
+  const titlePatterns = [
+    /<h1[^>]*id="productTitle"[^>]*>([^<]+)</i,
+    /<h1[^>]*class="[^"]*product-title[^"]*"[^>]*>([^<]+)</i,
+    /<h1[^>]*>([^<]+)</i,
+    /<title>([^<]+)</i,
+    /property="og:title" content="([^"]+)"/i
+  ];
+  
+  for (const pattern of titlePatterns) {
+    const match = html.match(pattern);
+    if (match) {
+      context.title = match[1].trim()
+        .replace(/&#x27;/g, "'")
+        .replace(/&quot;/g, '"')
+        .replace(/&amp;/g, '&')
+        .replace(/<[^>]*>/g, '');
+      break;
+    }
+  }
+
+  // Extract weight (often available even when dimensions aren't)
+  const weightPatterns = [
+    /(?:weight|Weight)[:\s]+(\d+\.?\d*)\s*(?:lbs?|pounds?)/i,
+    /(?:weight|Weight)[:\s]+(\d+\.?\d*)\s*(?:kg|kilograms?)/i,
+    /(?:Item Weight|Product Weight)[:\s]+(\d+\.?\d*)\s*(?:lbs?|pounds?)/i,
+    /(\d+\.?\d*)\s*(?:lbs?|pounds?)\s+(?:weight|Weight)/i,
+    /"weight":\s*"?(\d+\.?\d*)/i,
+    /Weight[^<]*<[^>]*>([^<]*\d+\.?\d*\s*(?:lbs?|pounds?))/i
+  ];
+  
+  for (const pattern of weightPatterns) {
+    const match = html.match(pattern);
+    if (match) {
+      let weight = parseFloat(match[1]);
+      if (pattern.toString().includes('kg')) {
+        weight = weight * 2.205; // Convert kg to lbs
+      }
+      if (weight > 0 && weight < 1000) { // Sanity check
+        context.weight = weight;
+        console.log(`Found product weight: ${weight} lbs`);
+        break;
+      }
+    }
+  }
+
+  // Extract bullet points (often contain size info)
+  const bulletMatches = html.matchAll(/<li[^>]*>([^<]{10,200})</gi);
+  for (const match of bulletMatches) {
+    context.bulletPoints.push(match[1]);
+  }
+
+  // Extract price if available
+  const pricePatterns = [
+    /class="a-price-whole">([0-9,]+)/i,
+    /class="a-price[^"]*"[^>]*>\s*<span[^>]*>\$([0-9,.]+)/i,
+    /"price":\s*"([0-9,.]+)"/i,
+    /data-price="([0-9,.]+)"/i
+  ];
+  
+  for (const pattern of pricePatterns) {
+    const match = html.match(pattern);
+    if (match) {
+      const price = parseFloat(match[1].replace(/,/g, ''));
+      if (price > 0) {
+        context.price = price;
+        break;
+      }
+    }
+  }
+
+  return context;
+}
+
+// AI-like product classification based on context
+function classifyProductFromContext(context) {
+  const title = (context.title + ' ' + context.bulletPoints.join(' ')).toLowerCase();
+  
+  // Detailed classification rules
+  const classifications = {
+    'small-electronics': {
+      keywords: ['phone', 'earbuds', 'airpods', 'watch', 'charger', 'cable', 'adapter', 'power bank', 'case', 'bluetooth', 'wireless earphone'],
+      maxWeight: 2,
+      typicalDensity: 0.15, // cubic feet per pound (very dense small items)
+      sizeLimit: 2
+    },
+    'medium-electronics': {
+      keywords: ['laptop', 'tablet', 'ipad', 'monitor', 'keyboard', 'printer', 'console', 'speaker', 'soundbar', 'playstation', 'xbox'],
+      maxWeight: 20,
+      typicalDensity: 0.25,
+      sizeLimit: 5
+    },
+    'large-electronics': {
+      keywords: ['tv', 'television', 'refrigerator', 'washer', 'dryer', 'dishwasher', 'microwave'],
+      maxWeight: 200,
+      typicalDensity: 0.4,
+      sizeLimit: 20
+    },
+    'books': {
+      keywords: ['book', 'paperback', 'hardcover', 'textbook', 'novel', 'pages', 'reading', 'bible', 'dictionary'],
+      maxWeight: 5,
+      typicalDensity: 0.08,
+      sizeLimit: 1
+    },
+    'clothing': {
+      keywords: ['shirt', 'pants', 'dress', 'jacket', 'shoes', 'clothing', 'apparel', 'wear', 'jeans', 'sweater', 'hoodie'],
+      maxWeight: 5,
+      typicalDensity: 1.5,
+      sizeLimit: 3
+    },
+    'toys': {
+      keywords: ['toy', 'game', 'puzzle', 'play', 'kids', 'children', 'lego', 'doll', 'action figure', 'board game'],
+      maxWeight: 10,
+      typicalDensity: 1.0,
+      sizeLimit: 4
+    },
+    'small-furniture': {
+      keywords: ['lamp', 'stool', 'nightstand', 'shelf', 'mirror', 'cushion', 'pillow', 'ottoman', 'end table'],
+      maxWeight: 30,
+      typicalDensity: 0.5,
+      sizeLimit: 8
+    },
+    'large-furniture': {
+      keywords: ['sofa', 'couch', 'bed', 'mattress', 'table', 'desk', 'dresser', 'cabinet', 'chair', 'recliner'],
+      maxWeight: 300,
+      typicalDensity: 0.4,
+      sizeLimit: 30
+    },
+    'tools': {
+      keywords: ['tool', 'drill', 'saw', 'hammer', 'wrench', 'kit', 'hardware', 'screwdriver', 'power tool'],
+      maxWeight: 30,
+      typicalDensity: 0.2,
+      sizeLimit: 3
+    },
+    'sports': {
+      keywords: ['ball', 'bat', 'golf', 'tennis', 'fitness', 'weights', 'bike', 'bicycle', 'exercise', 'workout'],
+      maxWeight: 50,
+      typicalDensity: 0.6,
+      sizeLimit: 10
+    }
+  };
+
+  // Find best classification match
+  let bestMatch = 'general';
+  let bestScore = 0;
+  
+  for (const [category, config] of Object.entries(classifications)) {
+    let score = 0;
+    
+    // Check keywords
+    for (const keyword of config.keywords) {
+      if (title.includes(keyword)) {
+        score += 10;
+      }
+    }
+    
+    // Weight compatibility check
+    if (context.weight > 0) {
+      if (context.weight <= config.maxWeight) {
+        score += 5;
+      } else {
+        score -= 10; // Penalize if weight doesn't match category
+      }
+    }
+    
+    if (score > bestScore) {
+      bestScore = score;
+      bestMatch = category;
+    }
+  }
+
+  return {
+    category: bestMatch,
+    confidence: bestScore >= 10 ? 'high' : bestScore >= 5 ? 'medium' : 'low',
+    config: classifications[bestMatch] || {
+      typicalDensity: 0.3,
+      maxWeight: 50,
+      sizeLimit: 5
+    }
+  };
+}
+
+// Smart dimension estimation using classification + weight
+function calculateDimensionsFromClassification(classification, context) {
+  const { category, confidence, config } = classification;
+  
+  // If we have weight, use it with category-specific density
+  if (context.weight > 0) {
+    let cubicFeet = context.weight * config.typicalDensity;
+    
+    // Cap cubic feet based on category size limits
+    cubicFeet = Math.min(cubicFeet, config.sizeLimit);
+    
+    // Minimum size sanity check
+    cubicFeet = Math.max(cubicFeet, 0.5);
+    
+    console.log(`Weight-based calculation: ${context.weight} lbs × ${config.typicalDensity} density = ${cubicFeet} cubic feet`);
+    
+    // Category-specific dimension ratios
+    const ratios = {
+      'small-electronics': { l: 1.5, w: 1.2, h: 0.8 },
+      'medium-electronics': { l: 1.4, w: 1.1, h: 0.7 },
+      'large-electronics': { l: 1.2, w: 0.8, h: 1.5 },
+      'books': { l: 1.2, w: 0.9, h: 0.3 },
+      'clothing': { l: 1.3, w: 1.0, h: 0.4 },
+      'toys': { l: 1.2, w: 1.0, h: 0.9 },
+      'small-furniture': { l: 1.3, w: 1.0, h: 1.1 },
+      'large-furniture': { l: 1.5, w: 1.0, h: 0.8 },
+      'tools': { l: 1.4, w: 0.8, h: 0.6 },
+      'sports': { l: 1.3, w: 0.9, h: 0.8 },
+      'general': { l: 1.2, w: 1.0, h: 0.8 }
+    };
+    
+    const ratio = ratios[category] || ratios.general;
+    const baseDim = Math.cbrt(cubicFeet * 1728);
+    
+    return {
+      length: Math.round(baseDim * ratio.l * 100) / 100,
+      width: Math.round(baseDim * ratio.w * 100) / 100,
+      height: Math.round(baseDim * ratio.h * 100) / 100,
+      confidence: confidence,
+      method: 'weight-based',
+      cubicFeet: cubicFeet
+    };
+  }
+  
+  // Price-based fallback with category awareness
+  if (context.price > 0) {
+    const priceFactors = {
+      'small-electronics': { base: 0.5, max: 2 },
+      'medium-electronics': { base: 1, max: 5 },
+      'large-electronics': { base: 3, max: 20 },
+      'books': { base: 0.3, max: 1 },
+      'clothing': { base: 0.8, max: 3 },
+      'toys': { base: 1, max: 4 },
+      'small-furniture': { base: 2, max: 8 },
+      'large-furniture': { base: 5, max: 30 },
+      'tools': { base: 0.5, max: 3 },
+      'sports': { base: 1.5, max: 10 },
+      'general': { base: 1, max: 5 }
+    };
+    
+    const factor = priceFactors[category] || priceFactors.general;
+    
+    // Price-based size estimation
+    let estimatedCubicFeet = factor.base;
+    if (context.price < 50) estimatedCubicFeet = factor.base * 0.5;
+    else if (context.price < 100) estimatedCubicFeet = factor.base * 0.75;
+    else if (context.price < 200) estimatedCubicFeet = factor.base;
+    else if (context.price < 500) estimatedCubicFeet = factor.base * 1.5;
+    else if (context.price < 1000) estimatedCubicFeet = factor.base * 2;
+    else estimatedCubicFeet = factor.base * 3;
+    
+    // Cap at category maximum
+    estimatedCubicFeet = Math.min(estimatedCubicFeet, factor.max);
+    
+    console.log(`Price-based calculation: $${context.price} in ${category} = ${estimatedCubicFeet} cubic feet`);
+    
+    const baseDim = Math.cbrt(estimatedCubicFeet * 1728);
+    
+    return {
+      length: Math.round(baseDim * 1.3 * 100) / 100,
+      width: Math.round(baseDim * 1.0 * 100) / 100,
+      height: Math.round(baseDim * 0.7 * 100) / 100,
+      confidence: 'low',
+      method: 'price-based',
+      cubicFeet: estimatedCubicFeet
+    };
+  }
+  
+  // Ultimate fallback - category defaults (much smaller than before)
+  const defaults = {
+    'small-electronics': { l: 8, w: 6, h: 3 },
+    'medium-electronics': { l: 16, w: 12, h: 8 },
+    'large-electronics': { l: 36, w: 24, h: 20 },
+    'books': { l: 9, w: 6, h: 2 },
+    'clothing': { l: 14, w: 10, h: 3 },
+    'toys': { l: 12, w: 10, h: 8 },
+    'small-furniture': { l: 24, w: 20, h: 18 },
+    'large-furniture': { l: 48, w: 36, h: 30 },
+    'tools': { l: 12, w: 8, h: 6 },
+    'sports': { l: 20, w: 14, h: 10 },
+    'general': { l: 12, w: 10, h: 8 }
+  };
+  
+  const def = defaults[category] || defaults.general;
+  
+  return {
+    length: def.l,
+    width: def.w,
+    height: def.h,
+    confidence: 'fallback',
+    method: 'category-default',
+    cubicFeet: (def.l * def.w * def.h) / 1728
+  };
+}
+
+// Extract dimensions directly from HTML
+function extractDimensionsFromHTML(html) {
+  const dimensionPatterns = [
+    /(?:Dimensions|Size|Measurements)[^:]*:\s*(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)/i,
+    /(\d+\.?\d*)"?\s*W\s*[x×]\s*(\d+\.?\d*)"?\s*D\s*[x×]\s*(\d+\.?\d*)"?\s*H/i,
+    /(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*(?:inches|in|")/i,
+    /"dimension"[^}]*"value":\s*"(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)"/i
+  ];
+  
+  for (const pattern of dimensionPatterns) {
+    const match = html.match(pattern);
+    if (match) {
+      const dims = {
+        length: parseFloat(match[2]) || parseFloat(match[1]),
+        width: parseFloat(match[1]) || parseFloat(match[2]),
+        height: parseFloat(match[3])
+      };
+      
+      // Validate dimensions are reasonable
+      if (dims.length > 0 && dims.length < 120 &&
+          dims.width > 0 && dims.width < 120 &&
+          dims.height > 0 && dims.height < 120) {
+        // Apply 1.2x buffer to scraped dimensions
+        return {
+          length: dims.length * 1.2,
+          width: dims.width * 1.2,
+          height: dims.height * 1.2
+        };
+      }
+    }
+  }
+  
+  return null;
+}
+
+// Main integration function
+async function getIntelligentDimensions(html, url, productPrice) {
+  // Step 1: Try direct dimension extraction first
+  const directDims = extractDimensionsFromHTML(html);
+  if (directDims) {
+    console.log('Found dimensions directly from HTML');
+    return { ...directDims, confidence: 'high', method: 'scraped' };
+  }
+  
+  // Step 2: Extract full context
+  const context = await extractFullProductContext(html, url);
+  context.price = productPrice || context.price;
+  
+  console.log(`Extracted context - Weight: ${context.weight} lbs, Price: $${context.price}, Title: ${context.title.substring(0, 50)}...`);
+  
+  // Step 3: Classify the product
+  const classification = classifyProductFromContext(context);
+  console.log(`Product classified as: ${classification.category} (confidence: ${classification.confidence})`);
+  
+  // Step 4: Calculate dimensions based on classification
+  const dimensions = calculateDimensionsFromClassification(classification, context);
+  
+  // Step 5: Apply confidence-based buffer
+  const bufferMap = {
+    'high': 1.1,
+    'medium': 1.2,
+    'low': 1.3,
+    'fallback': 1.5
+  };
+  
+  const buffer = bufferMap[dimensions.confidence];
+  console.log(`Applying ${buffer}x buffer based on ${dimensions.confidence} confidence`);
+  
+  return {
+    length: Math.round(dimensions.length * buffer * 100) / 100,
+    width: Math.round(dimensions.width * buffer * 100) / 100,
+    height: Math.round(dimensions.height * buffer * 100) / 100,
+    source: dimensions.method,
+    confidence: dimensions.confidence,
+    category: classification.category,
+    estimatedCubicFeet: dimensions.cubicFeet
+  };
+}
+
+// ===== END OF NEW INTELLIGENT ESTIMATION FUNCTIONS =====
+
 function validateDimensions(dimensions, category, name) {
   const { length, width, height } = dimensions;
   
@@ -306,136 +704,17 @@ async function scrapingBeeRequest(url) {
   }
 }
 
-// Enhanced function to search for similar products
+// Enhanced function to search for similar products (simplified)
 async function findSimilarProductDimensions(productName, category, originalPrice) {
-  console.log(`Searching for similar products to: ${productName}`);
-  
-  // Clean and prepare search terms
-  const cleanName = productName
-    .replace(/[^\w\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  
-  const words = cleanName.split(' ');
-  const brandWords = words.slice(0, 2).join(' ');
-  const productWords = words.slice(0, 5).join(' ');
-  
-  const searchQueries = [
-    `${productWords} dimensions specifications inches`,
-    `${productWords} "W x D x H"`,
-    `${brandWords} ${category} dimensions size`,
-    `${productWords} shipping dimensions weight`
-  ];
-  
-  let allDimensions = [];
-  
-  for (const query of searchQueries) {
-    try {
-      console.log(`Searching: ${query}`);
-      const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(query)}&tbm=shop`;
-      const html = await scrapingBeeRequest(searchUrl);
-      
-      const dimPatterns = [
-        /(\d+(?:\.\d+)?)\s*"?\s*[x×]\s*(\d+(?:\.\d+)?)\s*"?\s*[x×]\s*(\d+(?:\.\d+)?)\s*"?/gi,
-        /(\d+(?:\.\d+)?)"?\s*W\s*[x×]\s*(\d+(?:\.\d+)?)"?\s*D\s*[x×]\s*(\d+(?:\.\d+)?)"?\s*H/gi,
-        /(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*(?:inches|in|")/gi
-      ];
-      
-      for (const pattern of dimPatterns) {
-        const matches = [...html.matchAll(pattern)];
-        for (const match of matches) {
-          const dim = {
-            length: parseFloat(match[2]) || parseFloat(match[1]),
-            width: parseFloat(match[1]) || parseFloat(match[2]),
-            height: parseFloat(match[3])
-          };
-          
-          if (dim.length > 1 && dim.length < 120 &&
-              dim.width > 1 && dim.width < 120 &&
-              dim.height > 1 && dim.height < 120) {
-            allDimensions.push(dim);
-          }
-        }
-      }
-      
-      if (allDimensions.length >= 3) break;
-      
-    } catch (error) {
-      console.log(`Search attempt failed: ${error.message}`);
-    }
-  }
-  
-  if (allDimensions.length > 0) {
-    allDimensions.sort((a, b) => 
-      (a.length * a.width * a.height) - (b.length * b.width * b.height)
-    );
-    
-    const medianIndex = Math.floor(allDimensions.length / 2);
-    const median = allDimensions[medianIndex];
-    
-    console.log(`Found ${allDimensions.length} similar products. Using median: ${median.length}x${median.width}x${median.height}`);
-    
-    return {
-      length: Math.round(median.length * 1.2 * 100) / 100,
-      width: Math.round(median.width * 1.2 * 100) / 100,
-      height: Math.round(median.height * 1.2 * 100) / 100,
-      source: 'similar-products',
-      confidence: 'medium'
-    };
-  }
-  
-  if (originalPrice) {
-    return makeIntelligentDimensionEstimate(category, originalPrice);
-  }
-  
+  console.log(`Would search for similar products to: ${productName}`);
+  // For now, return null to use intelligent estimation instead
   return null;
 }
 
-// Intelligent dimension estimation based on price and category
+// Simplified intelligent dimension estimation
 function makeIntelligentDimensionEstimate(category, price) {
-  console.log(`Making intelligent estimate for ${category} at $${price}`);
-  
-  let sizeMultiplier = 1;
-  if (price > 200) sizeMultiplier = 1.2;
-  if (price > 500) sizeMultiplier = 1.4;
-  if (price > 1000) sizeMultiplier = 1.6;
-  if (price > 2000) sizeMultiplier = 1.8;
-  
-  const intelligentEstimates = {
-    'furniture': {
-      length: (36 + (price / 50)) * sizeMultiplier,
-      width: (24 + (price / 80)) * sizeMultiplier,
-      height: (30 + (price / 70)) * sizeMultiplier
-    },
-    'electronics': {
-      length: (12 + (price / 100)) * sizeMultiplier,
-      width: (10 + (price / 150)) * sizeMultiplier,
-      height: (6 + (price / 200)) * sizeMultiplier
-    },
-    'appliances': {
-      length: (28 + (price / 60)) * sizeMultiplier,
-      width: (28 + (price / 60)) * sizeMultiplier,
-      height: (32 + (price / 50)) * sizeMultiplier
-    },
-    'general': {
-      length: (18 + (price / 75)) * sizeMultiplier,
-      width: (14 + (price / 100)) * sizeMultiplier,
-      height: (10 + (price / 125)) * sizeMultiplier
-    }
-  };
-  
-  const base = intelligentEstimates[category] || intelligentEstimates.general;
-  
-  const dimensions = {
-    length: Math.min(96, Math.round(base.length * 100) / 100),
-    width: Math.min(72, Math.round(base.width * 100) / 100),
-    height: Math.min(72, Math.round(base.height * 100) / 100),
-    source: 'intelligent-estimate',
-    confidence: 'low'
-  };
-  
-  console.log(`Intelligent estimate: ${dimensions.length}x${dimensions.width}x${dimensions.height}`);
-  return dimensions;
+  // This is now handled by getIntelligentDimensions
+  return null;
 }
 
 async function parseScrapingBeeHTML(html, url) {
@@ -488,30 +767,8 @@ async function parseScrapingBeeHTML(html, url) {
     }
   }
   
-  // Enhanced dimension extraction patterns
-  const dimensionPatterns = [
-    /(?:Dimensions|Size|Measurements)[^:]*:\s*(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)/i,
-    /(\d+\.?\d*)"?\s*W\s*[x×]\s*(\d+\.?\d*)"?\s*D\s*[x×]\s*(\d+\.?\d*)"?\s*H/i,
-    /(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*(?:inches|in|")/i,
-    /"dimension"[^}]*"value":\s*"(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)"/i
-  ];
-  
-  for (const pattern of dimensionPatterns) {
-    const match = html.match(pattern);
-    if (match) {
-      result.dimensions = {
-        length: parseFloat(match[2]) || parseFloat(match[1]),
-        width: parseFloat(match[1]) || parseFloat(match[2]),
-        height: parseFloat(match[3])
-      };
-      
-      // Apply 1.2x buffer to scraped dimensions
-      result.dimensions.length *= 1.2;
-      result.dimensions.width *= 1.2;
-      result.dimensions.height *= 1.2;
-      break;
-    }
-  }
+  // Use intelligent dimension extraction instead of basic patterns
+  // Dimensions will be handled by getIntelligentDimensions
   
   // Image extraction
   const imagePatterns = [
@@ -540,32 +797,23 @@ async function scrapeProduct(url) {
       const html = await scrapingBeeRequest(url);
       const productData = await parseScrapingBeeHTML(html, url);
       
-      if (productData.name) {
+      if (productData.name || html.length > 1000) { // If we got HTML content
         const category = categorizeProduct(productData.name || '', url);
-        let dimensions = productData.dimensions;
-        let dimensionSource = 'product-page';
-        let confidence = 'high';
+        let dimensions;
+        let dimensionSource;
+        let confidence;
         
-        // If no dimensions found on product page, search for similar products
-        if (!dimensions) {
-          console.log(`No dimensions found on product page, searching for similar products...`);
-          const similarDims = await findSimilarProductDimensions(
-            productData.name, 
-            category, 
-            productData.price
-          );
-          
-          if (similarDims) {
-            dimensions = similarDims;
-            dimensionSource = similarDims.source;
-            confidence = similarDims.confidence;
-          } else {
-            // Last resort: Use intelligent category estimates
-            dimensions = makeIntelligentDimensionEstimate(category, productData.price || 0);
-            dimensionSource = 'intelligent-estimate';
-            confidence = 'low';
-          }
-        }
+        // Use intelligent dimension estimation
+        console.log(`Using intelligent dimension estimation...`);
+        const intelligentDims = await getIntelligentDimensions(
+          html, 
+          url, 
+          productData.price
+        );
+        
+        dimensions = intelligentDims;
+        dimensionSource = intelligentDims.source || 'intelligent-estimate';
+        confidence = intelligentDims.confidence || 'low';
         
         const validatedDimensions = validateDimensions(dimensions, category, productData.name);
         const weight = estimateWeight(validatedDimensions, category);
@@ -589,7 +837,7 @@ async function scrapeProduct(url) {
           quantity: 1,
           scraped: true,
           method: 'ScrapingBee',
-          estimateWarning: dimensionSource !== 'product-page' ? 
+          estimateWarning: confidence !== 'high' ? 
             `ESTIMATED DIMENSIONS (${dimensionSource}, confidence: ${confidence}) - Manual verification recommended` : null
         };
       }
@@ -598,10 +846,11 @@ async function scrapeProduct(url) {
     }
   }
 
-  // Fallback data creation
+  // Fallback data creation with intelligent estimation
   console.log(`Creating fallback data for ${retailer}: ${url}`);
+  const intelligentDims = await getIntelligentDimensions('', url, null);
   const category = categorizeProduct('', url);
-  const dimensions = estimateDimensions(category);
+  const dimensions = intelligentDims;
   const weight = estimateWeight(dimensions, category);
   const shippingCost = calculateShippingCost(dimensions, weight, 0);
 
@@ -613,8 +862,8 @@ async function scrapeProduct(url) {
     retailer: retailer,
     category: category,
     dimensions: dimensions,
-    dimensionSource: 'fallback-estimate',
-    confidence: 'low',
+    dimensionSource: intelligentDims.source || 'fallback-estimate',
+    confidence: intelligentDims.confidence || 'low',
     weight: weight,
     shippingCost: shippingCost,
     url: url,
@@ -647,7 +896,7 @@ app.post('/api/scrape', async (req, res) => {
     }
 
     console.log(`Starting to scrape ${validUrls.length} products...`);
-    console.log(`Using ${USE_SCRAPINGBEE ? 'ScrapingBee with similar product search' : 'Fallback mode only'}`);
+    console.log(`Using ${USE_SCRAPINGBEE ? 'ScrapingBee with intelligent estimation' : 'Fallback mode only'}`);
     
     const products = [];
     for (let i = 0; i < validUrls.length; i += MAX_CONCURRENT_SCRAPES) {
@@ -681,9 +930,9 @@ app.post('/api/scrape', async (req, res) => {
       count: products.length,
       scraped: products.filter(p => p.scraped).length,
       pricesFound: products.filter(p => p.price).length,
-      dimensionsFound: products.filter(p => p.dimensionSource === 'product-page').length,
-      similarProductsUsed: products.filter(p => p.dimensionSource === 'similar-products').length,
-      estimatesUsed: products.filter(p => p.confidence === 'low').length,
+      dimensionsFound: products.filter(p => p.dimensionSource === 'scraped').length,
+      intelligentEstimates: products.filter(p => p.dimensionSource === 'weight-based' || p.dimensionSource === 'price-based').length,
+      fallbacksUsed: products.filter(p => p.confidence === 'fallback').length,
       retailers: Object.keys(groupedProducts)
     };
 
@@ -780,8 +1029,8 @@ DIMENSION SOURCES:
 ${products.map(p => `• ${p.name}: ${p.dimensionSource || 'unknown'} (${p.confidence || 'unknown'} confidence)`).join('\n')}
 
 MANUAL VERIFICATION NEEDED FOR:
-${products.filter(p => p.confidence === 'low').length > 0 ? 
-  `• Products with low confidence dimensions:\n${products.filter(p => p.confidence === 'low').map(p => `  - ${p.name}`).join('\n')}\n` : ''}
+${products.filter(p => p.confidence === 'low' || p.confidence === 'fallback').length > 0 ? 
+  `• Products with low confidence dimensions:\n${products.filter(p => p.confidence === 'low' || p.confidence === 'fallback').map(p => `  - ${p.name}`).join('\n')}\n` : ''}
 ${products.filter(p => p.needsManualPrice).length > 0 ? 
   `• Products requiring price verification:\n${products.filter(p => p.needsManualPrice).map(p => `  - ${p.name}`).join('\n')}\n` : ''}
 
@@ -856,7 +1105,7 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`✅ Bermuda Import Calculator Backend running on port ${PORT}`);
   console.log(`✅ Health check available at: http://0.0.0.0:${PORT}/health`);
   console.log(`✅ Frontend served at: http://0.0.0.0:${PORT}/`);
-  console.log(`✅ Ready to process import quotes!`);
+  console.log(`✅ Ready to process import quotes with intelligent dimension estimation!`);
 }).on('error', (err) => {
   console.error('❌ Failed to start server:', err);
   process.exit(1);
