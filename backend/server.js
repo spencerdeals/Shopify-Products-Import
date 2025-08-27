@@ -255,7 +255,7 @@ async function parseUniversalProduct(html, url, productId, urlType) {
     name: null,
     image: null,
     dimensions: null,
-    price: 0,
+    price: null,
     quantity: 1,
     category: 'General',
     needsManualPrice: true,
@@ -287,10 +287,13 @@ async function parseUniversalProduct(html, url, productId, urlType) {
   if (priceResult.confident) {
     product.price = priceResult.price;
     product.needsManualPrice = false;
+    product.priceStatus = 'found';
     console.log(`  ✓ Confident price: $${priceResult.price} (${priceResult.source})`);
   } else {
-    product.price = 0;
+    product.price = null; // Don't show $0
     product.needsManualPrice = true;
+    product.priceStatus = 'manual_required';
+    product.priceMessage = priceResult.reason || 'Price could not be determined automatically';
     console.log(`  ⚠ Price uncertain - manual entry required (${priceResult.reason})`);
   }
   
@@ -730,7 +733,7 @@ function createFallbackProduct(url, productId) {
     url: url,
     retailer: retailer,
     name: `Product from ${retailer}`,
-    price: 0,
+    price: null,
     image: `https://placehold.co/200x200/667eea/FFFFFF/png?text=${encodeURIComponent(retailer)}`,
     dimensions: dimensions,
     weight: weight,
@@ -738,6 +741,8 @@ function createFallbackProduct(url, productId) {
     category: 'General',
     shippingCost: calculateShippingCost(dimensions, weight),
     needsManualPrice: true,
+    priceStatus: 'manual_required',
+    priceMessage: 'Unable to scrape product information',
     isFallback: true,
     pageType: 'unknown'
   };
@@ -746,11 +751,11 @@ function createFallbackProduct(url, productId) {
 app.listen(PORT, () => {
   console.log(`
 ╔════════════════════════════════════════╗
-║  Bermuda Import Calculator             ║
+║  Bermuda Ocean Freight Calculator     ║
 ║  Running on port ${PORT}                  ║
 ║  ScrapingBee: ${SCRAPINGBEE_API_KEY ? '✓ Connected' : '✗ Missing'}         ║
 ║  Mode: Robust Universal Scraper       ║
-║  Handles: Any URL type + Dimensions    ║
+║  Price: Confident Auto + Manual       ║
 ╚════════════════════════════════════════╝
   `);
 });
