@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const axios = require('axios');
+const path = require('path');
 const { URL } = require('url');
 require('dotenv').config();
 
@@ -26,7 +27,10 @@ console.log('=====================');
 // Middleware
 app.use(cors());
 app.use(express.json({ limit: '5mb' }));
-app.use(express.static('public'));
+
+// Serve frontend static files
+app.use(express.static(path.join(__dirname, '../frontend')));
+app.use(express.static(path.join(__dirname, '../web')));
 
 // CRITICAL: Health check MUST be before rate limiter
 app.get('/health', (req, res) => {
@@ -39,15 +43,21 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Root route
+// Root route - serve frontend HTML
 app.get('/', (req, res) => {
-  res.json({
-    message: 'Bermuda Import Calculator API',
-    version: '2.0',
-    endpoints: {
-      health: '/health',
-      scrape: 'POST /api/scrape',
-      createOrder: 'POST /apps/instant-import/create-draft-order'
+  const frontendPath = path.join(__dirname, '../frontend', 'index.html');
+  res.sendFile(frontendPath, (err) => {
+    if (err) {
+      console.error('Error serving frontend:', err);
+      // Fallback to API info if frontend not found
+      res.json({
+        message: 'Frontend not found - API is running',
+        endpoints: {
+          health: '/health',
+          scrape: 'POST /api/scrape',
+          createOrder: 'POST /apps/instant-import/create-draft-order'
+        }
+      });
     }
   });
 });
@@ -845,7 +855,8 @@ app.use((error, req, res, next) => {
 const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`✅ Bermuda Import Calculator Backend running on port ${PORT}`);
   console.log(`✅ Health check available at: http://0.0.0.0:${PORT}/health`);
-  console.log(`✅ Ready to process import quotes with enhanced dimension detection!`);
+  console.log(`✅ Frontend served at: http://0.0.0.0:${PORT}/`);
+  console.log(`✅ Ready to process import quotes!`);
 }).on('error', (err) => {
   console.error('❌ Failed to start server:', err);
   process.exit(1);
