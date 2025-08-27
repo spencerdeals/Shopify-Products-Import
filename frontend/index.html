@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bermuda Import Calculator</title>
+    <title>Bermuda Import Duty Calculator</title>
     <style>
         * {
             margin: 0;
@@ -12,93 +12,127 @@
         }
 
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #7BC043 0%, #29773E 100%);
             min-height: 100vh;
-            color: #333;
-        }
-
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
             padding: 20px;
         }
 
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
         .header {
-            background: white;
-            padding: 30px;
-            border-radius: 20px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-            margin-bottom: 30px;
             text-align: center;
+            color: white;
+            margin-bottom: 30px;
         }
 
         .header h1 {
-            color: #2c3e50;
             font-size: 2.5rem;
             margin-bottom: 10px;
-            background: linear-gradient(45deg, #667eea, #764ba2);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
         }
 
-        .page {
-            display: none;
+        .header p {
+            font-size: 1.1rem;
+            opacity: 0.95;
+        }
+
+        .main-card {
             background: white;
-            border-radius: 20px;
-            padding: 40px;
+            border-radius: 15px;
             box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        .input-section {
+            padding: 30px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+
+        .url-inputs {
             margin-bottom: 20px;
         }
 
-        .page.active {
-            display: block;
+        .url-input-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .url-input {
+            flex: 1;
+            padding: 12px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+        }
+
+        .url-input:focus {
+            outline: none;
+            border-color: #7BC043;
+            box-shadow: 0 0 0 3px rgba(123, 192, 67, 0.1);
+        }
+
+        .url-input::placeholder {
+            color: #999;
         }
 
         .btn {
-            background: linear-gradient(45deg, #667eea, #764ba2);
-            color: white;
-            padding: 15px 30px;
+            padding: 12px 24px;
             border: none;
             border-radius: 10px;
-            font-size: 16px;
+            font-size: 1rem;
             font-weight: 600;
             cursor: pointer;
             transition: all 0.3s ease;
-            margin: 10px 5px;
         }
 
-        .btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3);
+        .btn-add {
+            background: #f0f0f0;
+            color: #333;
         }
 
-        .form-control {
+        .btn-add:hover {
+            background: #e0e0e0;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #7BC043 0%, #29773E 100%);
+            color: white;
             width: 100%;
             padding: 15px;
-            border: 2px solid #e0e0e0;
-            border-radius: 10px;
-            font-size: 16px;
-            transition: all 0.3s ease;
+            font-size: 1.1rem;
         }
 
-        .form-control:focus {
-            outline: none;
-            border-color: #667eea;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        .btn-primary:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(123, 192, 67, 0.3);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
         }
 
         .loading {
+            display: none;
             text-align: center;
             padding: 40px;
         }
 
+        .loading.active {
+            display: block;
+        }
+
         .spinner {
+            width: 50px;
+            height: 50px;
             border: 4px solid #f3f3f3;
-            border-top: 4px solid #667eea;
+            border-top: 4px solid #7BC043;
             border-radius: 50%;
-            width: 40px;
-            height: 40px;
             animation: spin 1s linear infinite;
             margin: 0 auto 20px;
         }
@@ -108,250 +142,423 @@
             100% { transform: rotate(360deg); }
         }
 
-        .success {
-            background: #e8f5e8;
-            color: #2e7d32;
-            padding: 15px;
+        .products-section {
+            display: none;
+        }
+
+        .products-section.active {
+            display: block;
+        }
+
+        .review-header {
+            padding: 20px 30px;
+            border-bottom: 2px solid #f0f0f0;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .review-header h2 {
+            color: #333;
+            font-size: 1.8rem;
+            font-weight: 600;
+        }
+
+        .package-icon {
+            font-size: 2rem;
+        }
+
+        .product-card {
+            padding: 25px 30px;
+            border-bottom: 1px solid #e5e5e5;
+            display: flex;
+            gap: 20px;
+            align-items: flex-start;
+            transition: background 0.2s ease;
+        }
+
+        .product-card:hover {
+            background: #fafafa;
+        }
+
+        .product-image {
+            width: 100px;
+            height: 100px;
             border-radius: 10px;
-            margin: 10px 0;
-            border-left: 4px solid #4caf50;
+            object-fit: cover;
+            border: 2px solid #f0f0f0;
+            flex-shrink: 0;
         }
 
-        .error {
-            background: #ffebee;
-            color: #c62828;
-            padding: 15px;
-            border-radius: 10px;
-            margin: 10px 0;
-            border-left: 4px solid #c62828;
+        .product-details {
+            flex: 1;
         }
 
-        .product-item {
-            background: #f8f9fa;
-            border: 2px solid #e9ecef;
-            border-radius: 15px;
-            padding: 20px;
-            margin-bottom: 20px;
+        .product-name {
+            font-size: 1.2rem;
+            color: #333;
+            font-weight: 600;
+            margin-bottom: 5px;
+            line-height: 1.3;
         }
 
-        .quote-summary {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        .product-variant {
+            font-size: 0.95rem;
+            color: #777;
+            margin-bottom: 8px;
+            font-style: italic;
+        }
+
+        .product-price {
+            font-size: 1.4rem;
+            color: #29773E;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .retailer {
+            color: #666;
+            font-size: 0.95rem;
+            margin-bottom: 12px;
+        }
+
+        .product-meta {
+            display: flex;
+            gap: 20px;
+            color: #666;
+            font-size: 0.95rem;
+            margin-bottom: 12px;
+        }
+
+        .meta-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .quantity-control {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .quantity-label {
+            color: #666;
+            font-size: 0.95rem;
+        }
+
+        .quantity-input {
+            width: 60px;
+            padding: 6px 10px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1rem;
+            text-align: center;
+        }
+
+        .quantity-input:focus {
+            outline: none;
+            border-color: #7BC043;
+        }
+
+        .remove-btn {
+            margin-left: auto;
+            padding: 8px 15px;
+            background: #ff4757;
             color: white;
-            padding: 30px;
-            border-radius: 15px;
-            margin: 30px 0;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: background 0.2s ease;
         }
 
-        .quote-row {
+        .remove-btn:hover {
+            background: #ff3838;
+        }
+
+        .calculation-section {
+            padding: 30px;
+            background: #f8f9fa;
+            border-radius: 0 0 15px 15px;
+        }
+
+        .calculation-section h3 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 1.4rem;
+        }
+
+        .calc-row {
             display: flex;
             justify-content: space-between;
-            margin-bottom: 15px;
             padding: 10px 0;
-            border-bottom: 1px solid rgba(255,255,255,0.2);
+            border-bottom: 1px solid #e0e0e0;
         }
 
-        .quote-row:last-child {
-            border-bottom: 2px solid white;
-            font-size: 1.2rem;
+        .calc-row:last-child {
+            border-bottom: none;
+            padding-top: 15px;
+            margin-top: 10px;
+            border-top: 2px solid #29773E;
+            font-size: 1.3rem;
             font-weight: bold;
-            margin-top: 20px;
+            color: #29773E;
+        }
+
+        .calc-label {
+            color: #666;
+        }
+
+        .calc-value {
+            color: #333;
+            font-weight: 500;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 15px;
+            margin-top: 25px;
+        }
+
+        .btn-back {
+            background: #6c757d;
+            color: white;
+            flex: 1;
+        }
+
+        .btn-calculate {
+            background: linear-gradient(135deg, #7BC043 0%, #29773E 100%);
+            color: white;
+            flex: 2;
+        }
+
+        .error-message {
+            background: #ff4757;
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 15px;
+            display: none;
+        }
+
+        .error-message.active {
+            display: block;
         }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>🏝️ Bermuda Import Calculator</h1>
-            <p>Get instant quotes for importing your items to Bermuda with accurate duty and shipping costs</p>
-            <p style="font-size: 14px; color: #666; margin-top: 10px;">
-                🚀 <strong>Production Version:</strong> Real-time scraping with ScrapingBee API
-            </p>
+            <h1>🇧🇲 Bermuda Import Duty Calculator</h1>
+            <p>Calculate total costs including customs duties for your online purchases</p>
         </div>
 
-        <!-- Page 1: Add Links -->
-        <div class="page active" id="page1">
-            <h2>📦 Add Product Links</h2>
-            
-            <div style="background: #e3f2fd; padding: 15px; border-radius: 10px; margin: 20px 0; border-left: 4px solid #2196f3;">
-                <h4 style="color: #1976d2; margin-bottom: 10px;">🚚 Important Shipping Information</h4>
-                <p><strong>Freight Forwarder Address (USA to Sealine):</strong></p>
-                <p>Sealine Freight Forwarder<br>
-                Elizabeth, NJ 07201-614<br>
-                New Jersey, USA</p>
-                <p><em>Please use this address when calculating shipping costs from retailers to get accurate USA delivery totals.</em></p>
+        <div class="main-card">
+            <!-- Input Section -->
+            <div class="input-section" id="inputSection">
+                <h3 style="margin-bottom: 20px; color: #333;">Enter Product URLs</h3>
+                <div class="url-inputs" id="urlInputs">
+                    <div class="url-input-group">
+                        <input type="url" class="url-input" placeholder="Paste product URL (e.g., Amazon, Wayfair, etc.)">
+                    </div>
+                </div>
+                <button class="btn btn-add" onclick="addUrlInput()">+ Add Another Product</button>
+                <div style="margin-top: 20px;">
+                    <button class="btn btn-primary" id="fetchBtn" onclick="fetchProducts()">
+                        Get Product Details
+                    </button>
+                </div>
+                <div class="error-message" id="errorMessage"></div>
             </div>
 
-            <div class="form-group">
-                <label for="productLinks">Enter Product URLs (one per line):</label>
-                <textarea id="productLinks" class="form-control" rows="8" placeholder="https://www.amazon.com/product1
-https://www.wayfair.com/product2
-https://www.target.com/product3
-
-Paste your product links here - we support Amazon, Wayfair, Target, Best Buy, Walmart and many more retailers!
-
-Try this test URL:
-https://www.wayfair.com/outdoor/pdp/latitude-run-alishea-4-piece-rattan-outdoor-sofa-with-cushions-w003073104.html"></textarea>
+            <!-- Loading Section -->
+            <div class="loading" id="loadingSection">
+                <div class="spinner"></div>
+                <p>Fetching product information...</p>
             </div>
 
-            <button class="btn" onclick="scrapeProducts()">
-                🔍 Scrape Products & Continue
-            </button>
-
-            <div id="scrapeResults"></div>
-        </div>
-
-        <!-- Page 2: Review Items -->
-        <div class="page" id="page2">
-            <h2>📋 Review Your Items</h2>
-            <div id="productsList"></div>
-            <div style="text-align: center; margin-top: 30px;">
-                <button class="btn" onclick="goToPage(1)">← Back</button>
-                <button class="btn" onclick="calculateQuote()">Calculate Quote →</button>
-            </div>
-        </div>
-
-        <!-- Page 3: Final Quote -->
-        <div class="page" id="page3">
-            <h2>💰 Your Bermuda Import Quote</h2>
-            <div id="finalQuote"></div>
-            <div style="text-align: center; margin-top: 30px;">
-                <button class="btn" onclick="goToPage(2)">← Back to Items</button>
-                <button class="btn" onclick="startOver()">🔄 Start New Quote</button>
+            <!-- Products Review Section -->
+            <div class="products-section" id="productsSection">
+                <div class="review-header">
+                    <span class="package-icon">📦</span>
+                    <h2>Review Your Items</h2>
+                </div>
+                <div id="productsList"></div>
+                
+                <!-- Calculation Section -->
+                <div class="calculation-section">
+                    <h3>Import Duty Calculation</h3>
+                    <div id="calculationDetails"></div>
+                    <div class="action-buttons">
+                        <button class="btn btn-back" onclick="goBack()">← Back</button>
+                        <button class="btn btn-calculate" onclick="calculateDuty()">Calculate Total Cost →</button>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 
     <script>
-        let currentPage = 1;
-        let scrapedProducts = [];
-        let finalQuoteData = {};
+        let products = [];
 
-        // Use backend API for scraping
-        async function scrapeProducts() {
-            const linksText = document.getElementById('productLinks').value.trim();
-            const resultsDiv = document.getElementById('scrapeResults');
-            
-            if (!linksText) {
-                resultsDiv.innerHTML = '<div class="error">Please enter at least one product URL.</div>';
+        function addUrlInput() {
+            const urlInputs = document.getElementById('urlInputs');
+            const inputGroup = document.createElement('div');
+            inputGroup.className = 'url-input-group';
+            inputGroup.innerHTML = `
+                <input type="url" class="url-input" placeholder="Paste product URL (e.g., Amazon, Wayfair, etc.)">
+                <button class="btn btn-add" onclick="this.parentElement.remove()">Remove</button>
+            `;
+            urlInputs.appendChild(inputGroup);
+        }
+
+        async function fetchProducts() {
+            const inputs = document.querySelectorAll('.url-input');
+            const urls = Array.from(inputs)
+                .map(input => input.value.trim())
+                .filter(url => url.length > 0);
+
+            if (urls.length === 0) {
+                showError('Please enter at least one product URL');
                 return;
             }
 
-            const urls = linksText.split('\n').filter(link => link.trim());
-            
-            resultsDiv.innerHTML = `
-                <div class="loading">
-                    <div class="spinner"></div>
-                    <p>🚀 <strong>PRODUCTION MODE:</strong> Scraping ${urls.length} products using ScrapingBee API...</p>
-                    <p style="font-size: 14px; color: #666;">Real-time scraping from backend server...</p>
-                </div>
-            `;
+            // Show loading
+            document.getElementById('inputSection').style.display = 'none';
+            document.getElementById('loadingSection').classList.add('active');
+            document.getElementById('errorMessage').classList.remove('active');
 
             try {
                 const response = await fetch('/api/scrape', {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json',
                     },
                     body: JSON.stringify({ urls })
                 });
 
-                if (!response.ok) {
-                    throw new Error(`Server error: ${response.status}`);
-                }
-
                 const data = await response.json();
                 
-                if (data.success) {
-                    scrapedProducts = data.products;
-                    resultsDiv.innerHTML = `
-                        <div class="success">
-                            ✅ Successfully scraped ${data.scraped} products!
-                            <p style="margin-top: 10px; font-size: 14px;">
-                                <strong>Scraping Method:</strong> Real ScrapingBee API calls from backend
-                            </p>
-                            <button class="btn" onclick="goToPage(2)" style="margin-top: 15px;">
-                                Continue to Review Products →
-                            </button>
-                        </div>
-                    `;
+                if (data.success && data.products) {
+                    products = data.products;
                     displayProducts();
                 } else {
-                    throw new Error(data.error || 'Unknown error');
+                    throw new Error(data.error || 'Failed to fetch products');
                 }
-
             } catch (error) {
-                console.error('Scraping error:', error);
-                resultsDiv.innerHTML = `
-                    <div class="error">
-                        ❌ Error during scraping: ${error.message}
-                        <br>Please try again or check your internet connection.
-                    </div>
-                `;
+                console.error('Error:', error);
+                showError('Failed to fetch product information. Please try again.');
+                document.getElementById('inputSection').style.display = 'block';
+            } finally {
+                document.getElementById('loadingSection').classList.remove('active');
             }
         }
 
         function displayProducts() {
+            document.getElementById('productsSection').classList.add('active');
             const productsList = document.getElementById('productsList');
             
-            productsList.innerHTML = scrapedProducts.map(product => `
-                <div class="product-item">
-                    <h4>${product.name}</h4>
-                    <p><strong>$${product.price.toFixed(2)}</strong> from ${product.retailer}</p>
-                    <p>Weight: ${product.weight} lbs | Category: ${product.category}</p>
-                    <p>Quantity: <input type="number" value="${product.quantity}" min="1" style="width: 60px; padding: 5px;"></p>
+            productsList.innerHTML = products.map((product, index) => `
+                <div class="product-card" data-index="${index}">
+                    <img src="${product.image}" 
+                         alt="${product.name}" 
+                         class="product-image"
+                         onerror="this.src='https://via.placeholder.com/100x100/7BC043/FFFFFF?text=${product.retailer.charAt(0)}'">
+                    
+                    <div class="product-details">
+                        <div class="product-name">${product.name}</div>
+                        ${product.variant ? `<div class="product-variant">${product.variant}</div>` : ''}
+                        <div class="product-price">$${product.price.toFixed(2)}</div>
+                        <div class="retailer">from ${product.retailer}</div>
+                        
+                        <div class="product-meta">
+                            <div class="meta-item">
+                                <span>📁</span>
+                                <span>Category: ${product.category}</span>
+                            </div>
+                        </div>
+                        
+                        <div class="quantity-control">
+                            <span class="quantity-label">Quantity:</span>
+                            <input type="number" class="quantity-input" value="${product.quantity}" min="1" max="10" 
+                                   onchange="updateQuantity(${index}, this.value)">
+                            <button class="remove-btn" onclick="removeProduct(${index})">Remove</button>
+                        </div>
+                    </div>
                 </div>
             `).join('');
+
+            calculateDuty();
         }
 
-        function calculateQuote() {
-            let totalItemCost = 0;
-            scrapedProducts.forEach(product => {
-                totalItemCost += product.price * product.quantity;
+        function updateQuantity(index, quantity) {
+            products[index].quantity = parseInt(quantity) || 1;
+            calculateDuty();
+        }
+
+        function removeProduct(index) {
+            products.splice(index, 1);
+            if (products.length === 0) {
+                goBack();
+            } else {
+                displayProducts();
+            }
+        }
+
+        function calculateDuty() {
+            let subtotal = 0;
+            products.forEach(product => {
+                subtotal += product.price * product.quantity;
             });
 
-            const dutyAmount = totalItemCost * 0.265; // 26.5%
-            const shippingCost = 300; // Simplified shipping
-            const grandTotal = totalItemCost + dutyAmount + shippingCost;
+            // Bermuda duty calculation
+            let duty = 0;
+            if (subtotal <= 100) {
+                duty = subtotal * 0.25; // 25% on first $100
+            } else {
+                duty = (100 * 0.25) + ((subtotal - 100) * 0.335); // 25% on first $100, 33.5% after
+            }
 
-            finalQuoteData = { totalItemCost, dutyAmount, shippingCost, grandTotal };
+            // Estimated shipping (could be made dynamic)
+            const shipping = subtotal * 0.15; // 15% estimated shipping
 
-            document.getElementById('finalQuote').innerHTML = `
-                <div class="quote-summary">
-                    <h3 style="text-align: center; margin-bottom: 20px;">🏝️ Bermuda Import Quote</h3>
-                    <div class="quote-row">
-                        <span>Total Item Cost</span>
-                        <span>$${totalItemCost.toFixed(2)}</span>
-                    </div>
-                    <div class="quote-row">
-                        <span>Bermuda Duty (26.5%)</span>
-                        <span>$${dutyAmount.toFixed(2)}</span>
-                    </div>
-                    <div class="quote-row">
-                        <span>Shipping Cost</span>
-                        <span>$${shippingCost.toFixed(2)}</span>
-                    </div>
-                    <div class="quote-row">
-                        <span><strong>TOTAL LANDED COST</strong></span>
-                        <span><strong>$${grandTotal.toFixed(2)}</strong></span>
-                    </div>
+            const total = subtotal + duty + shipping;
+
+            document.getElementById('calculationDetails').innerHTML = `
+                <div class="calc-row">
+                    <span class="calc-label">Subtotal (${products.reduce((sum, p) => sum + p.quantity, 0)} items):</span>
+                    <span class="calc-value">$${subtotal.toFixed(2)}</span>
+                </div>
+                <div class="calc-row">
+                    <span class="calc-label">Estimated Shipping:</span>
+                    <span class="calc-value">$${shipping.toFixed(2)}</span>
+                </div>
+                <div class="calc-row">
+                    <span class="calc-label">Import Duty:</span>
+                    <span class="calc-value">$${duty.toFixed(2)}</span>
+                </div>
+                <div class="calc-row">
+                    <span class="calc-label">Total Cost:</span>
+                    <span class="calc-value">$${total.toFixed(2)}</span>
                 </div>
             `;
-            
-            goToPage(3);
         }
 
-        function goToPage(pageNum) {
-            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-            document.getElementById(`page${pageNum}`).classList.add('active');
-            currentPage = pageNum;
+        function goBack() {
+            document.getElementById('inputSection').style.display = 'block';
+            document.getElementById('productsSection').classList.remove('active');
+            // Clear inputs
+            document.querySelectorAll('.url-input').forEach(input => input.value = '');
         }
 
-        function startOver() {
-            scrapedProducts = [];
-            finalQuoteData = {};
-            document.getElementById('productLinks').value = '';
-            document.getElementById('scrapeResults').innerHTML = '';
-            goToPage(1);
+        function showError(message) {
+            const errorElement = document.getElementById('errorMessage');
+            errorElement.textContent = message;
+            errorElement.classList.add('active');
+            setTimeout(() => {
+                errorElement.classList.remove('active');
+            }, 5000);
         }
     </script>
 </body>
