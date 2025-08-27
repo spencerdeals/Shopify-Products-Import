@@ -14,8 +14,14 @@ const __dirname = dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 8080;
 
+// ScrapingBee Config
 const SCRAPINGBEE_API_KEY = process.env.SCRAPINGBEE_API_KEY;
 const SCRAPINGBEE_URL = 'https://app.scrapingbee.com/api/v1/';
+
+// Shopify Config
+const SHOPIFY_STORE_DOMAIN = 'spencer-deals-ltd.myshopify.com';
+const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN;
+const SHOPIFY_API_VERSION = '2024-10';
 
 app.use(express.json());
 app.use(express.static(join(__dirname, '../frontend')));
@@ -39,6 +45,226 @@ app.get('/', (req, res) => {
   }
 });
 
+// Shopify Customer Authentication
+app.post('/api/auth/customer', async (req, res) => {
+  try {
+    const { email, firstName, lastName, phone } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required' });
+    }
+
+    console.log(`Creating/finding customer: ${email}`);
+    
+    // Try to find existing customer first
+    let customer = await findCustomerByEmail(email);
+    
+    if (!customer) {
+      // Create new customer
+      customer = await createShopifyCustomer({
+        email,
+        first_name: firstName || '',
+        last_name: lastName || '',
+        phone: phone || '',
+        verified_email: true,
+        tags: 'bermuda-import-calculator'
+      });
+      console.log(`Created new customer: ${customer.id}`);
+    } else {
+      console.log(`Found existing customer: ${customer.id}`);
+    }
+    
+    res.json({ 
+      success: true, 
+      customer: {
+        id: customer.id,
+        email: customer.email,
+        first_name: customer.first_name,
+        last_name: customer.last_name
+      }
+    });
+
+  } catch (error) {
+    console.error('Customer auth error:', error);
+    res.status(500).json({ 
+      error: 'Failed to authenticate customer',
+      message: error.message 
+    });
+  }
+});
+
+// Create Draft Order
+app.post('/api/create-draft-order', async (req, res) => {
+  try {
+    const { customerId, products, deliveryFees, totals, originalUrls } = req.body;
+    
+    if (!customerId) {
+      return res.status(400).json({ error: 'Customer ID is required' });
+    }
+
+    console.log(`Creating draft order for customer: ${customerId}`);
+    
+    // Build line items from products
+    const lineItems = products.map(product => ({
+      title: product.name,
+      price: product.finalPrice.toString(),
+      quantity: product.quantity,
+      sku: `IMPORT-${product.id}`,
+      properties: [
+        {
+          name: 'Original URL',
+          value: product.url
+        },
+        {
+          name: 'Retailer', 
+          value: product.retailer
+        },
+        {
+          name: 'Category',
+          value: product.category
+        }
+      ]
+    }));
+
+    // Add delivery fees as line items
+    Object.entries(deliveryFees || {}).forEach(([retailer, fee]) => {
+      if (fee > 0) {
+        lineItems.push({
+          title: `${retailer} - USA Delivery Fee`,
+          price: fee.toString(),
+          quantity: 1,
+          sku: 'DELIVERY-FEE'
+        });
+      }
+    });
+
+    // Add duty as line item
+    lineItems.push({
+      title: 'Bermuda Import Duty (26.5%)',
+      price: totals.dutyAmount.toString(),
+      quantity: 1,
+      sku: 'BERMUDA-DUTY'
+    });
+
+    // Create note with all URLs and details
+    const noteContent = [
+      'BERMUDA IMPORT CALCULATOR QUOTE',
+      '=====================================',
+      '',
+      'ORIGINAL PRODUCT URLS:',
+      ...originalUrls.map((url, index) => `${index + 1}. ${url}`),
+      '',
+      'QUOTE BREAKDOWN:',
+      `Product Total: $${totals.totalItemCost.toFixed(2)}`,
+      `Delivery Fees: $${totals.totalDeliveryFees.toFixed(2)}`,
+      `Import Duty: $${totals.dutyAmount.toFixed(2)}`,
+      `Ocean Freight: $${totals.totalShippingCost.toFixed(2)}`,
+      `TOTAL: $${totals.grandTotal.toFixed(2)}`,
+      '',
+      `Generated: ${new Date().toISOString()}`,
+      'Via: Bermuda Import Calculator'
+    ].join('\n');
+
+    const draftOrder = {
+      draft_order: {
+        customer: {
+          id: customerId
+        },
+        line_items: lineItems,
+        shipping_line: {
+          title: 'Ocean Freight & Handling',
+          price: totals.totalShippingCost.toString()
+        },
+        note: noteContent,
+        tags: 'bermuda-import,quote',
+        currency: 'USD'
+      }
+    };
+
+    const shopifyOrder = await createShopifyDraftOrder(draftOrder);
+    
+    console.log(`Draft order created: ${shopifyOrder.id}`);
+    
+    res.json({ 
+      success: true, 
+      draftOrderId: shopifyOrder.id,
+      draftOrderNumber: shopifyOrder.name,
+      orderUrl: `https://admin.shopify.com/store/spencer-deals-ltd/draft_orders/${shopifyOrder.id}`
+    });
+
+  } catch (error) {
+    console.error('Draft order creation error:', error);
+    res.status(500).json({ 
+      error: 'Failed to create draft order',
+      message: error.message 
+    });
+  }
+});
+
+// Shopify API Functions
+async function findCustomerByEmail(email) {
+  const url = `https://${SHOPIFY_STORE_DOMAIN}/admin/api/${SHOPIFY_API_VERSION}/customers/search.json?query=email:${encodeURIComponent(email)}`;
+  
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: {
+      'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN,
+      'Content-Type': 'application/json'
+    }
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Shopify customer search failed: ${response.status} ${error}`);
+  }
+
+  const data = await response.json();
+  return data.customers.length > 0 ? data.customers[0] : null;
+}
+
+async function createShopifyCustomer(customerData) {
+  const url = `https://${SHOPIFY_STORE_DOMAIN}/admin/api/${SHOPIFY_API_VERSION}/customers.json`;
+  
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ customer: customerData })
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Shopify customer creation failed: ${response.status} ${error}`);
+  }
+
+  const data = await response.json();
+  return data.customer;
+}
+
+async function createShopifyDraftOrder(draftOrderData) {
+  const url = `https://${SHOPIFY_STORE_DOMAIN}/admin/api/${SHOPIFY_API_VERSION}/draft_orders.json`;
+  
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(draftOrderData)
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Shopify draft order creation failed: ${response.status} ${error}`);
+  }
+
+  const data = await response.json();
+  return data.draft_order;
+}
+
+// Original scraping functionality
 app.post('/api/scrape', async (req, res) => {
   try {
     const { urls } = req.body;
@@ -103,7 +329,7 @@ function groupProductsByRetailer(products) {
       grouped[retailer] = {
         retailer: retailer,
         products: [],
-        deliveryFee: 0 // Customer will input this
+        deliveryFee: 0
       };
     }
     grouped[retailer].products.push(product);
@@ -112,10 +338,8 @@ function groupProductsByRetailer(products) {
   return grouped;
 }
 
-// Robust scraper that handles any URL type
 async function robustScrapeProduct(url, productId) {
   try {
-    // First, analyze the URL to determine strategy
     const urlType = analyzeURL(url);
     console.log(`  URL type: ${urlType.type} (${urlType.retailer})`);
     
@@ -125,12 +349,10 @@ async function robustScrapeProduct(url, productId) {
     let productUrl = url;
     let htmlToProcess = html;
     
-    // If it's a category/search page, try to find first product
     if (urlType.type === 'category' || urlType.type === 'search') {
       const firstProductUrl = extractFirstProductURL(html, urlType.retailer);
       if (firstProductUrl) {
         console.log(`  Found first product: ${firstProductUrl.substring(0, 80)}...`);
-        // For now, use the category page data but flag it
         productUrl = firstProductUrl;
       } else {
         console.log(`  No individual products found, using category page data`);
@@ -146,12 +368,10 @@ async function robustScrapeProduct(url, productId) {
   }
 }
 
-// Analyze URL to determine page type and strategy
 function analyzeURL(url) {
   const retailer = getRetailerName(url);
   const lowerUrl = url.toLowerCase();
   
-  // Detect page types
   if (lowerUrl.includes('/pdp/') || lowerUrl.includes('/dp/') || lowerUrl.includes('/product/') || lowerUrl.includes('/p/')) {
     return { type: 'product', retailer, confidence: 'high' };
   }
@@ -174,13 +394,12 @@ async function fetchWithScrapingBee(url, urlType) {
   const params = new URLSearchParams({
     'api_key': SCRAPINGBEE_API_KEY,
     'url': url,
-    'render_js': 'false', // Faster for category pages
+    'render_js': 'false',
     'premium_proxy': 'true',
     'country_code': 'us',
     'block_ads': 'true'
   });
   
-  // Only use JS rendering for product pages
   if (urlType.type === 'product') {
     params.set('render_js', 'true');
     params.set('wait', '3000');
@@ -205,7 +424,6 @@ async function fetchWithScrapingBee(url, urlType) {
   return await response.text();
 }
 
-// Extract first product URL from category/search pages
 function extractFirstProductURL(html, retailer) {
   const patterns = {
     'Wayfair': [
@@ -224,14 +442,13 @@ function extractFirstProductURL(html, retailer) {
     ]
   };
   
-  const retailerPatterns = patterns[retailer] || patterns['Amazon']; // Default fallback
+  const retailerPatterns = patterns[retailer] || patterns['Amazon'];
   
   for (const pattern of retailerPatterns) {
     const match = html.match(pattern);
     if (match) {
       let productUrl = match[1];
       
-      // Make URL absolute if relative
       if (productUrl.startsWith('/')) {
         const baseUrl = new URL(html.match(/https?:\/\/[^\/]+/)?.[0] || 'https://www.wayfair.com');
         productUrl = baseUrl.origin + productUrl;
@@ -244,7 +461,6 @@ function extractFirstProductURL(html, retailer) {
   return null;
 }
 
-// Universal product parser that works with any content
 async function parseUniversalProduct(html, url, productId, urlType) {
   const retailer = urlType.retailer;
   
@@ -265,7 +481,6 @@ async function parseUniversalProduct(html, url, productId, urlType) {
   
   console.log(`  Parsing ${retailer} ${urlType.type} page...`);
   
-  // 1. Try structured data (most reliable)
   const structuredData = extractStructuredData(html);
   if (structuredData) {
     console.log('  ✓ Found structured data');
@@ -274,7 +489,6 @@ async function parseUniversalProduct(html, url, productId, urlType) {
     product.price = structuredData.price || product.price;
   }
   
-  // 2. Universal content extraction (works on any page type)
   const universalData = extractUniversalContent(html, retailer);
   console.log(`  Universal extraction: name=${!!universalData.name}, image=${!!universalData.image}, price=${!!universalData.price}, dimensions=${!!universalData.dimensions}`);
   
@@ -282,7 +496,6 @@ async function parseUniversalProduct(html, url, productId, urlType) {
   product.image = product.image || universalData.image;
   product.dimensions = product.dimensions || universalData.dimensions;
   
-  // 3. Confident price extraction only
   const priceResult = extractConfidentPrice(html, retailer, structuredData);
   if (priceResult.confident) {
     product.price = priceResult.price;
@@ -290,56 +503,128 @@ async function parseUniversalProduct(html, url, productId, urlType) {
     product.priceStatus = 'found';
     console.log(`  ✓ Confident price: $${priceResult.price} (${priceResult.source})`);
   } else {
-    product.price = null; // Don't show $0
+    product.price = null;
     product.needsManualPrice = true;
     product.priceStatus = 'manual_required';
     product.priceMessage = priceResult.reason || 'Price could not be determined automatically';
     console.log(`  ⚠ Price uncertain - manual entry required (${priceResult.reason})`);
   }
   
-  // Clean up and finalize
   product.name = cleanProductName(product.name) || `${retailer} Product`;
   product.category = determineCategory(product.name);
   
-  // Add dimensions with buffer if not found
   if (!product.dimensions) {
     product.dimensions = getEstimatedDimensions(product.name, product.category);
     product.dimensions.estimated = true;
     product.dimensions.source = 'category estimate + 20% buffer';
   } else {
-    // Add 20% buffer to scraped dimensions
     product.dimensions.length = Math.ceil(product.dimensions.length * 1.2);
     product.dimensions.width = Math.ceil(product.dimensions.width * 1.2);  
     product.dimensions.height = Math.ceil(product.dimensions.height * 1.2);
     product.dimensions.source += ' + 20% buffer';
   }
   
-  // Estimate weight
   product.weight = product.weight || estimateWeight(product.name, product.category);
   
-  // Set placeholder image if needed
   if (!product.image) {
     product.image = `https://placehold.co/200x200/667eea/FFFFFF/png?text=${encodeURIComponent(retailer)}`;
   }
   
-  // Make image URL absolute
   if (product.image && product.image.startsWith('/')) {
     const baseUrl = new URL(url);
     product.image = baseUrl.origin + product.image;
   }
   
-  // Calculate shipping cost
   product.shippingCost = calculateShippingCost(product.dimensions, product.weight);
   console.log(`  💰 Calculated shipping: $${product.shippingCost} (${product.dimensions.length}" x ${product.dimensions.width}" x ${product.dimensions.height}", ${product.weight}lbs)`);
   
   return product;
 }
 
-// Confident price extraction with reliability scoring
+function extractStructuredData(html) {
+  const result = {};
+  
+  try {
+    const scripts = html.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi) || [];
+    
+    for (const script of scripts) {
+      const match = script.match(/>([^<]+)</);
+      if (!match) continue;
+      
+      try {
+        const data = JSON.parse(match[1].trim());
+        
+        if (data['@type'] === 'Product' || (Array.isArray(data) && data.find(item => item['@type'] === 'Product'))) {
+          const product = Array.isArray(data) ? data.find(item => item['@type'] === 'Product') : data;
+          result.name = product.name;
+          result.image = Array.isArray(product.image) ? product.image[0] : product.image;
+          result.price = product.offers?.price || product.offers?.[0]?.price;
+          break;
+        }
+      } catch (e) {
+        continue;
+      }
+    }
+  } catch (e) {
+    // Continue
+  }
+  
+  const ogTitle = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)/i);
+  const ogImage = html.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)/i);
+  const ogPrice = html.match(/<meta[^>]*property=["']product:price:amount["'][^>]*content=["']([^"']+)/i);
+  
+  if (ogTitle) result.name = result.name || ogTitle[1];
+  if (ogImage) result.image = result.image || ogImage[1];
+  if (ogPrice) result.price = result.price || parseFloat(ogPrice[1]);
+  
+  return Object.keys(result).length > 0 ? result : null;
+}
+
+function extractUniversalContent(html, retailer) {
+  const result = {};
+  
+  const namePatterns = [
+    /<h1[^>]*>([^<]{10,200})<\/h1>/i,
+    /<title>([^<]{10,100})<\/title>/i,
+    /<span[^>]*class=["'][^"']*title[^"']*["'][^>]*>([^<]{10,150})<\/span>/i,
+    /<div[^>]*class=["'][^"']*name[^"']*["'][^>]*>([^<]{10,150})<\/div>/i
+  ];
+  
+  for (const pattern of namePatterns) {
+    const match = html.match(pattern);
+    if (match) {
+      let name = match[1].trim();
+      name = name.replace(/\s*[-|]\s*(Wayfair|Amazon|Walmart|Target).*$/i, '');
+      name = name.replace(/\s*\|\s*.*$/, '');
+      if (name.length > 10) {
+        result.name = name;
+        break;
+      }
+    }
+  }
+  
+  const imagePatterns = [
+    /<img[^>]*(?:class|id)=["'][^"']*(?:product|main|primary|hero)[^"']*["'][^>]*src=["']([^"']+)/i,
+    /<img[^>]*src=["']([^"']*(?:product|main|item)[^"']*\.(?:jpg|jpeg|png|webp))/i,
+    /<img[^>]*data-[^>]*=["']([^"']+\.(?:jpg|jpeg|png|webp))/i
+  ];
+  
+  for (const pattern of imagePatterns) {
+    const match = html.match(pattern);
+    if (match && !match[1].includes('placeholder') && !match[1].includes('icon')) {
+      result.image = match[1];
+      break;
+    }
+  }
+  
+  result.dimensions = extractDimensionsFromHTML(html);
+  
+  return result;
+}
+
 function extractConfidentPrice(html, retailer, structuredData) {
   const results = [];
   
-  // 1. Structured data (highest confidence)
   if (structuredData && structuredData.price > 0) {
     results.push({
       price: structuredData.price,
@@ -348,7 +633,6 @@ function extractConfidentPrice(html, retailer, structuredData) {
     });
   }
   
-  // 2. Retailer-specific selectors (high confidence)
   const retailerPrice = extractRetailerPrice(html, retailer);
   if (retailerPrice > 0) {
     results.push({
@@ -358,7 +642,6 @@ function extractConfidentPrice(html, retailer, structuredData) {
     });
   }
   
-  // 3. Generic price patterns (medium confidence)
   const genericPrices = extractGenericPrices(html);
   genericPrices.forEach(price => {
     results.push({
@@ -368,21 +651,18 @@ function extractConfidentPrice(html, retailer, structuredData) {
     });
   });
   
-  // Filter and validate results
   const validResults = results.filter(result => 
-    result.price >= 5 && result.price <= 25000 // Reasonable range
+    result.price >= 5 && result.price <= 25000
   );
   
   if (validResults.length === 0) {
     return { confident: false, reason: 'No valid prices found' };
   }
   
-  // Use highest confidence result
   const bestResult = validResults.sort((a, b) => b.confidence - a.confidence)[0];
   
-  // Only confident if score is 80+ or multiple sources agree
   const agreeingPrices = validResults.filter(r => 
-    Math.abs(r.price - bestResult.price) < (bestResult.price * 0.05) // Within 5%
+    Math.abs(r.price - bestResult.price) < (bestResult.price * 0.05)
   );
   
   const confident = bestResult.confidence >= 80 || agreeingPrices.length >= 2;
@@ -403,7 +683,6 @@ function extractConfidentPrice(html, retailer, structuredData) {
   }
 }
 
-// Retailer-specific price extraction
 function extractRetailerPrice(html, retailer) {
   const patterns = {
     'Wayfair': [
@@ -435,7 +714,6 @@ function extractRetailerPrice(html, retailer) {
   return 0;
 }
 
-// Generic price extraction
 function extractGenericPrices(html) {
   const patterns = [
     /\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g
@@ -453,7 +731,6 @@ function extractGenericPrices(html) {
     });
   }
   
-  // Return most common prices (likely to be actual product prices)
   const priceCounts = {};
   prices.forEach(price => {
     priceCounts[price] = (priceCounts[price] || 0) + 1;
@@ -465,110 +742,13 @@ function extractGenericPrices(html) {
     .map(([price]) => parseFloat(price));
 }
 
-// Extract structured data (JSON-LD, meta tags)
-function extractStructuredData(html) {
-  const result = {};
-  
-  // JSON-LD
-  try {
-    const scripts = html.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi) || [];
-    
-    for (const script of scripts) {
-      const match = script.match(/>([^<]+)</);
-      if (!match) continue;
-      
-      try {
-        const data = JSON.parse(match[1].trim());
-        
-        if (data['@type'] === 'Product' || (Array.isArray(data) && data.find(item => item['@type'] === 'Product'))) {
-          const product = Array.isArray(data) ? data.find(item => item['@type'] === 'Product') : data;
-          result.name = product.name;
-          result.image = Array.isArray(product.image) ? product.image[0] : product.image;
-          result.price = product.offers?.price || product.offers?.[0]?.price;
-          break;
-        }
-      } catch (e) {
-        continue;
-      }
-    }
-  } catch (e) {
-    // Continue
-  }
-  
-  // Open Graph
-  const ogTitle = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)/i);
-  const ogImage = html.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)/i);
-  const ogPrice = html.match(/<meta[^>]*property=["']product:price:amount["'][^>]*content=["']([^"']+)/i);
-  
-  if (ogTitle) result.name = result.name || ogTitle[1];
-  if (ogImage) result.image = result.image || ogImage[1];
-  if (ogPrice) result.price = result.price || parseFloat(ogPrice[1]);
-  
-  return Object.keys(result).length > 0 ? result : null;
-}
-
-// Universal content extraction that works on any page
-function extractUniversalContent(html, retailer) {
-  const result = {};
-  
-  // Product name - multiple strategies
-  const namePatterns = [
-    /<h1[^>]*>([^<]{10,200})<\/h1>/i,
-    /<title>([^<]{10,100})<\/title>/i,
-    /<span[^>]*class=["'][^"']*title[^"']*["'][^>]*>([^<]{10,150})<\/span>/i,
-    /<div[^>]*class=["'][^"']*name[^"']*["'][^>]*>([^<]{10,150})<\/div>/i
-  ];
-  
-  for (const pattern of namePatterns) {
-    const match = html.match(pattern);
-    if (match) {
-      let name = match[1].trim();
-      // Clean up common noise
-      name = name.replace(/\s*[-|]\s*(Wayfair|Amazon|Walmart|Target).*$/i, '');
-      name = name.replace(/\s*\|\s*.*$/, '');
-      if (name.length > 10) {
-        result.name = name;
-        break;
-      }
-    }
-  }
-  
-  // Product image - look for main images
-  const imagePatterns = [
-    /<img[^>]*(?:class|id)=["'][^"']*(?:product|main|primary|hero)[^"']*["'][^>]*src=["']([^"']+)/i,
-    /<img[^>]*src=["']([^"']*(?:product|main|item)[^"']*\.(?:jpg|jpeg|png|webp))/i,
-    /<img[^>]*data-[^>]*=["']([^"']+\.(?:jpg|jpeg|png|webp))/i
-  ];
-  
-  for (const pattern of imagePatterns) {
-    const match = html.match(pattern);
-    if (match && !match[1].includes('placeholder') && !match[1].includes('icon')) {
-      result.image = match[1];
-      break;
-    }
-  }
-  
-  // Dimensions - comprehensive search
-  result.dimensions = extractDimensionsFromHTML(html);
-  
-  return result;
-}
-
-// Enhanced dimension extraction
 function extractDimensionsFromHTML(html) {
   console.log('  Looking for dimensions...');
   
   const patterns = [
-    // Product dimensions with labels
     /(?:overall|product|assembled|item|package|shipping|box)\s*dimensions?[^:]*:\s*(\d+(?:\.\d+)?)["\s]*(?:[LlWwHhxX×])\s*[×x]\s*(\d+(?:\.\d+)?)["\s]*(?:[LlWwHhxX])\s*[×x]\s*(\d+(?:\.\d+)?)["\s]*(?:[LlWwHh])/i,
-    
-    // Simple patterns
     /(\d+(?:\.\d+)?)["\s]*[×x]\s*(\d+(?:\.\d+)?)["\s]*[×x]\s*(\d+(?:\.\d+)?)\s*(?:inches|in|")/i,
-    
-    // With units
     /(\d+(?:\.\d+)?)["\s]*[LWHlwh]\s*[×x]\s*(\d+(?:\.\d+)?)["\s]*[LWHlwh]\s*[×x]\s*(\d+(?:\.\d+)?)["\s]*[LWHlwh]/i,
-    
-    // Flexible patterns
     /(?:size|measure)[^:]*:\s*(\d+(?:\.\d+)?)\s*[×x]\s*(\d+(?:\.\d+)?)\s*[×x]\s*(\d+(?:\.\d+)?)/i
   ];
   
@@ -581,7 +761,6 @@ function extractDimensionsFromHTML(html) {
         parseFloat(match[3])
       ].sort((a, b) => b - a);
       
-      // Validate dimensions
       if (dims[0] >= 1 && dims[0] <= 300 && dims[2] >= 1) {
         console.log(`  ✓ Found dimensions: ${dims[0]}" x ${dims[1]}" x ${dims[2]}"`);
         return {
@@ -754,8 +933,8 @@ app.listen(PORT, () => {
 ║  Bermuda Ocean Freight Calculator     ║
 ║  Running on port ${PORT}                  ║
 ║  ScrapingBee: ${SCRAPINGBEE_API_KEY ? '✓ Connected' : '✗ Missing'}         ║
-║  Mode: Robust Universal Scraper       ║
-║  Price: Confident Auto + Manual       ║
+║  Shopify: ${SHOPIFY_ACCESS_TOKEN ? '✓ Connected' : '✗ Missing'}            ║
+║  Store: spencer-deals-ltd              ║
 ╚════════════════════════════════════════╝
   `);
 });
