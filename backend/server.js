@@ -191,86 +191,8 @@ async function fetchWithScrapingBee(url) {
   return await response.text();
 }
 
-async function parseProductHTML// Extract JSON-LD structured data
-function extractJSONLD(html) {
-  try {
-    const scripts = html.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi) || [];
-    
-    for (const script of scripts) {
-      const match = script.match(/>([^<]+)</);
-      if (!match) continue;
-      
-      try {
-        const data = JSON.parse(match[1].trim());
-        
-        if (data['@type'] === 'Product' || data.type === 'Product') {
-          return {
-            name: data.name,
-            price: data.offers?.price || data.offers?.[0]?.price,
-            image: Array.isArray(data.image) ? data.image[0] : data.image
-          };
-        }
-        
-        if (Array.isArray(data)) {
-          const product = data.find(item => item['@type'] === 'Product');
-          if (product) {
-            return {
-              name: product.name,
-              price: product.offers?.price,
-              image: Array.isArray(product.image) ? product.image[0] : product.image
-            };
-          }
-        }
-      } catch (e) {
-        // Continue
-      }
-    }
-  } catch (e) {
-    console.log('  JSON-LD extraction error:', e.message);
-  }
-  return null;
-}
-
-// Extract Open Graph data
-function extractOpenGraph(html) {
-  const og = {};
-  
-  const titleMatch = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)/i);
-  const priceMatch = html.match(/<meta[^>]*property=["']product:price:amount["'][^>]*content=["']([^"']+)/i);
-  const imageMatch = html.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)/i);
-  
-  if (titleMatch) og.title = titleMatch[1];
-  if (priceMatch) og.price = parseFloat(priceMatch[1]);
-  if (imageMatch) og.image = imageMatch[1];
-  
-  return og;
-}
-
-// Generic HTML parsing as final fallback
-function parseGenericHTML(html) {
-  const result = {};
-  
-  // Get title from multiple sources
-  const titleMatch = html.match(/<h1[^>]*>([^<]{5,200})</i) ||
-                    html.match(/<title>([^<]{5,100})</i) ||
-                    html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)/i);
-  
-  if (titleMatch) {
-    result.name = titleMatch[1].trim();
-  }
-  
-  // Find prices
-  const priceMatches = html.match(/\$[\d,]+\.?\d*/g) || [];
-  const prices = priceMatches
-    .map(p => parseFloat(p.replace(/[$,]/g, '')))
-    .filter(p => p > 10 && p < 100000);
-  
-  if (prices.length > 0) {
-    result.price = prices[0];
-  }
-  
-  return result;
-}
+async function parseProductHTML(html, url, productId) {
+  const retailer = getRetailerName(url);
   
   let product = {
     id: productId,
@@ -381,293 +303,124 @@ function parseGenericHTML(html) {
   return product;
 }
 
-// Extract dimensions from HTML using multiple patterns
-function extractDimensionsFromHTML(html) {
-  console.log('  Looking for dimensions in HTML...');
-  
-  // Pattern 1: Product dimensions (L x W x H)
-  const patterns = [
-    // Standard format: 24" L x 18" W x 12" H
-    /(\d+(?:\.\d+)?)["\s]*[LlWwHh]\s*x\s*(\d+(?:\.\d+)?)["\s]*[LlWwHh]\s*x\s*(\d+(?:\.\d+)?)["\s]*[LlWwHh]/i,
-    // Format: 24 x 18 x 12 inches
-    /(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)\s*(?:inches|in|")/i,
-    // Overall/Product Dimensions: 24" x 18" x 12"
-    /(?:overall|product|assembled|package|box)\s*dimensions?[^:]*:\s*(\d+(?:\.\d+)?)["\s]*x\s*(\d+(?:\.\d+)?)["\s]*x\s*(\d+(?:\.\d+)?)/i,
-    // Shipping dimensions
-    /(?:shipping|package|box)\s*(?:dimensions?|size)[^:]*:\s*(\d+(?:\.\d+)?)["\s]*x\s*(\d+(?:\.\d+)?)["\s]*x\s*(\d+(?:\.\d+)?)/i,
-    // Table format: Depth 24" Width 18" Height 12"
-    /depth[^:]*:\s*(\d+(?:\.\d+)?)["\s]*.*?width[^:]*:\s*(\d+(?:\.\d+)?)["\s]*.*?height[^:]*:\s*(\d+(?:\.\d+)?)/is
-  ];
-  
-  for (const pattern of patterns) {
-    const match = html.match(pattern);
-    if (match) {
-      const dims = [
-        parseFloat(match[1]),
-        parseFloat(match[2]),
-        parseFloat(match[3])
-      ].sort((a, b) => b - a);
+// Extract JSON-LD structured data
+function extractJSONLD(html) {
+  try {
+    const scripts = html.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi) || [];
+    
+    for (const script of scripts) {
+      const match = script.match(/>([^<]+)</);
+      if (!match) continue;
       
-      console.log(`  ✓ Found dimensions: ${dims[0]}" x ${dims[1]}" x ${dims[2]}"`);
-      
-      return {
-        length: dims[0],
-        width: dims[1],
-        height: dims[2],
-        source: 'scraped from page'
-      };
+      try {
+        const data = JSON.parse(match[1].trim());
+        
+        if (data['@type'] === 'Product' || data.type === 'Product') {
+          return {
+            name: data.name,
+            price: data.offers?.price || data.offers?.[0]?.price,
+            image: Array.isArray(data.image) ? data.image[0] : data.image
+          };
+        }
+        
+        if (Array.isArray(data)) {
+          const product = data.find(item => item['@type'] === 'Product');
+          if (product) {
+            return {
+              name: product.name,
+              price: product.offers?.price,
+              image: Array.isArray(product.image) ? product.image[0] : product.image
+            };
+          }
+        }
+      } catch (e) {
+        // Continue
+      }
     }
+  } catch (e) {
+    console.log('  JSON-LD extraction error:', e.message);
   }
-  
-  // Pattern 2: Try to find individual measurements
-  const lengthMatch = html.match(/(?:length|depth)[^:]*:\s*(\d+(?:\.\d+)?)\s*(?:inches|in|")/i);
-  const widthMatch = html.match(/(?:width)[^:]*:\s*(\d+(?:\.\d+)?)\s*(?:inches|in|")/i);
-  const heightMatch = html.match(/(?:height)[^:]*:\s*(\d+(?:\.\d+)?)\s*(?:inches|in|")/i);
-  
-  if (lengthMatch && widthMatch && heightMatch) {
-    console.log(`  ✓ Found individual dimensions`);
-    return {
-      length: parseFloat(lengthMatch[1]),
-      width: parseFloat(widthMatch[1]),
-      height: parseFloat(heightMatch[1]),
-      source: 'scraped individually'
-    };
-  }
-  
   return null;
 }
 
-// Find best dimensions using multiple strategies
-async function findBestDimensions(html, productName, category) {
-  const name = productName.toLowerCase();
+// Extract Open Graph data
+function extractOpenGraph(html) {
+  const og = {};
   
-  // Strategy 1: Look for similar product dimensions in the same page
-  console.log('  Strategy 1: Looking for related products...');
-  const relatedMatch = html.match(/(?:similar|related|you may also like)[\s\S]{0,5000}(\d+)\s*x\s*(\d+)\s*x\s*(\d+)/i);
-  if (relatedMatch) {
-    const dims = [
-      parseFloat(relatedMatch[1]),
-      parseFloat(relatedMatch[2]),
-      parseFloat(relatedMatch[3])
-    ].sort((a, b) => b - a);
-    
-    // Add 15% safety margin
-    return {
-      length: Math.ceil(dims[0] * 1.15),
-      width: Math.ceil(dims[1] * 1.15),
-      height: Math.ceil(dims[2] * 1.15),
-      source: 'similar product + 15% margin',
-      estimated: true
-    };
+  const titleMatch = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)/i);
+  const priceMatch = html.match(/<meta[^>]*property=["']product:price:amount["'][^>]*content=["']([^"']+)/i);
+  const imageMatch = html.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)/i);
+  
+  if (titleMatch) og.title = titleMatch[1];
+  if (priceMatch) og.price = parseFloat(priceMatch[1]);
+  if (imageMatch) og.image = imageMatch[1];
+  
+  return og;
+}
+
+// Generic HTML parsing as final fallback
+function parseGenericHTML(html) {
+  const result = {};
+  
+  // Get title from multiple sources
+  const titleMatch = html.match(/<h1[^>]*>([^<]{5,200})</i) ||
+                    html.match(/<title>([^<]{5,100})</i) ||
+                    html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)/i);
+  
+  if (titleMatch) {
+    result.name = titleMatch[1].trim();
   }
   
-  // Strategy 2: Use detailed category database with product keywords
-  console.log('  Strategy 2: Using category database...');
-  const dimensions = getSmartDimensions(name, category);
+  // Find prices
+  const priceMatches = html.match(/\$[\d,]+\.?\d*/g) || [];
+  const prices = priceMatches
+    .map(p => parseFloat(p.replace(/[$,]/g, '')))
+    .filter(p => p > 10 && p < 100000);
   
-  // Strategy 3: If furniture, check for seat/bed dimensions and extrapolate
-  if (category === 'Furniture') {
-    const seatDepth = html.match(/seat\s*depth[^:]*:\s*(\d+(?:\.\d+)?)/i);
-    const seatWidth = html.match(/seat\s*width[^:]*:\s*(\d+(?:\.\d+)?)/i);
-    
-    if (seatDepth && seatWidth) {
-      // Extrapolate full dimensions from seat dimensions
-      return {
-        length: Math.ceil(parseFloat(seatWidth[1]) * 1.2),
-        width: Math.ceil(parseFloat(seatDepth[1]) * 1.3),
-        height: 36, // Standard furniture height
-        source: 'extrapolated from seat dimensions',
-        estimated: true
-      };
+  if (prices.length > 0) {
+    result.price = prices[0];
+  }
+  
+  return result;
+}
+
+// Amazon parser
+function parseAmazonHTML(html) {
+  const result = {};
+  
+  const titlePatterns = [
+    /<span[^>]*id=["']productTitle["'][^>]*>([^<]+)</i,
+    /<h1[^>]*id=["']title["'][^>]*>([^<]+)</i
+  ];
+  
+  for (const pattern of titlePatterns) {
+    const match = html.match(pattern);
+    if (match) {
+      result.name = match[1].trim();
+      break;
     }
   }
   
-  return dimensions;
-}
-
-// Smart dimension database with product-specific estimates
-function getSmartDimensions(productName, category) {
-  const name = productName.toLowerCase();
+  const pricePatterns = [
+    /<span[^>]*class=["'][^"']*a-price-whole["'][^>]*>[\s\$]*([0-9,]+)/i,
+    /<span[^>]*class=["'][^"']*a-price["'][^>]*>.*?\$([0-9,]+\.?\d*)/is
+  ];
   
-  // Very specific product dimensions first
-  const specificDimensions = {
-    // Sofas by size
-    'sectional': { length: 120, width: 84, height: 36 },
-    '3-seat': { length: 84, width: 36, height: 36 },
-    '2-seat': { length: 60, width: 36, height: 36 },
-    'loveseat': { length: 60, width: 36, height: 36 },
-    'sleeper sofa': { length: 84, width: 40, height: 36 },
-    'futon': { length: 72, width: 36, height: 32 },
-    
-    // Chairs
-    'recliner': { length: 36, width: 38, height: 42 },
-    'accent chair': { length: 30, width: 30, height: 35 },
-    'office chair': { length: 26, width: 26, height: 40 },
-    'dining chair': { length: 20, width: 20, height: 38 },
-    'bar stool': { length: 16, width: 16, height: 30 },
-    
-    // Tables
-    'dining table': { length: 72, width: 36, height: 30 },
-    'coffee table': { length: 48, width: 24, height: 18 },
-    'end table': { length: 22, width: 22, height: 24 },
-    'console table': { length: 48, width: 16, height: 30 },
-    'desk': { length: 60, width: 30, height: 30 },
-    
-    // Bedroom
-    'king bed': { length: 84, width: 80, height: 56 },
-    'queen bed': { length: 84, width: 64, height: 56 },
-    'full bed': { length: 79, width: 59, height: 56 },
-    'twin bed': { length: 79, width: 42, height: 56 },
-    'king mattress': { length: 80, width: 76, height: 12 },
-    'queen mattress': { length: 80, width: 60, height: 12 },
-    'dresser': { length: 60, width: 18, height: 36 },
-    'nightstand': { length: 24, width: 18, height: 24 },
-    
-    // Electronics (including box)
-    '65" tv': { length: 64, width: 6, height: 38 },
-    '55" tv': { length: 54, width: 6, height: 33 },
-    '50" tv': { length: 49, width: 6, height: 30 },
-    '43" tv': { length: 42, width: 5, height: 26 },
-    'laptop': { length: 16, width: 12, height: 3 },
-    'desktop': { length: 20, width: 20, height: 24 },
-    
-    // Appliances (boxed)
-    'refrigerator': { length: 38, width: 38, height: 72 },
-    'dishwasher': { length: 26, width: 26, height: 37 },
-    'microwave': { length: 24, width: 20, height: 16 },
-    'washer': { length: 30, width: 32, height: 42 },
-    'dryer': { length: 30, width: 32, height: 42 }
-  };
-  
-  // Check for specific product types
-  for (const [key, dims] of Object.entries(specificDimensions)) {
-    if (name.includes(key)) {
-      return {
-        ...dims,
-        source: `matched "${key}"`,
-        estimated: true
-      };
+  for (const pattern of pricePatterns) {
+    const match = html.match(pattern);
+    if (match) {
+      const price = parseFloat(match[1].replace(/,/g, ''));
+      if (price > 0) {
+        result.price = price;
+        break;
+      }
     }
   }
   
-  // Check for size indicators and apply them
-  let baseDims = getCategoryDefaults(category);
-  
-  if (name.includes('small') || name.includes('compact')) {
-    baseDims = {
-      length: Math.ceil(baseDims.length * 0.75),
-      width: Math.ceil(baseDims.width * 0.75),
-      height: Math.ceil(baseDims.height * 0.9)
-    };
-  } else if (name.includes('large') || name.includes('oversized')) {
-    baseDims = {
-      length: Math.ceil(baseDims.length * 1.25),
-      width: Math.ceil(baseDims.width * 1.25),
-      height: Math.ceil(baseDims.height * 1.1)
-    };
-  }
-  
-  return {
-    ...baseDims,
-    source: 'category estimate',
-    estimated: true
-  };
+  return result;
 }
 
-// Category defaults
-function getCategoryDefaults(category) {
-  const defaults = {
-    'Furniture': { length: 48, width: 30, height: 30 },
-    'Electronics': { length: 24, width: 18, height: 12 },
-    'Appliances': { length: 30, width: 30, height: 36 },
-    'Outdoor': { length: 48, width: 48, height: 36 },
-    'Clothing': { length: 20, width: 16, height: 6 },
-    'Toys': { length: 16, width: 12, height: 10 },
-    'Sports': { length: 36, width: 12, height: 12 },
-    'Books': { length: 12, width: 9, height: 3 },
-    'General': { length: 18, width: 14, height: 10 }
-  };
-  
-  return defaults[category] || defaults['General'];
-}
-
-// Estimate weight based on dimensions and category
-function estimateWeight(productName, category) {
-  const name = productName.toLowerCase();
-  
-  // Specific weights
-  const weights = {
-    'sectional': 250,
-    'sofa': 150,
-    'loveseat': 100,
-    'chair': 50,
-    'recliner': 85,
-    'ottoman': 25,
-    'coffee table': 60,
-    'dining table': 120,
-    'desk': 100,
-    'dresser': 150,
-    'bed': 100,
-    'mattress': 80,
-    'tv': 35,
-    'refrigerator': 300,
-    'washer': 200,
-    'dryer': 125,
-    'grill': 100
-  };
-  
-  for (const [key, weight] of Object.entries(weights)) {
-    if (name.includes(key)) {
-      return weight;
-    }
-  }
-  
-  const categoryWeights = {
-    'Furniture': 75,
-    'Electronics': 20,
-    'Appliances': 100,
-    'Outdoor': 80,
-    'General': 15
-  };
-  
-  return categoryWeights[category] || 15;
-}
-
-// Calculate shipping based on actual dimensions
-function calculateShipping(dimensions, weight) {
-  const CONTAINER_COST = 6000;
-  const USABLE_CUBIC_FEET = 1172; // 75% of 20ft container
-  const COST_PER_CUBIC_FOOT = CONTAINER_COST / USABLE_CUBIC_FEET;
-  
-  if (!dimensions || !dimensions.length) {
-    const estimatedCubicFeet = Math.max(1, weight / 30);
-    return Math.round(estimatedCubicFeet * COST_PER_CUBIC_FOOT * 100) / 100;
-  }
-  
-  const cubicInches = dimensions.length * dimensions.width * dimensions.height;
-  const cubicFeet = cubicInches / 1728;
-  
-  // Add margin if dimensions were estimated
-  let chargeableCubicFeet = cubicFeet;
-  if (dimensions.estimated) {
-    chargeableCubicFeet = cubicFeet * 1.1; // 10% safety margin for estimated dimensions
-  }
-  
-  // Minimum 0.5 cubic feet
-  chargeableCubicFeet = Math.max(0.5, chargeableCubicFeet);
-  
-  let shipping = chargeableCubicFeet * COST_PER_CUBIC_FOOT;
-  
-  // Heavy item surcharge
-  if (weight > 150) shipping += 50;
-  else if (weight > 70) shipping += 25;
-  
-  return Math.round(shipping * 100) / 100;
-}
-
-// [Include all the retailer-specific parsers here - I'll continue with the enhanced Wayfair one as an example]
-
-// Enhanced Wayfair parser with dimension extraction
+// Wayfair parser
 function parseWayfairHTML(html) {
   const result = {};
   
@@ -681,17 +434,18 @@ function parseWayfairHTML(html) {
     result.name = title;
   }
   
-  // Price
+  // Price - look for $339.99 pattern
   const priceMatches = html.match(/\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g) || [];
   for (const match of priceMatches) {
     const price = parseFloat(match.replace(/[$,]/g, ''));
+    // For Wayfair furniture, prices are typically $100-$2000
     if (price > 100 && price < 2000) {
       result.price = price;
       break;
     }
   }
   
-  // Dimensions - Wayfair usually has them in specifications
+  // Dimensions
   const overallMatch = html.match(/Overall[^:]*:\s*(\d+(?:\.\d+)?)["\s]*[HWL]\s*x\s*(\d+(?:\.\d+)?)["\s]*[HWL]\s*x\s*(\d+(?:\.\d+)?)["\s]*[HWL]/i);
   if (overallMatch) {
     const nums = [
@@ -717,7 +471,353 @@ function parseWayfairHTML(html) {
   return result;
 }
 
-// [Include all other retailer parsers with similar dimension extraction...]
+// Walmart parser
+function parseWalmartHTML(html) {
+  const result = {};
+  
+  const nameMatch = html.match(/<h1[^>]*itemprop=["']name["'][^>]*>([^<]+)</i) ||
+                    html.match(/<h1[^>]*>([^<]+)</i);
+  
+  const priceMatch = html.match(/\$([0-9,]+(?:\.[0-9]{2})?)/);
+  
+  if (nameMatch) result.name = nameMatch[1].trim();
+  if (priceMatch) result.price = parseFloat(priceMatch[1].replace(/,/g, ''));
+  
+  return result;
+}
+
+// Target parser
+function parseTargetHTML(html) {
+  const result = {};
+  
+  const nameMatch = html.match(/<h1[^>]*data-test=["']product-title["'][^>]*>([^<]+)</i) ||
+                    html.match(/<h1[^>]*>([^<]+)</i);
+  
+  const priceMatch = html.match(/\$([0-9,]+(?:\.[0-9]{2})?)/);
+  
+  if (nameMatch) result.name = nameMatch[1].trim();
+  if (priceMatch) result.price = parseFloat(priceMatch[1].replace(/,/g, ''));
+  
+  return result;
+}
+
+// Home Depot parser
+function parseHomeDepotHTML(html) {
+  const result = {};
+  
+  const nameMatch = html.match(/<h1[^>]*class=["'][^"']*product-title["'][^>]*>([^<]+)</i) ||
+                    html.match(/<h1[^>]*>([^<]+)</i);
+  
+  const priceMatch = html.match(/<span[^>]*class=["'][^"']*price["'][^>]*>.*?\$([0-9,]+(?:\.[0-9]{2})?)/is);
+  
+  if (nameMatch) result.name = nameMatch[1].trim();
+  if (priceMatch) result.price = parseFloat(priceMatch[1].replace(/,/g, ''));
+  
+  return result;
+}
+
+// Best Buy parser
+function parseBestBuyHTML(html) {
+  const result = {};
+  
+  const nameMatch = html.match(/<h1[^>]*class=["'][^"']*sku-title["'][^>]*>([^<]+)</i) ||
+                    html.match(/<h1[^>]*>([^<]+)</i);
+  
+  const priceMatch = html.match(/<span[^>]*class=["'][^"']*pricing-price["'][^>]*>.*?\$([0-9,]+(?:\.[0-9]{2})?)/is);
+  
+  if (nameMatch) result.name = nameMatch[1].trim();
+  if (priceMatch) result.price = parseFloat(priceMatch[1].replace(/,/g, ''));
+  
+  return result;
+}
+
+// IKEA parser
+function parseIKEAHTML(html) {
+  const result = {};
+  
+  const nameMatch = html.match(/<h1[^>]*class=["'][^"']*pip-header-section["'][^>]*>([^<]+)</i) ||
+                    html.match(/<span[^>]*class=["'][^"']*pip-header__title["'][^>]*>([^<]+)</i);
+  
+  const priceMatch = html.match(/<span[^>]*class=["'][^"']*pip-price__integer["'][^>]*>([0-9,]+)/i);
+  
+  if (nameMatch) result.name = nameMatch[1].trim();
+  if (priceMatch) result.price = parseFloat(priceMatch[1].replace(/,/g, ''));
+  
+  return result;
+}
+
+// Costco parser
+function parseCostcoHTML(html) {
+  const result = {};
+  
+  const nameMatch = html.match(/<h1[^>]*>([^<]+)</i);
+  const priceMatch = html.match(/<span[^>]*class=["'][^"']*value["'][^>]*>([0-9,]+(?:\.[0-9]{2})?)/i);
+  
+  if (nameMatch) result.name = nameMatch[1].trim();
+  if (priceMatch) result.price = parseFloat(priceMatch[1].replace(/,/g, ''));
+  
+  return result;
+}
+
+// eBay parser
+function parseEbayHTML(html) {
+  const result = {};
+  
+  const nameMatch = html.match(/<h1[^>]*class=["'][^"']*it-ttl["'][^>]*>([^<]+)</i) ||
+                    html.match(/<h1[^>]*>([^<]+)</i);
+  
+  const priceMatch = html.match(/<span[^>]*class=["'][^"']*vi-price["'][^>]*>.*?\$([0-9,]+(?:\.[0-9]{2})?)/is);
+  
+  if (nameMatch) result.name = nameMatch[1].trim();
+  if (priceMatch) result.price = parseFloat(priceMatch[1].replace(/,/g, ''));
+  
+  return result;
+}
+
+// Lowes parser
+function parseLowesHTML(html) {
+  const result = {};
+  
+  const nameMatch = html.match(/<h1[^>]*>([^<]+)</i);
+  const priceMatch = html.match(/\$([0-9,]+(?:\.[0-9]{2})?)/);
+  
+  if (nameMatch) result.name = nameMatch[1].trim();
+  if (priceMatch) result.price = parseFloat(priceMatch[1].replace(/,/g, ''));
+  
+  return result;
+}
+
+// Overstock parser
+function parseOverstockHTML(html) {
+  const result = {};
+  
+  const nameMatch = html.match(/<h1[^>]*>([^<]+)</i);
+  const priceMatch = html.match(/\$([0-9,]+(?:\.[0-9]{2})?)/);
+  
+  if (nameMatch) result.name = nameMatch[1].trim();
+  if (priceMatch) result.price = parseFloat(priceMatch[1].replace(/,/g, ''));
+  
+  return result;
+}
+
+// Crate & Barrel parser
+function parseCrateBarrelHTML(html) {
+  const result = {};
+  
+  const nameMatch = html.match(/<h1[^>]*>([^<]+)</i);
+  const priceMatch = html.match(/<span[^>]*class=["'][^"']*regPrice["'][^>]*>\$([0-9,]+(?:\.[0-9]{2})?)/i);
+  
+  if (nameMatch) result.name = nameMatch[1].trim();
+  if (priceMatch) result.price = parseFloat(priceMatch[1].replace(/,/g, ''));
+  
+  return result;
+}
+
+// Pottery Barn parser
+function parsePotteryBarnHTML(html) {
+  const result = {};
+  
+  const nameMatch = html.match(/<h1[^>]*>([^<]+)</i);
+  const priceMatch = html.match(/\$([0-9,]+(?:\.[0-9]{2})?)/);
+  
+  if (nameMatch) result.name = nameMatch[1].trim();
+  if (priceMatch) result.price = parseFloat(priceMatch[1].replace(/,/g, ''));
+  
+  return result;
+}
+
+// Ashley Furniture parser
+function parseAshleyHTML(html) {
+  const result = {};
+  
+  const nameMatch = html.match(/<h1[^>]*>([^<]+)</i);
+  const priceMatch = html.match(/\$([0-9,]+(?:\.[0-9]{2})?)/);
+  
+  if (nameMatch) result.name = nameMatch[1].trim();
+  if (priceMatch) result.price = parseFloat(priceMatch[1].replace(/,/g, ''));
+  
+  return result;
+}
+
+// Extract dimensions from HTML using multiple patterns
+function extractDimensionsFromHTML(html) {
+  console.log('  Looking for dimensions in HTML...');
+  
+  const patterns = [
+    /(\d+(?:\.\d+)?)["\s]*[LlWwHh]\s*x\s*(\d+(?:\.\d+)?)["\s]*[LlWwHh]\s*x\s*(\d+(?:\.\d+)?)["\s]*[LlWwHh]/i,
+    /(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)\s*(?:inches|in|")/i,
+    /(?:overall|product|assembled|package|box)\s*dimensions?[^:]*:\s*(\d+(?:\.\d+)?)["\s]*x\s*(\d+(?:\.\d+)?)["\s]*x\s*(\d+(?:\.\d+)?)/i,
+    /(?:shipping|package|box)\s*(?:dimensions?|size)[^:]*:\s*(\d+(?:\.\d+)?)["\s]*x\s*(\d+(?:\.\d+)?)["\s]*x\s*(\d+(?:\.\d+)?)/i
+  ];
+  
+  for (const pattern of patterns) {
+    const match = html.match(pattern);
+    if (match) {
+      const dims = [
+        parseFloat(match[1]),
+        parseFloat(match[2]),
+        parseFloat(match[3])
+      ].sort((a, b) => b - a);
+      
+      console.log(`  ✓ Found dimensions: ${dims[0]}" x ${dims[1]}" x ${dims[2]}"`);
+      
+      return {
+        length: dims[0],
+        width: dims[1],
+        height: dims[2],
+        source: 'scraped from page'
+      };
+    }
+  }
+  
+  return null;
+}
+
+// Find best dimensions using multiple strategies
+async function findBestDimensions(html, productName, category) {
+  const name = productName.toLowerCase();
+  
+  // Look for related products
+  const relatedMatch = html.match(/(?:similar|related|you may also like)[\s\S]{0,5000}(\d+)\s*x\s*(\d+)\s*x\s*(\d+)/i);
+  if (relatedMatch) {
+    const dims = [
+      parseFloat(relatedMatch[1]),
+      parseFloat(relatedMatch[2]),
+      parseFloat(relatedMatch[3])
+    ].sort((a, b) => b - a);
+    
+    return {
+      length: Math.ceil(dims[0] * 1.15),
+      width: Math.ceil(dims[1] * 1.15),
+      height: Math.ceil(dims[2] * 1.15),
+      source: 'similar product + 15% margin',
+      estimated: true
+    };
+  }
+  
+  return getSmartDimensions(name, category);
+}
+
+// Smart dimension database with product-specific estimates
+function getSmartDimensions(productName, category) {
+  const name = productName.toLowerCase();
+  
+  const specificDimensions = {
+    'sectional': { length: 120, width: 84, height: 36 },
+    'loveseat': { length: 60, width: 36, height: 36 },
+    'sofa': { length: 84, width: 36, height: 36 },
+    'chair': { length: 32, width: 32, height: 40 },
+    'recliner': { length: 36, width: 38, height: 42 },
+    'ottoman': { length: 24, width: 18, height: 18 },
+    'coffee table': { length: 48, width: 24, height: 18 },
+    'dining table': { length: 72, width: 36, height: 30 },
+    'desk': { length: 60, width: 30, height: 30 },
+    'dresser': { length: 60, width: 18, height: 36 },
+    'nightstand': { length: 24, width: 18, height: 24 },
+    'tv': { length: 50, width: 3, height: 28 },
+    'refrigerator': { length: 36, width: 36, height: 70 },
+    'washer': { length: 27, width: 30, height: 38 },
+    'dryer': { length: 27, width: 30, height: 38 }
+  };
+  
+  for (const [key, dims] of Object.entries(specificDimensions)) {
+    if (name.includes(key)) {
+      return {
+        ...dims,
+        source: `matched "${key}"`,
+        estimated: true
+      };
+    }
+  }
+  
+  return {
+    ...getCategoryDefaults(category),
+    source: 'category estimate',
+    estimated: true
+  };
+}
+
+// Category defaults
+function getCategoryDefaults(category) {
+  const defaults = {
+    'Furniture': { length: 48, width: 30, height: 30 },
+    'Electronics': { length: 24, width: 18, height: 12 },
+    'Appliances': { length: 30, width: 30, height: 36 },
+    'Outdoor': { length: 48, width: 48, height: 36 },
+    'General': { length: 18, width: 14, height: 10 }
+  };
+  
+  return defaults[category] || defaults['General'];
+}
+
+// Estimate weight
+function estimateWeight(productName, category) {
+  const name = productName.toLowerCase();
+  
+  const weights = {
+    'sectional': 250,
+    'sofa': 150,
+    'loveseat': 100,
+    'chair': 50,
+    'recliner': 85,
+    'ottoman': 25,
+    'coffee table': 60,
+    'dining table': 120,
+    'desk': 100,
+    'dresser': 150,
+    'bed': 100,
+    'mattress': 80,
+    'tv': 35,
+    'refrigerator': 300,
+    'washer': 200,
+    'dryer': 125
+  };
+  
+  for (const [key, weight] of Object.entries(weights)) {
+    if (name.includes(key)) {
+      return weight;
+    }
+  }
+  
+  const categoryWeights = {
+    'Furniture': 75,
+    'Electronics': 20,
+    'Appliances': 100,
+    'Outdoor': 80,
+    'General': 15
+  };
+  
+  return categoryWeights[category] || 15;
+}
+
+// Calculate shipping
+function calculateShipping(dimensions, weight) {
+  const CONTAINER_COST = 6000;
+  const USABLE_CUBIC_FEET = 1172;
+  const COST_PER_CUBIC_FOOT = CONTAINER_COST / USABLE_CUBIC_FEET;
+  
+  if (!dimensions || !dimensions.length) {
+    const estimatedCubicFeet = Math.max(1, weight / 30);
+    return Math.round(estimatedCubicFeet * COST_PER_CUBIC_FOOT * 100) / 100;
+  }
+  
+  const cubicInches = dimensions.length * dimensions.width * dimensions.height;
+  const cubicFeet = cubicInches / 1728;
+  
+  let chargeableCubicFeet = cubicFeet;
+  if (dimensions.estimated) {
+    chargeableCubicFeet = cubicFeet * 1.1;
+  }
+  
+  chargeableCubicFeet = Math.max(0.5, chargeableCubicFeet);
+  
+  let shipping = chargeableCubicFeet * COST_PER_CUBIC_FOOT;
+  
+  if (weight > 150) shipping += 50;
+  else if (weight > 70) shipping += 25;
+  
+  return Math.round(shipping * 100) / 100;
+}
 
 function getRetailerName(url) {
   const hostname = new URL(url).hostname.toLowerCase();
@@ -801,8 +901,6 @@ function createFallbackProduct(url, productId) {
     scraped_at: new Date().toISOString()
   };
 }
-
-// [Include remaining parser functions...]
 
 app.listen(PORT, () => {
   console.log(`
