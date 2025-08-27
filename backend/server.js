@@ -324,8 +324,7 @@ async function parseProductInfo(html, url, productId) {
   
   // Calculate shipping cost based on dimensions
   product.shippingCost = calculateShippingCost(product.dimensions, product.weight);
-  product.shippingCost = calculateShippingCost(product.dimensions, product.weight);
-console.log(`  💰 Calculated shipping: $${product.shippingCost} (${product.dimensions.length}" x ${product.dimensions.width}" x ${product.dimensions.height}", ${product.weight}lbs)`);
+  console.log(`  💰 Calculated shipping: $${product.shippingCost} (${product.dimensions.length}" x ${product.dimensions.width}" x ${product.dimensions.height}", ${product.weight}lbs)`);
   
   return product;
 }
