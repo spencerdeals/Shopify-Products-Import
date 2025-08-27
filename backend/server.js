@@ -1,9 +1,11 @@
-const express = require('express');
-const cors = require('cors');
-const rateLimit = require('express-rate-limit');
-const axios = require('axios');
-const { URL } = require('url');
-require('dotenv').config();
+import express from 'express';
+import cors from 'cors';
+import rateLimit from 'express-rate-limit';
+import axios from 'axios';
+import { URL } from 'url';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -34,7 +36,7 @@ const USE_PUPPETEER = process.env.USE_PUPPETEER === 'true';
 
 if (USE_PUPPETEER) {
   try {
-    puppeteer = require('puppeteer');
+    puppeteer = await import('puppeteer');
     console.log('Puppeteer loaded successfully');
   } catch (error) {
     console.warn('Puppeteer not available:', error.message);
@@ -274,7 +276,7 @@ async function parseScrapingBeeHTML(html, url) {
   for (const pattern of namePatterns) {
     const match = html.match(pattern);
     if (match && match[1]) {
-      result.name = match[1].trim().replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/<[^>]*>/g, '');
+      result.name = match[1].trim().replace(/'/g, "'").replace(/"/g, '"').replace(/<[^>]*>/g, '');
       break;
     }
   }
@@ -623,4 +625,4 @@ app.listen(PORT, () => {
   console.log('Ready to process import quotes!');
 });
 
-module.exports = app;
+export default app;
