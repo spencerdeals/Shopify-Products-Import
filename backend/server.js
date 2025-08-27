@@ -47,7 +47,7 @@ app.post('/api/scrape', async (req, res) => {
       return res.status(400).json({ error: 'URLs array is required' });
     }
 
-    console.log(`\n============ Scraping ${urls.length} URLs (Name + Image + Dimensions) ============`);
+    console.log(`\n============ Scraping ${urls.length} URLs (Name + Image + Dimensions + Price Attempt) ============`);
     let products = [];
 
     for (let i = 0; i < urls.length; i++) {
@@ -57,7 +57,9 @@ app.post('/api/scrape', async (req, res) => {
       try {
         const productData = await scrapeProductInfo(url, i + 1);
         products.push(productData);
-        console.log(`✓ Success: ${productData.name.substring(0, 50)}... [${productData.retailer}]`);
+        
+        const priceStatus = productData.needsManualPrice ? 'Manual entry needed' : `$${productData.price}`;
+        console.log(`✓ Success: ${productData.name.substring(0, 50)}... [${productData.retailer}] - ${priceStatus}`);
         
         if (productData.dimensions) {
           console.log(`  📦 Dimensions: ${productData.dimensions.length}" x ${productData.dimensions.width}" x ${productData.dimensions.height}" (${productData.dimensions.source})`);
@@ -73,8 +75,10 @@ app.post('/api/scrape', async (req, res) => {
 
     // Group products by retailer
     const groupedProducts = groupProductsByRetailer(products);
+    const successfulPrices = products.filter(p => !p.needsManualPrice).length;
     
     console.log(`\n✓ Completed: ${products.length} products from ${Object.keys(groupedProducts).length} retailers`);
+    console.log(`  Prices found: ${successfulPrices}/${products.length}, Manual entry needed: ${products.length - successfulPrices}`);
     
     res.json({ 
       success: true, 
@@ -82,6 +86,7 @@ app.post('/api/scrape', async (req, res) => {
       groupedProducts: groupedProducts,
       retailers: Object.keys(groupedProducts),
       scraped: products.filter(p => !p.isFallback).length,
+      pricesFound: successfulPrices,
       count: products.length,
       timestamp: new Date().toISOString()
     });
@@ -185,14 +190,14 @@ async function parseProductInfo(html, url, productId) {
     name: null,
     image: null,
     dimensions: null,
-    price: 0, // Manual entry
+    price: 0,
     quantity: 1,
     category: 'General',
     needsManualPrice: true,
     weight: null
   };
   
-  console.log(`  Parsing ${retailer} for name + image + dimensions...`);
+  console.log(`  Parsing ${retailer} for name + image + dimensions + price...`);
   
   // 1. Try JSON-LD structured data first
   const structuredData = extractJSONLD(html);
@@ -200,17 +205,39 @@ async function parseProductInfo(html, url, productId) {
     console.log('  ✓ Found JSON-LD data');
     product.name = structuredData.name || product.name;
     product.image = structuredData.image || product.image;
+    product.price = structuredData.price || product.price;
   }
   
   // 2. Try Open Graph meta tags
   const ogData = extractOpenGraph(html);
-  if (ogData.title || ogData.image) {
+  if (ogData.title || ogData.image || ogData.price) {
     console.log('  ✓ Found Open Graph data');
     product.name = product.name || ogData.title;
     product.image = product.image || ogData.image;
+    product.price = product.price || ogData.price;
   }
   
-  // 3. Retailer-specific parsing
+  // 3. Try non-blocking price extraction with timeout
+  if (!product.price || product.price === 0) {
+    try {
+      const priceWithTimeout = await Promise.race([
+        extractPriceFromHTML(html, retailer),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Price extraction timeout')), 3000))
+      ]);
+      
+      if (priceWithTimeout && priceWithTimeout > 0) {
+        product.price = priceWithTimeout;
+        product.needsManualPrice = false;
+        console.log(`  ✓ Price extracted: $${priceWithTimeout}`);
+      } else {
+        console.log('  ⚠ Price extraction returned invalid value');
+      }
+    } catch (error) {
+      console.log(`  ⚠ Price extraction failed: ${error.message}`);
+    }
+  }
+  
+  // 4. Retailer-specific parsing (never blocks for price)
   const parserMap = {
     'Amazon': parseAmazon,
     'Wayfair': parseWayfair,
@@ -227,19 +254,28 @@ async function parseProductInfo(html, url, productId) {
     console.log(`  ${retailer} parsing:`, { 
       name: !!retailerData.name, 
       image: !!retailerData.image,
-      dimensions: !!retailerData.dimensions
+      dimensions: !!retailerData.dimensions,
+      price: !!retailerData.price
     });
+    
     product.name = product.name || retailerData.name;
     product.image = product.image || retailerData.image;
     product.dimensions = product.dimensions || retailerData.dimensions;
+    
+    // Use retailer price if we don't have one yet
+    if ((!product.price || product.price === 0) && retailerData.price && retailerData.price > 0) {
+      product.price = retailerData.price;
+      product.needsManualPrice = false;
+      console.log(`  ✓ Price from ${retailer} parser: $${retailerData.price}`);
+    }
   }
   
-  // 4. Try generic dimension extraction
+  // 5. Try generic dimension extraction
   if (!product.dimensions) {
     product.dimensions = extractDimensionsFromHTML(html);
   }
   
-  // 5. Generic fallback parsing
+  // 6. Generic fallback parsing
   if (!product.name) {
     const genericData = parseGenericHTML(html);
     product.name = product.name || genericData.name;
@@ -249,6 +285,15 @@ async function parseProductInfo(html, url, productId) {
   // Clean up and finalize
   product.name = cleanProductName(product.name) || `Product from ${retailer}`;
   product.category = determineCategory(product.name);
+  
+  // Final price validation
+  if (product.price && product.price > 0) {
+    product.price = parseFloat(product.price);
+    product.needsManualPrice = false;
+  } else {
+    product.price = 0;
+    product.needsManualPrice = true;
+  }
   
   // Estimate dimensions if not found, with 20% buffer for Bermuda shipping
   if (!product.dimensions) {
@@ -268,7 +313,7 @@ async function parseProductInfo(html, url, productId) {
   
   // Set placeholder image if needed
   if (!product.image) {
-    product.image = `https://via.placeholder.com/200x200/667eea/FFFFFF?text=${encodeURIComponent(retailer)}`;
+    product.image = `https://placehold.co/200x200/667eea/FFFFFF/png?text=${encodeURIComponent(retailer)}`;
   }
   
   // Make image URL absolute
@@ -281,6 +326,38 @@ async function parseProductInfo(html, url, productId) {
   product.shippingCost = calculateShippingCost(product.dimensions, product.weight);
   
   return product;
+}
+
+// Non-blocking price extraction with timeout
+async function extractPriceFromHTML(html, retailer) {
+  console.log(`  Attempting price extraction for ${retailer}...`);
+  
+  // Generic price patterns
+  const pricePatterns = [
+    /\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g,
+    /USD\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/gi,
+    /price[^>]*>.*?\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/is
+  ];
+  
+  for (const pattern of pricePatterns) {
+    const matches = html.match(pattern);
+    if (matches) {
+      const prices = matches
+        .map(match => {
+          const numMatch = match.match(/(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/);
+          return numMatch ? parseFloat(numMatch[1].replace(/,/g, '')) : null;
+        })
+        .filter(price => price && price >= 10 && price <= 50000) // Reasonable price range
+        .sort((a, b) => a - b); // Sort ascending
+      
+      if (prices.length > 0) {
+        // Use the first reasonable price found
+        return prices[0];
+      }
+    }
+  }
+  
+  return null;
 }
 
 // Extract dimensions with multiple patterns
@@ -341,7 +418,8 @@ function extractJSONLD(html) {
         if (data['@type'] === 'Product' || data.type === 'Product') {
           return {
             name: data.name,
-            image: Array.isArray(data.image) ? data.image[0] : data.image
+            image: Array.isArray(data.image) ? data.image[0] : data.image,
+            price: data.offers?.price || data.offers?.[0]?.price
           };
         }
         
@@ -350,7 +428,8 @@ function extractJSONLD(html) {
           if (product) {
             return {
               name: product.name,
-              image: Array.isArray(product.image) ? product.image[0] : product.image
+              image: Array.isArray(product.image) ? product.image[0] : product.image,
+              price: product.offers?.price || product.offers?.[0]?.price
             };
           }
         }
@@ -370,9 +449,11 @@ function extractOpenGraph(html) {
   
   const titleMatch = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)/i);
   const imageMatch = html.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)/i);
+  const priceMatch = html.match(/<meta[^>]*property=["']product:price:amount["'][^>]*content=["']([^"']+)/i);
   
   if (titleMatch) og.title = titleMatch[1];
   if (imageMatch) og.image = imageMatch[1];
+  if (priceMatch) og.price = parseFloat(priceMatch[1]);
   
   return og;
 }
@@ -411,6 +492,23 @@ function parseAmazon(html) {
   const imageMatch = html.match(/<img[^>]*id=["']landingImage["'][^>]*src=["']([^"']+)/i);
   if (imageMatch) result.image = imageMatch[1];
   
+  // Price
+  const pricePatterns = [
+    /<span[^>]*class=["'][^"']*a-price-whole["'][^>]*>[\s\$]*([0-9,]+)/i,
+    /<span[^>]*class=["'][^"']*a-price["'][^>]*>.*?\$([0-9,]+\.?\d*)/is
+  ];
+  
+  for (const pattern of pricePatterns) {
+    const match = html.match(pattern);
+    if (match) {
+      const price = parseFloat(match[1].replace(/,/g, ''));
+      if (price > 0) {
+        result.price = price;
+        break;
+      }
+    }
+  }
+  
   return result;
 }
 
@@ -428,6 +526,17 @@ function parseWayfair(html) {
   // Image
   const imageMatch = html.match(/<img[^>]*class=["'][^"']*ProductDetailImageCarousel[^"']*["'][^>]*src=["']([^"']+)/i);
   if (imageMatch) result.image = imageMatch[1];
+  
+  // Price - look for $339.99 pattern
+  const priceMatches = html.match(/\$(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g) || [];
+  for (const match of priceMatches) {
+    const price = parseFloat(match.replace(/[$,]/g, ''));
+    // For Wayfair furniture, prices are typically $100-$2000
+    if (price > 50 && price < 5000) {
+      result.price = price;
+      break;
+    }
+  }
   
   // Dimensions (Wayfair usually has good dimension data)
   const overallMatch = html.match(/Overall[^:]*:\s*(\d+(?:\.\d+)?)["\s]*[HWL]\s*x\s*(\d+(?:\.\d+)?)["\s]*[HWL]\s*x\s*(\d+(?:\.\d+)?)["\s]*[HWL]/i);
@@ -458,6 +567,9 @@ function parseWalmart(html) {
   const imageMatch = html.match(/<img[^>]*class=["'][^"']*prod-ProductImage[^"']*["'][^>]*src=["']([^"']+)/i);
   if (imageMatch) result.image = imageMatch[1];
   
+  const priceMatch = html.match(/\$([0-9,]+(?:\.[0-9]{2})?)/);
+  if (priceMatch) result.price = parseFloat(priceMatch[1].replace(/,/g, ''));
+  
   return result;
 }
 
@@ -470,6 +582,9 @@ function parseTarget(html) {
   const imageMatch = html.match(/<img[^>]*data-test=["']product-image["'][^>]*src=["']([^"']+)/i);
   if (imageMatch) result.image = imageMatch[1];
   
+  const priceMatch = html.match(/\$([0-9,]+(?:\.[0-9]{2})?)/);
+  if (priceMatch) result.price = parseFloat(priceMatch[1].replace(/,/g, ''));
+  
   return result;
 }
 
@@ -478,6 +593,9 @@ function parseHomeDepot(html) {
   
   const nameMatch = html.match(/<h1[^>]*class=["'][^"']*product-title["'][^>]*>([^<]+)</i);
   if (nameMatch) result.name = nameMatch[1].trim();
+  
+  const priceMatch = html.match(/<span[^>]*class=["'][^"']*price["'][^>]*>.*?\$([0-9,]+(?:\.[0-9]{2})?)/is);
+  if (priceMatch) result.price = parseFloat(priceMatch[1].replace(/,/g, ''));
   
   return result;
 }
@@ -488,6 +606,9 @@ function parseBestBuy(html) {
   const nameMatch = html.match(/<h1[^>]*class=["'][^"']*sku-title["'][^>]*>([^<]+)</i);
   if (nameMatch) result.name = nameMatch[1].trim();
   
+  const priceMatch = html.match(/<span[^>]*class=["'][^"']*pricing-price["'][^>]*>.*?\$([0-9,]+(?:\.[0-9]{2})?)/is);
+  if (priceMatch) result.price = parseFloat(priceMatch[1].replace(/,/g, ''));
+  
   return result;
 }
 
@@ -496,6 +617,9 @@ function parseIKEA(html) {
   
   const nameMatch = html.match(/<span[^>]*class=["'][^"']*pip-header__title["'][^>]*>([^<]+)</i);
   if (nameMatch) result.name = nameMatch[1].trim();
+  
+  const priceMatch = html.match(/<span[^>]*class=["'][^"']*pip-price__integer["'][^>]*>([0-9,]+)/i);
+  if (priceMatch) result.price = parseFloat(priceMatch[1].replace(/,/g, ''));
   
   return result;
 }
@@ -679,7 +803,7 @@ function createFallbackProduct(url, productId) {
     retailer: retailer,
     name: `Product from ${retailer}`,
     price: 0,
-    image: `https://via.placeholder.com/200x200/667eea/FFFFFF?text=${encodeURIComponent(retailer)}`,
+    image: `https://placehold.co/200x200/667eea/FFFFFF/png?text=${encodeURIComponent(retailer)}`,
     dimensions: dimensions,
     weight: weight,
     quantity: 1,
@@ -697,6 +821,7 @@ app.listen(PORT, () => {
 ║  Running on port ${PORT}                  ║
 ║  ScrapingBee: ${SCRAPINGBEE_API_KEY ? '✓ Connected' : '✗ Missing'}         ║
 ║  Focus: Name + Image + Dimensions      ║
+║  Price: Attempt + Manual Fallback     ║
 ╚════════════════════════════════════════╝
   `);
 });
