@@ -1,18 +1,4 @@
-// ScrapingBee integration
-async function scrapingBeeRequest(url) {
-  if (!SCRAPINGBEE_API_KEY) {
-    throw new Error('ScrapingBee API key not configured');
-  }
-  
-  const scrapingBeeUrl = 'https://app.scrapingbee.com/api/v1/';
-  const params = new URLSearchParams({
-    api_key: SCRAPINGBEE_API_KEY,
-    url: url,
-    render_js: 'true',
-    premium_proxy: 'true',
-    country_code: 'us',
-    wait: '2000',
-    waitconst express = require('express');
+const express = require('express');
 const puppeteer = require('puppeteer');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
@@ -92,13 +78,16 @@ function estimateDimensions(category, name = '') {
   const text = name.toLowerCase();
   const dimMatch = text.match(/(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)/);
   if (dimMatch) {
+    // Add 1.2x buffer to scraped dimensions
     return {
-      length: Math.max(1, parseFloat(dimMatch[1])),
-      width: Math.max(1, parseFloat(dimMatch[2])), 
-      height: Math.max(1, parseFloat(dimMatch[3]))
+      length: Math.max(1, parseFloat(dimMatch[1]) * 1.2),
+      width: Math.max(1, parseFloat(dimMatch[2]) * 1.2), 
+      height: Math.max(1, parseFloat(dimMatch[3]) * 1.2)
     };
   }
-  const estimates = {
+  
+  // Category-based estimates with 1.2x buffer (in inches)
+  const baseEstimates = {
     'furniture': { length: 48, width: 24, height: 36 },
     'electronics': { length: 20, width: 12, height: 8 },
     'appliances': { length: 28, width: 28, height: 36 },
@@ -109,18 +98,26 @@ function estimateDimensions(category, name = '') {
     'home-decor': { length: 12, width: 12, height: 12 },
     'general': { length: 18, width: 12, height: 8 }
   };
-  return estimates[category] || estimates.general;
+  
+  const base = baseEstimates[category] || baseEstimates.general;
+  
+  // Apply 1.2x buffer to estimates
+  return {
+    length: base.length * 1.2,
+    width: base.width * 1.2,
+    height: base.height * 1.2
+  };
 }
 
 function calculateShippingCost(dimensions, weight) {
   const volume = dimensions.length * dimensions.width * dimensions.height;
-  const cubicFeet = volume / 1728;
-  const weightRate = weight * 0.85;
-  const volumeRate = cubicFeet * 12;
-  const baseCost = Math.max(weightRate, volumeRate);
-  const handlingFee = 15;
-  const totalShippingCost = baseCost + handlingFee;
-  return Math.max(25, Math.round(totalShippingCost * 100) / 100);
+  const cubicFeet = volume / 1728; // Convert cubic inches to cubic feet
+  
+  // Simple freight calculation: $8 per cubic foot
+  const freightCost = cubicFeet * 8;
+  
+  // Minimum freight cost
+  return Math.max(25, Math.round(freightCost * 100) / 100);
 }
 
 // ScrapingBee integration
@@ -221,10 +218,11 @@ async function parseScrapingBeeHTML(html, url) {
     const dimPattern = /(\d+\.?\d*)["′]\s*W\s*x\s*(\d+\.?\d*)["′]\s*D\s*x\s*(\d+\.?\d*)["′]\s*H/i;
     const dimMatch = html.match(dimPattern);
     if (dimMatch) {
+      // Apply 1.2x buffer to scraped dimensions
       result.dimensions = {
-        length: parseFloat(dimMatch[2]), // D = length
-        width: parseFloat(dimMatch[1]),  // W = width  
-        height: parseFloat(dimMatch[3])  // H = height
+        length: parseFloat(dimMatch[2]) * 1.2, // D = length
+        width: parseFloat(dimMatch[1]) * 1.2,  // W = width  
+        height: parseFloat(dimMatch[3]) * 1.2  // H = height
       };
     }
   }
@@ -254,10 +252,11 @@ const scrapers = {
       const details = Array.from(document.querySelectorAll('#feature-bullets ul li span, .a-unordered-list li span')).map(el => el.textContent).join(' ');
       const dimMatch = details.match(/(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*inches/i);
       if (dimMatch) {
+        // Apply 1.2x buffer to scraped dimensions
         result.dimensions = {
-          length: parseFloat(dimMatch[1]),
-          width: parseFloat(dimMatch[2]),
-          height: parseFloat(dimMatch[3])
+          length: parseFloat(dimMatch[1]) * 1.2,
+          width: parseFloat(dimMatch[2]) * 1.2,
+          height: parseFloat(dimMatch[3]) * 1.2
         };
       }
       return result;
@@ -282,10 +281,11 @@ const scrapers = {
       if (dimText) {
         const dimMatch = dimText.match(/(\d+\.?\d*)["′]\s*W\s*x\s*(\d+\.?\d*)["′]\s*D\s*x\s*(\d+\.?\d*)["′]\s*H/i);
         if (dimMatch) {
+          // Apply 1.2x buffer to scraped dimensions
           result.dimensions = {
-            length: parseFloat(dimMatch[2]),
-            width: parseFloat(dimMatch[1]),
-            height: parseFloat(dimMatch[3])
+            length: parseFloat(dimMatch[2]) * 1.2, // D = length
+            width: parseFloat(dimMatch[1]) * 1.2,  // W = width  
+            height: parseFloat(dimMatch[3]) * 1.2  // H = height
           };
         }
       }
@@ -616,9 +616,10 @@ app.post('/apps/instant-import/create-draft-order', async (req, res) => {
       });
     }
 
+    // Add duty calculation as line item (hide percentage from customer)
     if (totals && totals.dutyAmount > 0) {
       lineItems.push({
-        title: 'Bermuda Import Duty (26.5%)',
+        title: 'Duty',
         price: totals.dutyAmount,
         quantity: 1,
         custom: true,
