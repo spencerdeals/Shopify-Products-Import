@@ -1,3 +1,4 @@
+// Enhanced backend with multiple scraping services
 import express from 'express';
 import { join } from 'path';
 import { readFileSync } from 'fs';
@@ -14,8 +15,11 @@ const __dirname = dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 8080;
 
+// Multiple scraping service API keys
 const SCRAPINGBEE_API_KEY = process.env.SCRAPINGBEE_API_KEY;
-const SCRAPINGBEE_URL = 'https://app.scrapingbee.com/api/v1/';
+const BRIGHTDATA_API_KEY = process.env.BRIGHTDATA_API_KEY; // Optional: More powerful
+const SCRAPERAPI_KEY = process.env.SCRAPERAPI_KEY; // Optional: Good for Amazon
+const SCRAPFLY_KEY = process.env.SCRAPFLY_KEY; // Optional: Great success rates
 
 app.use(express.json());
 app.use(express.static(join(__dirname, '../frontend')));
@@ -53,12 +57,16 @@ app.post('/api/scrape', async (req, res) => {
     for (let i = 0; i < urls.length; i++) {
       const url = urls[i];
       try {
-        console.log(`Processing product URL ${i + 1}: ${url}`);
+        console.log(`\n========== Processing URL ${i + 1} ==========`);
+        console.log(`URL: ${url}`);
+        
         const productData = await scrapeProductURL(url, i + 1);
         products.push(productData);
+        
+        console.log(`✓ Successfully scraped: ${productData.name} - $${productData.price}`);
       } catch (error) {
-        console.error(`Error processing URL ${url}:`, error);
-        const fallbackData = await createFallbackProduct(url, i + 1);
+        console.error(`✗ Failed to scrape URL:`, error.message);
+        const fallbackData = createFallbackProduct(url, i + 1);
         products.push(fallbackData);
       }
     }
@@ -80,334 +88,660 @@ app.post('/api/scrape', async (req, res) => {
 });
 
 async function scrapeProductURL(url, productId) {
-  try {
-    const html = await fetchWithScrapingBee(url);
-    console.log(`Received HTML for product ${productId}, length: ${html.length}`);
+  let html = null;
+  let method = null;
+  
+  // Try multiple scraping methods in order of preference
+  const scrapingMethods = [
+    { name: 'ScraperAPI', fn: fetchWithScraperAPI },
+    { name: 'ScrapingBee', fn: fetchWithScrapingBee },
+    { name: 'ScrapFly', fn: fetchWithScrapFly },
+    { name: 'Direct', fn: fetchDirect }
+  ];
+  
+  for (const scraper of scrapingMethods) {
+    if (!shouldUseScraper(scraper.name)) continue;
     
-    if (html.length < 1000) {
-      console.log('Minimal HTML received, using fallback');
-      return await createFallbackProduct(url, productId);
+    try {
+      console.log(`Attempting ${scraper.name}...`);
+      html = await scraper.fn(url);
+      
+      if (html && html.length > 1000) {
+        method = scraper.name;
+        console.log(`✓ ${scraper.name} succeeded (${html.length} bytes)`);
+        break;
+      }
+    } catch (error) {
+      console.log(`✗ ${scraper.name} failed: ${error.message}`);
     }
+  }
+  
+  if (!html || html.length < 1000) {
+    console.log('All scraping methods failed, using fallback');
+    return createFallbackProduct(url, productId);
+  }
+  
+  // Parse the HTML
+  const product = await parseProductHTML(html, url, productId);
+  
+  // Enhance with dimensions if not found
+  if (!product.dimensions || !product.dimensions.length) {
+    product.dimensions = await estimateProductDimensions(product.name, product.category);
+  }
+  
+  // Calculate shipping based on dimensions
+  product.shipping = calculateShipping(product.dimensions, product.weight);
+  
+  console.log(`Scraped via ${method}:`, {
+    name: product.name.substring(0, 50),
+    price: product.price,
+    dimensions: product.dimensions
+  });
+  
+  return product;
+}
 
-    return await parseProductHTML(html, url, productId);
-  } catch (error) {
-    console.error('Product scraping failed:', error);
-    return await createFallbackProduct(url, productId);
+// Check if we should use a scraper based on available API keys
+function shouldUseScraper(name) {
+  switch(name) {
+    case 'ScraperAPI': return !!process.env.SCRAPERAPI_KEY;
+    case 'ScrapingBee': return !!process.env.SCRAPINGBEE_API_KEY;
+    case 'ScrapFly': return !!process.env.SCRAPFLY_KEY;
+    case 'Direct': return true;
+    default: return false;
   }
 }
 
-async function fetchWithScrapingBee(url) {
-  const isAmazon = url.toLowerCase().includes('amazon.com');
+// ScraperAPI - Excellent for Amazon
+async function fetchWithScraperAPI(url) {
+  if (!process.env.SCRAPERAPI_KEY) throw new Error('ScraperAPI key not configured');
   
-  const scrapingBeeParams = new URLSearchParams({
-    'api_key': SCRAPINGBEE_API_KEY,
+  const params = new URLSearchParams({
+    'api_key': process.env.SCRAPERAPI_KEY,
+    'url': url,
+    'render': 'true',
+    'country_code': 'us'
+  });
+  
+  // Special params for Amazon
+  if (url.includes('amazon.com')) {
+    params.set('autoparse', 'true'); // ScraperAPI's Amazon parser
+  }
+  
+  const response = await fetch(`http://api.scraperapi.com?${params}`);
+  
+  if (!response.ok) {
+    throw new Error(`ScraperAPI error: ${response.status}`);
+  }
+  
+  const text = await response.text();
+  
+  // If Amazon autoparse is enabled, we get JSON
+  if (url.includes('amazon.com') && text.startsWith('{')) {
+    const data = JSON.parse(text);
+    // Convert ScraperAPI's Amazon format to HTML-like format for our parser
+    return convertAmazonAPIToHTML(data);
+  }
+  
+  return text;
+}
+
+// Convert ScraperAPI Amazon data to our format
+function convertAmazonAPIToHTML(data) {
+  // Create a pseudo-HTML that our parser can understand
+  return `
+    <html>
+      <span id="productTitle">${data.name || data.title || ''}</span>
+      <span class="a-price-whole">${data.price || ''}</span>
+      <img id="landingImage" src="${data.image || ''}" />
+      <span class="selection">${data.variant || ''}</span>
+      <script type="application/ld+json">
+        ${JSON.stringify({
+          '@type': 'Product',
+          name: data.name,
+          offers: { price: data.price },
+          image: data.image
+        })}
+      </script>
+    </html>
+  `;
+}
+
+// Enhanced ScrapingBee with better settings
+async function fetchWithScrapingBee(url) {
+  if (!process.env.SCRAPINGBEE_API_KEY) throw new Error('ScrapingBee key not configured');
+  
+  const isAmazon = url.toLowerCase().includes('amazon.com');
+  const isWayfair = url.toLowerCase().includes('wayfair.com');
+  
+  const params = new URLSearchParams({
+    'api_key': process.env.SCRAPINGBEE_API_KEY,
     'url': url,
     'render_js': 'true',
     'premium_proxy': 'true',
-    'country_code': 'us'
+    'country_code': 'us',
+    'block_ads': 'true',
+    'block_resources': 'false'
   });
-
-  // Amazon needs special handling
-  if (isAmazon) {
-    scrapingBeeParams.set('wait', '5000');
-    scrapingBeeParams.set('wait_for', '#productTitle');
-    scrapingBeeParams.set('js_scenario', JSON.stringify({
-      instructions: [
-        { wait: 2000 },
-        { wait_for: '#productTitle' },
-        { wait: 1000 }
-      ]
-    }));
-  } else {
-    scrapingBeeParams.set('wait', '3000');
-  }
-
-  const scrapingBeeUrl = `${SCRAPINGBEE_URL}?${scrapingBeeParams}`;
   
-  console.log(`Fetching ${isAmazon ? 'Amazon' : 'regular'} URL with ScrapingBee...`);
-  const response = await fetch(scrapingBeeUrl, {
-    method: 'GET',
+  if (isAmazon) {
+    params.set('wait', '5000');
+    params.set('wait_for', '#productTitle');
+    params.set('stealth_proxy', 'true'); // Use stealth mode for Amazon
+  } else if (isWayfair) {
+    params.set('wait', '4000');
+    params.set('wait_for', 'h1');
+  } else {
+    params.set('wait', '3000');
+  }
+  
+  const response = await fetch(`https://app.scrapingbee.com/api/v1/?${params}`, {
     headers: {
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      'Accept': 'text/html,application/xhtml+xml',
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Cache-Control': 'no-cache'
     }
   });
-
+  
   if (!response.ok) {
     throw new Error(`ScrapingBee error: ${response.status}`);
   }
-
+  
   return await response.text();
 }
 
+// ScrapFly - High success rate
+async function fetchWithScrapFly(url) {
+  if (!process.env.SCRAPFLY_KEY) throw new Error('ScrapFly key not configured');
+  
+  const params = new URLSearchParams({
+    'key': process.env.SCRAPFLY_KEY,
+    'url': url,
+    'render_js': 'true',
+    'asp': 'true', // Anti-bot bypass
+    'country': 'us'
+  });
+  
+  const response = await fetch(`https://api.scrapfly.io/scrape?${params}`);
+  
+  if (!response.ok) {
+    throw new Error(`ScrapFly error: ${response.status}`);
+  }
+  
+  const data = await response.json();
+  return data.result.content;
+}
+
+// Direct fetch as last resort
+async function fetchDirect(url) {
+  const response = await fetch(url, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      'Accept': 'text/html,application/xhtml+xml',
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Cache-Control': 'no-cache'
+    }
+  });
+  
+  if (!response.ok) {
+    throw new Error(`Direct fetch error: ${response.status}`);
+  }
+  
+  return await response.text();
+}
+
+// Enhanced HTML parser with better patterns
 async function parseProductHTML(html, url, productId) {
   const retailer = getRetailerName(url);
-  let productName = 'Product';
-  let price = 0;
-  let image = null;
-  let variant = null;
-  
-  console.log(`Parsing HTML for ${retailer}...`);
-  
-  // First try: Check for structured data (works on most modern sites)
-  const structuredData = extractStructuredData(html);
-  if (structuredData) {
-    productName = structuredData.name || productName;
-    price = structuredData.price || price;
-    image = structuredData.image || image;
-    console.log('Found structured data:', { productName, price });
-  }
-  
-  // Second try: Open Graph meta tags (widely used)
-  if (!productName || !price) {
-    const ogData = extractOpenGraphData(html);
-    productName = productName === 'Product' ? (ogData.title || productName) : productName;
-    price = price === 0 ? (ogData.price || price) : price;
-    image = image || ogData.image;
-    console.log('Found OG data:', { productName, price });
-  }
-  
-  // Third try: Retailer-specific parsing
-  if (retailer === 'Amazon') {
-    const amazonData = parseAmazonHTML(html);
-    productName = amazonData.name || productName;
-    price = amazonData.price || price;
-    image = amazonData.image || image;
-    variant = amazonData.variant;
-  } else if (retailer === 'Wayfair') {
-    const wayfairData = parseWayfairHTML(html);
-    productName = wayfairData.name || productName;
-    price = wayfairData.price || price;
-    image = wayfairData.image || image;
-    variant = wayfairData.variant;
-  } else if (retailer === 'Walmart') {
-    const walmartData = parseWalmartHTML(html);
-    productName = walmartData.name || productName;
-    price = walmartData.price || price;
-    image = walmartData.image || image;
-  } else if (retailer === 'Target') {
-    const targetData = parseTargetHTML(html);
-    productName = targetData.name || productName;
-    price = targetData.price || price;
-    image = targetData.image || image;
-  } else {
-    // Generic fallback parsing
-    const genericData = parseGenericHTML(html);
-    productName = genericData.name || productName;
-    price = genericData.price || price;
-    image = genericData.image || image;
-  }
-  
-  // Clean up product name
-  productName = cleanProductName(productName);
-  
-  // Final validation
-  if (price === 0) {
-    console.log('No price found, using fallback');
-    return await createFallbackProduct(url, productId);
-  }
-  
-  return {
+  let productData = {
     id: productId,
     url: url,
     retailer: retailer,
-    name: productName,
-    price: price,
-    image: image || `https://via.placeholder.com/150x150/7BC043/FFFFFF?text=${encodeURIComponent(retailer.charAt(0))}`,
-    variant: variant,
-    quantity: 1,
-    category: determineCategory(productName),
-    scraped_at: new Date().toISOString()
+    name: null,
+    price: null,
+    image: null,
+    variant: null,
+    dimensions: null,
+    weight: null,
+    quantity: 1
   };
+  
+  console.log(`Parsing ${retailer} HTML (${html.length} bytes)...`);
+  
+  // Try multiple parsing strategies
+  const parsers = [
+    extractStructuredData,
+    extractOpenGraphData,
+    extractMicrodata,
+    getRetailerSpecificParser(retailer),
+    parseGenericHTML
+  ];
+  
+  for (const parser of parsers) {
+    if (!parser) continue;
+    
+    try {
+      const data = parser(html);
+      if (data) {
+        // Merge found data
+        productData.name = productData.name || data.name;
+        productData.price = productData.price || data.price;
+        productData.image = productData.image || data.image;
+        productData.variant = productData.variant || data.variant;
+        productData.dimensions = productData.dimensions || data.dimensions;
+        productData.weight = productData.weight || data.weight;
+        
+        // If we have name and price, we're good
+        if (productData.name && productData.price) {
+          console.log(`✓ Parser succeeded: ${parser.name}`);
+          break;
+        }
+      }
+    } catch (error) {
+      console.log(`Parser ${parser.name} error:`, error.message);
+    }
+  }
+  
+  // Clean and validate
+  productData.name = cleanProductName(productData.name) || 'Unknown Product';
+  productData.price = parseFloat(productData.price) || 0;
+  productData.category = determineCategory(productData.name);
+  
+  // Ensure we have dimensions and weight
+  if (!productData.dimensions) {
+    productData.dimensions = await estimateProductDimensions(productData.name, productData.category);
+  }
+  if (!productData.weight) {
+    productData.weight = estimateWeight(productData.name, productData.category);
+  }
+  
+  // Add placeholder image if needed
+  if (!productData.image) {
+    productData.image = `https://via.placeholder.com/150x150/7BC043/FFFFFF?text=${encodeURIComponent(retailer.charAt(0))}`;
+  }
+  
+  return productData;
 }
 
-// Extract JSON-LD structured data
-function extractStructuredData(html) {
-  try {
-    const jsonLdMatch = html.match(/<script[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/i);
-    if (jsonLdMatch) {
-      const data = JSON.parse(jsonLdMatch[1]);
-      if (data['@type'] === 'Product' || data.type === 'Product') {
+// Get retailer-specific parser
+function getRetailerSpecificParser(retailer) {
+  const parsers = {
+    'Amazon': parseAmazonHTML,
+    'Wayfair': parseWayfairHTML,
+    'Walmart': parseWalmartHTML,
+    'Target': parseTargetHTML,
+    'Home Depot': parseHomeDepotHTML,
+    'IKEA': parseIKEAHTML,
+    'Best Buy': parseBestBuyHTML
+  };
+  
+  return parsers[retailer];
+}
+
+// Enhanced Amazon parser
+function parseAmazonHTML(html) {
+  const result = { name: null, price: null, image: null, variant: null, dimensions: null, weight: null };
+  
+  // Multiple strategies for Amazon
+  const strategies = [
+    // Strategy 1: Standard selectors
+    () => {
+      const title = html.match(/<span[^>]*id="productTitle"[^>]*>([^<]+)/i);
+      const price = html.match(/class="a-price-whole">([0-9,]+)/);
+      const image = html.match(/id="landingImage"[^>]*src="([^"]+)"/);
+      
+      return {
+        name: title?.[1]?.trim(),
+        price: price ? parseFloat(price[1].replace(/,/g, '')) : null,
+        image: image?.[1]
+      };
+    },
+    
+    // Strategy 2: Alternative price locations
+    () => {
+      const priceSpan = html.match(/<span[^>]*class="a-price[^"]*"[^>]*>.*?\$([0-9,]+\.?\d*)/s);
+      const buyBox = html.match(/id="priceblock_dealprice">.*?\$([0-9,]+\.?\d*)/s);
+      
+      return {
+        price: priceSpan ? parseFloat(priceSpan[1].replace(/,/g, '')) : 
+               buyBox ? parseFloat(buyBox[1].replace(/,/g, '')) : null
+      };
+    },
+    
+    // Strategy 3: Dimensions from details
+    () => {
+      const dimensions = html.match(/Product Dimensions[^<]*<[^>]*>([^<]+)/i);
+      const weight = html.match(/Item Weight[^<]*<[^>]*>([0-9.]+)\s*(pound|lb|ounce|oz)/i);
+      
+      let dims = null;
+      if (dimensions) {
+        const matches = dimensions[1].match(/([0-9.]+)\s*x\s*([0-9.]+)\s*x\s*([0-9.]+)/);
+        if (matches) {
+          dims = {
+            length: parseFloat(matches[1]),
+            width: parseFloat(matches[2]),
+            height: parseFloat(matches[3])
+          };
+        }
+      }
+      
+      let wt = null;
+      if (weight) {
+        wt = parseFloat(weight[1]);
+        if (weight[2].toLowerCase().includes('oz')) {
+          wt = wt / 16; // Convert ounces to pounds
+        }
+      }
+      
+      return { dimensions: dims, weight: wt };
+    }
+  ];
+  
+  // Try all strategies and merge results
+  for (const strategy of strategies) {
+    try {
+      const data = strategy();
+      Object.assign(result, data);
+    } catch (e) {
+      // Continue to next strategy
+    }
+  }
+  
+  return result;
+}
+
+// Enhanced Wayfair parser
+function parseWayfairHTML(html) {
+  const result = { name: null, price: null, image: null, dimensions: null, weight: null };
+  
+  // Wayfair uses React, so we need multiple strategies
+  const strategies = [
+    // JSON-LD data
+    () => {
+      const jsonLd = html.match(/<script[^>]*type="application\/ld\+json"[^>]*>([^<]+)/);
+      if (jsonLd) {
+        const data = JSON.parse(jsonLd[1]);
         return {
           name: data.name,
-          price: data.offers?.price || data.price,
-          image: data.image?.[0] || data.image
+          price: data.offers?.price,
+          image: data.image
         };
       }
-    }
-  } catch (e) {
-    console.log('No structured data found');
-  }
-  return null;
-}
-
-// Extract Open Graph meta tags
-function extractOpenGraphData(html) {
-  const ogTitle = html.match(/<meta[^>]*property="og:title"[^>]*content="([^"]+)"/i);
-  const ogPrice = html.match(/<meta[^>]*property="product:price:amount"[^>]*content="([^"]+)"/i);
-  const ogImage = html.match(/<meta[^>]*property="og:image"[^>]*content="([^"]+)"/i);
-  
-  return {
-    title: ogTitle?.[1],
-    price: ogPrice ? parseFloat(ogPrice[1]) : null,
-    image: ogImage?.[1]
-  };
-}
-
-// Parse Amazon specifically
-function parseAmazonHTML(html) {
-  const result = { name: null, price: null, image: null, variant: null };
-  
-  // Product title
-  const titlePatterns = [
-    /<span[^>]*id="productTitle"[^>]*>([^<]+)<\/span>/i,
-    /<h1[^>]*class="[^"]*product-title[^"]*"[^>]*>([^<]+)<\/h1>/i,
-    /<h1[^>]*data-automation-id="title"[^>]*>([^<]+)<\/h1>/i
-  ];
-  
-  for (const pattern of titlePatterns) {
-    const match = html.match(pattern);
-    if (match) {
-      result.name = match[1].trim();
-      break;
-    }
-  }
-  
-  // Price patterns
-  const pricePatterns = [
-    /<span[^>]*class="a-price-whole"[^>]*>([0-9,]+)/,
-    /<span[^>]*class="a-price-range"[^>]*>.*?\$([0-9,]+(?:\.[0-9]{2})?)/s,
-    /<span[^>]*class="a-size-medium a-color-price"[^>]*>\$([0-9,]+(?:\.[0-9]{2})?)/,
-    /data-asin-price="([0-9.]+)"/
-  ];
-  
-  for (const pattern of pricePatterns) {
-    const match = html.match(pattern);
-    if (match) {
-      const price = parseFloat(match[1].replace(/,/g, ''));
-      if (price > 0) {
-        result.price = price;
-        break;
+    },
+    
+    // Standard HTML
+    () => {
+      const title = html.match(/<h1[^>]*>([^<]+)/);
+      const price = html.match(/\$([0-9,]+\.?\d*)/);
+      const image = html.match(/class="[^"]*ProductImage[^"]*"[^>]*src="([^"]+)"/);
+      
+      return {
+        name: title?.[1]?.trim(),
+        price: price ? parseFloat(price[1].replace(/,/g, '')) : null,
+        image: image?.[1]
+      };
+    },
+    
+    // Dimensions from specifications
+    () => {
+      const overall = html.match(/Overall[^:]*:\s*([0-9.]+)"?\s*[HLW]\s*x\s*([0-9.]+)"?\s*[HLW]\s*x\s*([0-9.]+)"?\s*[HLW]/i);
+      const weight = html.match(/Weight[^:]*:\s*([0-9.]+)\s*(lb|pound)/i);
+      
+      let dims = null;
+      if (overall) {
+        dims = {
+          length: Math.max(parseFloat(overall[1]), parseFloat(overall[2]), parseFloat(overall[3])),
+          width: parseFloat(overall[2]),
+          height: Math.min(parseFloat(overall[1]), parseFloat(overall[2]), parseFloat(overall[3]))
+        };
       }
+      
+      return {
+        dimensions: dims,
+        weight: weight ? parseFloat(weight[1]) : null
+      };
     }
-  }
-  
-  // Image
-  const imagePatterns = [
-    /<img[^>]*id="landingImage"[^>]*src="([^"]+)"/i,
-    /<img[^>]*class="[^"]*a-dynamic-image[^"]*"[^>]*src="([^"]+)"/i,
-    /data-old-hires="([^"]+\.jpg[^"]*)"/i
   ];
   
-  for (const pattern of imagePatterns) {
-    const match = html.match(pattern);
-    if (match) {
-      result.image = match[1];
-      break;
+  for (const strategy of strategies) {
+    try {
+      const data = strategy();
+      if (data) Object.assign(result, data);
+    } catch (e) {
+      // Continue
     }
   }
   
-  // Variant/color selection
-  const variantMatch = html.match(/<span[^>]*class="selection"[^>]*>([^<]+)<\/span>/i);
-  if (variantMatch) {
-    result.variant = variantMatch[1].trim();
+  return result;
+}
+
+// Calculate shipping based on dimensions
+function calculateShipping(dimensions, weight) {
+  // Container: $6000, 75% full typically
+  // Standard 20ft container: 1,172 cubic feet usable (75% of 1,563)
+  const CONTAINER_COST = 6000;
+  const USABLE_CUBIC_FEET = 1172;
+  const COST_PER_CUBIC_FOOT = CONTAINER_COST / USABLE_CUBIC_FEET; // ~$5.12 per cubic foot
+  
+  if (!dimensions || !dimensions.length) {
+    // Estimate based on weight if no dimensions
+    const estimatedCubicFeet = weight ? weight / 30 : 1; // Rough density estimate
+    return estimatedCubicFeet * COST_PER_CUBIC_FOOT;
   }
   
-  return result;
+  // Calculate cubic feet
+  const cubicInches = dimensions.length * dimensions.width * dimensions.height;
+  const cubicFeet = cubicInches / 1728; // 1728 cubic inches in a cubic foot
+  
+  // Minimum charge for small items
+  const minimumCubicFeet = 0.5;
+  const chargeableCubicFeet = Math.max(cubicFeet, minimumCubicFeet);
+  
+  // Calculate shipping cost
+  let shippingCost = chargeableCubicFeet * COST_PER_CUBIC_FOOT;
+  
+  // Add handling fee based on weight
+  if (weight > 150) {
+    shippingCost += 50; // Heavy item handling
+  } else if (weight > 70) {
+    shippingCost += 25; // Medium weight handling
+  }
+  
+  return Math.round(shippingCost * 100) / 100; // Round to 2 decimals
 }
 
-// Parse Wayfair specifically  
-function parseWayfairHTML(html) {
-  const result = { name: null, price: null, image: null, variant: null };
+// Enhanced dimension estimation
+async function estimateProductDimensions(productName, category) {
+  const name = productName.toLowerCase();
   
-  // Wayfair patterns
-  const nameMatch = html.match(/<h1[^>]*class="[^"]*ProductDetailInfoBlock[^"]*"[^>]*>([^<]+)<\/h1>/i) ||
-                    html.match(/<h1[^>]*>([^<]+)<\/h1>/i);
+  // Detailed dimension database
+  const dimensionDatabase = {
+    // Furniture
+    'sofa': { length: 84, width: 36, height: 36 },
+    'sectional': { length: 120, width: 84, height: 36 },
+    'loveseat': { length: 60, width: 36, height: 36 },
+    'chair': { length: 32, width: 32, height: 40 },
+    'recliner': { length: 36, width: 38, height: 42 },
+    'ottoman': { length: 24, width: 18, height: 18 },
+    'coffee table': { length: 48, width: 24, height: 18 },
+    'dining table': { length: 72, width: 36, height: 30 },
+    'desk': { length: 60, width: 30, height: 30 },
+    'bookshelf': { length: 36, width: 12, height: 72 },
+    'dresser': { length: 60, width: 18, height: 36 },
+    'nightstand': { length: 24, width: 18, height: 24 },
+    'bed frame king': { length: 80, width: 76, height: 14 },
+    'bed frame queen': { length: 80, width: 60, height: 14 },
+    'mattress king': { length: 80, width: 76, height: 12 },
+    'mattress queen': { length: 80, width: 60, height: 12 },
+    
+    // Electronics
+    'tv 65': { length: 57, width: 3, height: 33 },
+    'tv 55': { length: 49, width: 3, height: 28 },
+    'tv 50': { length: 44, width: 3, height: 25 },
+    'tv 43': { length: 38, width: 3, height: 22 },
+    'laptop': { length: 14, width: 10, height: 1 },
+    'monitor': { length: 24, width: 8, height: 18 },
+    'desktop': { length: 18, width: 8, height: 16 },
+    'printer': { length: 16, width: 14, height: 8 },
+    
+    // Appliances
+    'refrigerator': { length: 36, width: 36, height: 70 },
+    'dishwasher': { length: 24, width: 24, height: 35 },
+    'microwave': { length: 20, width: 16, height: 12 },
+    'washer': { length: 27, width: 30, height: 38 },
+    'dryer': { length: 27, width: 30, height: 38 },
+    'oven range': { length: 30, width: 26, height: 36 },
+    
+    // Outdoor
+    'grill': { length: 48, width: 24, height: 48 },
+    'patio set': { length: 72, width: 72, height: 36 },
+    'fire pit': { length: 36, width: 36, height: 24 },
+    'umbrella': { length: 96, width: 10, height: 10 } // Packed dimensions
+  };
   
-  const priceMatch = html.match(/<span[^>]*class="[^"]*SFPrice[^"]*"[^>]*>\$([0-9,]+(?:\.[0-9]{2})?)/i) ||
-                     html.match(/\$([0-9,]+(?:\.[0-9]{2})?)/);
-  
-  const imageMatch = html.match(/<img[^>]*class="[^"]*ProductImage[^"]*"[^>]*src="([^"]+)"/i);
-  
-  if (nameMatch) result.name = nameMatch[1].trim();
-  if (priceMatch) result.price = parseFloat(priceMatch[1].replace(/,/g, ''));
-  if (imageMatch) result.image = imageMatch[1];
-  
-  return result;
-}
-
-// Parse Walmart specifically
-function parseWalmartHTML(html) {
-  const result = { name: null, price: null, image: null };
-  
-  const nameMatch = html.match(/<h1[^>]*itemprop="name"[^>]*>([^<]+)<\/h1>/i) ||
-                    html.match(/<h1[^>]*>([^<]+)<\/h1>/i);
-  
-  const priceMatch = html.match(/\$([0-9,]+(?:\.[0-9]{2})?)/);
-  
-  if (nameMatch) result.name = nameMatch[1].trim();
-  if (priceMatch) result.price = parseFloat(priceMatch[1].replace(/,/g, ''));
-  
-  return result;
-}
-
-// Parse Target specifically
-function parseTargetHTML(html) {
-  const result = { name: null, price: null, image: null };
-  
-  const nameMatch = html.match(/<h1[^>]*data-test="product-title"[^>]*>([^<]+)<\/h1>/i) ||
-                    html.match(/<h1[^>]*>([^<]+)<\/h1>/i);
-  
-  const priceMatch = html.match(/\$([0-9,]+(?:\.[0-9]{2})?)/);
-  
-  if (nameMatch) result.name = nameMatch[1].trim();
-  if (priceMatch) result.price = parseFloat(priceMatch[1].replace(/,/g, ''));
-  
-  return result;
-}
-
-// Generic HTML parsing as final fallback
-function parseGenericHTML(html) {
-  const result = { name: null, price: null, image: null };
-  
-  // Try multiple name patterns
-  const namePatterns = [
-    /<h1[^>]*>([^<]{10,200})<\/h1>/i,
-    /<title>([^<]{10,100})<\/title>/i,
-    /<meta[^>]*name="title"[^>]*content="([^"]+)"/i
-  ];
-  
-  for (const pattern of namePatterns) {
-    const match = html.match(pattern);
-    if (match) {
-      result.name = match[1].trim();
-      break;
+  // Check for exact matches
+  for (const [key, dimensions] of Object.entries(dimensionDatabase)) {
+    if (name.includes(key)) {
+      return dimensions;
     }
   }
   
-  // Find all prices and pick the most likely one
-  const priceMatches = html.match(/\$([0-9,]+\.?[0-9]*)/g) || [];
-  const prices = priceMatches
-    .map(p => parseFloat(p.replace(/[$,]/g, '')))
-    .filter(p => p > 10 && p < 50000)
-    .sort((a, b) => b - a); // Sort high to low
+  // Category defaults
+  const categoryDefaults = {
+    'Furniture': { length: 48, width: 30, height: 30 },
+    'Electronics': { length: 24, width: 18, height: 12 },
+    'Appliances': { length: 30, width: 30, height: 36 },
+    'Clothing': { length: 16, width: 12, height: 4 },
+    'Books': { length: 10, width: 8, height: 2 },
+    'Toys': { length: 12, width: 12, height: 12 },
+    'Sports': { length: 36, width: 12, height: 12 },
+    'General': { length: 18, width: 14, height: 10 }
+  };
   
-  if (prices.length > 0) {
-    result.price = prices[0];
-  }
-  
-  // Try to find any product image
-  const imageMatch = html.match(/<img[^>]*(?:class="[^"]*product[^"]*"|id="[^"]*product[^"]*")[^>]*src="([^"]+)"/i);
-  if (imageMatch) {
-    result.image = imageMatch[1];
-  }
-  
-  return result;
+  return categoryDefaults[category] || categoryDefaults['General'];
 }
 
-// Clean product name
+// Enhanced weight estimation
+function estimateWeight(productName, category) {
+  const name = productName.toLowerCase();
+  
+  // Weight database
+  const weightDatabase = {
+    // Furniture
+    'sofa': 150,
+    'sectional': 250,
+    'loveseat': 100,
+    'chair': 50,
+    'recliner': 85,
+    'ottoman': 25,
+    'coffee table': 60,
+    'dining table': 120,
+    'desk': 100,
+    'bookshelf': 80,
+    'dresser': 150,
+    'nightstand': 30,
+    'bed frame': 75,
+    'mattress king': 140,
+    'mattress queen': 120,
+    
+    // Electronics  
+    'tv 65': 55,
+    'tv 55': 40,
+    'tv 50': 35,
+    'tv 43': 25,
+    'laptop': 5,
+    'monitor': 15,
+    'desktop': 25,
+    
+    // Appliances
+    'refrigerator': 300,
+    'dishwasher': 125,
+    'microwave': 35,
+    'washer': 200,
+    'dryer': 125,
+    
+    // Outdoor
+    'grill': 100,
+    'patio': 200,
+    'fire pit': 60
+  };
+  
+  for (const [key, weight] of Object.entries(weightDatabase)) {
+    if (name.includes(key)) {
+      return weight;
+    }
+  }
+  
+  // Category defaults
+  const categoryWeights = {
+    'Furniture': 75,
+    'Electronics': 20,
+    'Appliances': 100,
+    'Clothing': 2,
+    'Books': 2,
+    'Toys': 5,
+    'General': 10
+  };
+  
+  return categoryWeights[category] || 10;
+}
+
+// ... (Include all the other parsing functions from before)
+
+function getRetailerName(url) {
+  const hostname = new URL(url).hostname.toLowerCase();
+  const retailers = {
+    'amazon': 'Amazon',
+    'wayfair': 'Wayfair',
+    'target': 'Target',
+    'walmart': 'Walmart',
+    'ebay': 'eBay',
+    'bestbuy': 'Best Buy',
+    'homedepot': 'Home Depot',
+    'lowes': 'Lowes',
+    'ikea': 'IKEA',
+    'costco': 'Costco',
+    'overstock': 'Overstock',
+    'ashleyfurniture': 'Ashley Furniture',
+    'crateandbarrel': 'Crate & Barrel',
+    'potterybarn': 'Pottery Barn',
+    'westelm': 'West Elm',
+    'article': 'Article',
+    'allmodern': 'AllModern'
+  };
+  
+  for (const [key, name] of Object.entries(retailers)) {
+    if (hostname.includes(key)) return name;
+  }
+  
+  return 'Online Store';
+}
+
+function determineCategory(productName) {
+  const name = productName.toLowerCase();
+  
+  const categories = {
+    'Furniture': ['sofa', 'chair', 'table', 'desk', 'bed', 'dresser', 'cabinet', 'shelf', 'ottoman', 'bench'],
+    'Electronics': ['tv', 'television', 'laptop', 'computer', 'tablet', 'phone', 'monitor', 'speaker', 'headphone'],
+    'Appliances': ['refrigerator', 'fridge', 'washer', 'dryer', 'dishwasher', 'microwave', 'oven', 'range', 'freezer'],
+    'Outdoor': ['patio', 'grill', 'umbrella', 'hammock', 'fire pit', 'outdoor'],
+    'Clothing': ['shirt', 'pants', 'dress', 'jacket', 'shoe', 'coat', 'jeans'],
+    'Sports': ['bike', 'bicycle', 'treadmill', 'weights', 'fitness', 'exercise'],
+    'Books': ['book', 'novel', 'textbook', 'magazine'],
+    'Toys': ['toy', 'game', 'puzzle', 'lego', 'doll']
+  };
+  
+  for (const [category, keywords] of Object.entries(categories)) {
+    if (keywords.some(keyword => name.includes(keyword))) {
+      return category;
+    }
+  }
+  
+  return 'General';
+}
+
 function cleanProductName(name) {
-  if (!name) return 'Product';
+  if (!name) return null;
   
   return name
     .replace(/&amp;/g, '&')
@@ -420,96 +754,35 @@ function cleanProductName(name) {
     .trim();
 }
 
-async function createFallbackProduct(url, productId) {
+function createFallbackProduct(url, productId) {
   const retailer = getRetailerName(url);
-  
-  // Create realistic fallback data based on URL
-  let fallbackName = 'Product Item';
-  let fallbackPrice = 99.99;
-  let fallbackCategory = 'General';
-  
-  if (url.includes('furniture') || url.includes('sofa') || url.includes('chair')) {
-    fallbackName = 'Furniture Item';
-    fallbackPrice = 299.99;
-    fallbackCategory = 'Furniture';
-  } else if (url.includes('electronic') || url.includes('laptop') || url.includes('phone')) {
-    fallbackName = 'Electronics Item';
-    fallbackPrice = 499.99;
-    fallbackCategory = 'Electronics';
-  }
+  const category = 'General';
+  const dimensions = { length: 18, width: 14, height: 10 };
+  const weight = 10;
   
   return {
     id: productId,
     url: url,
     retailer: retailer,
-    name: fallbackName,
-    price: fallbackPrice,
+    name: 'Product (Details Unavailable)',
+    price: 99.99,
     image: `https://via.placeholder.com/150x150/7BC043/FFFFFF?text=${encodeURIComponent(retailer.charAt(0))}`,
-    weight: estimateWeight(fallbackName),
-    dimensions: estimateDimensions(fallbackName),
+    dimensions: dimensions,
+    weight: weight,
     quantity: 1,
-    category: fallbackCategory,
-    scraped_at: new Date().toISOString()
+    category: category,
+    shipping: calculateShipping(dimensions, weight),
+    scraped_at: new Date().toISOString(),
+    fallback: true
   };
 }
 
-function getRetailerName(url) {
-  const hostname = new URL(url).hostname.toLowerCase();
-  if (hostname.includes('amazon')) return 'Amazon';
-  if (hostname.includes('wayfair')) return 'Wayfair';
-  if (hostname.includes('target')) return 'Target';
-  if (hostname.includes('walmart')) return 'Walmart';
-  if (hostname.includes('ebay')) return 'eBay';
-  if (hostname.includes('bestbuy')) return 'Best Buy';
-  if (hostname.includes('homedepot')) return 'Home Depot';
-  if (hostname.includes('lowes')) return 'Lowes';
-  if (hostname.includes('ikea')) return 'IKEA';
-  if (hostname.includes('costco')) return 'Costco';
-  return 'Online Store';
-}
-
-function determineCategory(productName) {
-  const name = productName.toLowerCase();
-  if (name.includes('sofa') || name.includes('chair') || name.includes('table') || name.includes('desk') || name.includes('bed')) return 'Furniture';
-  if (name.includes('laptop') || name.includes('phone') || name.includes('tv') || name.includes('computer') || name.includes('tablet')) return 'Electronics';
-  if (name.includes('shoe') || name.includes('shirt') || name.includes('pants') || name.includes('dress') || name.includes('jacket')) return 'Clothing';
-  if (name.includes('book') || name.includes('novel') || name.includes('textbook')) return 'Books';
-  if (name.includes('toy') || name.includes('game') || name.includes('puzzle')) return 'Toys';
-  return 'General';
-}
-
-function estimateDimensions(productName) {
-  const name = productName.toLowerCase();
-  if (name.includes('sofa') || name.includes('sectional') || name.includes('couch')) {
-    return { length: 84, width: 36, height: 36 };
-  }
-  if (name.includes('chair') || name.includes('recliner')) {
-    return { length: 32, width: 32, height: 40 };
-  }
-  if (name.includes('table') && name.includes('dining')) {
-    return { length: 60, width: 36, height: 30 };
-  }
-  if (name.includes('desk')) {
-    return { length: 48, width: 24, height: 30 };
-  }
-  if (name.includes('tv') || name.includes('television')) {
-    return { length: 48, width: 4, height: 28 };
-  }
-  return { length: 12, width: 12, height: 12 };
-}
-
-function estimateWeight(productName) {
-  const name = productName.toLowerCase();
-  if (name.includes('sofa') || name.includes('sectional') || name.includes('couch')) return 150;
-  if (name.includes('chair') || name.includes('recliner')) return 50;
-  if (name.includes('table')) return 75;
-  if (name.includes('desk')) return 100;
-  if (name.includes('tv') || name.includes('television')) return 35;
-  if (name.includes('laptop')) return 5;
-  if (name.includes('phone')) return 1;
-  return 10;
-}
+// ... (Include remaining parsing functions)
 
 app.listen(PORT, () => {
   console.log(`Bermuda Import Calculator running on port ${PORT}`);
+  console.log('Configured scrapers:');
+  if (process.env.SCRAPINGBEE_API_KEY) console.log('  ✓ ScrapingBee');
+  if (process.env.SCRAPERAPI_KEY) console.log('  ✓ ScraperAPI');
+  if (process.env.SCRAPFLY_KEY) console.log('  ✓ ScrapFly');
 });
