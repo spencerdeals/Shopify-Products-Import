@@ -1,5 +1,4 @@
 const express = require('express');
-const puppeteer = require('puppeteer');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const axios = require('axios');
@@ -13,21 +12,34 @@ const PORT = process.env.PORT || 3000;
 const SHOPIFY_DOMAIN = process.env.SHOPIFY_DOMAIN;
 const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN;
 const SCRAPINGBEE_API_KEY = process.env.SCRAPINGBEE_API_KEY;
-const SCRAPING_TIMEOUT = 30000;
-const MAX_CONCURRENT_SCRAPES = 3;
+const SCRAPING_TIMEOUT = 25000;
+const MAX_CONCURRENT_SCRAPES = 2;
 const BERMUDA_DUTY_RATE = 0.265;
 const USE_SCRAPINGBEE = !!SCRAPINGBEE_API_KEY;
 
 // Middleware
 app.use(cors());
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '5mb' }));
 app.use(express.static('public'));
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100
+  max: 50
 });
 app.use('/api/', limiter);
+
+// Conditionally load Puppeteer only if needed
+let puppeteer = null;
+const USE_PUPPETEER = process.env.USE_PUPPETEER === 'true';
+
+if (USE_PUPPETEER) {
+  try {
+    puppeteer = require('puppeteer');
+    console.log('Puppeteer loaded successfully');
+  } catch (error) {
+    console.warn('Puppeteer not available:', error.message);
+  }
+}
 
 // Utilities
 function generateProductId() {
@@ -52,7 +64,6 @@ function detectRetailer(url) {
 function categorizeProduct(name, url) {
   const text = (name + ' ' + url).toLowerCase();
   
-  // Enhanced categorization with more specific keywords
   if (/\b(sofa|sectional|loveseat|couch|chair|recliner|ottoman|table|desk|dresser|nightstand|bookshelf|cabinet|wardrobe|armoire|bed|frame|headboard|mattress|dining|kitchen|office)\b/.test(text)) return 'furniture';
   
   if (/\b(tv|television|monitor|laptop|computer|tablet|phone|smartphone|camera|speaker|headphone|earbuds|router|gaming|console|xbox|playstation|nintendo)\b/.test(text)) return 'electronics';
@@ -69,7 +80,6 @@ function categorizeProduct(name, url) {
   
   if (/\b(decor|decoration|vase|picture|frame|artwork|painting|candle|lamp|mirror|pillow|curtain|rug|carpet)\b/.test(text)) return 'home-decor';
   
-  // Additional categories for better estimation
   if (/\b(tool|hardware|drill|saw|hammer|screwdriver|wrench|toolbox)\b/.test(text)) return 'tools';
   
   if (/\b(garden|plant|pot|soil|fertilizer|hose|mower|outdoor)\b/.test(text)) return 'garden';
@@ -92,7 +102,6 @@ function estimateWeight(dimensions, category) {
 function estimateDimensions(category, name = '') {
   const text = name.toLowerCase();
   
-  // Try to extract dimensions from product name first
   const dimMatch = text.match(/(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)/);
   if (dimMatch) {
     const dims = {
@@ -101,66 +110,61 @@ function estimateDimensions(category, name = '') {
       height: Math.max(1, parseFloat(dimMatch[3]) * 1.2)
     };
     
-    // Sanity check: dimensions should be reasonable
-    if (dims.length > 120 || dims.width > 120 || dims.height > 120) {
-      console.warn(`Unrealistic dimensions found: ${dims.length}x${dims.width}x${dims.height}, using category defaults`);
-    } else {
+    if (dims.length <= 120 && dims.width <= 120 && dims.height <= 120) {
       return dims;
     }
   }
   
-  // Enhanced category-based estimates with realistic size ranges
   const baseEstimates = {
     'furniture': { 
-      length: Math.random() * 30 + 36, // 36-66 inches
-      width: Math.random() * 20 + 20,  // 20-40 inches  
-      height: Math.random() * 24 + 30  // 30-54 inches
+      length: 36 + Math.random() * 30,
+      width: 20 + Math.random() * 20,  
+      height: 30 + Math.random() * 24
     },
     'electronics': { 
-      length: Math.random() * 15 + 12, // 12-27 inches
-      width: Math.random() * 8 + 8,    // 8-16 inches
-      height: Math.random() * 6 + 4    // 4-10 inches
+      length: 12 + Math.random() * 15,
+      width: 8 + Math.random() * 8,
+      height: 4 + Math.random() * 6
     },
     'appliances': { 
-      length: Math.random() * 12 + 24, // 24-36 inches
-      width: Math.random() * 12 + 24,  // 24-36 inches
-      height: Math.random() * 20 + 30  // 30-50 inches
+      length: 24 + Math.random() * 12,
+      width: 24 + Math.random() * 12,
+      height: 30 + Math.random() * 20
     },
     'clothing': { 
-      length: Math.random() * 6 + 12,  // 12-18 inches
-      width: Math.random() * 6 + 10,   // 10-16 inches
-      height: Math.random() * 2 + 2    // 2-4 inches
+      length: 12 + Math.random() * 6,
+      width: 10 + Math.random() * 6,
+      height: 2 + Math.random() * 2
     },
     'books': { 
-      length: Math.random() * 3 + 8,   // 8-11 inches
-      width: Math.random() * 2 + 5,    // 5-7 inches
-      height: Math.random() * 1 + 1    // 1-2 inches
+      length: 8 + Math.random() * 3,
+      width: 5 + Math.random() * 2,
+      height: 1 + Math.random() * 1
     },
     'toys': { 
-      length: Math.random() * 8 + 8,   // 8-16 inches
-      width: Math.random() * 6 + 6,    // 6-12 inches
-      height: Math.random() * 4 + 4    // 4-8 inches
+      length: 8 + Math.random() * 8,
+      width: 6 + Math.random() * 6,
+      height: 4 + Math.random() * 4
     },
     'sports': { 
-      length: Math.random() * 20 + 18, // 18-38 inches
-      width: Math.random() * 10 + 8,   // 8-18 inches
-      height: Math.random() * 8 + 6    // 6-14 inches
+      length: 18 + Math.random() * 20,
+      width: 8 + Math.random() * 10,
+      height: 6 + Math.random() * 8
     },
     'home-decor': { 
-      length: Math.random() * 8 + 8,   // 8-16 inches
-      width: Math.random() * 8 + 8,    // 8-16 inches
-      height: Math.random() * 8 + 8    // 8-16 inches
+      length: 8 + Math.random() * 8,
+      width: 8 + Math.random() * 8,
+      height: 8 + Math.random() * 8
     },
     'general': { 
-      length: Math.random() * 12 + 15, // 15-27 inches
-      width: Math.random() * 8 + 10,   // 10-18 inches
-      height: Math.random() * 6 + 6    // 6-12 inches
+      length: 15 + Math.random() * 12,
+      width: 10 + Math.random() * 8,
+      height: 6 + Math.random() * 6
     }
   };
   
   const base = baseEstimates[category] || baseEstimates.general;
   
-  // Apply 1.3x buffer for packaging (increased from 1.2x)
   return {
     length: Math.round(base.length * 1.3 * 100) / 100,
     width: Math.round(base.width * 1.3 * 100) / 100,
@@ -168,26 +172,17 @@ function estimateDimensions(category, name = '') {
   };
 }
 
-// Add dimension validation function
 function validateDimensions(dimensions, category, name) {
   const { length, width, height } = dimensions;
   
-  // Check for obviously wrong dimensions
   if (length <= 0 || width <= 0 || height <= 0) {
     console.warn(`Invalid dimensions for ${name}: ${length}x${width}x${height}`);
     return estimateDimensions(category, name);
   }
   
-  // Check for unrealistic dimensions (over 10 feet in any direction)
   if (length > 120 || width > 120 || height > 120) {
     console.warn(`Unrealistic dimensions for ${name}: ${length}x${width}x${height}, using estimates`);
     return estimateDimensions(category, name);
-  }
-  
-  // Check for suspiciously small dimensions for furniture
-  if (category === 'furniture' && (length < 12 || width < 12)) {
-    console.warn(`Suspiciously small furniture dimensions for ${name}: ${length}x${width}x${height}`);
-    // Don't override, but flag for manual review in draft order
   }
   
   return dimensions;
@@ -196,29 +191,22 @@ function validateDimensions(dimensions, category, name) {
 function calculateShippingCost(dimensions, weight, orderTotal = 0) {
   let { length, width, height } = dimensions;
   
-  // Apply realistic shipping box limits - no single box exceeds these dimensions
-  const MAX_SINGLE_BOX = 96; // 96 inches max in any direction
+  const MAX_SINGLE_BOX = 96;
   
-  // Cap individual dimensions to realistic shipping box sizes
   length = Math.min(length, MAX_SINGLE_BOX);
   width = Math.min(width, MAX_SINGLE_BOX); 
   height = Math.min(height, MAX_SINGLE_BOX);
   
-  // Calculate base cubic feet
   let volume = length * width * height;
   let cubicFeet = volume / 1728;
   
-  // Apply multi-box shipping correction for large furniture
-  // Large furniture items ship in multiple smaller boxes, not one giant box
-  if (cubicFeet > 30) { // Over 30 cubic feet suggests large furniture
-    cubicFeet = cubicFeet * 0.6; // 40% reduction for multi-box efficiency
+  if (cubicFeet > 30) {
+    cubicFeet = cubicFeet * 0.6;
     console.log(`Applied multi-box shipping correction: ${cubicFeet.toFixed(2)} cubic feet`);
   }
   
-  // Base freight: $7.50 per cubic foot
   const baseCost = cubicFeet * 7.5;
   
-  // Competitive margin based on order size
   let marginMultiplier;
   if (orderTotal < 400) {
     marginMultiplier = 1.45;
@@ -230,7 +218,6 @@ function calculateShippingCost(dimensions, weight, orderTotal = 0) {
   
   let finalCost = baseCost * marginMultiplier;
   
-  // Sanity check: shipping shouldn't exceed 50% of item value for most items
   if (orderTotal > 0) {
     const maxReasonableShipping = orderTotal * 0.5;
     if (finalCost > maxReasonableShipping) {
@@ -242,33 +229,7 @@ function calculateShippingCost(dimensions, weight, orderTotal = 0) {
   return Math.max(35, Math.round(finalCost * 100) / 100);
 }
 
-// API endpoint to recalculate shipping with order total
-app.post('/api/calculate-shipping', (req, res) => {
-  try {
-    const { products, orderTotal } = req.body;
-    
-    const updatedProducts = products.map(product => ({
-      ...product,
-      shippingCost: calculateShippingCost(product.dimensions, product.weight, orderTotal)
-    }));
-    
-    const totalShippingCost = updatedProducts.reduce((total, product) => {
-      return total + (product.shippingCost * product.quantity);
-    }, 0);
-    
-    res.json({
-      success: true,
-      products: updatedProducts,
-      totalShippingCost: Math.round(totalShippingCost * 100) / 100
-    });
-    
-  } catch (error) {
-    console.error('Shipping calculation error:', error);
-    res.status(500).json({ success: false, error: 'Failed to calculate shipping' });
-  }
-});
-
-// ScrapingBee integration
+// ScrapingBee integration (Primary method)
 async function scrapingBeeRequest(url) {
   if (!SCRAPINGBEE_API_KEY) {
     throw new Error('ScrapingBee API key not configured');
@@ -283,7 +244,6 @@ async function scrapingBeeRequest(url) {
       premium_proxy: 'true',
       country_code: 'us',
       wait: '2000',
-      wait_for: '.product-title, h1, [data-test="product-title"], #productTitle',
       block_ads: 'true',
       block_resources: 'false'
     });
@@ -314,7 +274,7 @@ async function parseScrapingBeeHTML(html, url) {
   for (const pattern of namePatterns) {
     const match = html.match(pattern);
     if (match && match[1]) {
-      result.name = match[1].trim().replace(/&#x27;/g, "'").replace(/&quot;/g, '"');
+      result.name = match[1].trim().replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/<[^>]*>/g, '');
       break;
     }
   }
@@ -371,163 +331,13 @@ async function parseScrapingBeeHTML(html, url) {
   return result;
 }
 
-// Scrapers
-const scrapers = {
-  async scrapeAmazon(page, url) {
-    await page.goto(url, { waitUntil: 'networkidle2' });
-    return await page.evaluate(() => {
-      const result = {};
-      result.name = document.querySelector('#productTitle')?.textContent?.trim() || 'Amazon Product';
-      const priceSelectors = ['.a-price .a-offscreen', '.a-price-whole', '#priceblock_dealprice', '#priceblock_ourprice'];
-      for (const selector of priceSelectors) {
-        const priceEl = document.querySelector(selector);
-        if (priceEl) {
-          const price = priceEl.textContent.replace(/[^0-9.]/g, '');
-          if (price && !isNaN(parseFloat(price))) {
-            result.price = parseFloat(price);
-            break;
-          }
-        }
-      }
-      result.image = document.querySelector('#landingImage')?.src || document.querySelector('.a-dynamic-image')?.src;
-      const details = Array.from(document.querySelectorAll('#feature-bullets ul li span, .a-unordered-list li span')).map(el => el.textContent).join(' ');
-      const dimMatch = details.match(/(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*inches/i);
-      if (dimMatch) {
-        result.dimensions = {
-          length: parseFloat(dimMatch[1]) * 1.2,
-          width: parseFloat(dimMatch[2]) * 1.2,
-          height: parseFloat(dimMatch[3]) * 1.2
-        };
-      }
-      return result;
-    });
-  },
-
-  async scrapeWayfair(page, url) {
-    await page.goto(url, { waitUntil: 'networkidle2' });
-    return await page.evaluate(() => {
-      const result = {};
-      result.name = document.querySelector('[data-enzyme-id="ProductTitle"]')?.textContent?.trim() || document.querySelector('h1')?.textContent?.trim() || 'Wayfair Product';
-      const priceEl = document.querySelector('[data-enzyme-id="PriceDisplay"] .sr-only, [data-enzyme-id="PriceDisplay"]') || document.querySelector('.BasePriceBlock-price');
-      if (priceEl) {
-        const price = priceEl.textContent.replace(/[^0-9.]/g, '');
-        if (price && !isNaN(parseFloat(price))) {
-          result.price = parseFloat(price);
-        }
-      }
-      result.image = document.querySelector('[data-enzyme-id="ProductImageCarousel"] img')?.src || document.querySelector('.ProductImageCarousel img')?.src;
-      const specs = Array.from(document.querySelectorAll('[data-enzyme-id="ProductSpecifications"] dd, .Specifications dd')).map(el => el.textContent);
-      const dimText = specs.find(spec => spec.match(/\d+\.?\d*["′]\s*W\s*x\s*\d+\.?\d*["′]\s*D\s*x\s*\d+\.?\d*["′]\s*H/i));
-      if (dimText) {
-        const dimMatch = dimText.match(/(\d+\.?\d*)["′]\s*W\s*x\s*(\d+\.?\d*)["′]\s*D\s*x\s*(\d+\.?\d*)["′]\s*H/i);
-        if (dimMatch) {
-          result.dimensions = {
-            length: parseFloat(dimMatch[2]) * 1.2,
-            width: parseFloat(dimMatch[1]) * 1.2,
-            height: parseFloat(dimMatch[3]) * 1.2
-          };
-        }
-      }
-      return result;
-    });
-  },
-
-  async scrapeTarget(page, url) {
-    await page.goto(url, { waitUntil: 'networkidle2' });
-    return await page.evaluate(() => {
-      const result = {};
-      result.name = document.querySelector('[data-test="product-title"]')?.textContent?.trim() || 'Target Product';
-      const priceEl = document.querySelector('[data-test="product-price"]') || document.querySelector('.Price-characteristic');
-      if (priceEl) {
-        const price = priceEl.textContent.replace(/[^0-9.]/g, '');
-        if (price && !isNaN(parseFloat(price))) {
-          result.price = parseFloat(price);
-        }
-      }
-      result.image = document.querySelector('[data-test="hero-image-carousel"] img')?.src;
-      return result;
-    });
-  },
-
-  async scrapeBestBuy(page, url) {
-    await page.goto(url, { waitUntil: 'networkidle2' });
-    return await page.evaluate(() => {
-      const result = {};
-      result.name = document.querySelector('.sku-title h1')?.textContent?.trim() || 'Best Buy Product';
-      const priceEl = document.querySelector('.pricing-price__range .sr-only') || document.querySelector('.pricing-price__range');
-      if (priceEl) {
-        const price = priceEl.textContent.replace(/[^0-9.]/g, '');
-        if (price && !isNaN(parseFloat(price))) {
-          result.price = parseFloat(price);
-        }
-      }
-      result.image = document.querySelector('.primary-image')?.src;
-      return result;
-    });
-  },
-
-  async scrapeWalmart(page, url) {
-    await page.goto(url, { waitUntil: 'networkidle2' });
-    return await page.evaluate(() => {
-      const result = {};
-      result.name = document.querySelector('[data-testid="product-title"]')?.textContent?.trim() || 'Walmart Product';
-      const priceEl = document.querySelector('[data-testid="price-current"]') || document.querySelector('.price-current');
-      if (priceEl) {
-        const price = priceEl.textContent.replace(/[^0-9.]/g, '');
-        if (price && !isNaN(parseFloat(price))) {
-          result.price = parseFloat(price);
-        }
-      }
-      result.image = document.querySelector('[data-testid="hero-image"]')?.src;
-      return result;
-    });
-  },
-
-  async scrapeGeneric(page, url) {
-    await page.goto(url, { waitUntil: 'networkidle2' });
-    return await page.evaluate(() => {
-      const result = {};
-      const nameSelectors = ['h1', '.product-title', '.product-name', '[class*="title"]'];
-      for (const selector of nameSelectors) {
-        const el = document.querySelector(selector);
-        if (el && el.textContent.trim()) {
-          result.name = el.textContent.trim();
-          break;
-        }
-      }
-      result.name = result.name || 'Product';
-      const priceSelectors = ['[class*="price"]:not([class*="old"])', '[class*="cost"]', '[data-price]', '.money'];
-      for (const selector of priceSelectors) {
-        const els = document.querySelectorAll(selector);
-        for (const el of els) {
-          const text = el.textContent || el.getAttribute('data-price') || '';
-          const price = text.replace(/[^0-9.]/g, '');
-          if (price && !isNaN(parseFloat(price)) && parseFloat(price) > 0) {
-            result.price = parseFloat(price);
-            break;
-          }
-        }
-        if (result.price) break;
-      }
-      const imgSelectors = ['.product-image img', '.main-image img', '[class*="hero"] img'];
-      for (const selector of imgSelectors) {
-        const img = document.querySelector(selector);
-        if (img && img.src) {
-          result.image = img.src;
-          break;
-        }
-      }
-      return result;
-    });
-  }
-};
-
-async function scrapeProduct(url, browser) {
+async function scrapeProduct(url) {
   const retailer = detectRetailer(url);
   
+  // Try ScrapingBee first
   if (USE_SCRAPINGBEE) {
     try {
-      console.log(`Trying ScrapingBee for ${retailer}: ${url}`);
+      console.log(`Using ScrapingBee for ${retailer}: ${url}`);
       const html = await scrapingBeeRequest(url);
       const productData = await parseScrapingBeeHTML(html, url);
       
@@ -558,87 +368,45 @@ async function scrapeProduct(url, browser) {
         };
       }
     } catch (error) {
-      console.log(`ScrapingBee failed for ${url}, falling back to Puppeteer:`, error.message);
+      console.log(`ScrapingBee failed for ${url}:`, error.message);
     }
   }
 
-  const page = await browser.newPage();
-  try {
-    console.log(`Using Puppeteer for ${retailer}: ${url}`);
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
-    await page.setViewport({ width: 1366, height: 768 });
-    await page.setRequestInterception(true);
-    page.on('request', (req) => {
-      if (req.resourceType() === 'stylesheet' || req.resourceType() === 'font' || req.resourceType() === 'media') {
-        req.abort();
-      } else {
-        req.continue();
-      }
-    });
+  // If ScrapingBee fails, return fallback data
+  console.log(`Creating fallback data for ${retailer}: ${url}`);
+  const category = categorizeProduct('', url);
+  const dimensions = estimateDimensions(category);
+  const weight = estimateWeight(dimensions, category);
+  const shippingCost = calculateShippingCost(dimensions, weight, 0);
 
-    let productData;
-    switch (retailer) {
-      case 'Amazon': productData = await scrapers.scrapeAmazon(page, url); break;
-      case 'Wayfair': productData = await scrapers.scrapeWayfair(page, url); break;
-      case 'Target': productData = await scrapers.scrapeTarget(page, url); break;
-      case 'Best Buy': productData = await scrapers.scrapeBestBuy(page, url); break;
-      case 'Walmart': productData = await scrapers.scrapeWalmart(page, url); break;
-      default: productData = await scrapers.scrapeGeneric(page, url); break;
-    }
-
-    const category = categorizeProduct(productData.name || '', url);
-    const rawDimensions = productData.dimensions || estimateDimensions(category, productData.name);
-    const dimensions = validateDimensions(rawDimensions, category, productData.name);
-    const weight = estimateWeight(dimensions, category);
-    const shippingCost = calculateShippingCost(dimensions, weight, 0);
-
-    return {
-      id: generateProductId(),
-      name: productData.name || 'Unknown Product',
-      price: productData.price || null,
-      image: productData.image && productData.image.includes('http') ? productData.image : 'https://placehold.co/120x120/7CB342/FFFFFF/png?text=SDL',
-      retailer: retailer,
-      category: category,
-      dimensions: dimensions,
-      weight: weight,
-      shippingCost: shippingCost,
-      url: url,
-      needsManualPrice: !productData.price,
-      priceMessage: !productData.price ? 'Price could not be detected automatically' : null,
-      quantity: 1,
-      scraped: true,
-      method: 'Puppeteer',
-      estimateWarning: !productData.dimensions ? 'ESTIMATED DIMENSIONS - Manual verification recommended' : null
-    };
-  } catch (error) {
-    console.error(`Both ScrapingBee and Puppeteer failed for ${url}:`, error.message);
-    const retailer = detectRetailer(url);
-    return {
-      id: generateProductId(),
-      name: `${retailer} Product`,
-      price: null,
-      image: 'https://placehold.co/120x120/7CB342/FFFFFF/png?text=SDL',
-      retailer: retailer,
-      category: 'general',
-      dimensions: estimateDimensions('general'),
-      weight: 5,
-      shippingCost: 35,
-      url: url,
-      needsManualPrice: true,
-      priceMessage: 'Scraping failed - please enter price manually',
-      quantity: 1,
-      scraped: false,
-      error: error.message,
-      method: 'Failed'
-    };
-  } finally {
-    await page.close();
-  }
+  return {
+    id: generateProductId(),
+    name: `${retailer} Product`,
+    price: null,
+    image: 'https://placehold.co/120x120/7CB342/FFFFFF/png?text=SDL',
+    retailer: retailer,
+    category: category,
+    dimensions: dimensions,
+    weight: weight,
+    shippingCost: shippingCost,
+    url: url,
+    needsManualPrice: true,
+    priceMessage: 'Price could not be detected automatically - please enter manually',
+    quantity: 1,
+    scraped: false,
+    method: 'Fallback',
+    estimateWarning: 'ESTIMATED DIMENSIONS - Manual verification recommended'
+  };
 }
 
 // Routes
 app.get('/health', (req, res) => {
-  res.json({ status: 'OK', timestamp: new Date().toISOString() });
+  res.json({ 
+    status: 'OK', 
+    timestamp: new Date().toISOString(),
+    scrapingBee: USE_SCRAPINGBEE,
+    puppeteer: USE_PUPPETEER && !!puppeteer
+  });
 });
 
 app.post('/api/scrape', async (req, res) => {
@@ -660,56 +428,51 @@ app.post('/api/scrape', async (req, res) => {
     }
 
     console.log(`Starting to scrape ${validUrls.length} products...`);
-    console.log(`Using ${USE_SCRAPINGBEE ? 'ScrapingBee + Puppeteer fallback' : 'Puppeteer only'}`);
+    console.log(`Using ${USE_SCRAPINGBEE ? 'ScrapingBee' : 'Fallback mode only'}`);
     
-    const browser = await puppeteer.launch({
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+    const products = [];
+    for (let i = 0; i < validUrls.length; i += MAX_CONCURRENT_SCRAPES) {
+      const batch = validUrls.slice(i, i + MAX_CONCURRENT_SCRAPES);
+      const batchPromises = batch.map(url => 
+        Promise.race([
+          scrapeProduct(url),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), SCRAPING_TIMEOUT))
+        ]).catch(error => {
+          console.error(`Failed to scrape ${url}:`, error.message);
+          return null;
+        })
+      );
+      const batchResults = await Promise.allSettled(batchPromises);
+      batchResults.forEach(result => {
+        if (result.status === 'fulfilled' && result.value) {
+          products.push(result.value);
+        }
+      });
+    }
+
+    const groupedProducts = {};
+    products.forEach(product => {
+      if (!groupedProducts[product.retailer]) {
+        groupedProducts[product.retailer] = { retailer: product.retailer, products: [] };
+      }
+      groupedProducts[product.retailer].products.push(product);
     });
 
-    try {
-      const products = [];
-      for (let i = 0; i < validUrls.length; i += MAX_CONCURRENT_SCRAPES) {
-        const batch = validUrls.slice(i, i + MAX_CONCURRENT_SCRAPES);
-        const batchPromises = batch.map(url => 
-          Promise.race([
-            scrapeProduct(url, browser),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), SCRAPING_TIMEOUT))
-          ])
-        );
-        const batchResults = await Promise.allSettled(batchPromises);
-        batchResults.forEach(result => {
-          if (result.status === 'fulfilled') {
-            products.push(result.value);
-          }
-        });
-      }
+    const stats = {
+      count: products.length,
+      scraped: products.filter(p => p.scraped).length,
+      pricesFound: products.filter(p => p.price).length,
+      retailers: Object.keys(groupedProducts)
+    };
 
-      const groupedProducts = {};
-      products.forEach(product => {
-        if (!groupedProducts[product.retailer]) {
-          groupedProducts[product.retailer] = { retailer: product.retailer, products: [] };
-        }
-        groupedProducts[product.retailer].products.push(product);
-      });
+    console.log(`Scraping completed:`, stats);
+    res.json({
+      success: true,
+      products: products,
+      groupedProducts: groupedProducts,
+      ...stats
+    });
 
-      const stats = {
-        count: products.length,
-        scraped: products.filter(p => p.scraped).length,
-        pricesFound: products.filter(p => p.price).length,
-        retailers: Object.keys(groupedProducts)
-      };
-
-      console.log(`Scraping completed:`, stats);
-      res.json({
-        success: true,
-        products: products,
-        groupedProducts: groupedProducts,
-        ...stats
-      });
-    } finally {
-      await browser.close();
-    }
   } catch (error) {
     console.error('Scraping error:', error);
     res.status(500).json({ success: false, error: error.message || 'Scraping failed' });
@@ -856,7 +619,8 @@ app.listen(PORT, () => {
   console.log(`Bermuda Import Calculator Backend running on port ${PORT}`);
   console.log(`Shopify domain: ${SHOPIFY_DOMAIN}`);
   console.log(`ScrapingBee: ${USE_SCRAPINGBEE ? 'Enabled' : 'Disabled'}`);
-  console.log('Ready to process import quotes with realistic shipping costs!');
+  console.log(`Puppeteer: ${USE_PUPPETEER && !!puppeteer ? 'Enabled' : 'Disabled'}`);
+  console.log('Ready to process import quotes!');
 });
 
 module.exports = app;
