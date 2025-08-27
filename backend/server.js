@@ -22,7 +22,7 @@ const USE_SCRAPINGBEE = !!SCRAPINGBEE_API_KEY;
 // Middleware
 app.use(cors());
 app.use(express.json({ limit: '5mb' }));
-app.use(express.static('public'));
+app.use(express.static('frontend'));
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -409,6 +409,10 @@ app.get('/health', (req, res) => {
     scrapingBee: USE_SCRAPINGBEE,
     puppeteer: USE_PUPPETEER && !!puppeteer
   });
+});
+
+app.get('/', (req, res) => {
+  res.sendFile('index.html', { root: 'frontend' });
 });
 
 app.post('/api/scrape', async (req, res) => {
