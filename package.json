@@ -1,11 +1,6 @@
 {
-  "name": "bermuda-calculator",
-  "version": "1.0.0",
-  "main": "server.js",
+  "name": "app",
   "scripts": {
-    "start": "node server.js"
-  },
-  "engines": {
-    "node": ">=14.0.0"
+    "start": "node backend/server.js"
   }
 }
