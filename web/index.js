@@ -94,7 +94,7 @@ async function scrapeProductFromURL(url, productId) {
       'url': url,
       'render_js': 'true',
       'wait': '3000',
-      'ai_query': 'Find the main product being sold: extract the product name, current price (including sale price if available), main product image URL, product weight, shipping weight, dimensions (length x width x height), and any size/variant information. Look in product details, specifications, shipping info, and technical details sections.'
+      'ai_query': 'Extract: product name, current price, main image URL, weight, dimensions from this product page'
     });
 
     const scrapingBeeUrl = `${SCRAPINGBEE_URL}?${scrapingBeeParams}`;
