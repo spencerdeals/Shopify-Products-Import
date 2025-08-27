@@ -1,0 +1,43 @@
+{
+  "name": "bermuda-import-calculator",
+  "version": "1.0.0",
+  "description": "Shopify app for calculating import costs to Bermuda with real-time product scraping",
+  "main": "web/index.js",
+  "scripts": {
+    "build": "shopify app build",
+    "dev": "shopify app dev",
+    "info": "shopify app info",
+    "scaffold": "shopify app scaffold",
+    "deploy": "shopify app deploy",
+    "start": "node web/index.js",
+    "railway-build": "npm install && npm run build",
+    "railway-start": "npm run start"
+  },
+  "dependencies": {
+    "@shopify/shopify-api": "^7.7.0",
+    "@shopify/shopify-app-express": "^2.1.0",
+    "@shopify/shopify-app-session-storage-sqlite": "^1.1.0",
+    "express": "^4.18.2",
+    "sqlite3": "^5.1.6",
+    "node-fetch": "^3.3.2",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "@shopify/cli": "^3.50.0",
+    "nodemon": "^3.0.1"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "keywords": [
+    "shopify",
+    "app",
+    "bermuda",
+    "import",
+    "calculator",
+    "duty",
+    "shipping"
+  ],
+  "author": "Your Company",
+  "license": "MIT"
+}
