@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bermuda Import Duty Calculator</title>
+    <title>Bermuda Ocean Freight Instant Import</title>
     <style>
         * {
             margin: 0;
@@ -12,127 +12,136 @@
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-            background: linear-gradient(135deg, #7BC043 0%, #29773E 100%);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #7CB342 0%, #4CAF50 50%, #2E7D32 100%);
             min-height: 100vh;
-            padding: 20px;
-        }
-
-        .container {
-            max-width: 900px;
-            margin: 0 auto;
-        }
-
-        .header {
-            text-align: center;
-            color: white;
-            margin-bottom: 30px;
-        }
-
-        .header h1 {
-            font-size: 2.5rem;
-            margin-bottom: 10px;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
-        }
-
-        .header p {
-            font-size: 1.1rem;
-            opacity: 0.95;
-        }
-
-        .main-card {
-            background: white;
-            border-radius: 15px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-        }
-
-        .input-section {
-            padding: 30px;
-            border-bottom: 2px solid #f0f0f0;
-        }
-
-        .url-inputs {
-            margin-bottom: 20px;
-        }
-
-        .url-input-group {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 10px;
-        }
-
-        .url-input {
-            flex: 1;
-            padding: 12px 15px;
-            border: 2px solid #e0e0e0;
-            border-radius: 10px;
-            font-size: 1rem;
-            transition: all 0.3s ease;
-        }
-
-        .url-input:focus {
-            outline: none;
-            border-color: #7BC043;
-            box-shadow: 0 0 0 3px rgba(123, 192, 67, 0.1);
-        }
-
-        .url-input::placeholder {
-            color: #999;
-        }
-
-        .btn {
-            padding: 12px 24px;
-            border: none;
-            border-radius: 10px;
-            font-size: 1rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s ease;
-        }
-
-        .btn-add {
-            background: #f0f0f0;
             color: #333;
         }
 
-        .btn-add:hover {
-            background: #e0e0e0;
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
         }
 
-        .btn-primary {
-            background: linear-gradient(135deg, #7BC043 0%, #29773E 100%);
+        .header {
+            background: white;
+            padding: 30px;
+            border-radius: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            margin-bottom: 20px;
+            text-align: center;
+            border: 3px solid #4CAF50;
+        }
+
+        .header h1 {
+            color: #2c3e50;
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            background: linear-gradient(45deg, #7CB342, #2E7D32);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 15px;
+        }
+
+        .flag {
+            font-size: 3rem;
+            filter: drop-shadow(2px 2px 4px rgba(0,0,0,0.3));
+        }
+
+        .header p {
+            color: #666;
+            font-size: 1.1rem;
+            line-height: 1.4;
+            margin-bottom: 5px;
+        }
+
+        .disclaimer {
+            background: #FFF3CD;
+            border: 1px solid #FFEAA7;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 20px;
+            color: #856404;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        .disclaimer strong {
+            color: #721C24;
+        }
+
+        .page {
+            display: none;
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            margin-bottom: 20px;
+            border: 2px solid #4CAF50;
+        }
+
+        .page.active {
+            display: block;
+        }
+
+        .btn {
+            background: linear-gradient(45deg, #7CB342, #2E7D32);
             color: white;
+            padding: 15px 30px;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin: 10px 5px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(76, 175, 80, 0.3);
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #545b62;
+        }
+
+        .form-control {
             width: 100%;
             padding: 15px;
-            font-size: 1.1rem;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 16px;
+            transition: all 0.3s ease;
+            margin-bottom: 15px;
         }
 
-        .btn-primary:hover:not(:disabled) {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(123, 192, 67, 0.3);
-        }
-
-        .btn-primary:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
+        .form-control:focus {
+            outline: none;
+            border-color: #4CAF50;
+            box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.1);
         }
 
         .loading {
-            display: none;
             text-align: center;
             padding: 40px;
         }
 
-        .loading.active {
-            display: block;
-        }
-
         .spinner {
-            width: 50px;
-            height: 50px;
             border: 4px solid #f3f3f3;
-            border-top: 4px solid #7BC043;
+            border-top: 4px solid #4CAF50;
             border-radius: 50%;
+            width: 40px;
+            height: 40px;
             animation: spin 1s linear infinite;
             margin: 0 auto 20px;
         }
@@ -142,52 +151,62 @@
             100% { transform: rotate(360deg); }
         }
 
-        .products-section {
-            display: none;
+        .success {
+            background: #D4F6DD;
+            color: #2E7D32;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 10px 0;
+            border-left: 4px solid #4CAF50;
         }
 
-        .products-section.active {
-            display: block;
+        .error {
+            background: #FFEBEE;
+            color: #C62828;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 10px 0;
+            border-left: 4px solid #C62828;
         }
 
-        .review-header {
-            padding: 20px 30px;
-            border-bottom: 2px solid #f0f0f0;
+        .retailer-group {
+            background: #F8F9FA;
+            border: 2px solid #DEE2E6;
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 25px;
+        }
+
+        .retailer-header {
+            background: linear-gradient(45deg, #7CB342, #2E7D32);
+            color: white;
+            padding: 15px 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            font-size: 1.2rem;
+            font-weight: bold;
             display: flex;
+            justify-content: space-between;
             align-items: center;
-            gap: 15px;
         }
 
-        .review-header h2 {
-            color: #333;
-            font-size: 1.8rem;
-            font-weight: 600;
-        }
-
-        .package-icon {
-            font-size: 2rem;
-        }
-
-        .product-card {
-            padding: 25px 30px;
-            border-bottom: 1px solid #e5e5e5;
+        .product-item {
+            background: white;
+            border: 2px solid #E9ECEF;
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
             display: flex;
             gap: 20px;
             align-items: flex-start;
-            transition: background 0.2s ease;
-        }
-
-        .product-card:hover {
-            background: #fafafa;
         }
 
         .product-image {
-            width: 100px;
-            height: 100px;
+            width: 120px;
+            height: 120px;
             border-radius: 10px;
             object-fit: cover;
-            border: 2px solid #f0f0f0;
-            flex-shrink: 0;
+            border: 2px solid #DEE2E6;
         }
 
         .product-details {
@@ -195,370 +214,788 @@
         }
 
         .product-name {
-            font-size: 1.2rem;
-            color: #333;
+            font-size: 1.1rem;
             font-weight: 600;
-            margin-bottom: 5px;
+            color: #2c3e50;
+            margin-bottom: 10px;
             line-height: 1.3;
         }
 
-        .product-variant {
-            font-size: 0.95rem;
-            color: #777;
-            margin-bottom: 8px;
-            font-style: italic;
-        }
-
-        .product-price {
-            font-size: 1.4rem;
-            color: #29773E;
-            font-weight: bold;
-            margin-bottom: 5px;
-        }
-
-        .retailer {
-            color: #666;
-            font-size: 0.95rem;
-            margin-bottom: 12px;
-        }
-
         .product-meta {
-            display: flex;
-            gap: 20px;
             color: #666;
-            font-size: 0.95rem;
-            margin-bottom: 12px;
+            font-size: 0.9rem;
+            margin-bottom: 15px;
         }
 
-        .meta-item {
-            display: flex;
-            align-items: center;
-            gap: 5px;
+        .price-input-group {
+            margin: 15px 0;
         }
 
-        .quantity-control {
-            display: flex;
-            align-items: center;
-            gap: 10px;
+        .price-input-group label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 5px;
+            color: #2c3e50;
         }
 
-        .quantity-label {
-            color: #666;
-            font-size: 0.95rem;
-        }
-
-        .quantity-input {
-            width: 60px;
-            padding: 6px 10px;
-            border: 2px solid #e0e0e0;
+        .price-input {
+            width: 150px;
+            padding: 10px;
+            border: 2px solid #4CAF50;
             border-radius: 8px;
-            font-size: 1rem;
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .price-message {
+            background: #FFF3CD;
+            border: 1px solid #FFEAA7;
+            border-radius: 8px;
+            padding: 10px;
+            margin-top: 10px;
+            color: #856404;
+            font-size: 14px;
+        }
+
+        .delivery-fee-group {
+            background: #E8F5E9;
+            border: 2px solid #4CAF50;
+            border-radius: 10px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+
+        .delivery-fee-group h4 {
+            color: #2E7D32;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .delivery-fee-input {
+            width: 120px;
+            padding: 8px;
+            border: 2px solid #4CAF50;
+            border-radius: 6px;
+            font-size: 14px;
+            margin-left: 10px;
+        }
+
+        .freight-info {
+            background: #E8F5E9;
+            border: 1px solid #4CAF50;
+            border-radius: 10px;
+            padding: 15px;
+            margin: 20px 0;
+            color: #2E7D32;
+        }
+
+        .quote-summary {
+            background: linear-gradient(135deg, #7CB342 0%, #2E7D32 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 15px;
+            margin: 30px 0;
+        }
+
+        .quote-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 15px;
+            padding: 10px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.2);
+        }
+
+        .quote-row:last-child {
+            border-bottom: 2px solid white;
+            font-size: 1.2rem;
+            font-weight: bold;
+            margin-top: 20px;
+        }
+
+        .shipping-note {
+            font-size: 0.9rem;
+            color: rgba(255,255,255,0.9);
+            font-style: italic;
+            margin-top: 10px;
+        }
+
+        /* Modal Styles */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.5);
+            animation: fadeIn 0.3s;
+        }
+
+        .modal.show {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .modal-content {
+            background: white;
+            margin: auto;
+            padding: 40px;
+            border-radius: 20px;
+            width: 90%;
+            max-width: 500px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            position: relative;
+            animation: slideUp 0.3s;
+        }
+
+        @keyframes slideUp {
+            from { transform: translateY(50px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+
+        .close {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+            position: absolute;
+            right: 20px;
+            top: 20px;
+        }
+
+        .close:hover,
+        .close:focus {
+            color: #000;
+            text-decoration: none;
+        }
+
+        .auth-form h2 {
+            color: #2E7D32;
+            margin-bottom: 20px;
             text-align: center;
         }
 
-        .quantity-input:focus {
-            outline: none;
-            border-color: #7BC043;
-        }
-
-        .remove-btn {
-            margin-left: auto;
-            padding: 8px 15px;
-            background: #ff4757;
-            color: white;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 0.9rem;
-            transition: background 0.2s ease;
-        }
-
-        .remove-btn:hover {
-            background: #ff3838;
-        }
-
-        .calculation-section {
-            padding: 30px;
-            background: #f8f9fa;
-            border-radius: 0 0 15px 15px;
-        }
-
-        .calculation-section h3 {
-            color: #333;
+        .form-group {
             margin-bottom: 20px;
-            font-size: 1.4rem;
         }
 
-        .calc-row {
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+
+        .auth-toggle {
+            text-align: center;
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #eee;
+        }
+
+        .auth-toggle button {
+            background: none;
+            border: none;
+            color: #4CAF50;
+            text-decoration: underline;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .customer-info {
+            background: #E8F5E9;
+            border: 1px solid #4CAF50;
+            border-radius: 10px;
+            padding: 15px;
+            margin: 20px 0;
             display: flex;
             justify-content: space-between;
-            padding: 10px 0;
-            border-bottom: 1px solid #e0e0e0;
+            align-items: center;
         }
 
-        .calc-row:last-child {
-            border-bottom: none;
-            padding-top: 15px;
-            margin-top: 10px;
-            border-top: 2px solid #29773E;
-            font-size: 1.3rem;
-            font-weight: bold;
-            color: #29773E;
+        .customer-info .customer-details {
+            color: #2E7D32;
         }
 
-        .calc-label {
-            color: #666;
-        }
-
-        .calc-value {
-            color: #333;
-            font-weight: 500;
-        }
-
-        .action-buttons {
-            display: flex;
-            gap: 15px;
-            margin-top: 25px;
-        }
-
-        .btn-back {
-            background: #6c757d;
+        .btn-logout {
+            background: #dc3545;
             color: white;
-            flex: 1;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
         }
 
-        .btn-calculate {
-            background: linear-gradient(135deg, #7BC043 0%, #29773E 100%);
+        .draft-order-success {
+            background: linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%);
             color: white;
-            flex: 2;
+            padding: 30px;
+            border-radius: 15px;
+            margin: 30px 0;
+            text-align: center;
         }
 
-        .error-message {
-            background: #ff4757;
-            color: white;
-            padding: 15px;
-            border-radius: 10px;
-            margin-top: 15px;
-            display: none;
+        .draft-order-success h3 {
+            margin-bottom: 15px;
         }
 
-        .error-message.active {
-            display: block;
+        .draft-order-success p {
+            margin-bottom: 10px;
+        }
+
+        .draft-order-success a {
+            color: #B8E6B8;
+            text-decoration: underline;
         }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>🇧🇲 Bermuda Import Duty Calculator</h1>
-            <p>Calculate total costs including customs duties for your online purchases</p>
+            <h1>
+                <span class="flag">🇧🇲</span>
+                Bermuda Ocean Freight Instant Import
+            </h1>
+            <p><strong>Get instant quotes for importing your items to Bermuda</strong></p>
+            <p>Calculate accurate shipping costs, duties, and total landed costs in seconds</p>
         </div>
 
-        <div class="main-card">
-            <!-- Input Section -->
-            <div class="input-section" id="inputSection">
-                <h3 style="margin-bottom: 20px; color: #333;">Enter Product URLs</h3>
-                <div class="url-inputs" id="urlInputs">
-                    <div class="url-input-group">
-                        <input type="url" class="url-input" placeholder="Paste product URL (e.g., Amazon, Wayfair, etc.)">
-                    </div>
-                </div>
-                <button class="btn btn-add" onclick="addUrlInput()">+ Add Another Product</button>
-                <div style="margin-top: 20px;">
-                    <button class="btn btn-primary" id="fetchBtn" onclick="fetchProducts()">
-                        Get Product Details
-                    </button>
-                </div>
-                <div class="error-message" id="errorMessage"></div>
+        <div class="disclaimer">
+            <strong>Important:</strong> Please ensure all product variants (size, color, etc.) are selected before pasting your links. We are not responsible for incorrect calculations due to incomplete product information provided by customers.
+        </div>
+
+        <!-- Customer Info Display -->
+        <div id="customerInfo" class="customer-info" style="display: none;">
+            <div class="customer-details">
+                <strong id="customerName"></strong> (<span id="customerEmail"></span>)
+            </div>
+            <button class="btn-logout" onclick="logout()">Sign Out</button>
+        </div>
+
+        <!-- Page 1: Add Links -->
+        <div class="page active" id="page1">
+            <h2>🚢 Add Product Links</h2>
+            
+            <div class="freight-info">
+                <h4>🚚 USA Freight Forwarder Address</h4>
+                <p><strong>Sealine Freight Forwarder</strong><br>
+                Elizabeth, NJ 07201-614<br>
+                New Jersey, USA</p>
+                <p><em>Use this address when calculating shipping costs from US retailers to get accurate delivery totals.</em></p>
             </div>
 
-            <!-- Loading Section -->
-            <div class="loading" id="loadingSection">
-                <div class="spinner"></div>
-                <p>Fetching product information...</p>
+            <div class="form-group">
+                <label for="productLinks"><strong>Enter Product URLs (one per line):</strong></label>
+                <textarea id="productLinks" class="form-control" rows="8" placeholder="https://www.amazon.com/product1
+https://www.wayfair.com/product2
+https://www.target.com/product3
+
+Paste your product links here - we support Amazon, Wayfair, Target, Best Buy, Walmart and many more retailers!
+
+Try this test URL:
+https://www.wayfair.com/furniture/pdp/latitude-run-alishea-4-piece-rattan-outdoor-sofa-with-cushions-w003073104.html"></textarea>
             </div>
 
-            <!-- Products Review Section -->
-            <div class="products-section" id="productsSection">
-                <div class="review-header">
-                    <span class="package-icon">📦</span>
-                    <h2>Review Your Items</h2>
-                </div>
-                <div id="productsList"></div>
+            <button class="btn" onclick="startScraping()">
+                🔍 Get Products & Continue
+            </button>
+
+            <div id="scrapeResults"></div>
+        </div>
+
+        <!-- Page 2: Review Items -->
+        <div class="page" id="page2">
+            <h2>📦 Review Your Items</h2>
+            <div id="productsList"></div>
+            <div style="text-align: center; margin-top: 30px;">
+                <button class="btn btn-secondary" onclick="goToPage(1)">← Back</button>
+                <button class="btn" onclick="calculateQuote()">Calculate Quote →</button>
+            </div>
+        </div>
+
+        <!-- Page 3: Final Quote -->
+        <div class="page" id="page3">
+            <h2>💰 Your Bermuda Import Quote</h2>
+            <div id="finalQuote"></div>
+            <div id="draftOrderResult"></div>
+            <div style="text-align: center; margin-top: 30px;">
+                <button class="btn btn-secondary" onclick="goToPage(2)">← Back to Items</button>
+                <button class="btn" onclick="startOver()">🔄 Start New Quote</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Authentication Modal -->
+    <div id="authModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeAuthModal()">&times;</span>
+            
+            <div id="loginForm" class="auth-form">
+                <h2>Sign In to Continue</h2>
+                <p style="text-align: center; color: #666; margin-bottom: 25px;">
+                    Sign in or create an account to get your import quote
+                </p>
                 
-                <!-- Calculation Section -->
-                <div class="calculation-section">
-                    <h3>Import Duty Calculation</h3>
-                    <div id="calculationDetails"></div>
-                    <div class="action-buttons">
-                        <button class="btn btn-back" onclick="goBack()">← Back</button>
-                        <button class="btn btn-calculate" onclick="calculateDuty()">Calculate Total Cost →</button>
-                    </div>
+                <div class="form-group">
+                    <label for="loginEmail">Email Address</label>
+                    <input type="email" id="loginEmail" class="form-control" placeholder="your@email.com" required>
                 </div>
+                
+                <div class="form-group">
+                    <label for="loginFirstName">First Name</label>
+                    <input type="text" id="loginFirstName" class="form-control" placeholder="John">
+                </div>
+                
+                <div class="form-group">
+                    <label for="loginLastName">Last Name</label>
+                    <input type="text" id="loginLastName" class="form-control" placeholder="Smith">
+                </div>
+                
+                <div class="form-group">
+                    <label for="loginPhone">Phone (Optional)</label>
+                    <input type="tel" id="loginPhone" class="form-control" placeholder="+1 (441) 123-4567">
+                </div>
+                
+                <button class="btn" onclick="authenticateCustomer()" style="width: 100%;">
+                    Continue with Account
+                </button>
+                
+                <div id="authError"></div>
             </div>
         </div>
     </div>
 
     <script>
-        let products = [];
+        let currentPage = 1;
+        let scrapedProducts = [];
+        let finalQuoteData = {};
+        let currentCustomer = null;
+        let originalUrls = [];
 
-        function addUrlInput() {
-            const urlInputs = document.getElementById('urlInputs');
-            const inputGroup = document.createElement('div');
-            inputGroup.className = 'url-input-group';
-            inputGroup.innerHTML = `
-                <input type="url" class="url-input" placeholder="Paste product URL (e.g., Amazon, Wayfair, etc.)">
-                <button class="btn btn-add" onclick="this.parentElement.remove()">Remove</button>
-            `;
-            urlInputs.appendChild(inputGroup);
+        // Check if customer is already authenticated
+        window.addEventListener('load', function() {
+            const savedCustomer = localStorage.getItem('currentCustomer');
+            if (savedCustomer) {
+                currentCustomer = JSON.parse(savedCustomer);
+                showCustomerInfo();
+            }
+        });
+
+        function showCustomerInfo() {
+            if (currentCustomer) {
+                document.getElementById('customerName').textContent = 
+                    `${currentCustomer.first_name} ${currentCustomer.last_name}`.trim() || 'Customer';
+                document.getElementById('customerEmail').textContent = currentCustomer.email;
+                document.getElementById('customerInfo').style.display = 'flex';
+            }
         }
 
-        async function fetchProducts() {
-            const inputs = document.querySelectorAll('.url-input');
-            const urls = Array.from(inputs)
-                .map(input => input.value.trim())
-                .filter(url => url.length > 0);
+        function logout() {
+            localStorage.removeItem('currentCustomer');
+            currentCustomer = null;
+            document.getElementById('customerInfo').style.display = 'none';
+            startOver();
+        }
 
-            if (urls.length === 0) {
-                showError('Please enter at least one product URL');
+        function startScraping() {
+            const linksText = document.getElementById('productLinks').value.trim();
+            
+            if (!linksText) {
+                document.getElementById('scrapeResults').innerHTML = 
+                    '<div class="error">Please enter at least one product URL.</div>';
                 return;
             }
 
-            // Show loading
-            document.getElementById('inputSection').style.display = 'none';
-            document.getElementById('loadingSection').classList.add('active');
-            document.getElementById('errorMessage').classList.remove('active');
+            // If customer not authenticated, show modal
+            if (!currentCustomer) {
+                document.getElementById('authModal').classList.add('show');
+                return;
+            }
+
+            // Customer is authenticated, proceed with scraping
+            scrapeProducts();
+        }
+
+        function closeAuthModal() {
+            document.getElementById('authModal').classList.remove('show');
+        }
+
+        async function authenticateCustomer() {
+            const email = document.getElementById('loginEmail').value.trim();
+            const firstName = document.getElementById('loginFirstName').value.trim();
+            const lastName = document.getElementById('loginLastName').value.trim();
+            const phone = document.getElementById('loginPhone').value.trim();
+            const errorDiv = document.getElementById('authError');
+
+            if (!email) {
+                errorDiv.innerHTML = '<div class="error">Email address is required.</div>';
+                return;
+            }
+
+            try {
+                errorDiv.innerHTML = '<div class="loading"><div class="spinner"></div><p>Creating your account...</p></div>';
+
+                const response = await fetch('/api/auth/customer', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        email,
+                        firstName,
+                        lastName,
+                        phone
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    currentCustomer = data.customer;
+                    localStorage.setItem('currentCustomer', JSON.stringify(currentCustomer));
+                    
+                    closeAuthModal();
+                    showCustomerInfo();
+                    
+                    // Clear form
+                    document.getElementById('loginEmail').value = '';
+                    document.getElementById('loginFirstName').value = '';
+                    document.getElementById('loginLastName').value = '';
+                    document.getElementById('loginPhone').value = '';
+                    
+                    // Now proceed with scraping
+                    scrapeProducts();
+                } else {
+                    errorDiv.innerHTML = `<div class="error">Authentication failed: ${data.message}</div>`;
+                }
+
+            } catch (error) {
+                console.error('Authentication error:', error);
+                errorDiv.innerHTML = '<div class="error">Authentication failed. Please try again.</div>';
+            }
+        }
+
+        // Use backend API for scraping
+        async function scrapeProducts() {
+            const linksText = document.getElementById('productLinks').value.trim();
+            const resultsDiv = document.getElementById('scrapeResults');
+            
+            const urls = linksText.split('\n').filter(link => link.trim());
+            originalUrls = urls; // Store for draft order
+            
+            resultsDiv.innerHTML = `
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>🚀 <strong>Scraping ${urls.length} products...</strong></p>
+                    <p style="font-size: 14px; color: #666;">Getting product names, images, and dimensions...</p>
+                </div>
+            `;
 
             try {
                 const response = await fetch('/api/scrape', {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json',
+                        'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({ urls })
                 });
 
+                if (!response.ok) {
+                    throw new Error(`Server error: ${response.status}`);
+                }
+
                 const data = await response.json();
                 
-                if (data.success && data.products) {
-                    products = data.products;
-                    displayProducts();
+                if (data.success) {
+                    scrapedProducts = data.products;
+                    resultsDiv.innerHTML = `
+                        <div class="success">
+                            ✅ Successfully processed ${data.count} products from ${data.retailers.length} retailer(s)!
+                            <p style="margin-top: 10px; font-size: 14px;">
+                                <strong>Found:</strong> ${data.scraped} scraped, ${data.pricesFound} prices detected
+                            </p>
+                            <button class="btn" onclick="goToPage(2)" style="margin-top: 15px;">
+                                Continue to Review Products →
+                            </button>
+                        </div>
+                    `;
+                    displayProducts(data.groupedProducts);
                 } else {
-                    throw new Error(data.error || 'Failed to fetch products');
+                    throw new Error(data.error || 'Unknown error');
                 }
+
             } catch (error) {
-                console.error('Error:', error);
-                showError('Failed to fetch product information. Please try again.');
-                document.getElementById('inputSection').style.display = 'block';
-            } finally {
-                document.getElementById('loadingSection').classList.remove('active');
+                console.error('Scraping error:', error);
+                resultsDiv.innerHTML = `
+                    <div class="error">
+                        ❌ Error during scraping: ${error.message}
+                        <br>Please try again or check your internet connection.
+                    </div>
+                `;
             }
         }
 
-        function displayProducts() {
-            document.getElementById('productsSection').classList.add('active');
+        function displayProducts(groupedProducts) {
             const productsList = document.getElementById('productsList');
             
-            productsList.innerHTML = products.map((product, index) => `
-                <div class="product-card" data-index="${index}">
-                    <img src="${product.image}" 
-                         alt="${product.name}" 
-                         class="product-image"
-                         onerror="this.src='https://via.placeholder.com/100x100/7BC043/FFFFFF?text=${product.retailer.charAt(0)}'">
-                    
-                    <div class="product-details">
-                        <div class="product-name">${product.name}</div>
-                        ${product.variant ? `<div class="product-variant">${product.variant}</div>` : ''}
-                        <div class="product-price">$${product.price.toFixed(2)}</div>
-                        <div class="retailer">from ${product.retailer}</div>
-                        
-                        <div class="product-meta">
-                            <div class="meta-item">
-                                <span>📁</span>
-                                <span>Category: ${product.category}</span>
-                            </div>
+            let html = '';
+            
+            Object.values(groupedProducts).forEach(retailerGroup => {
+                html += `
+                    <div class="retailer-group">
+                        <div class="retailer-header">
+                            <span>🏪 ${retailerGroup.retailer} (${retailerGroup.products.length} item${retailerGroup.products.length > 1 ? 's' : ''})</span>
                         </div>
                         
-                        <div class="quantity-control">
-                            <span class="quantity-label">Quantity:</span>
-                            <input type="number" class="quantity-input" value="${product.quantity}" min="1" max="10" 
-                                   onchange="updateQuantity(${index}, this.value)">
-                            <button class="remove-btn" onclick="removeProduct(${index})">Remove</button>
+                        ${retailerGroup.products.map(product => `
+                            <div class="product-item" data-id="${product.id}">
+                                <img src="${product.image}" alt="${product.name}" class="product-image" onerror="this.src='https://placehold.co/120x120/4CAF50/FFFFFF/png?text=No+Image'">
+                                <div class="product-details">
+                                    <div class="product-name">${product.name}</div>
+                                    <div class="product-meta">
+                                        📁 Category: ${product.category} | 
+                                        📐 Dimensions: ${product.dimensions.length}" × ${product.dimensions.width}" × ${product.dimensions.height}" |
+                                        ⚖️ Est. Weight: ${product.weight} lbs
+                                    </div>
+                                    
+                                    <div class="price-input-group">
+                                        <label for="price-${product.id}">Product Price (USD):</label>
+                                        <input type="number" 
+                                               id="price-${product.id}" 
+                                               class="price-input" 
+                                               placeholder="0.00" 
+                                               step="0.01" 
+                                               min="0"
+                                               value="${product.price ? product.price : ''}"
+                                               required>
+                                        ${product.needsManualPrice ? `
+                                            <div class="price-message">
+                                                💰 <strong>Manual Entry Required:</strong> ${product.priceMessage || 'Price could not be determined automatically'}
+                                            </div>
+                                        ` : `
+                                            <div class="price-message" style="background: #D4F6DD; border-color: #4CAF50; color: #2E7D32;">
+                                                ✅ <strong>Price Found:</strong> Please verify this amount is correct
+                                            </div>
+                                        `}
+                                    </div>
+
+                                    <div style="margin-top: 10px; font-size: 14px; color: #666;">
+                                        Quantity: <input type="number" value="${product.quantity}" min="1" style="width: 60px; padding: 5px; border: 1px solid #ccc; border-radius: 4px;" onchange="updateQuantity(${product.id}, this.value)">
+                                    </div>
+                                </div>
+                            </div>
+                        `).join('')}
+                        
+                        <div class="delivery-fee-group">
+                            <h4>🚚 USA Delivery Fee</h4>
+                            <p>Enter any shipping costs from ${retailerGroup.retailer} to our New Jersey freight forwarder address:</p>
+                            <label>
+                                Delivery Fee (if any): $<input type="number" 
+                                                                class="delivery-fee-input" 
+                                                                placeholder="0.00" 
+                                                                step="0.01" 
+                                                                min="0"
+                                                                data-retailer="${retailerGroup.retailer}"
+                                                                onchange="updateDeliveryFee('${retailerGroup.retailer}', this.value)">
+                            </label>
+                            <p style="font-size: 13px; color: #666; margin-top: 8px;">
+                                <em>Most retailers offer free shipping, but some may charge delivery fees to New Jersey.</em>
+                            </p>
                         </div>
                     </div>
-                </div>
-            `).join('');
-
-            calculateDuty();
+                `;
+            });
+            
+            productsList.innerHTML = html;
         }
 
-        function updateQuantity(index, quantity) {
-            products[index].quantity = parseInt(quantity) || 1;
-            calculateDuty();
-        }
-
-        function removeProduct(index) {
-            products.splice(index, 1);
-            if (products.length === 0) {
-                goBack();
-            } else {
-                displayProducts();
+        function updateQuantity(productId, quantity) {
+            const product = scrapedProducts.find(p => p.id === productId);
+            if (product) {
+                product.quantity = parseInt(quantity) || 1;
             }
         }
 
-        function calculateDuty() {
-            let subtotal = 0;
-            products.forEach(product => {
-                subtotal += product.price * product.quantity;
+        function updateDeliveryFee(retailer, fee) {
+            if (!window.deliveryFees) {
+                window.deliveryFees = {};
+            }
+            window.deliveryFees[retailer] = parseFloat(fee) || 0;
+        }
+
+        async function calculateQuote() {
+            // Validate all prices are entered
+            let hasErrors = false;
+            let totalItemCost = 0;
+            let totalDeliveryFees = 0;
+            
+            scrapedProducts.forEach(product => {
+                const priceInput = document.getElementById(`price-${product.id}`);
+                const price = parseFloat(priceInput.value) || 0;
+                
+                if (price <= 0) {
+                    priceInput.style.borderColor = '#dc3545';
+                    hasErrors = true;
+                } else {
+                    priceInput.style.borderColor = '#4CAF50';
+                    product.finalPrice = price;
+                    totalItemCost += price * product.quantity;
+                }
             });
 
-            // Bermuda duty calculation
-            let duty = 0;
-            if (subtotal <= 100) {
-                duty = subtotal * 0.25; // 25% on first $100
-            } else {
-                duty = (100 * 0.25) + ((subtotal - 100) * 0.335); // 25% on first $100, 33.5% after
+            if (hasErrors) {
+                alert('Please enter valid prices for all products.');
+                return;
             }
 
-            // Estimated shipping (could be made dynamic)
-            const shipping = subtotal * 0.15; // 15% estimated shipping
+            // Add delivery fees
+            if (window.deliveryFees) {
+                Object.values(window.deliveryFees).forEach(fee => {
+                    totalDeliveryFees += fee;
+                });
+            }
 
-            const total = subtotal + duty + shipping;
+            // Calculate shipping and duties
+            let totalShippingCost = 0;
+            scrapedProducts.forEach(product => {
+                totalShippingCost += product.shippingCost * product.quantity;
+            });
 
-            document.getElementById('calculationDetails').innerHTML = `
-                <div class="calc-row">
-                    <span class="calc-label">Subtotal (${products.reduce((sum, p) => sum + p.quantity, 0)} items):</span>
-                    <span class="calc-value">$${subtotal.toFixed(2)}</span>
+            const dutyAmount = totalItemCost * 0.265; // 26.5%
+            const grandTotal = totalItemCost + totalDeliveryFees + dutyAmount + totalShippingCost;
+
+            finalQuoteData = { 
+                totalItemCost, 
+                totalDeliveryFees, 
+                dutyAmount, 
+                totalShippingCost, 
+                grandTotal 
+            };
+
+            document.getElementById('finalQuote').innerHTML = `
+                <div class="quote-summary">
+                    <h3 style="text-align: center; margin-bottom: 20px;">🇧🇲 Bermuda Import Quote</h3>
+                    <div class="quote-row">
+                        <span>Total Product Cost</span>
+                        <span>$${totalItemCost.toFixed(2)}</span>
+                    </div>
+                    ${totalDeliveryFees > 0 ? `
+                    <div class="quote-row">
+                        <span>USA Delivery Fees</span>
+                        <span>$${totalDeliveryFees.toFixed(2)}</span>
+                    </div>
+                    ` : ''}
+                    <div class="quote-row">
+                        <span>Bermuda Import Duty (26.5%)</span>
+                        <span>$${dutyAmount.toFixed(2)}</span>
+                    </div>
+                    <div class="quote-row">
+                        <span>Ocean Freight & Handling</span>
+                        <span>$${totalShippingCost.toFixed(2)}</span>
+                    </div>
+                    <div class="quote-row">
+                        <span><strong>TOTAL LANDED COST</strong></span>
+                        <span><strong>$${grandTotal.toFixed(2)}</strong></span>
+                    </div>
+                    <div class="shipping-note">
+                        * Ocean freight calculated based on cubic dimensions and weight
+                    </div>
                 </div>
-                <div class="calc-row">
-                    <span class="calc-label">Estimated Shipping:</span>
-                    <span class="calc-value">$${shipping.toFixed(2)}</span>
-                </div>
-                <div class="calc-row">
-                    <span class="calc-label">Import Duty:</span>
-                    <span class="calc-value">$${duty.toFixed(2)}</span>
-                </div>
-                <div class="calc-row">
-                    <span class="calc-label">Total Cost:</span>
-                    <span class="calc-value">$${total.toFixed(2)}</span>
+
+                <div style="text-align: center; margin-top: 30px;">
+                    <button class="btn" onclick="createDraftOrder()" style="font-size: 18px; padding: 20px 40px;">
+                        📋 Submit Quote to Spencer Deals Ltd
+                    </button>
                 </div>
             `;
+            
+            goToPage(3);
         }
 
-        function goBack() {
-            document.getElementById('inputSection').style.display = 'block';
-            document.getElementById('productsSection').classList.remove('active');
-            // Clear inputs
-            document.querySelectorAll('.url-input').forEach(input => input.value = '');
+        async function createDraftOrder() {
+            if (!currentCustomer) {
+                alert('Please sign in first.');
+                return;
+            }
+
+            try {
+                document.getElementById('draftOrderResult').innerHTML = `
+                    <div class="loading">
+                        <div class="spinner"></div>
+                        <p>Creating your quote in our system...</p>
+                    </div>
+                `;
+
+                const response = await fetch('/api/create-draft-order', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        customerId: currentCustomer.id,
+                        products: scrapedProducts,
+                        deliveryFees: window.deliveryFees || {},
+                        totals: finalQuoteData,
+                        originalUrls: originalUrls
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    document.getElementById('draftOrderResult').innerHTML = `
+                        <div class="draft-order-success">
+                            <h3>✅ Quote Submitted Successfully!</h3>
+                            <p><strong>Quote #:</strong> ${data.draftOrderNumber}</p>
+                            <p>Your quote has been sent to Spencer Deals Ltd for review.</p>
+                            <p>We'll contact you shortly to finalize your Bermuda import.</p>
+                            <p style="margin-top: 20px;">
+                                <a href="${data.orderUrl}" target="_blank">View in Admin (Staff Only)</a>
+                            </p>
+                        </div>
+                    `;
+                } else {
+                    throw new Error(data.message || 'Failed to create quote');
+                }
+
+            } catch (error) {
+                console.error('Draft order error:', error);
+                document.getElementById('draftOrderResult').innerHTML = `
+                    <div class="error">
+                        ❌ Failed to submit quote: ${error.message}
+                        <br>Please try again or contact us directly.
+                    </div>
+                `;
+            }
         }
 
-        function showError(message) {
-            const errorElement = document.getElementById('errorMessage');
-            errorElement.textContent = message;
-            errorElement.classList.add('active');
-            setTimeout(() => {
-                errorElement.classList.remove('active');
-            }, 5000);
+        function goToPage(pageNum) {
+            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+            document.getElementById(`page${pageNum}`).classList.add('active');
+            currentPage = pageNum;
+        }
+
+        function startOver() {
+            scrapedProducts = [];
+            finalQuoteData = {};
+            originalUrls = [];
+            window.deliveryFees = {};
+            document.getElementById('productLinks').value = '';
+            document.getElementById('scrapeResults').innerHTML = '';
+            document.getElementById('draftOrderResult').innerHTML = '';
+            goToPage(1);
         }
     </script>
 </body>
