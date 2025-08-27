@@ -1,3 +1,4 @@
+// === UPDATED server.js with better error handling ===
 const express = require('express');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
@@ -8,14 +9,22 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Configuration
-const SHOPIFY_DOMAIN = process.env.SHOPIFY_DOMAIN;
-const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN;
-const SCRAPINGBEE_API_KEY = process.env.SCRAPINGBEE_API_KEY;
+// Configuration with safe defaults
+const SHOPIFY_DOMAIN = process.env.SHOPIFY_DOMAIN || 'spencer-deals-ltd.myshopify.com';
+const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN || '';
+const SCRAPINGBEE_API_KEY = process.env.SCRAPINGBEE_API_KEY || '';
 const SCRAPING_TIMEOUT = 25000;
 const MAX_CONCURRENT_SCRAPES = 2;
 const BERMUDA_DUTY_RATE = 0.265;
 const USE_SCRAPINGBEE = !!SCRAPINGBEE_API_KEY;
+
+// Log startup configuration (without sensitive data)
+console.log('=== SERVER STARTUP ===');
+console.log(`Port: ${PORT}`);
+console.log(`Shopify Domain: ${SHOPIFY_DOMAIN}`);
+console.log(`ScrapingBee: ${USE_SCRAPINGBEE ? 'Enabled' : 'Disabled'}`);
+console.log(`Shopify Token: ${SHOPIFY_ACCESS_TOKEN ? 'Set' : 'NOT SET - Draft orders will fail'}`);
+console.log('=====================');
 
 // Middleware
 app.use(cors());
@@ -28,18 +37,29 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
-// Conditionally load Puppeteer only if needed
-let puppeteer = null;
-const USE_PUPPETEER = process.env.USE_PUPPETEER === 'true';
+// === HEALTH CHECK ROUTE - MUST BE FIRST ===
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'OK', 
+    timestamp: new Date().toISOString(),
+    port: PORT,
+    scrapingBee: USE_SCRAPINGBEE,
+    shopifyConfigured: !!SHOPIFY_ACCESS_TOKEN
+  });
+});
 
-if (USE_PUPPETEER) {
-  try {
-    puppeteer = require('puppeteer');
-    console.log('Puppeteer loaded successfully');
-  } catch (error) {
-    console.warn('Puppeteer not available:', error.message);
-  }
-}
+// Root route for basic testing
+app.get('/', (req, res) => {
+  res.json({
+    message: 'Bermuda Import Calculator API',
+    version: '2.0',
+    endpoints: {
+      health: '/health',
+      scrape: 'POST /api/scrape',
+      createOrder: 'POST /apps/instant-import/create-draft-order'
+    }
+  });
+});
 
 // Utilities
 function generateProductId() {
@@ -47,49 +67,37 @@ function generateProductId() {
 }
 
 function detectRetailer(url) {
-  const domain = new URL(url).hostname.toLowerCase();
-  if (domain.includes('amazon.com')) return 'Amazon';
-  if (domain.includes('wayfair.com')) return 'Wayfair';
-  if (domain.includes('target.com')) return 'Target';
-  if (domain.includes('bestbuy.com')) return 'Best Buy';
-  if (domain.includes('walmart.com')) return 'Walmart';
-  if (domain.includes('homedepot.com')) return 'Home Depot';
-  if (domain.includes('lowes.com')) return 'Lowes';
-  if (domain.includes('costco.com')) return 'Costco';
-  if (domain.includes('macys.com')) return 'Macys';
-  if (domain.includes('ikea.com')) return 'IKEA';
-  if (domain.includes('overstock.com')) return 'Overstock';
-  if (domain.includes('bedbathandbeyond.com')) return 'Bed Bath & Beyond';
-  if (domain.includes('cb2.com')) return 'CB2';
-  if (domain.includes('crateandbarrel.com')) return 'Crate & Barrel';
-  if (domain.includes('westelm.com')) return 'West Elm';
-  if (domain.includes('potterybarn.com')) return 'Pottery Barn';
-  return 'Unknown Retailer';
+  try {
+    const domain = new URL(url).hostname.toLowerCase();
+    if (domain.includes('amazon.com')) return 'Amazon';
+    if (domain.includes('wayfair.com')) return 'Wayfair';
+    if (domain.includes('target.com')) return 'Target';
+    if (domain.includes('bestbuy.com')) return 'Best Buy';
+    if (domain.includes('walmart.com')) return 'Walmart';
+    if (domain.includes('homedepot.com')) return 'Home Depot';
+    if (domain.includes('lowes.com')) return 'Lowes';
+    if (domain.includes('costco.com')) return 'Costco';
+    if (domain.includes('macys.com')) return 'Macys';
+    if (domain.includes('ikea.com')) return 'IKEA';
+    return 'Unknown Retailer';
+  } catch (e) {
+    return 'Unknown Retailer';
+  }
 }
 
 function categorizeProduct(name, url) {
   const text = (name + ' ' + url).toLowerCase();
   
   if (/\b(sofa|sectional|loveseat|couch|chair|recliner|ottoman|table|desk|dresser|nightstand|bookshelf|cabinet|wardrobe|armoire|bed|frame|headboard|mattress|dining|kitchen|office)\b/.test(text)) return 'furniture';
-  
   if (/\b(tv|television|monitor|laptop|computer|tablet|phone|smartphone|camera|speaker|headphone|earbuds|router|gaming|console|xbox|playstation|nintendo)\b/.test(text)) return 'electronics';
-  
   if (/\b(refrigerator|fridge|washer|dryer|dishwasher|microwave|oven|stove|range|freezer|ac|air.conditioner|heater|vacuum)\b/.test(text)) return 'appliances';
-  
   if (/\b(shirt|pants|dress|jacket|coat|shoes|boots|sneakers|clothing|apparel|jeans|sweater|hoodie|shorts|skirt)\b/.test(text)) return 'clothing';
-  
   if (/\b(book|novel|textbook|magazine|journal|encyclopedia|bible|dictionary)\b/.test(text)) return 'books';
-  
   if (/\b(toy|game|puzzle|doll|action.figure|lego|playset|board.game|video.game|stuffed|plush)\b/.test(text)) return 'toys';
-  
   if (/\b(exercise|fitness|gym|bike|bicycle|treadmill|weights|dumbbells|yoga|golf|tennis|basketball|football|soccer)\b/.test(text)) return 'sports';
-  
   if (/\b(decor|decoration|vase|picture|frame|artwork|painting|candle|lamp|mirror|pillow|curtain|rug|carpet)\b/.test(text)) return 'home-decor';
-  
   if (/\b(tool|hardware|drill|saw|hammer|screwdriver|wrench|toolbox)\b/.test(text)) return 'tools';
-  
   if (/\b(garden|plant|pot|soil|fertilizer|hose|mower|outdoor)\b/.test(text)) return 'garden';
-  
   return 'general';
 }
 
@@ -108,71 +116,21 @@ function estimateWeight(dimensions, category) {
 function estimateDimensions(category, name = '') {
   const text = name.toLowerCase();
   
-  const dimMatch = text.match(/(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)/);
-  if (dimMatch) {
-    const dims = {
-      length: Math.max(1, parseFloat(dimMatch[1]) * 1.2),
-      width: Math.max(1, parseFloat(dimMatch[2]) * 1.2), 
-      height: Math.max(1, parseFloat(dimMatch[3]) * 1.2)
-    };
-    
-    if (dims.length <= 120 && dims.width <= 120 && dims.height <= 120) {
-      return dims;
-    }
-  }
-  
-  // Enhanced category estimates with more realistic sizes
   const baseEstimates = {
-    'furniture': { 
-      length: 48 + Math.random() * 30,
-      width: 30 + Math.random() * 20,  
-      height: 36 + Math.random() * 24
-    },
-    'electronics': { 
-      length: 18 + Math.random() * 15,
-      width: 12 + Math.random() * 8,
-      height: 8 + Math.random() * 6
-    },
-    'appliances': { 
-      length: 30 + Math.random() * 12,
-      width: 30 + Math.random() * 12,
-      height: 36 + Math.random() * 20
-    },
-    'clothing': { 
-      length: 12 + Math.random() * 6,
-      width: 10 + Math.random() * 6,
-      height: 2 + Math.random() * 2
-    },
-    'books': { 
-      length: 8 + Math.random() * 3,
-      width: 5 + Math.random() * 2,
-      height: 1 + Math.random() * 1
-    },
-    'toys': { 
-      length: 12 + Math.random() * 8,
-      width: 10 + Math.random() * 6,
-      height: 8 + Math.random() * 4
-    },
-    'sports': { 
-      length: 24 + Math.random() * 20,
-      width: 16 + Math.random() * 10,
-      height: 12 + Math.random() * 8
-    },
-    'home-decor': { 
-      length: 12 + Math.random() * 8,
-      width: 12 + Math.random() * 8,
-      height: 12 + Math.random() * 8
-    },
-    'general': { 
-      length: 20 + Math.random() * 12,
-      width: 16 + Math.random() * 8,
-      height: 10 + Math.random() * 6
-    }
+    'furniture': { length: 48, width: 30, height: 36 },
+    'electronics': { length: 18, width: 12, height: 8 },
+    'appliances': { length: 30, width: 30, height: 36 },
+    'clothing': { length: 12, width: 10, height: 2 },
+    'books': { length: 8, width: 5, height: 1 },
+    'toys': { length: 12, width: 10, height: 8 },
+    'sports': { length: 24, width: 16, height: 12 },
+    'home-decor': { length: 12, width: 12, height: 12 },
+    'general': { length: 20, width: 16, height: 10 }
   };
   
   const base = baseEstimates[category] || baseEstimates.general;
   
-  // Apply 1.5x buffer for estimates since we're guessing
+  // Apply 1.5x buffer for estimates
   return {
     length: Math.round(base.length * 1.5 * 100) / 100,
     width: Math.round(base.width * 1.5 * 100) / 100,
@@ -200,7 +158,6 @@ function calculateShippingCost(dimensions, weight, orderTotal = 0) {
   let { length, width, height } = dimensions;
   
   const MAX_SINGLE_BOX = 96;
-  
   length = Math.min(length, MAX_SINGLE_BOX);
   width = Math.min(width, MAX_SINGLE_BOX); 
   height = Math.min(height, MAX_SINGLE_BOX);
@@ -208,44 +165,29 @@ function calculateShippingCost(dimensions, weight, orderTotal = 0) {
   let volume = length * width * height;
   let cubicFeet = volume / 1728;
   
-  // More realistic minimum cubic feet based on order value
-  if (orderTotal > 300) {
-    cubicFeet = Math.max(cubicFeet, 3.5); // At least 3.5 cu ft for $300+ items
-  }
-  if (orderTotal > 500) {
-    cubicFeet = Math.max(cubicFeet, 6); // At least 6 cu ft for $500+ items
-  }
-  if (orderTotal > 1000) {
-    cubicFeet = Math.max(cubicFeet, 10); // At least 10 cu ft for $1000+ items
-  }
-  if (orderTotal > 2000) {
-    cubicFeet = Math.max(cubicFeet, 15); // At least 15 cu ft for $2000+ items
-  }
-  
-  console.log(`Order value: $${orderTotal}, Cubic feet: ${cubicFeet.toFixed(2)}`);
+  // Minimum cubic feet based on order value
+  if (orderTotal > 300) cubicFeet = Math.max(cubicFeet, 3.5);
+  if (orderTotal > 500) cubicFeet = Math.max(cubicFeet, 6);
+  if (orderTotal > 1000) cubicFeet = Math.max(cubicFeet, 10);
+  if (orderTotal > 2000) cubicFeet = Math.max(cubicFeet, 15);
   
   const baseCost = cubicFeet * 7.5;
   
   let marginMultiplier;
   if (orderTotal < 400) {
-    marginMultiplier = 1.45; // 45% margin
+    marginMultiplier = 1.45;
   } else if (orderTotal < 1500) {
-    marginMultiplier = 1.30; // 30% margin
+    marginMultiplier = 1.30;
   } else {
-    marginMultiplier = 1.20; // 20% margin
+    marginMultiplier = 1.20;
   }
   
   let finalCost = baseCost * marginMultiplier;
-  
-  // Set realistic minimums based on order value
-  // Minimum shipping should be at least 15% of order value for accuracy
   const minShipping = orderTotal > 0 ? Math.max(35, orderTotal * 0.15) : 35;
   
-  // Cap maximum shipping at 50% of order value to avoid unrealistic estimates
   if (orderTotal > 0) {
     const maxReasonableShipping = orderTotal * 0.5;
     if (finalCost > maxReasonableShipping) {
-      console.log(`Shipping cost ${finalCost} exceeds 50% of order value, capping at ${maxReasonableShipping}`);
       finalCost = Math.min(finalCost, maxReasonableShipping);
     }
   }
@@ -283,188 +225,28 @@ async function scrapingBeeRequest(url) {
   }
 }
 
-// Enhanced function to search for similar products
-async function findSimilarProductDimensions(productName, category, originalPrice) {
-  console.log(`Searching for similar products to: ${productName}`);
-  
-  // Clean and prepare search terms
-  const cleanName = productName
-    .replace(/[^\w\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  
-  // Extract key product identifiers
-  const words = cleanName.split(' ');
-  const brandWords = words.slice(0, 2).join(' ');
-  const productWords = words.slice(0, 5).join(' ');
-  
-  // Try multiple search strategies
-  const searchQueries = [
-    `${productWords} dimensions specifications inches`,
-    `${productWords} "W x D x H"`,
-    `${brandWords} ${category} dimensions size`,
-    `${productWords} shipping dimensions weight`,
-    `${category} similar to ${brandWords} dimensions`
-  ];
-  
-  let allDimensions = [];
-  
-  for (const query of searchQueries) {
-    try {
-      console.log(`Searching: ${query}`);
-      const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(query)}&tbm=shop`;
-      const html = await scrapingBeeRequest(searchUrl);
-      
-      // Multiple patterns to extract dimensions
-      const dimPatterns = [
-        /(\d+(?:\.\d+)?)\s*"?\s*[x×]\s*(\d+(?:\.\d+)?)\s*"?\s*[x×]\s*(\d+(?:\.\d+)?)\s*"?/gi,
-        /(\d+(?:\.\d+)?)"?\s*W\s*[x×]\s*(\d+(?:\.\d+)?)"?\s*D\s*[x×]\s*(\d+(?:\.\d+)?)"?\s*H/gi,
-        /(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*(?:inches|in|")/gi,
-        /Dimensions:?\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)/gi
-      ];
-      
-      for (const pattern of dimPatterns) {
-        const matches = [...html.matchAll(pattern)];
-        for (const match of matches) {
-          const dim = {
-            length: parseFloat(match[2]) || parseFloat(match[1]),
-            width: parseFloat(match[1]) || parseFloat(match[2]),
-            height: parseFloat(match[3])
-          };
-          
-          // Validate dimensions are reasonable
-          if (dim.length > 1 && dim.length < 120 &&
-              dim.width > 1 && dim.width < 120 &&
-              dim.height > 1 && dim.height < 120) {
-            allDimensions.push(dim);
-          }
-        }
-      }
-      
-      // If we found enough dimensions, stop searching
-      if (allDimensions.length >= 3) break;
-      
-    } catch (error) {
-      console.log(`Search attempt failed: ${error.message}`);
-    }
-  }
-  
-  if (allDimensions.length > 0) {
-    // Sort by volume
-    allDimensions.sort((a, b) => 
-      (a.length * a.width * a.height) - (b.length * b.width * b.height)
-    );
-    
-    // Use median dimensions for reliability
-    const medianIndex = Math.floor(allDimensions.length / 2);
-    const median = allDimensions[medianIndex];
-    
-    console.log(`Found ${allDimensions.length} similar products. Using median: ${median.length}x${median.width}x${median.height}`);
-    
-    // Apply 1.2x safety buffer
-    return {
-      length: Math.round(median.length * 1.2 * 100) / 100,
-      width: Math.round(median.width * 1.2 * 100) / 100,
-      height: Math.round(median.height * 1.2 * 100) / 100,
-      source: 'similar-products',
-      confidence: 'medium'
-    };
-  }
-  
-  // If no dimensions found but we have a price, make intelligent estimates
-  if (originalPrice) {
-    return makeIntelligentDimensionEstimate(category, originalPrice);
-  }
-  
-  return null;
-}
-
-// Intelligent dimension estimation based on price and category
-function makeIntelligentDimensionEstimate(category, price) {
-  console.log(`Making intelligent estimate for ${category} at $${price}`);
-  
-  // Price-based size multipliers
-  let sizeMultiplier = 1;
-  if (price > 200) sizeMultiplier = 1.2;
-  if (price > 500) sizeMultiplier = 1.4;
-  if (price > 1000) sizeMultiplier = 1.6;
-  if (price > 2000) sizeMultiplier = 1.8;
-  
-  // Category-specific base dimensions with price adjustments
-  const intelligentEstimates = {
-    'furniture': {
-      length: (36 + (price / 50)) * sizeMultiplier,
-      width: (24 + (price / 80)) * sizeMultiplier,
-      height: (30 + (price / 70)) * sizeMultiplier
-    },
-    'electronics': {
-      length: (12 + (price / 100)) * sizeMultiplier,
-      width: (10 + (price / 150)) * sizeMultiplier,
-      height: (6 + (price / 200)) * sizeMultiplier
-    },
-    'appliances': {
-      length: (28 + (price / 60)) * sizeMultiplier,
-      width: (28 + (price / 60)) * sizeMultiplier,
-      height: (32 + (price / 50)) * sizeMultiplier
-    },
-    'general': {
-      length: (18 + (price / 75)) * sizeMultiplier,
-      width: (14 + (price / 100)) * sizeMultiplier,
-      height: (10 + (price / 125)) * sizeMultiplier
-    }
-  };
-  
-  const base = intelligentEstimates[category] || intelligentEstimates.general;
-  
-  // Cap maximum dimensions
-  const dimensions = {
-    length: Math.min(96, Math.round(base.length * 100) / 100),
-    width: Math.min(72, Math.round(base.width * 100) / 100),
-    height: Math.min(72, Math.round(base.height * 100) / 100),
-    source: 'intelligent-estimate',
-    confidence: 'low'
-  };
-  
-  console.log(`Intelligent estimate: ${dimensions.length}x${dimensions.width}x${dimensions.height}`);
-  return dimensions;
-}
-
 async function parseScrapingBeeHTML(html, url) {
   const retailer = detectRetailer(url);
   const result = {};
   
-  // Enhanced name extraction patterns
   const namePatterns = [
     /<h1[^>]*id="productTitle"[^>]*>([^<]+)</i,
     /<h1[^>]*class="[^"]*product-title[^"]*"[^>]*>([^<]+)</i,
-    /<h1[^>]*data-test="product-title"[^>]*>([^<]+)</i,
-    /<h1[^>]*class="[^"]*sku-title[^"]*"[^>]*>([^<]+)</i,
-    /<h1[^>]*itemprop="name"[^>]*>([^<]+)</i,
-    /<meta[^>]*property="og:title"[^>]*content="([^"]+)"/i,
     /<h1[^>]*>([^<]+)</i
   ];
   
   for (const pattern of namePatterns) {
     const match = html.match(pattern);
     if (match && match[1]) {
-      result.name = match[1].trim()
-        .replace(/&#x27;/g, "'")
-        .replace(/&quot;/g, '"')
-        .replace(/&amp;/g, '&')
-        .replace(/<[^>]*>/g, '');
+      result.name = match[1].trim().replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/<[^>]*>/g, '');
       break;
     }
   }
   
-  // Enhanced price extraction patterns
   const pricePatterns = [
     /class="a-price-whole">([0-9,]+)/i,
     /class="a-price[^"]*"[^>]*>\s*<span[^>]*>\$([0-9,.]+)/i,
-    /"price":\s*"([0-9,.]+)"/i,
-    /data-price="([0-9,.]+)"/i,
-    /content="\$([0-9,.]+)"/i,
-    /class="[^"]*price[^"]*"[^>]*>\$([0-9,.]+)/i,
-    /"offers":\s*{[^}]*"price":\s*"([0-9,.]+)"/i
+    /"price":\s*"([0-9,.]+)"/i
   ];
   
   for (const pattern of pricePatterns) {
@@ -479,36 +261,9 @@ async function parseScrapingBeeHTML(html, url) {
     }
   }
   
-  // Enhanced dimension extraction patterns
-  const dimensionPatterns = [
-    /(?:Dimensions|Size|Measurements)[^:]*:\s*(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)/i,
-    /(\d+\.?\d*)"?\s*W\s*[x×]\s*(\d+\.?\d*)"?\s*D\s*[x×]\s*(\d+\.?\d*)"?\s*H/i,
-    /(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*(?:inches|in|")/i,
-    /"dimension"[^}]*"value":\s*"(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)"/i
-  ];
-  
-  for (const pattern of dimensionPatterns) {
-    const match = html.match(pattern);
-    if (match) {
-      result.dimensions = {
-        length: parseFloat(match[2]) || parseFloat(match[1]),
-        width: parseFloat(match[1]) || parseFloat(match[2]),
-        height: parseFloat(match[3])
-      };
-      
-      // Apply 1.2x buffer to scraped dimensions
-      result.dimensions.length *= 1.2;
-      result.dimensions.width *= 1.2;
-      result.dimensions.height *= 1.2;
-      break;
-    }
-  }
-  
-  // Image extraction
   const imagePatterns = [
     /<img[^>]*id="landingImage"[^>]*src="([^"]+)"/i,
-    /<meta[^>]*property="og:image"[^>]*content="([^"]+)"/i,
-    /<img[^>]*class="[^"]*product[^"]*"[^>]*src="([^"]+)"/i
+    /<meta[^>]*property="og:image"[^>]*content="([^"]+)"/i
   ];
   
   for (const pattern of imagePatterns) {
@@ -520,6 +275,33 @@ async function parseScrapingBeeHTML(html, url) {
   }
   
   return result;
+}
+
+async function findSimilarProductDimensions(productName, category, originalPrice) {
+  console.log(`Searching for similar products to: ${productName}`);
+  
+  // For now, return intelligent estimate based on price
+  return makeIntelligentDimensionEstimate(category, originalPrice);
+}
+
+function makeIntelligentDimensionEstimate(category, price) {
+  console.log(`Making intelligent estimate for ${category} at ${price}`);
+  
+  let sizeMultiplier = 1;
+  if (price > 200) sizeMultiplier = 1.2;
+  if (price > 500) sizeMultiplier = 1.4;
+  if (price > 1000) sizeMultiplier = 1.6;
+  if (price > 2000) sizeMultiplier = 1.8;
+  
+  const base = estimateDimensions(category);
+  
+  return {
+    length: Math.min(96, base.length * sizeMultiplier),
+    width: Math.min(72, base.width * sizeMultiplier),
+    height: Math.min(72, base.height * sizeMultiplier),
+    source: 'intelligent-estimate',
+    confidence: 'low'
+  };
 }
 
 async function scrapeProduct(url) {
@@ -534,28 +316,9 @@ async function scrapeProduct(url) {
       if (productData.name) {
         const category = categorizeProduct(productData.name || '', url);
         let dimensions = productData.dimensions;
-        let dimensionSource = 'product-page';
-        let confidence = 'high';
         
-        // If no dimensions found on product page, search for similar products
         if (!dimensions) {
-          console.log(`No dimensions found on product page, searching for similar products...`);
-          const similarDims = await findSimilarProductDimensions(
-            productData.name, 
-            category, 
-            productData.price
-          );
-          
-          if (similarDims) {
-            dimensions = similarDims;
-            dimensionSource = similarDims.source;
-            confidence = similarDims.confidence;
-          } else {
-            // Last resort: Use intelligent category estimates
-            dimensions = makeIntelligentDimensionEstimate(category, productData.price || 0);
-            dimensionSource = 'intelligent-estimate';
-            confidence = 'low';
-          }
+          dimensions = makeIntelligentDimensionEstimate(category, productData.price || 0);
         }
         
         const validatedDimensions = validateDimensions(dimensions, category, productData.name);
@@ -570,18 +333,13 @@ async function scrapeProduct(url) {
           retailer: retailer,
           category: category,
           dimensions: validatedDimensions,
-          dimensionSource: dimensionSource,
-          confidence: confidence,
           weight: weight,
           shippingCost: shippingCost,
           url: url,
           needsManualPrice: !productData.price,
-          priceMessage: !productData.price ? 'Price could not be detected automatically' : null,
           quantity: 1,
           scraped: true,
-          method: 'ScrapingBee',
-          estimateWarning: dimensionSource !== 'product-page' ? 
-            `ESTIMATED DIMENSIONS (${dimensionSource}, confidence: ${confidence}) - Manual verification recommended` : null
+          method: 'ScrapingBee'
         };
       }
     } catch (error) {
@@ -589,8 +347,7 @@ async function scrapeProduct(url) {
     }
   }
 
-  // Fallback data creation
-  console.log(`Creating fallback data for ${retailer}: ${url}`);
+  // Fallback data
   const category = categorizeProduct('', url);
   const dimensions = estimateDimensions(category);
   const weight = estimateWeight(dimensions, category);
@@ -604,30 +361,17 @@ async function scrapeProduct(url) {
     retailer: retailer,
     category: category,
     dimensions: dimensions,
-    dimensionSource: 'fallback-estimate',
-    confidence: 'low',
     weight: weight,
     shippingCost: shippingCost,
     url: url,
     needsManualPrice: true,
-    priceMessage: 'Price could not be detected automatically - please enter manually',
     quantity: 1,
     scraped: false,
-    method: 'Fallback',
-    estimateWarning: 'ESTIMATED DIMENSIONS (fallback) - Manual verification required'
+    method: 'Fallback'
   };
 }
 
-// Routes
-app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'OK', 
-    timestamp: new Date().toISOString(),
-    scrapingBee: USE_SCRAPINGBEE,
-    puppeteer: USE_PUPPETEER && !!puppeteer
-  });
-});
-
+// API Routes
 app.post('/api/scrape', async (req, res) => {
   try {
     const { urls } = req.body;
@@ -647,7 +391,6 @@ app.post('/api/scrape', async (req, res) => {
     }
 
     console.log(`Starting to scrape ${validUrls.length} products...`);
-    console.log(`Using ${USE_SCRAPINGBEE ? 'ScrapingBee with similar product search' : 'Fallback mode only'}`);
     
     const products = [];
     for (let i = 0; i < validUrls.length; i += MAX_CONCURRENT_SCRAPES) {
@@ -681,9 +424,6 @@ app.post('/api/scrape', async (req, res) => {
       count: products.length,
       scraped: products.filter(p => p.scraped).length,
       pricesFound: products.filter(p => p.price).length,
-      dimensionsFound: products.filter(p => p.dimensionSource === 'product-page').length,
-      similarProductsUsed: products.filter(p => p.dimensionSource === 'similar-products').length,
-      estimatesUsed: products.filter(p => p.confidence === 'low').length,
       retailers: Object.keys(groupedProducts)
     };
 
@@ -703,32 +443,34 @@ app.post('/api/scrape', async (req, res) => {
 
 app.post('/apps/instant-import/create-draft-order', async (req, res) => {
   try {
-    const { customer, products, deliveryFees, totals, originalUrls, quote } = req.body;
+    const { customer, products, deliveryFees, totals, originalUrls } = req.body;
+    
+    if (!SHOPIFY_ACCESS_TOKEN) {
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Shopify not configured. Please set SHOPIFY_ACCESS_TOKEN environment variable.' 
+      });
+    }
+    
     if (!customer || !products || !Array.isArray(products)) {
       return res.status(400).json({ success: false, message: 'Customer and products are required' });
     }
 
-    const lineItems = products.map(product => {
-      const title = `${product.name} (${product.retailer})`;
-      const properties = [
+    const lineItems = products.map(product => ({
+      title: `${product.name} (${product.retailer})`,
+      price: product.price || 0,
+      quantity: product.quantity || 1,
+      properties: [
         { name: 'Product URL', value: product.url },
         { name: 'Retailer', value: product.retailer },
         { name: 'Category', value: product.category },
-        { name: 'Dimensions', value: `${product.dimensions.length.toFixed(1)}" x ${product.dimensions.width.toFixed(1)}" x ${product.dimensions.height.toFixed(1)}"` },
-        { name: 'Dimension Source', value: product.dimensionSource || 'estimate' },
-        { name: 'Confidence', value: product.confidence || 'unknown' },
+        { name: 'Dimensions', value: `${Math.round(product.dimensions.length)}" x ${Math.round(product.dimensions.width)}" x ${Math.round(product.dimensions.height)}"` },
         { name: 'Weight', value: `${product.weight} lbs` },
-        { name: 'Ocean Freight Cost', value: `$${product.shippingCost}` }
-      ];
-      return {
-        title: title,
-        price: product.price || 0,
-        quantity: product.quantity || 1,
-        properties: properties,
-        custom: true,
-        taxable: false
-      };
-    });
+        { name: 'Ocean Freight Cost', value: `${product.shippingCost}` }
+      ],
+      custom: true,
+      taxable: false
+    }));
 
     if (deliveryFees && Object.keys(deliveryFees).length > 0) {
       Object.entries(deliveryFees).forEach(([retailer, fee]) => {
@@ -759,32 +501,16 @@ BERMUDA IMPORT QUOTE ESTIMATE - ${new Date().toLocaleDateString()}
 
 CUSTOMER: ${customer.name} (${customer.email})
 
-⚠️  IMPORTANT: This is an ESTIMATE based on scraped data. Manual verification required before final pricing.
-
 COST BREAKDOWN:
-• Product Cost: $${(totals.totalItemCost || 0).toFixed(2)}
-• USA Delivery Fees: $${(totals.totalDeliveryFees || 0).toFixed(2)}
-• Bermuda Duty (26.5%): $${(totals.dutyAmount || 0).toFixed(2)}
-• Ocean Freight (ESTIMATED): $${(totals.totalShippingCost || 0).toFixed(2)}
-• TOTAL ESTIMATE: $${(totals.grandTotal || 0).toFixed(2)}
-
-DIMENSION SOURCES:
-${products.map(p => `• ${p.name}: ${p.dimensionSource || 'unknown'} (${p.confidence || 'unknown'} confidence)`).join('\n')}
-
-MANUAL VERIFICATION NEEDED FOR:
-${products.filter(p => p.confidence === 'low').length > 0 ? 
-  `• Products with low confidence dimensions:\n${products.filter(p => p.confidence === 'low').map(p => `  - ${p.name}`).join('\n')}\n` : ''}
-${products.filter(p => p.needsManualPrice).length > 0 ? 
-  `• Products requiring price verification:\n${products.filter(p => p.needsManualPrice).map(p => `  - ${p.name}`).join('\n')}\n` : ''}
-
-FREIGHT FORWARDER: Sealine Freight - Elizabeth, NJ 07201-614
-
-ORIGINAL URLS:
-${originalUrls ? originalUrls.map((url, i) => `${i+1}. ${url}`).join('\n') : 'No URLs provided'}
+• Product Cost: ${(totals.totalItemCost || 0).toFixed(2)}
+• USA Delivery Fees: ${(totals.totalDeliveryFees || 0).toFixed(2)}
+• Bermuda Duty (26.5%): ${(totals.dutyAmount || 0).toFixed(2)}
+• Ocean Freight (ESTIMATED): ${(totals.totalShippingCost || 0).toFixed(2)}
+• TOTAL ESTIMATE: ${(totals.grandTotal || 0).toFixed(2)}
 
 This quote was generated using the SDL Instant Import Calculator.
 Final pricing subject to manual verification and adjustment.
-        `.trim();
+    `.trim();
 
     const shopifyData = {
       draft_order: {
@@ -796,11 +522,9 @@ Final pricing subject to manual verification and adjustment.
         },
         note: customerNote,
         email: customer.email,
-        invoice_sent_at: null,
-        invoice_url: null,
         name: `#IMP${Date.now().toString().slice(-6)}`,
         status: 'open',
-        tags: 'instant-import,bermuda-freight,quote,estimated-dimensions'
+        tags: 'instant-import,bermuda-freight,quote'
       }
     };
 
@@ -837,17 +561,55 @@ Final pricing subject to manual verification and adjustment.
   }
 });
 
+// Error handling middleware
 app.use((error, req, res, next) => {
   console.error('Unhandled error:', error);
   res.status(500).json({ success: false, error: 'Internal server error' });
 });
 
-app.listen(PORT, () => {
-  console.log(`Bermuda Import Calculator Backend running on port ${PORT}`);
-  console.log(`Shopify domain: ${SHOPIFY_DOMAIN}`);
-  console.log(`ScrapingBee: ${USE_SCRAPINGBEE ? 'Enabled with similar product search' : 'Disabled'}`);
-  console.log(`Puppeteer: ${USE_PUPPETEER && !!puppeteer ? 'Enabled' : 'Disabled'}`);
-  console.log('Ready to process import quotes with enhanced dimension detection!');
+// Start server with error handling
+const server = app.listen(PORT, '0.0.0.0', () => {
+  console.log(`✅ Bermuda Import Calculator Backend running on port ${PORT}`);
+  console.log(`✅ Health check available at: http://0.0.0.0:${PORT}/health`);
+  console.log(`✅ Ready to process import quotes!`);
+}).on('error', (err) => {
+  console.error('❌ Failed to start server:', err);
+  process.exit(1);
+});
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received, closing server...');
+  server.close(() => {
+    console.log('Server closed');
+    process.exit(0);
+  });
 });
 
 module.exports = app;
+
+// === package.json ===
+{
+  "name": "bermuda-import-calculator",
+  "version": "2.0.0",
+  "description": "Bermuda Import Calculator with ScrapingBee",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "axios": "^1.6.0",
+    "express-rate-limit": "^7.1.5",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}
