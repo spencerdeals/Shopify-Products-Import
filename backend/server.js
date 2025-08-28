@@ -1,1123 +1,667 @@
-const express = require('express');
-const cors = require('cors');
-const rateLimit = require('express-rate-limit');
-const axios = require('axios');
-const path = require('path');
-const { URL } = require('url');
-require('dotenv').config();
-
-const app = express();
-const PORT = process.env.PORT || 3000;
-
-// Configuration
-const SHOPIFY_DOMAIN = process.env.SHOPIFY_DOMAIN || 'spencer-deals-ltd.myshopify.com';
-const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN || '';
-const SCRAPINGBEE_API_KEY = process.env.SCRAPINGBEE_API_KEY || '';
-const SCRAPING_TIMEOUT = 25000;
-const MAX_CONCURRENT_SCRAPES = 2;
-const BERMUDA_DUTY_RATE = 0.265;
-const USE_SCRAPINGBEE = !!SCRAPINGBEE_API_KEY;
-
-console.log('=== SERVER STARTUP ===');
-console.log(`Port: ${PORT}`);
-console.log(`Shopify Domain: ${SHOPIFY_DOMAIN}`);
-console.log(`ScrapingBee: ${USE_SCRAPINGBEE ? 'Enabled' : 'Disabled'}`);
-console.log('=====================');
-
-// Middleware
-app.use(cors());
-app.use(express.json({ limit: '5mb' }));
-
-// Fix for Railway X-Forwarded-For warning
-app.set('trust proxy', true);
-
-// Serve frontend static files
-app.use(express.static(path.join(__dirname, '../frontend')));
-app.use(express.static(path.join(__dirname, '../web')));
-
-// CRITICAL: Health check MUST be before rate limiter
-app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'OK', 
-    timestamp: new Date().toISOString(),
-    port: PORT,
-    scrapingBee: USE_SCRAPINGBEE,
-    shopifyConfigured: !!SHOPIFY_ACCESS_TOKEN
-  });
-});
-
-// Root route - serve frontend HTML
-app.get('/', (req, res) => {
-  const frontendPath = path.join(__dirname, '../frontend', 'index.html');
-  res.sendFile(frontendPath, (err) => {
-    if (err) {
-      console.error('Error serving frontend:', err);
-      // Fallback to API info if frontend not found
-      res.json({
-        message: 'Frontend not found - API is running',
-        endpoints: {
-          health: '/health',
-          scrape: 'POST /api/scrape',
-          createOrder: 'POST /apps/instant-import/create-draft-order'
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Instant Import Calculator</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
         }
-      });
-    }
-  });
-});
 
-// Rate limiter (after health check)
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 50,
-  trustProxy: true
-});
-app.use('/api/', limiter);
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
 
-// Utilities
-function generateProductId() {
-  return Date.now() + Math.random().toString(36).substr(2, 9);
-}
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 700px;
+            width: 100%;
+            padding: 40px;
+            position: relative;
+            overflow: hidden;
+        }
 
-function detectRetailer(url) {
-  try {
-    const domain = new URL(url).hostname.toLowerCase();
-    if (domain.includes('amazon.com')) return 'Amazon';
-    if (domain.includes('wayfair.com')) return 'Wayfair';
-    if (domain.includes('target.com')) return 'Target';
-    if (domain.includes('bestbuy.com')) return 'Best Buy';
-    if (domain.includes('walmart.com')) return 'Walmart';
-    if (domain.includes('homedepot.com')) return 'Home Depot';
-    if (domain.includes('lowes.com')) return 'Lowes';
-    if (domain.includes('costco.com')) return 'Costco';
-    if (domain.includes('macys.com')) return 'Macys';
-    if (domain.includes('ikea.com')) return 'IKEA';
-    if (domain.includes('overstock.com')) return 'Overstock';
-    if (domain.includes('bedbathandbeyond.com')) return 'Bed Bath & Beyond';
-    if (domain.includes('cb2.com')) return 'CB2';
-    if (domain.includes('crateandbarrel.com')) return 'Crate & Barrel';
-    if (domain.includes('westelm.com')) return 'West Elm';
-    if (domain.includes('potterybarn.com')) return 'Pottery Barn';
-    return 'Unknown Retailer';
-  } catch (e) {
-    return 'Unknown Retailer';
-  }
-}
+        .container::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 5px;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+        }
 
-function categorizeProduct(name, url) {
-  const text = (name + ' ' + url).toLowerCase();
-  
-  if (/\b(sofa|sectional|loveseat|couch|chair|recliner|ottoman|table|desk|dresser|nightstand|bookshelf|cabinet|wardrobe|armoire|bed|frame|headboard|mattress|dining|kitchen|office)\b/.test(text)) return 'furniture';
-  if (/\b(tv|television|monitor|laptop|computer|tablet|phone|smartphone|camera|speaker|headphone|earbuds|router|gaming|console|xbox|playstation|nintendo)\b/.test(text)) return 'electronics';
-  if (/\b(refrigerator|fridge|washer|dryer|dishwasher|microwave|oven|stove|range|freezer|ac|air.conditioner|heater|vacuum)\b/.test(text)) return 'appliances';
-  if (/\b(shirt|pants|dress|jacket|coat|shoes|boots|sneakers|clothing|apparel|jeans|sweater|hoodie|shorts|skirt)\b/.test(text)) return 'clothing';
-  if (/\b(book|novel|textbook|magazine|journal|encyclopedia|bible|dictionary)\b/.test(text)) return 'books';
-  if (/\b(toy|game|puzzle|doll|action.figure|lego|playset|board.game|video.game|stuffed|plush)\b/.test(text)) return 'toys';
-  if (/\b(exercise|fitness|gym|bike|bicycle|treadmill|weights|dumbbells|yoga|golf|tennis|basketball|football|soccer)\b/.test(text)) return 'sports';
-  if (/\b(decor|decoration|vase|picture|frame|artwork|painting|candle|lamp|mirror|pillow|curtain|rug|carpet)\b/.test(text)) return 'home-decor';
-  if (/\b(tool|hardware|drill|saw|hammer|screwdriver|wrench|toolbox)\b/.test(text)) return 'tools';
-  if (/\b(garden|plant|pot|soil|fertilizer|hose|mower|outdoor)\b/.test(text)) return 'garden';
-  return 'general';
-}
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+            text-align: center;
+        }
 
-function estimateWeight(dimensions, category) {
-  const volume = dimensions.length * dimensions.width * dimensions.height;
-  const cubicFeet = volume / 1728;
-  const densityFactors = {
-    'furniture': 8, 'electronics': 15, 'appliances': 20, 'clothing': 3,
-    'books': 25, 'toys': 5, 'sports': 10, 'home-decor': 6, 'general': 8
-  };
-  const density = densityFactors[category] || 8;
-  const estimatedWeight = Math.max(1, cubicFeet * density);
-  return Math.round(estimatedWeight * 10) / 10;
-}
+        .subtitle {
+            color: #666;
+            text-align: center;
+            margin-bottom: 25px;
+            font-size: 14px;
+        }
 
-function estimateDimensions(category, name = '') {
-  const text = name.toLowerCase();
-  
-  // Check if dimensions are in the name
-  const dimMatch = text.match(/(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)/);
-  if (dimMatch) {
-    const dims = {
-      length: Math.max(1, parseFloat(dimMatch[1]) * 1.2),
-      width: Math.max(1, parseFloat(dimMatch[2]) * 1.2), 
-      height: Math.max(1, parseFloat(dimMatch[3]) * 1.2)
-    };
-    
-    if (dims.length <= 120 && dims.width <= 120 && dims.height <= 120) {
-      return dims;
-    }
-  }
-  
-  // Enhanced category estimates with more realistic sizes
-  const baseEstimates = {
-    'furniture': { 
-      length: 48 + Math.random() * 30,
-      width: 30 + Math.random() * 20,  
-      height: 36 + Math.random() * 24
-    },
-    'electronics': { 
-      length: 18 + Math.random() * 15,
-      width: 12 + Math.random() * 8,
-      height: 8 + Math.random() * 6
-    },
-    'appliances': { 
-      length: 30 + Math.random() * 12,
-      width: 30 + Math.random() * 12,
-      height: 36 + Math.random() * 20
-    },
-    'clothing': { 
-      length: 12 + Math.random() * 6,
-      width: 10 + Math.random() * 6,
-      height: 2 + Math.random() * 2
-    },
-    'books': { 
-      length: 8 + Math.random() * 3,
-      width: 5 + Math.random() * 2,
-      height: 1 + Math.random() * 1
-    },
-    'toys': { 
-      length: 12 + Math.random() * 8,
-      width: 10 + Math.random() * 6,
-      height: 8 + Math.random() * 4
-    },
-    'sports': { 
-      length: 24 + Math.random() * 20,
-      width: 16 + Math.random() * 10,
-      height: 12 + Math.random() * 8
-    },
-    'home-decor': { 
-      length: 12 + Math.random() * 8,
-      width: 12 + Math.random() * 8,
-      height: 12 + Math.random() * 8
-    },
-    'general': { 
-      length: 20 + Math.random() * 12,
-      width: 16 + Math.random() * 8,
-      height: 10 + Math.random() * 6
-    }
-  };
-  
-  const base = baseEstimates[category] || baseEstimates.general;
-  
-  // Apply 1.5x buffer for estimates since we're guessing
-  return {
-    length: Math.round(base.length * 1.5 * 100) / 100,
-    width: Math.round(base.width * 1.5 * 100) / 100,
-    height: Math.round(base.height * 1.5 * 100) / 100
-  };
-}
+        /* Freight Forwarder Address Box */
+        .forwarder-address {
+            background: linear-gradient(135deg, #e8f5e9 0%, #f1f8e9 100%);
+            border: 2px solid #66bb6a;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 25px;
+            position: relative;
+        }
 
-// ===== NEW INTELLIGENT ESTIMATION FUNCTIONS START HERE =====
+        .forwarder-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 12px;
+            color: #2e7d32;
+            font-weight: 600;
+            font-size: 16px;
+        }
 
-// Enhanced product context extraction
-async function extractFullProductContext(html, url) {
-  const context = {
-    title: '',
-    description: '',
-    bulletPoints: [],
-    specifications: {},
-    price: 0,
-    weight: 0,
-    brand: '',
-    modelNumber: '',
-    category: ''
-  };
+        .forwarder-header::before {
+            content: '🚚';
+            margin-right: 8px;
+            font-size: 20px;
+        }
 
-  // Title extraction (multiple patterns)
-  const titlePatterns = [
-    /<h1[^>]*id="productTitle"[^>]*>([^<]+)</i,
-    /<h1[^>]*class="[^"]*product-title[^"]*"[^>]*>([^<]+)</i,
-    /<h1[^>]*>([^<]+)</i,
-    /<title>([^<]+)</i,
-    /property="og:title" content="([^"]+)"/i
-  ];
-  
-  for (const pattern of titlePatterns) {
-    const match = html.match(pattern);
-    if (match) {
-      context.title = match[1].trim()
-        .replace(/&#x27;/g, "'")
-        .replace(/&quot;/g, '"')
-        .replace(/&amp;/g, '&')
-        .replace(/<[^>]*>/g, '');
-      break;
-    }
-  }
+        .forwarder-name {
+            color: #2e7d32;
+            font-weight: 600;
+            font-size: 18px;
+            margin-bottom: 5px;
+        }
 
-  // Extract weight (often available even when dimensions aren't)
-  const weightPatterns = [
-    /(?:weight|Weight)[:\s]+(\d+\.?\d*)\s*(?:lbs?|pounds?)/i,
-    /(?:weight|Weight)[:\s]+(\d+\.?\d*)\s*(?:kg|kilograms?)/i,
-    /(?:Item Weight|Product Weight)[:\s]+(\d+\.?\d*)\s*(?:lbs?|pounds?)/i,
-    /(\d+\.?\d*)\s*(?:lbs?|pounds?)\s+(?:weight|Weight)/i,
-    /"weight":\s*"?(\d+\.?\d*)/i,
-    /Weight[^<]*<[^>]*>([^<]*\d+\.?\d*\s*(?:lbs?|pounds?))/i
-  ];
-  
-  for (const pattern of weightPatterns) {
-    const match = html.match(pattern);
-    if (match) {
-      let weight = parseFloat(match[1]);
-      if (pattern.toString().includes('kg')) {
-        weight = weight * 2.205; // Convert kg to lbs
-      }
-      if (weight > 0 && weight < 1000) { // Sanity check
-        context.weight = weight;
-        console.log(`Found product weight: ${weight} lbs`);
-        break;
-      }
-    }
-  }
+        .forwarder-details {
+            color: #555;
+            line-height: 1.6;
+            margin-bottom: 10px;
+        }
 
-  // Extract bullet points (often contain size info)
-  const bulletMatches = html.matchAll(/<li[^>]*>([^<]{10,200})</gi);
-  for (const match of bulletMatches) {
-    context.bulletPoints.push(match[1]);
-  }
+        .forwarder-note {
+            color: #558b2f;
+            font-style: italic;
+            font-size: 13px;
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #a5d6a7;
+        }
 
-  // Extract price if available
-  const pricePatterns = [
-    /class="a-price-whole">([0-9,]+)/i,
-    /class="a-price[^"]*"[^>]*>\s*<span[^>]*>\$([0-9,.]+)/i,
-    /"price":\s*"([0-9,.]+)"/i,
-    /data-price="([0-9,.]+)"/i
-  ];
-  
-  for (const pattern of pricePatterns) {
-    const match = html.match(pattern);
-    if (match) {
-      const price = parseFloat(match[1].replace(/,/g, ''));
-      if (price > 0) {
-        context.price = price;
-        break;
-      }
-    }
-  }
+        .input-group {
+            margin-bottom: 25px;
+        }
 
-  return context;
-}
+        label {
+            display: block;
+            color: #555;
+            margin-bottom: 8px;
+            font-weight: 500;
+            font-size: 14px;
+        }
 
-// AI-like product classification based on context
-function classifyProductFromContext(context) {
-  const title = (context.title + ' ' + context.bulletPoints.join(' ')).toLowerCase();
-  
-  // Detailed classification rules
-  const classifications = {
-    'small-electronics': {
-      keywords: ['phone', 'earbuds', 'airpods', 'watch', 'charger', 'cable', 'adapter', 'power bank', 'case', 'bluetooth', 'wireless earphone'],
-      maxWeight: 2,
-      typicalDensity: 0.15, // cubic feet per pound (very dense small items)
-      sizeLimit: 2
-    },
-    'medium-electronics': {
-      keywords: ['laptop', 'tablet', 'ipad', 'monitor', 'keyboard', 'printer', 'console', 'speaker', 'soundbar', 'playstation', 'xbox'],
-      maxWeight: 20,
-      typicalDensity: 0.25,
-      sizeLimit: 5
-    },
-    'large-electronics': {
-      keywords: ['tv', 'television', 'refrigerator', 'washer', 'dryer', 'dishwasher', 'microwave'],
-      maxWeight: 200,
-      typicalDensity: 0.4,
-      sizeLimit: 20
-    },
-    'books': {
-      keywords: ['book', 'paperback', 'hardcover', 'textbook', 'novel', 'pages', 'reading', 'bible', 'dictionary'],
-      maxWeight: 5,
-      typicalDensity: 0.08,
-      sizeLimit: 1
-    },
-    'clothing': {
-      keywords: ['shirt', 'pants', 'dress', 'jacket', 'shoes', 'clothing', 'apparel', 'wear', 'jeans', 'sweater', 'hoodie'],
-      maxWeight: 5,
-      typicalDensity: 1.5,
-      sizeLimit: 3
-    },
-    'toys': {
-      keywords: ['toy', 'game', 'puzzle', 'play', 'kids', 'children', 'lego', 'doll', 'action figure', 'board game'],
-      maxWeight: 10,
-      typicalDensity: 1.0,
-      sizeLimit: 4
-    },
-    'small-furniture': {
-      keywords: ['lamp', 'stool', 'nightstand', 'shelf', 'mirror', 'cushion', 'pillow', 'ottoman', 'end table'],
-      maxWeight: 30,
-      typicalDensity: 0.5,
-      sizeLimit: 8
-    },
-    'large-furniture': {
-      keywords: ['sofa', 'couch', 'bed', 'mattress', 'table', 'desk', 'dresser', 'cabinet', 'chair', 'recliner'],
-      maxWeight: 300,
-      typicalDensity: 0.4,
-      sizeLimit: 30
-    },
-    'tools': {
-      keywords: ['tool', 'drill', 'saw', 'hammer', 'wrench', 'kit', 'hardware', 'screwdriver', 'power tool'],
-      maxWeight: 30,
-      typicalDensity: 0.2,
-      sizeLimit: 3
-    },
-    'sports': {
-      keywords: ['ball', 'bat', 'golf', 'tennis', 'fitness', 'weights', 'bike', 'bicycle', 'exercise', 'workout'],
-      maxWeight: 50,
-      typicalDensity: 0.6,
-      sizeLimit: 10
-    }
-  };
+        input {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 16px;
+            transition: all 0.3s;
+            background-color: #f8f9fa;
+        }
 
-  // Find best classification match
-  let bestMatch = 'general';
-  let bestScore = 0;
-  
-  for (const [category, config] of Object.entries(classifications)) {
-    let score = 0;
-    
-    // Check keywords
-    for (const keyword of config.keywords) {
-      if (title.includes(keyword)) {
-        score += 10;
-      }
-    }
-    
-    // Weight compatibility check
-    if (context.weight > 0) {
-      if (context.weight <= config.maxWeight) {
-        score += 5;
-      } else {
-        score -= 10; // Penalize if weight doesn't match category
-      }
-    }
-    
-    if (score > bestScore) {
-      bestScore = score;
-      bestMatch = category;
-    }
-  }
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+            background-color: white;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
 
-  return {
-    category: bestMatch,
-    confidence: bestScore >= 10 ? 'high' : bestScore >= 5 ? 'medium' : 'low',
-    config: classifications[bestMatch] || {
-      typicalDensity: 0.3,
-      maxWeight: 50,
-      sizeLimit: 5
-    }
-  };
-}
+        /* Vendor-specific delivery fee section */
+        .vendor-delivery-section {
+            background: linear-gradient(135deg, #e8f5e9 0%, #f1f8e9 100%);
+            border: 1px solid #81c784;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
 
-// Smart dimension estimation using classification + weight
-function calculateDimensionsFromClassification(classification, context) {
-  const { category, confidence, config } = classification;
-  
-  // If we have weight, use it with category-specific density
-  if (context.weight > 0) {
-    let cubicFeet = context.weight * config.typicalDensity;
-    
-    // Cap cubic feet based on category size limits
-    cubicFeet = Math.min(cubicFeet, config.sizeLimit);
-    
-    // Minimum size sanity check
-    cubicFeet = Math.max(cubicFeet, 0.5);
-    
-    console.log(`Weight-based calculation: ${context.weight} lbs × ${config.typicalDensity} density = ${cubicFeet} cubic feet`);
-    
-    // Category-specific dimension ratios
-    const ratios = {
-      'small-electronics': { l: 1.5, w: 1.2, h: 0.8 },
-      'medium-electronics': { l: 1.4, w: 1.1, h: 0.7 },
-      'large-electronics': { l: 1.2, w: 0.8, h: 1.5 },
-      'books': { l: 1.2, w: 0.9, h: 0.3 },
-      'clothing': { l: 1.3, w: 1.0, h: 0.4 },
-      'toys': { l: 1.2, w: 1.0, h: 0.9 },
-      'small-furniture': { l: 1.3, w: 1.0, h: 1.1 },
-      'large-furniture': { l: 1.5, w: 1.0, h: 0.8 },
-      'tools': { l: 1.4, w: 0.8, h: 0.6 },
-      'sports': { l: 1.3, w: 0.9, h: 0.8 },
-      'general': { l: 1.2, w: 1.0, h: 0.8 }
-    };
-    
-    const ratio = ratios[category] || ratios.general;
-    const baseDim = Math.cbrt(cubicFeet * 1728);
-    
-    return {
-      length: Math.round(baseDim * ratio.l * 100) / 100,
-      width: Math.round(baseDim * ratio.w * 100) / 100,
-      height: Math.round(baseDim * ratio.h * 100) / 100,
-      confidence: confidence,
-      method: 'weight-based',
-      cubicFeet: cubicFeet
-    };
-  }
-  
-  // Price-based fallback with category awareness
-  if (context.price > 0) {
-    const priceFactors = {
-      'small-electronics': { base: 0.5, max: 2 },
-      'medium-electronics': { base: 1, max: 5 },
-      'large-electronics': { base: 3, max: 20 },
-      'books': { base: 0.3, max: 1 },
-      'clothing': { base: 0.8, max: 3 },
-      'toys': { base: 1, max: 4 },
-      'small-furniture': { base: 2, max: 8 },
-      'large-furniture': { base: 5, max: 30 },
-      'tools': { base: 0.5, max: 3 },
-      'sports': { base: 1.5, max: 10 },
-      'general': { base: 1, max: 5 }
-    };
-    
-    const factor = priceFactors[category] || priceFactors.general;
-    
-    // Price-based size estimation
-    let estimatedCubicFeet = factor.base;
-    if (context.price < 50) estimatedCubicFeet = factor.base * 0.5;
-    else if (context.price < 100) estimatedCubicFeet = factor.base * 0.75;
-    else if (context.price < 200) estimatedCubicFeet = factor.base;
-    else if (context.price < 500) estimatedCubicFeet = factor.base * 1.5;
-    else if (context.price < 1000) estimatedCubicFeet = factor.base * 2;
-    else estimatedCubicFeet = factor.base * 3;
-    
-    // Cap at category maximum
-    estimatedCubicFeet = Math.min(estimatedCubicFeet, factor.max);
-    
-    console.log(`Price-based calculation: $${context.price} in ${category} = ${estimatedCubicFeet} cubic feet`);
-    
-    const baseDim = Math.cbrt(estimatedCubicFeet * 1728);
-    
-    return {
-      length: Math.round(baseDim * 1.3 * 100) / 100,
-      width: Math.round(baseDim * 1.0 * 100) / 100,
-      height: Math.round(baseDim * 0.7 * 100) / 100,
-      confidence: 'low',
-      method: 'price-based',
-      cubicFeet: estimatedCubicFeet
-    };
-  }
-  
-  // Ultimate fallback - category defaults (much smaller than before)
-  const defaults = {
-    'small-electronics': { l: 8, w: 6, h: 3 },
-    'medium-electronics': { l: 16, w: 12, h: 8 },
-    'large-electronics': { l: 36, w: 24, h: 20 },
-    'books': { l: 9, w: 6, h: 2 },
-    'clothing': { l: 14, w: 10, h: 3 },
-    'toys': { l: 12, w: 10, h: 8 },
-    'small-furniture': { l: 24, w: 20, h: 18 },
-    'large-furniture': { l: 48, w: 36, h: 30 },
-    'tools': { l: 12, w: 8, h: 6 },
-    'sports': { l: 20, w: 14, h: 10 },
-    'general': { l: 12, w: 10, h: 8 }
-  };
-  
-  const def = defaults[category] || defaults.general;
-  
-  return {
-    length: def.l,
-    width: def.w,
-    height: def.h,
-    confidence: 'fallback',
-    method: 'category-default',
-    cubicFeet: (def.l * def.w * def.h) / 1728
-  };
-}
+        .vendor-delivery-header {
+            display: flex;
+            align-items: center;
+            color: #2e7d32;
+            font-weight: 600;
+            margin-bottom: 12px;
+            font-size: 15px;
+        }
 
-// Extract dimensions directly from HTML
-function extractDimensionsFromHTML(html) {
-  const dimensionPatterns = [
-    /(?:Dimensions|Size|Measurements)[^:]*:\s*(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)/i,
-    /(\d+\.?\d*)"?\s*W\s*[x×]\s*(\d+\.?\d*)"?\s*D\s*[x×]\s*(\d+\.?\d*)"?\s*H/i,
-    /(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*(?:inches|in|")/i,
-    /"dimension"[^}]*"value":\s*"(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)"/i
-  ];
-  
-  for (const pattern of dimensionPatterns) {
-    const match = html.match(pattern);
-    if (match) {
-      const dims = {
-        length: parseFloat(match[2]) || parseFloat(match[1]),
-        width: parseFloat(match[1]) || parseFloat(match[2]),
-        height: parseFloat(match[3])
-      };
-      
-      // Validate dimensions are reasonable
-      if (dims.length > 0 && dims.length < 120 &&
-          dims.width > 0 && dims.width < 120 &&
-          dims.height > 0 && dims.height < 120) {
-        // Apply 1.2x buffer to scraped dimensions
-        return {
-          length: dims.length * 1.2,
-          width: dims.width * 1.2,
-          height: dims.height * 1.2
-        };
-      }
-    }
-  }
-  
-  return null;
-}
+        .vendor-delivery-header::before {
+            content: '🚚';
+            margin-right: 8px;
+        }
 
-// Main integration function
-async function getIntelligentDimensions(html, url, productPrice) {
-  // Step 1: Try direct dimension extraction first
-  const directDims = extractDimensionsFromHTML(html);
-  if (directDims) {
-    console.log('Found dimensions directly from HTML');
-    return { ...directDims, confidence: 'high', method: 'scraped' };
-  }
-  
-  // Step 2: Extract full context
-  const context = await extractFullProductContext(html, url);
-  context.price = productPrice || context.price;
-  
-  console.log(`Extracted context - Weight: ${context.weight} lbs, Price: $${context.price}, Title: ${context.title.substring(0, 50)}...`);
-  
-  // Step 3: Classify the product
-  const classification = classifyProductFromContext(context);
-  console.log(`Product classified as: ${classification.category} (confidence: ${classification.confidence})`);
-  
-  // Step 4: Calculate dimensions based on classification
-  const dimensions = calculateDimensionsFromClassification(classification, context);
-  
-  // Step 5: Apply confidence-based buffer
-  const bufferMap = {
-    'high': 1.1,
-    'medium': 1.2,
-    'low': 1.3,
-    'fallback': 1.5
-  };
-  
-  const buffer = bufferMap[dimensions.confidence];
-  console.log(`Applying ${buffer}x buffer based on ${dimensions.confidence} confidence`);
-  
-  return {
-    length: Math.round(dimensions.length * buffer * 100) / 100,
-    width: Math.round(dimensions.width * buffer * 100) / 100,
-    height: Math.round(dimensions.height * buffer * 100) / 100,
-    source: dimensions.method,
-    confidence: dimensions.confidence,
-    category: classification.category,
-    estimatedCubicFeet: dimensions.cubicFeet
-  };
-}
+        .vendor-delivery-note {
+            color: #666;
+            font-size: 12px;
+            font-style: italic;
+            margin-top: 8px;
+        }
 
-// ===== END OF NEW INTELLIGENT ESTIMATION FUNCTIONS =====
+        button {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.3s, box-shadow 0.3s;
+            margin-top: 10px;
+        }
 
-function validateDimensions(dimensions, category, name) {
-  const { length, width, height } = dimensions;
-  
-  if (length <= 0 || width <= 0 || height <= 0) {
-    console.warn(`Invalid dimensions for ${name}: ${length}x${width}x${height}`);
-    return estimateDimensions(category, name);
-  }
-  
-  if (length > 120 || width > 120 || height > 120) {
-    console.warn(`Unrealistic dimensions for ${name}: ${length}x${width}x${height}, using estimates`);
-    return estimateDimensions(category, name);
-  }
-  
-  return dimensions;
-}
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
 
-function calculateShippingCost(dimensions, weight, orderTotal = 0) {
-  let { length, width, height } = dimensions;
-  
-  const MAX_SINGLE_BOX = 96;
-  
-  length = Math.min(length, MAX_SINGLE_BOX);
-  width = Math.min(width, MAX_SINGLE_BOX); 
-  height = Math.min(height, MAX_SINGLE_BOX);
-  
-  let volume = length * width * height;
-  let cubicFeet = volume / 1728;
-  
-  // More realistic minimum cubic feet based on order value
-  if (orderTotal > 300) {
-    cubicFeet = Math.max(cubicFeet, 3.5);
-  }
-  if (orderTotal > 500) {
-    cubicFeet = Math.max(cubicFeet, 6);
-  }
-  if (orderTotal > 1000) {
-    cubicFeet = Math.max(cubicFeet, 10);
-  }
-  if (orderTotal > 2000) {
-    cubicFeet = Math.max(cubicFeet, 15);
-  }
-  
-  console.log(`Order value: $${orderTotal}, Cubic feet: ${cubicFeet.toFixed(2)}`);
-  
-  const baseCost = cubicFeet * 7.5;
-  
-  // YOUR MARGIN STRUCTURE
-  let marginMultiplier;
-  if (orderTotal < 400) {
-    marginMultiplier = 1.45; // 45% margin
-  } else if (orderTotal < 1500) {
-    marginMultiplier = 1.30; // 30% margin
-  } else {
-    marginMultiplier = 1.20; // 20% margin
-  }
-  
-  let finalCost = baseCost * marginMultiplier;
-  
-  // Set realistic minimums based on order value
-  const minShipping = orderTotal > 0 ? Math.max(35, orderTotal * 0.15) : 35;
-  
-  // Cap maximum shipping at 50% of order value
-  if (orderTotal > 0) {
-    const maxReasonableShipping = orderTotal * 0.5;
-    if (finalCost > maxReasonableShipping) {
-      console.log(`Shipping cost ${finalCost} exceeds 50% of order value, capping at ${maxReasonableShipping}`);
-      finalCost = Math.min(finalCost, maxReasonableShipping);
-    }
-  }
-  
-  return Math.max(minShipping, Math.round(finalCost * 100) / 100);
-}
+        button:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+            transform: none;
+        }
 
-// ScrapingBee integration
-async function scrapingBeeRequest(url) {
-  if (!SCRAPINGBEE_API_KEY) {
-    throw new Error('ScrapingBee API key not configured');
-  }
-  
-  try {
-    const scrapingBeeUrl = 'https://app.scrapingbee.com/api/v1/';
-    const params = new URLSearchParams({
-      api_key: SCRAPINGBEE_API_KEY,
-      url: url,
-      render_js: 'true',
-      premium_proxy: 'true',
-      country_code: 'us',
-      wait: '2000',
-      block_ads: 'true',
-      block_resources: 'false'
-    });
+        .loading {
+            display: none;
+            text-align: center;
+            margin-top: 20px;
+        }
 
-    const response = await axios.get(`${scrapingBeeUrl}?${params.toString()}`, {
-      timeout: SCRAPING_TIMEOUT
-    });
+        .loading.active {
+            display: block;
+        }
 
-    return response.data;
-  } catch (error) {
-    console.error('ScrapingBee request failed:', error.message);
-    throw error;
-  }
-}
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
 
-// Enhanced function to search for similar products (simplified)
-async function findSimilarProductDimensions(productName, category, originalPrice) {
-  console.log(`Would search for similar products to: ${productName}`);
-  // For now, return null to use intelligent estimation instead
-  return null;
-}
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
 
-// Simplified intelligent dimension estimation
-function makeIntelligentDimensionEstimate(category, price) {
-  // This is now handled by getIntelligentDimensions
-  return null;
-}
+        .loading-text {
+            margin-top: 15px;
+            color: #666;
+            font-size: 14px;
+        }
 
-async function parseScrapingBeeHTML(html, url) {
-  const retailer = detectRetailer(url);
-  const result = {};
-  
-  // Enhanced name extraction patterns
-  const namePatterns = [
-    /<h1[^>]*id="productTitle"[^>]*>([^<]+)</i,
-    /<h1[^>]*class="[^"]*product-title[^"]*"[^>]*>([^<]+)</i,
-    /<h1[^>]*data-test="product-title"[^>]*>([^<]+)</i,
-    /<h1[^>]*class="[^"]*sku-title[^"]*"[^>]*>([^<]+)</i,
-    /<h1[^>]*itemprop="name"[^>]*>([^<]+)</i,
-    /<meta[^>]*property="og:title"[^>]*content="([^"]+)"/i,
-    /<h1[^>]*>([^<]+)</i
-  ];
-  
-  for (const pattern of namePatterns) {
-    const match = html.match(pattern);
-    if (match && match[1]) {
-      result.name = match[1].trim()
-        .replace(/&#x27;/g, "'")
-        .replace(/&quot;/g, '"')
-        .replace(/&amp;/g, '&')
-        .replace(/<[^>]*>/g, '');
-      break;
-    }
-  }
-  
-  // Enhanced price extraction patterns
-  const pricePatterns = [
-    /class="a-price-whole">([0-9,]+)/i,
-    /class="a-price[^"]*"[^>]*>\s*<span[^>]*>\$([0-9,.]+)/i,
-    /"price":\s*"([0-9,.]+)"/i,
-    /data-price="([0-9,.]+)"/i,
-    /content="\$([0-9,.]+)"/i,
-    /class="[^"]*price[^"]*"[^>]*>\$([0-9,.]+)/i,
-    /"offers":\s*{[^}]*"price":\s*"([0-9,.]+)"/i
-  ];
-  
-  for (const pattern of pricePatterns) {
-    const match = html.match(pattern);
-    if (match && match[1]) {
-      const priceStr = match[1].replace(/,/g, '');
-      const price = parseFloat(priceStr);
-      if (!isNaN(price) && price > 0) {
-        result.price = price;
-        break;
-      }
-    }
-  }
-  
-  // Use intelligent dimension extraction instead of basic patterns
-  // Dimensions will be handled by getIntelligentDimensions
-  
-  // Image extraction
-  const imagePatterns = [
-    /<img[^>]*id="landingImage"[^>]*src="([^"]+)"/i,
-    /<meta[^>]*property="og:image"[^>]*content="([^"]+)"/i,
-    /<img[^>]*class="[^"]*product[^"]*"[^>]*src="([^"]+)"/i
-  ];
-  
-  for (const pattern of imagePatterns) {
-    const match = html.match(pattern);
-    if (match && match[1]) {
-      result.image = match[1];
-      break;
-    }
-  }
-  
-  return result;
-}
+        .results {
+            display: none;
+            margin-top: 30px;
+            padding-top: 30px;
+            border-top: 2px solid #e0e0e0;
+        }
 
-async function scrapeProduct(url) {
-  const retailer = detectRetailer(url);
-  
-  if (USE_SCRAPINGBEE) {
-    try {
-      console.log(`Using ScrapingBee for ${retailer}: ${url}`);
-      const html = await scrapingBeeRequest(url);
-      const productData = await parseScrapingBeeHTML(html, url);
-      
-      if (productData.name || html.length > 1000) { // If we got HTML content
-        const category = categorizeProduct(productData.name || '', url);
-        let dimensions;
-        let dimensionSource;
-        let confidence;
+        .results.active {
+            display: block;
+            animation: fadeIn 0.5s;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .result-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 12px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .result-item:last-child {
+            border-bottom: none;
+        }
+
+        .result-label {
+            color: #555;
+            font-size: 14px;
+        }
+
+        .result-value {
+            color: #333;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .total-row {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 2px solid #667eea;
+        }
+
+        .total-row .result-label {
+            font-size: 18px;
+            color: #333;
+            font-weight: 600;
+        }
+
+        .total-row .result-value {
+            font-size: 20px;
+            color: #667eea;
+            font-weight: 700;
+        }
+
+        .error {
+            display: none;
+            background-color: #fee;
+            color: #c33;
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 20px;
+            border-left: 4px solid #c33;
+        }
+
+        .error.active {
+            display: block;
+        }
+
+        .price-alert {
+            background-color: #ffebee;
+            border: 1px solid #ff5252;
+            color: #c62828;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            font-size: 13px;
+        }
+
+        .price-alert-icon {
+            width: 20px;
+            height: 20px;
+            background-color: #ff5252;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 10px;
+            flex-shrink: 0;
+        }
+
+        .price-alert-icon::after {
+            content: '!';
+            color: white;
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        .info-text {
+            color: #666;
+            font-size: 12px;
+            text-align: center;
+            margin-top: 20px;
+            line-height: 1.5;
+        }
+
+        .searching-indicator {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 10px 0;
+        }
+
+        .searching-dot {
+            width: 8px;
+            height: 8px;
+            background-color: #667eea;
+            border-radius: 50%;
+            margin: 0 3px;
+            animation: searchingPulse 1.4s infinite ease-in-out both;
+        }
+
+        .searching-dot:nth-child(1) {
+            animation-delay: -0.32s;
+        }
+
+        .searching-dot:nth-child(2) {
+            animation-delay: -0.16s;
+        }
+
+        @keyframes searchingPulse {
+            0%, 80%, 100% {
+                transform: scale(0);
+                opacity: 0.5;
+            }
+            40% {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        .vendor-name {
+            color: #667eea;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚢 Instant Import Calculator</h1>
+        <p class="subtitle">Get accurate shipping costs for your Bermuda imports</p>
         
-        // Use intelligent dimension estimation
-        console.log(`Using intelligent dimension estimation...`);
-        const intelligentDims = await getIntelligentDimensions(
-          html, 
-          url, 
-          productData.price
-        );
-        
-        dimensions = intelligentDims;
-        dimensionSource = intelligentDims.source || 'intelligent-estimate';
-        confidence = intelligentDims.confidence || 'low';
-        
-        const validatedDimensions = validateDimensions(dimensions, category, productData.name);
-        const weight = estimateWeight(validatedDimensions, category);
-        const shippingCost = calculateShippingCost(validatedDimensions, weight, productData.price || 0);
+        <!-- Freight Forwarder Address Box -->
+        <div class="forwarder-address">
+            <div class="forwarder-header">USA Freight Forwarder Address</div>
+            <div class="forwarder-name">Sealine Freight Forwarder</div>
+            <div class="forwarder-details">
+                Elizabeth, NJ 07201-614<br>
+                New Jersey, USA
+            </div>
+            <div class="forwarder-note">
+                Use this address when calculating shipping costs from US retailers to get accurate delivery totals.
+            </div>
+        </div>
 
-        return {
-          id: generateProductId(),
-          name: productData.name || 'Unknown Product',
-          price: productData.price || null,
-          image: productData.image || 'https://placehold.co/120x120/7CB342/FFFFFF/png?text=SDL',
-          retailer: retailer,
-          category: category,
-          dimensions: validatedDimensions,
-          dimensionSource: dimensionSource,
-          confidence: confidence,
-          weight: weight,
-          shippingCost: shippingCost,
-          url: url,
-          needsManualPrice: !productData.price,
-          priceMessage: !productData.price ? 'Price could not be detected automatically' : null,
-          quantity: 1,
-          scraped: true,
-          method: 'ScrapingBee',
-          estimateWarning: confidence !== 'high' ? 
-            `ESTIMATED DIMENSIONS (${dimensionSource}, confidence: ${confidence}) - Manual verification recommended` : null
-        };
-      }
-    } catch (error) {
-      console.log(`ScrapingBee failed for ${url}:`, error.message);
-    }
-  }
+        <!-- Red price alert warning -->
+        <div class="price-alert">
+            <div class="price-alert-icon"></div>
+            <div>
+                <strong>Important:</strong> Final prices may vary based on actual product dimensions and weight. This calculator provides estimates for planning purposes.
+            </div>
+        </div>
 
-  // Fallback data creation with intelligent estimation
-  console.log(`Creating fallback data for ${retailer}: ${url}`);
-  const intelligentDims = await getIntelligentDimensions('', url, null);
-  const category = categorizeProduct('', url);
-  const dimensions = intelligentDims;
-  const weight = estimateWeight(dimensions, category);
-  const shippingCost = calculateShippingCost(dimensions, weight, 0);
+        <form id="calculatorForm">
+            <div class="input-group">
+                <label for="productUrl">Product URL</label>
+                <input 
+                    type="url" 
+                    id="productUrl" 
+                    name="productUrl" 
+                    placeholder="https://www.example.com/product" 
+                    required
+                >
+            </div>
 
-  return {
-    id: generateProductId(),
-    name: `${retailer} Product`,
-    price: null,
-    image: 'https://placehold.co/120x120/7CB342/FFFFFF/png?text=SDL',
-    retailer: retailer,
-    category: category,
-    dimensions: dimensions,
-    dimensionSource: intelligentDims.source || 'fallback-estimate',
-    confidence: intelligentDims.confidence || 'low',
-    weight: weight,
-    shippingCost: shippingCost,
-    url: url,
-    needsManualPrice: true,
-    priceMessage: 'Price could not be detected automatically - please enter manually',
-    quantity: 1,
-    scraped: false,
-    method: 'Fallback',
-    estimateWarning: 'ESTIMATED DIMENSIONS (fallback) - Manual verification required'
-  };
-}
+            <!-- Vendor-specific delivery fee section -->
+            <div class="vendor-delivery-section" id="deliveryFeeSection">
+                <div class="vendor-delivery-header">
+                    <span id="vendorDeliveryLabel">USA Delivery Fee</span>
+                </div>
+                <div class="input-group" style="margin-bottom: 0;">
+                    <label for="usShipping">Enter any shipping costs from <span id="vendorName" class="vendor-name">the retailer</span> to our New Jersey freight forwarder address:</label>
+                    <div style="display: flex; align-items: center;">
+                        <span style="margin-right: 10px; color: #555;">Delivery Fee (if any): $</span>
+                        <input 
+                            type="number" 
+                            id="usShipping" 
+                            name="usShipping" 
+                            placeholder="0.00" 
+                            min="0" 
+                            step="0.01" 
+                            required
+                            style="flex: 1; max-width: 150px;"
+                        >
+                    </div>
+                    <div class="vendor-delivery-note">
+                        Most retailers offer free shipping, but some may charge delivery fees to New Jersey.
+                    </div>
+                </div>
+            </div>
 
-// API Routes
-app.post('/api/scrape', async (req, res) => {
-  try {
-    const { urls } = req.body;
-    if (!urls || !Array.isArray(urls) || urls.length === 0) {
-      return res.status(400).json({ success: false, error: 'URLs array is required' });
-    }
-    if (urls.length > 20) {
-      return res.status(400).json({ success: false, error: 'Maximum 20 URLs allowed per request' });
-    }
+            <button type="submit" id="calculateBtn">
+                Calculate Import Costs
+            </button>
+        </form>
 
-    const validUrls = urls.filter(url => {
-      try { new URL(url); return true; } catch { return false; }
-    });
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <div class="loading-text">
+                <span id="loadingMessage">Searching for product information...</span>
+                <div class="searching-indicator">
+                    <div class="searching-dot"></div>
+                    <div class="searching-dot"></div>
+                    <div class="searching-dot"></div>
+                </div>
+            </div>
+        </div>
 
-    if (validUrls.length === 0) {
-      return res.status(400).json({ success: false, error: 'No valid URLs provided' });
-    }
+        <div class="error" id="error"></div>
 
-    console.log(`Starting to scrape ${validUrls.length} products...`);
-    console.log(`Using ${USE_SCRAPINGBEE ? 'ScrapingBee with intelligent estimation' : 'Fallback mode only'}`);
-    
-    const products = [];
-    for (let i = 0; i < validUrls.length; i += MAX_CONCURRENT_SCRAPES) {
-      const batch = validUrls.slice(i, i + MAX_CONCURRENT_SCRAPES);
-      const batchPromises = batch.map(url => 
-        Promise.race([
-          scrapeProduct(url),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), SCRAPING_TIMEOUT))
-        ]).catch(error => {
-          console.error(`Failed to scrape ${url}:`, error.message);
-          return null;
-        })
-      );
-      const batchResults = await Promise.allSettled(batchPromises);
-      batchResults.forEach(result => {
-        if (result.status === 'fulfilled' && result.value) {
-          products.push(result.value);
+        <div class="results" id="results">
+            <h3 style="margin-bottom: 20px; color: #333;">Cost Breakdown</h3>
+            
+            <div class="result-item">
+                <span class="result-label">Item First Cost:</span>
+                <span class="result-value" id="itemCost">-</span>
+            </div>
+            
+            <div class="result-item">
+                <span class="result-label">Bermuda Import Duty (26.5%):</span>
+                <span class="result-value" id="importDuty">-</span>
+            </div>
+            
+            <div class="result-item">
+                <span class="result-label"><span id="vendorResultLabel">USA</span> Delivery Fee:</span>
+                <span class="result-value" id="usaDelivery">-</span>
+            </div>
+            
+            <div class="result-item">
+                <span class="result-label">Ocean Freight & Handling:</span>
+                <span class="result-value" id="freightHandling">-</span>
+            </div>
+            
+            <div class="result-item total-row">
+                <span class="result-label">Total Landed Cost:</span>
+                <span class="result-value" id="totalCost">-</span>
+            </div>
+
+            <button type="button" id="createOrderBtn" style="margin-top: 20px;">
+                Create Draft Order in Shopify
+            </button>
+        </div>
+
+        <p class="info-text">
+            This calculator uses intelligent estimation to determine shipping costs based on product category, weight, and price.
+            We search multiple data points to provide the most accurate estimate possible.
+        </p>
+    </div>
+
+    <script>
+        let currentCalculation = null;
+        const loadingMessages = [
+            "Searching for product information...",
+            "Analyzing product details...",
+            "Calculating dimensions...",
+            "Determining shipping category...",
+            "Finalizing your quote..."
+        ];
+
+        // Function to extract vendor name from URL
+        function getVendorFromUrl(url) {
+            try {
+                const urlObj = new URL(url);
+                const hostname = urlObj.hostname.toLowerCase();
+                
+                // Common vendor mappings
+                if (hostname.includes('wayfair')) return 'Wayfair';
+                if (hostname.includes('amazon')) return 'Amazon';
+                if (hostname.includes('walmart')) return 'Walmart';
+                if (hostname.includes('target')) return 'Target';
+                if (hostname.includes('homedepot')) return 'Home Depot';
+                if (hostname.includes('lowes')) return 'Lowes';
+                if (hostname.includes('overstock')) return 'Overstock';
+                if (hostname.includes('costco')) return 'Costco';
+                if (hostname.includes('ikea')) return 'IKEA';
+                if (hostname.includes('bestbuy')) return 'Best Buy';
+                if (hostname.includes('ebay')) return 'eBay';
+                if (hostname.includes('etsy')) return 'Etsy';
+                if (hostname.includes('macys')) return "Macy's";
+                if (hostname.includes('nordstrom')) return 'Nordstrom';
+                if (hostname.includes('sephora')) return 'Sephora';
+                if (hostname.includes('ulta')) return 'Ulta';
+                if (hostname.includes('apple')) return 'Apple';
+                if (hostname.includes('nike')) return 'Nike';
+                if (hostname.includes('adidas')) return 'Adidas';
+                
+                // Extract domain name as fallback
+                const domain = hostname.replace('www.', '').split('.')[0];
+                return domain.charAt(0).toUpperCase() + domain.slice(1);
+            } catch (e) {
+                return 'USA';
+            }
         }
-      });
-    }
 
-    const groupedProducts = {};
-    products.forEach(product => {
-      if (!groupedProducts[product.retailer]) {
-        groupedProducts[product.retailer] = { retailer: product.retailer, products: [] };
-      }
-      groupedProducts[product.retailer].products.push(product);
-    });
+        // Update vendor name when URL changes
+        document.getElementById('productUrl').addEventListener('input', function(e) {
+            const vendor = getVendorFromUrl(e.target.value);
+            
+            // Update delivery fee section
+            document.getElementById('vendorDeliveryLabel').textContent = vendor + ' Delivery Fee';
+            document.getElementById('vendorName').textContent = vendor;
+            
+            // Update result label placeholder
+            document.getElementById('vendorResultLabel').textContent = vendor;
+        });
 
-    const stats = {
-      count: products.length,
-      scraped: products.filter(p => p.scraped).length,
-      pricesFound: products.filter(p => p.price).length,
-      dimensionsFound: products.filter(p => p.dimensionSource === 'scraped').length,
-      intelligentEstimates: products.filter(p => p.dimensionSource === 'weight-based' || p.dimensionSource === 'price-based').length,
-      fallbacksUsed: products.filter(p => p.confidence === 'fallback').length,
-      retailers: Object.keys(groupedProducts)
-    };
+        document.getElementById('calculatorForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const productUrl = document.getElementById('productUrl').value;
+            const usShipping = parseFloat(document.getElementById('usShipping').value);
+            const vendor = getVendorFromUrl(productUrl);
+            
+            // Update vendor label in results
+            document.getElementById('vendorResultLabel').textContent = vendor;
+            
+            // Hide previous results/errors
+            document.getElementById('results').classList.remove('active');
+            document.getElementById('error').classList.remove('active');
+            
+            // Show loading
+            document.getElementById('loading').classList.add('active');
+            document.getElementById('calculateBtn').disabled = true;
+            
+            // Cycle through loading messages
+            let messageIndex = 0;
+            const messageInterval = setInterval(() => {
+                messageIndex = (messageIndex + 1) % loadingMessages.length;
+                document.getElementById('loadingMessage').textContent = loadingMessages[messageIndex];
+            }, 2000);
+            
+            try {
+                const response = await fetch('/api/calculate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        url: productUrl,
+                        usShipping: usShipping,
+                        vendor: vendor
+                    })
+                });
+                
+                clearInterval(messageInterval);
+                
+                if (!response.ok) {
+                    throw new Error('Failed to calculate shipping');
+                }
+                
+                const data = await response.json();
+                currentCalculation = data;
+                currentCalculation.vendor = vendor; // Store vendor name
+                
+                // Update results
+                document.getElementById('itemCost').textContent = `$${data.itemCost.toFixed(2)}`;
+                document.getElementById('importDuty').textContent = `$${data.importDuty.toFixed(2)}`;
+                document.getElementById('usaDelivery').textContent = `$${data.usaDelivery.toFixed(2)}`;
+                document.getElementById('freightHandling').textContent = `$${data.freightHandling.toFixed(2)}`;
+                document.getElementById('totalCost').textContent = `$${data.totalCost.toFixed(2)}`;
+                
+                // Show results
+                document.getElementById('loading').classList.remove('active');
+                document.getElementById('results').classList.add('active');
+                
+            } catch (error) {
+                clearInterval(messageInterval);
+                document.getElementById('loading').classList.remove('active');
+                document.getElementById('error').classList.add('active');
+                document.getElementById('error').innerHTML = `
+                    <strong>Error:</strong> Unable to calculate shipping costs. Please check the URL and try again.
+                    <br><small>Tip: Make sure the product URL is complete and accessible.</small>
+                `;
+            } finally {
+                document.getElementById('calculateBtn').disabled = false;
+            }
+        });
 
-    console.log(`Scraping completed:`, stats);
-    res.json({
-      success: true,
-      products: products,
-      groupedProducts: groupedProducts,
-      ...stats
-    });
-
-  } catch (error) {
-    console.error('Scraping error:', error);
-    res.status(500).json({ success: false, error: error.message || 'Scraping failed' });
-  }
-});
-
-app.post('/apps/instant-import/create-draft-order', async (req, res) => {
-  try {
-    const { customer, products, deliveryFees, totals, originalUrls, quote } = req.body;
-    
-    if (!SHOPIFY_ACCESS_TOKEN) {
-      return res.status(500).json({ 
-        success: false, 
-        message: 'Shopify not configured. Please set SHOPIFY_ACCESS_TOKEN environment variable.' 
-      });
-    }
-    
-    if (!customer || !products || !Array.isArray(products)) {
-      return res.status(400).json({ success: false, message: 'Customer and products are required' });
-    }
-
-    const lineItems = products.map(product => {
-      const title = `${product.name} (${product.retailer})`;
-      const properties = [
-        { name: 'Product URL', value: product.url },
-        { name: 'Retailer', value: product.retailer },
-        { name: 'Category', value: product.category },
-        { name: 'Dimensions', value: `${product.dimensions.length.toFixed(1)}" x ${product.dimensions.width.toFixed(1)}" x ${product.dimensions.height.toFixed(1)}"` },
-        { name: 'Dimension Source', value: product.dimensionSource || 'estimate' },
-        { name: 'Confidence', value: product.confidence || 'unknown' },
-        { name: 'Weight', value: `${product.weight} lbs` },
-        { name: 'Ocean Freight Cost', value: `$${product.shippingCost}` }
-      ];
-      return {
-        title: title,
-        price: product.price || 0,
-        quantity: product.quantity || 1,
-        properties: properties,
-        custom: true,
-        taxable: false
-      };
-    });
-
-    if (deliveryFees && Object.keys(deliveryFees).length > 0) {
-      Object.entries(deliveryFees).forEach(([retailer, fee]) => {
-        if (fee > 0) {
-          lineItems.push({
-            title: `USA Delivery Fee - ${retailer}`,
-            price: fee,
-            quantity: 1,
-            custom: true,
-            taxable: false
-          });
-        }
-      });
-    }
-
-    if (totals && totals.dutyAmount > 0) {
-      lineItems.push({
-        title: 'Bermuda Import Duty (26.5%)',
-        price: totals.dutyAmount,
-        quantity: 1,
-        custom: true,
-        taxable: false
-      });
-    }
-
-    const customerNote = `
-BERMUDA IMPORT QUOTE ESTIMATE - ${new Date().toLocaleDateString()}
-
-CUSTOMER: ${customer.name} (${customer.email})
-
-⚠️  IMPORTANT: This is an ESTIMATE based on scraped data. Manual verification required before final pricing.
-
-COST BREAKDOWN:
-• Product Cost: $${(totals.totalItemCost || 0).toFixed(2)}
-• USA Delivery Fees: $${(totals.totalDeliveryFees || 0).toFixed(2)}
-• Bermuda Duty (26.5%): $${(totals.dutyAmount || 0).toFixed(2)}
-• Ocean Freight (ESTIMATED): $${(totals.totalShippingCost || 0).toFixed(2)}
-• TOTAL ESTIMATE: $${(totals.grandTotal || 0).toFixed(2)}
-
-DIMENSION SOURCES:
-${products.map(p => `• ${p.name}: ${p.dimensionSource || 'unknown'} (${p.confidence || 'unknown'} confidence)`).join('\n')}
-
-MANUAL VERIFICATION NEEDED FOR:
-${products.filter(p => p.confidence === 'low' || p.confidence === 'fallback').length > 0 ? 
-  `• Products with low confidence dimensions:\n${products.filter(p => p.confidence === 'low' || p.confidence === 'fallback').map(p => `  - ${p.name}`).join('\n')}\n` : ''}
-${products.filter(p => p.needsManualPrice).length > 0 ? 
-  `• Products requiring price verification:\n${products.filter(p => p.needsManualPrice).map(p => `  - ${p.name}`).join('\n')}\n` : ''}
-
-FREIGHT FORWARDER: Sealine Freight - Elizabeth, NJ 07201-614
-
-ORIGINAL URLS:
-${originalUrls ? originalUrls.map((url, i) => `${i+1}. ${url}`).join('\n') : 'No URLs provided'}
-
-This quote was generated using the SDL Instant Import Calculator.
-Final pricing subject to manual verification and adjustment.
-        `.trim();
-
-    const shopifyData = {
-      draft_order: {
-        line_items: lineItems,
-        customer: {
-          email: customer.email,
-          first_name: customer.name.split(' ')[0] || customer.name,
-          last_name: customer.name.split(' ').slice(1).join(' ') || ''
-        },
-        note: customerNote,
-        email: customer.email,
-        invoice_sent_at: null,
-        invoice_url: null,
-        name: `#IMP${Date.now().toString().slice(-6)}`,
-        status: 'open',
-        tags: 'instant-import,bermuda-freight,quote,estimated-dimensions'
-      }
-    };
-
-    console.log('Creating Shopify draft order...');
-    const response = await axios.post(
-      `https://${SHOPIFY_DOMAIN}/admin/api/2023-10/draft_orders.json`,
-      shopifyData,
-      {
-        headers: {
-          'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN,
-          'Content-Type': 'application/json'
-        }
-      }
-    );
-
-    const draftOrder = response.data.draft_order;
-    console.log(`Draft order created: ${draftOrder.name}`);
-
-    res.json({
-      success: true,
-      draftOrderId: draftOrder.id,
-      draftOrderNumber: draftOrder.name,
-      orderUrl: `https://${SHOPIFY_DOMAIN}/admin/draft_orders/${draftOrder.id}`,
-      invoiceUrl: draftOrder.invoice_url,
-      totalPrice: draftOrder.total_price,
-      message: 'Draft order created successfully'
-    });
-  } catch (error) {
-    console.error('Draft order creation error:', error.response?.data || error.message);
-    res.status(500).json({
-      success: false,
-      message: error.response?.data?.errors || error.message || 'Failed to create draft order'
-    });
-  }
-});
-
-// Error handling middleware
-app.use((error, req, res, next) => {
-  console.error('Unhandled error:', error);
-  res.status(500).json({ success: false, error: 'Internal server error' });
-});
-
-// CRITICAL: Bind to 0.0.0.0 for Railway
-const server = app.listen(PORT, '0.0.0.0', () => {
-  console.log(`✅ Bermuda Import Calculator Backend running on port ${PORT}`);
-  console.log(`✅ Health check available at: http://0.0.0.0:${PORT}/health`);
-  console.log(`✅ Frontend served at: http://0.0.0.0:${PORT}/`);
-  console.log(`✅ Ready to process import quotes with intelligent dimension estimation!`);
-}).on('error', (err) => {
-  console.error('❌ Failed to start server:', err);
-  process.exit(1);
-});
-
-// Graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('SIGTERM received, closing server...');
-  server.close(() => {
-    console.log('Server closed');
-    process.exit(0);
-  });
-});
-
-module.exports = app;
+        document.getElementById('createOrderBtn')?.addEventListener('click', async () => {
+            if (!currentCalculation) return;
+            
+            const btn = document.getElementById('createOrderBtn');
+            btn.disabled = true;
+            btn.textContent = 'Creating Order...';
+            
+            try {
+                const response = await fetch('/apps/instant-import/create-draft-order', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(currentCalculation)
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Failed to create draft order');
+                }
+                
+                const data = await response.json();
+                
+                if (data.draftOrder && data.draftOrder.invoice_url) {
+                    window.open(data.draftOrder.invoice_url, '_blank');
+                    btn.textContent = 'Order Created! Opening...';
+                    setTimeout(() => {
+                        btn.textContent = 'Create Another Order';
+                        btn.disabled = false;
+                    }, 2000);
+                }
+            } catch (error) {
+                alert('Failed to create draft order. Please try again.');
+                btn.textContent = 'Create Draft Order in Shopify';
+                btn.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>
