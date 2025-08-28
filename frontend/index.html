@@ -175,12 +175,14 @@
         }
 
         .forwarder-note {
-            color: #558b2f;
-            font-style: italic;
-            font-size: 13px;
-            margin-top: 10px;
-            padding-top: 10px;
-            border-top: 1px solid #a5d6a7;
+            color: #2e7d32;
+            font-weight: 700;
+            font-size: 15px;
+            margin-top: 15px;
+            padding: 12px;
+            border-top: 2px solid #4caf50;
+            background: rgba(76, 175, 80, 0.1);
+            border-radius: 6px;
         }
 
         .page {
@@ -629,7 +631,8 @@ You can add as many as you'd like!"
                 <div class="forwarder-header">USA Freight Forwarder Address</div>
                 <div class="forwarder-name">Sealine Freight Forwarder</div>
                 <div class="forwarder-details">
-                    Elizabeth, NJ 07201-614<br>
+                    614 Progress Street<br>
+                    Elizabeth, NJ 07201<br>
                     New Jersey, USA
                 </div>
                 <div class="forwarder-note">
@@ -641,7 +644,7 @@ You can add as many as you'd like!"
 
             <div class="loading" id="loading">
                 <div class="spinner"></div>
-                <div class="loading-text">Searching for product information...</div>
+                <div class="loading-text">Searching for product information... This may take 1-2 minutes, please wait.</div>
             </div>
 
             <div class="error" id="error"></div>
@@ -1014,11 +1017,11 @@ You can add as many as you'd like!"
             btn.textContent = 'Creating Order...';
             
             // Add customer info (you might want to collect this earlier)
-            const customerEmail = prompt('Please enter customer email:');
-            const customerName = prompt('Please enter customer name:');
+            const customerEmail = prompt('Please enter your email address:');
+            const customerName = prompt('Please enter your full name:');
             
             if (!customerEmail || !customerName) {
-                alert('Customer information is required');
+                alert('Customer information is required to proceed');
                 btn.disabled = false;
                 btn.textContent = 'Confirm & Create Order';
                 return;
@@ -1044,12 +1047,21 @@ You can add as many as you'd like!"
                 
                 const data = await response.json();
                 
-                alert(`Thank you! Your import request has been created successfully.\n\nOrder #${data.draftOrderNumber}\n\nWe'll review your quote and contact you if any adjustments are needed. If you don't hear from us, expect delivery within 3-5 weeks!`);
-                
-                // Reset form
-                location.reload();
+                // Check if we have an invoice URL to redirect to
+                if (data.invoiceUrl) {
+                    // Show brief success message then redirect to Shopify
+                    alert(`Order #${data.draftOrderNumber} created successfully!\n\nRedirecting you to Shopify to complete your purchase...`);
+                    
+                    // Redirect to Shopify invoice/checkout page
+                    window.location.href = data.invoiceUrl;
+                } else {
+                    // Fallback if no invoice URL
+                    alert(`Thank you! Your import request has been created successfully.\n\nOrder #${data.draftOrderNumber}\n\nWe'll contact you shortly to complete the order.`);
+                    location.reload();
+                }
                 
             } catch (error) {
+                console.error('Draft order creation error:', error);
                 alert('Failed to create draft order. Please try again.');
                 btn.textContent = 'Confirm & Create Order';
                 btn.disabled = false;
