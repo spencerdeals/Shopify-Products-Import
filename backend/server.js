@@ -4,6 +4,7 @@ const rateLimit = require('express-rate-limit');
 const axios = require('axios');
 const path = require('path');
 const { URL } = require('url');
+const ApifyScraper = require('./apifyScraper');
 require('dotenv').config();
 
 const app = express();
@@ -13,15 +14,21 @@ const PORT = process.env.PORT || 3000;
 const SHOPIFY_DOMAIN = process.env.SHOPIFY_DOMAIN || 'spencer-deals-ltd.myshopify.com';
 const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN || '';
 const SCRAPINGBEE_API_KEY = process.env.SCRAPINGBEE_API_KEY || '';
+const APIFY_API_KEY = process.env.APIFY_API_KEY || '';
 const SCRAPING_TIMEOUT = 30000;  // 30 seconds timeout
 const MAX_CONCURRENT_SCRAPES = 2;
 const BERMUDA_DUTY_RATE = 0.265;
 const USE_SCRAPINGBEE = !!SCRAPINGBEE_API_KEY;
 
+// Initialize Apify scraper
+const apifyScraper = new ApifyScraper(APIFY_API_KEY);
+const USE_APIFY_FOR_AMAZON = apifyScraper.isAvailable();
+
 console.log('=== SERVER STARTUP ===');
 console.log(`Port: ${PORT}`);
 console.log(`Shopify Domain: ${SHOPIFY_DOMAIN}`);
 console.log(`ScrapingBee: ${USE_SCRAPINGBEE ? 'Enabled' : 'Disabled'}`);
+console.log(`Apify (Amazon): ${USE_APIFY_FOR_AMAZON ? 'Enabled' : 'Disabled'}`);
 console.log('=====================');
 
 // Middleware
@@ -42,6 +49,7 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     port: PORT,
     scrapingBee: USE_SCRAPINGBEE,
+    apify: USE_APIFY_FOR_AMAZON,
     shopifyConfigured: !!SHOPIFY_ACCESS_TOKEN
   });
 });
@@ -912,6 +920,62 @@ async function parseScrapingBeeHTML(html, url) {
 async function scrapeProduct(url) {
   const retailer = detectRetailer(url);
   
+  // APIFY INTEGRATION FOR AMAZON
+  if (retailer === 'Amazon' && USE_APIFY_FOR_AMAZON) {
+    try {
+      console.log(`🎯 Using Apify for Amazon product: ${url}`);
+      const apifyData = await apifyScraper.scrapeAmazon(url);
+      
+      if (apifyData && (apifyData.name || apifyData.price)) {
+        const category = categorizeProduct(apifyData.name || '', url);
+        
+        let dimensions = apifyData.dimensions;
+        let dimensionSource = 'apify-scraped';
+        let confidence = 'high';
+        
+        if (!dimensions) {
+          console.log(`No dimensions from Apify, using intelligent estimation...`);
+          const intelligentDims = await getIntelligentDimensions('', url, apifyData.price);
+          dimensions = intelligentDims;
+          dimensionSource = intelligentDims.source || 'intelligent-estimate';
+          confidence = intelligentDims.confidence || 'medium';
+        }
+        
+        const validatedDimensions = validateDimensions(dimensions, category, apifyData.name);
+        const weight = apifyData.weight || estimateWeight(validatedDimensions, category);
+        const shippingCost = calculateShippingCost(validatedDimensions, weight, apifyData.price || 0);
+        
+        return {
+          id: generateProductId(),
+          name: apifyData.name || 'Amazon Product',
+          price: apifyData.price,
+          image: apifyData.image || 'https://placehold.co/120x120/FF9800/FFFFFF/png?text=Amazon',
+          retailer: retailer,
+          category: apifyData.category || category,
+          dimensions: validatedDimensions,
+          dimensionSource: dimensionSource,
+          confidence: confidence,
+          weight: weight,
+          shippingCost: shippingCost,
+          url: url,
+          needsManualPrice: !apifyData.price,
+          priceMessage: !apifyData.price ? 'Please enter product price manually' : null,
+          quantity: 1,
+          scraped: true,
+          method: 'Apify',
+          brand: apifyData.brand,
+          inStock: apifyData.inStock,
+          estimateWarning: confidence !== 'high' ? 
+            `Dimensions ${dimensionSource === 'apify-scraped' ? 'scraped' : 'estimated'} - Confidence: ${confidence}` : null
+        };
+      }
+    } catch (error) {
+      console.log(`⚠️ Apify failed for Amazon, falling back to ScrapingBee:`, error.message);
+      // Fall through to ScrapingBee
+    }
+  }
+  
+  // SCRAPINGBEE FOR ALL OTHER RETAILERS (AND AMAZON FALLBACK)
   if (USE_SCRAPINGBEE) {
     try {
       console.log(`Using ScrapingBee for ${retailer}: ${url}`);
@@ -983,7 +1047,9 @@ async function scrapeProduct(url) {
     id: generateProductId(),
     name: productName,
     price: null,
-    image: 'https://placehold.co/120x120/7CB342/FFFFFF/png?text=SDL',
+    image: retailer === 'Amazon' ? 
+      'https://placehold.co/120x120/FF9800/FFFFFF/png?text=Amazon' : 
+      'https://placehold.co/120x120/7CB342/FFFFFF/png?text=SDL',
     retailer: retailer,
     category: category,
     dimensions: dimensions,
@@ -1054,7 +1120,7 @@ app.post('/api/scrape', async (req, res) => {
     }
 
     console.log(`Starting to scrape ${validUrls.length} products...`);
-    console.log(`Using ${USE_SCRAPINGBEE ? 'ScrapingBee with intelligent estimation' : 'Fallback mode only'}`);
+    console.log(`Using ${USE_APIFY_FOR_AMAZON ? 'Apify for Amazon,' : ''} ${USE_SCRAPINGBEE ? 'ScrapingBee for others' : 'Fallback mode only'}`);
     
     const products = [];
     for (let i = 0; i < validUrls.length; i += MAX_CONCURRENT_SCRAPES) {
@@ -1088,9 +1154,10 @@ app.post('/api/scrape', async (req, res) => {
       count: products.length,
       scraped: products.filter(p => p.scraped).length,
       pricesFound: products.filter(p => p.price).length,
-      dimensionsFound: products.filter(p => p.dimensionSource === 'scraped').length,
+      dimensionsFound: products.filter(p => p.dimensionSource === 'scraped' || p.dimensionSource === 'apify-scraped').length,
       intelligentEstimates: products.filter(p => p.dimensionSource === 'weight-based' || p.dimensionSource === 'price-based').length,
       fallbacksUsed: products.filter(p => p.confidence === 'fallback').length,
+      apifyUsed: products.filter(p => p.method === 'Apify').length,
       retailers: Object.keys(groupedProducts)
     };
 
@@ -1177,11 +1244,11 @@ CUSTOMER: ${customer.name} (${customer.email})
 ⚠️  IMPORTANT: This is an ESTIMATE based on scraped data. Manual verification required before final pricing.
 
 COST BREAKDOWN:
-• Product Cost: $${(totals.totalItemCost || 0).toFixed(2)}
-• USA Delivery Fees: $${(totals.totalDeliveryFees || 0).toFixed(2)}
-• Bermuda Duty (26.5%): $${(totals.dutyAmount || 0).toFixed(2)}
-• Ocean Freight (ESTIMATED): $${(totals.totalShippingCost || 0).toFixed(2)}
-• TOTAL ESTIMATE: $${(totals.grandTotal || 0).toFixed(2)}
+- Product Cost: $${(totals.totalItemCost || 0).toFixed(2)}
+- USA Delivery Fees: $${(totals.totalDeliveryFees || 0).toFixed(2)}
+- Bermuda Duty (26.5%): $${(totals.dutyAmount || 0).toFixed(2)}
+- Ocean Freight (ESTIMATED): $${(totals.totalShippingCost || 0).toFixed(2)}
+- TOTAL ESTIMATE: $${(totals.grandTotal || 0).toFixed(2)}
 
 DIMENSION SOURCES:
 ${products.map(p => `• ${p.name}: ${p.dimensionSource || 'unknown'} (${p.confidence || 'unknown'} confidence)`).join('\n')}
@@ -1264,6 +1331,7 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`✅ Health check available at: http://0.0.0.0:${PORT}/health`);
   console.log(`✅ Frontend served at: http://0.0.0.0:${PORT}/`);
   console.log(`✅ Ready to process import quotes with intelligent dimension estimation!`);
+  console.log(`✅ Apify integration ${USE_APIFY_FOR_AMAZON ? 'ACTIVE' : 'DISABLED'} for Amazon products`);
 }).on('error', (err) => {
   console.error('❌ Failed to start server:', err);
   process.exit(1);
