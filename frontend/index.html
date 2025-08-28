@@ -13,7 +13,7 @@
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #7cb342 0%, #2e7d32 100%);
             min-height: 100vh;
             display: flex;
             justify-content: center;
@@ -25,11 +25,12 @@
             background: white;
             border-radius: 20px;
             box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-            max-width: 700px;
+            max-width: 800px;
             width: 100%;
             padding: 40px;
             position: relative;
             overflow: hidden;
+            min-height: 500px;
         }
 
         .container::before {
@@ -39,7 +40,7 @@
             left: 0;
             right: 0;
             height: 5px;
-            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(90deg, #7cb342 0%, #2e7d32 100%);
         }
 
         h1 {
@@ -53,6 +54,85 @@
             color: #666;
             text-align: center;
             margin-bottom: 25px;
+            font-size: 14px;
+        }
+
+        /* Progress indicator */
+        .progress-bar {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 30px;
+        }
+
+        .progress-step {
+            display: flex;
+            align-items: center;
+            margin: 0 10px;
+        }
+
+        .progress-circle {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            background-color: #e0e0e0;
+            color: #666;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 14px;
+            margin-right: 8px;
+        }
+
+        .progress-circle.active {
+            background-color: #7cb342;
+            color: white;
+        }
+
+        .progress-circle.completed {
+            background-color: #4caf50;
+            color: white;
+        }
+
+        .progress-line {
+            width: 40px;
+            height: 2px;
+            background-color: #e0e0e0;
+            margin: 0 5px;
+        }
+
+        .progress-line.completed {
+            background-color: #4caf50;
+        }
+
+        /* Warning boxes - now orange/yellow */
+        .warning-box {
+            background: linear-gradient(135deg, #fff8e1 0%, #ffecb3 100%);
+            border: 2px solid #ffa726;
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 25px;
+            position: relative;
+        }
+
+        .warning-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+            color: #e65100;
+            font-weight: 600;
+            font-size: 15px;
+        }
+
+        .warning-header::before {
+            content: '⚠️';
+            margin-right: 8px;
+            font-size: 18px;
+        }
+
+        .warning-text {
+            color: #bf360c;
+            line-height: 1.5;
             font-size: 14px;
         }
 
@@ -103,6 +183,26 @@
             border-top: 1px solid #a5d6a7;
         }
 
+        .page {
+            display: none;
+        }
+
+        .page.active {
+            display: block;
+            animation: fadeIn 0.5s;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
         .input-group {
             margin-bottom: 25px;
         }
@@ -115,7 +215,7 @@
             font-size: 14px;
         }
 
-        input {
+        input, textarea {
             width: 100%;
             padding: 12px 15px;
             border: 2px solid #e0e0e0;
@@ -123,48 +223,23 @@
             font-size: 16px;
             transition: all 0.3s;
             background-color: #f8f9fa;
+            font-family: inherit;
         }
 
-        input:focus {
+        textarea {
+            min-height: 120px;
+            resize: vertical;
+        }
+
+        input:focus, textarea:focus {
             outline: none;
-            border-color: #667eea;
+            border-color: #7cb342;
             background-color: white;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-        }
-
-        /* Vendor-specific delivery fee section */
-        .vendor-delivery-section {
-            background: linear-gradient(135deg, #e8f5e9 0%, #f1f8e9 100%);
-            border: 1px solid #81c784;
-            border-radius: 10px;
-            padding: 15px;
-            margin-bottom: 20px;
-        }
-
-        .vendor-delivery-header {
-            display: flex;
-            align-items: center;
-            color: #2e7d32;
-            font-weight: 600;
-            margin-bottom: 12px;
-            font-size: 15px;
-        }
-
-        .vendor-delivery-header::before {
-            content: '🚚';
-            margin-right: 8px;
-        }
-
-        .vendor-delivery-note {
-            color: #666;
-            font-size: 12px;
-            font-style: italic;
-            margin-top: 8px;
+            box-shadow: 0 0 0 3px rgba(124, 179, 66, 0.1);
         }
 
         button {
-            width: 100%;
-            padding: 15px;
+            padding: 15px 30px;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
             border: none;
@@ -173,7 +248,7 @@
             font-weight: 600;
             cursor: pointer;
             transition: transform 0.3s, box-shadow 0.3s;
-            margin-top: 10px;
+            margin: 10px 5px;
         }
 
         button:hover {
@@ -187,10 +262,152 @@
             transform: none;
         }
 
+        .button-group {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 30px;
+        }
+
+        .secondary-btn {
+            background: linear-gradient(135deg, #90a4ae 0%, #607d8b 100%);
+        }
+
+        /* Vendor group styling */
+        .vendor-group {
+            background: linear-gradient(135deg, #f3e5f5 0%, #e1bee7 100%);
+            border: 2px solid #ba68c8;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .vendor-header {
+            color: #6a1b9a;
+            font-weight: 600;
+            font-size: 18px;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+        }
+
+        .vendor-header::before {
+            content: '🏪';
+            margin-right: 10px;
+            font-size: 22px;
+        }
+
+        .product-item {
+            background: rgba(255, 255, 255, 0.7);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 10px;
+            border-left: 4px solid #ba68c8;
+        }
+
+        .product-name {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 4px;
+        }
+
+        .product-details {
+            font-size: 13px;
+            color: #666;
+        }
+
+        .delivery-fee-input {
+            background: rgba(255, 255, 255, 0.9);
+            border: 2px solid #ba68c8;
+            margin-top: 15px;
+        }
+
+        .delivery-fee-input input {
+            background: white;
+        }
+
+        /* Final summary styling */
+        .cost-breakdown {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 25px;
+        }
+
+        .cost-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .cost-item:last-child {
+            border-bottom: none;
+        }
+
+        .cost-label {
+            color: #555;
+            font-size: 14px;
+        }
+
+        .cost-value {
+            color: #333;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .total-row {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 2px solid #7cb342;
+            background: rgba(124, 179, 66, 0.1);
+            border-radius: 8px;
+            padding: 15px;
+        }
+
+        .total-row .cost-label {
+            font-size: 18px;
+            color: #333;
+            font-weight: 600;
+        }
+
+        .total-row .cost-value {
+            font-size: 20px;
+            color: #7cb342;
+            font-weight: 700;
+        }
+
+        /* Confirmation checkbox */
+        .confirmation-checkbox {
+            background: linear-gradient(135deg, #fff3e0 0%, #ffcc80 100%);
+            border: 2px solid #ff9800;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 25px;
+        }
+
+        .checkbox-container {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+        }
+
+        .checkbox-container input[type="checkbox"] {
+            margin-top: 4px;
+            width: auto;
+            flex-shrink: 0;
+        }
+
+        .checkbox-label {
+            color: #e65100;
+            font-size: 14px;
+            line-height: 1.5;
+            cursor: pointer;
+        }
+
         .loading {
             display: none;
             text-align: center;
-            margin-top: 20px;
+            margin: 30px 0;
         }
 
         .loading.active {
@@ -199,7 +416,7 @@
 
         .spinner {
             border: 3px solid #f3f3f3;
-            border-top: 3px solid #667eea;
+            border-top: 3px solid #7cb342;
             border-radius: 50%;
             width: 40px;
             height: 40px;
@@ -218,112 +435,18 @@
             font-size: 14px;
         }
 
-        .results {
-            display: none;
-            margin-top: 30px;
-            padding-top: 30px;
-            border-top: 2px solid #e0e0e0;
-        }
-
-        .results.active {
-            display: block;
-            animation: fadeIn 0.5s;
-        }
-
-        @keyframes fadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(10px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        .result-item {
-            display: flex;
-            justify-content: space-between;
-            padding: 12px 0;
-            border-bottom: 1px solid #f0f0f0;
-        }
-
-        .result-item:last-child {
-            border-bottom: none;
-        }
-
-        .result-label {
-            color: #555;
-            font-size: 14px;
-        }
-
-        .result-value {
-            color: #333;
-            font-weight: 600;
-            font-size: 14px;
-        }
-
-        .total-row {
-            margin-top: 15px;
-            padding-top: 15px;
-            border-top: 2px solid #667eea;
-        }
-
-        .total-row .result-label {
-            font-size: 18px;
-            color: #333;
-            font-weight: 600;
-        }
-
-        .total-row .result-value {
-            font-size: 20px;
-            color: #667eea;
-            font-weight: 700;
-        }
-
         .error {
             display: none;
-            background-color: #fee;
-            color: #c33;
+            background: linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%);
+            border: 2px solid #f44336;
+            color: #c62828;
             padding: 15px;
             border-radius: 10px;
-            margin-top: 20px;
-            border-left: 4px solid #c33;
+            margin: 20px 0;
         }
 
         .error.active {
             display: block;
-        }
-
-        .price-alert {
-            background-color: #ffebee;
-            border: 1px solid #ff5252;
-            color: #c62828;
-            padding: 12px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            display: flex;
-            align-items: center;
-            font-size: 13px;
-        }
-
-        .price-alert-icon {
-            width: 20px;
-            height: 20px;
-            background-color: #ff5252;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-right: 10px;
-            flex-shrink: 0;
-        }
-
-        .price-alert-icon::after {
-            content: '!';
-            color: white;
-            font-weight: bold;
-            font-size: 14px;
         }
 
         .info-text {
@@ -333,305 +456,373 @@
             margin-top: 20px;
             line-height: 1.5;
         }
-
-        .searching-indicator {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin: 10px 0;
-        }
-
-        .searching-dot {
-            width: 8px;
-            height: 8px;
-            background-color: #667eea;
-            border-radius: 50%;
-            margin: 0 3px;
-            animation: searchingPulse 1.4s infinite ease-in-out both;
-        }
-
-        .searching-dot:nth-child(1) {
-            animation-delay: -0.32s;
-        }
-
-        .searching-dot:nth-child(2) {
-            animation-delay: -0.16s;
-        }
-
-        @keyframes searchingPulse {
-            0%, 80%, 100% {
-                transform: scale(0);
-                opacity: 0.5;
-            }
-            40% {
-                transform: scale(1);
-                opacity: 1;
-            }
-        }
-
-        .vendor-name {
-            color: #667eea;
-            font-weight: 600;
-        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🚢 Instant Import Calculator</h1>
+        <h1>SDL Instant Imports (Ocean Freight)</h1>
         <p class="subtitle">Get accurate shipping costs for your Bermuda imports</p>
         
-        <!-- Freight Forwarder Address Box -->
-        <div class="forwarder-address">
-            <div class="forwarder-header">USA Freight Forwarder Address</div>
-            <div class="forwarder-name">Sealine Freight Forwarder</div>
-            <div class="forwarder-details">
-                Elizabeth, NJ 07201-614<br>
-                New Jersey, USA
+        <!-- Progress Bar -->
+        <div class="progress-bar">
+            <div class="progress-step">
+                <div class="progress-circle active" id="step1">1</div>
+                <span>Add Products</span>
             </div>
-            <div class="forwarder-note">
-                Use this address when calculating shipping costs from US retailers to get accurate delivery totals.
+            <div class="progress-line" id="line1"></div>
+            <div class="progress-step">
+                <div class="progress-circle" id="step2">2</div>
+                <span>Review & Fees</span>
             </div>
-        </div>
-
-        <!-- Red price alert warning -->
-        <div class="price-alert">
-            <div class="price-alert-icon"></div>
-            <div>
-                <strong>Important:</strong> Final prices may vary based on actual product dimensions and weight. This calculator provides estimates for planning purposes.
+            <div class="progress-line" id="line2"></div>
+            <div class="progress-step">
+                <div class="progress-circle" id="step3">3</div>
+                <span>Confirm Order</span>
             </div>
         </div>
 
-        <form id="calculatorForm">
-            <div class="input-group">
-                <label for="productUrl">Product URL</label>
-                <input 
-                    type="url" 
-                    id="productUrl" 
-                    name="productUrl" 
-                    placeholder="https://www.example.com/product" 
-                    required
-                >
-            </div>
-
-            <!-- Vendor-specific delivery fee section -->
-            <div class="vendor-delivery-section" id="deliveryFeeSection">
-                <div class="vendor-delivery-header">
-                    <span id="vendorDeliveryLabel">USA Delivery Fee</span>
-                </div>
-                <div class="input-group" style="margin-bottom: 0;">
-                    <label for="usShipping">Enter any shipping costs from <span id="vendorName" class="vendor-name">the retailer</span> to our New Jersey freight forwarder address:</label>
-                    <div style="display: flex; align-items: center;">
-                        <span style="margin-right: 10px; color: #555;">Delivery Fee (if any): $</span>
-                        <input 
-                            type="number" 
-                            id="usShipping" 
-                            name="usShipping" 
-                            placeholder="0.00" 
-                            min="0" 
-                            step="0.01" 
-                            required
-                            style="flex: 1; max-width: 150px;"
-                        >
-                    </div>
-                    <div class="vendor-delivery-note">
-                        Most retailers offer free shipping, but some may charge delivery fees to New Jersey.
-                    </div>
+        <!-- PAGE 1: URL Input -->
+        <div class="page active" id="page1">
+            <div class="warning-box">
+                <div class="warning-header">Please Note</div>
+                <div class="warning-text">
+                    Before pasting your links, make sure you've selected the correct size, color, or variant on each product page. We can't be responsible for mix-ups if the wrong variant gets ordered! 😊
                 </div>
             </div>
 
-            <button type="submit" id="calculateBtn">
-                Calculate Import Costs
-            </button>
-        </form>
+            <form id="urlForm">
+                <div class="input-group">
+                    <label for="productUrls">Product URLs</label>
+                    <textarea 
+                        id="productUrls" 
+                        name="productUrls" 
+                        placeholder="Paste your product URLs here, one per line:
+https://www.amazon.com/product1
+https://www.wayfair.com/product2
+https://www.target.com/product3
 
-        <div class="loading" id="loading">
-            <div class="spinner"></div>
-            <div class="loading-text">
-                <span id="loadingMessage">Searching for product information...</span>
-                <div class="searching-indicator">
-                    <div class="searching-dot"></div>
-                    <div class="searching-dot"></div>
-                    <div class="searching-dot"></div>
+You can add as many as you'd like!"
+                        required
+                    ></textarea>
+                </div>
+
+                <div class="button-group">
+                    <div></div> <!-- Empty div for spacing -->
+                    <button type="submit">Continue to Review →</button>
+                </div>
+            </form>
+        </div>
+
+        <!-- PAGE 2: Review Products & Delivery Fees -->
+        <div class="page" id="page2">
+            <h2 style="margin-bottom: 20px; color: #333;">Review Your Products</h2>
+            
+            <!-- Freight Forwarder Address Box -->
+            <div class="forwarder-address">
+                <div class="forwarder-header">USA Freight Forwarder Address</div>
+                <div class="forwarder-name">Sealine Freight Forwarder</div>
+                <div class="forwarder-details">
+                    Elizabeth, NJ 07201-614<br>
+                    New Jersey, USA
+                </div>
+                <div class="forwarder-note">
+                    Use this address when calculating shipping costs from US retailers to get accurate delivery totals.
                 </div>
             </div>
+
+            <div id="vendorGroups"></div>
+
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <div class="loading-text">Searching for product information...</div>
+            </div>
+
+            <div class="error" id="error"></div>
+
+            <div class="button-group">
+                <button type="button" class="secondary-btn" onclick="goToPage(1)">← Back to Products</button>
+                <button type="button" id="continueToFinal" onclick="calculateAndProceed()" disabled>Calculate Total →</button>
+            </div>
         </div>
 
-        <div class="error" id="error"></div>
+        <!-- PAGE 3: Final Breakdown & Confirmation -->
+        <div class="page" id="page3">
+            <h2 style="margin-bottom: 20px; color: #333;">Final Cost Breakdown</h2>
+            
+            <div class="cost-breakdown" id="costBreakdown"></div>
 
-        <div class="results" id="results">
-            <h3 style="margin-bottom: 20px; color: #333;">Cost Breakdown</h3>
-            
-            <div class="result-item">
-                <span class="result-label">Item First Cost:</span>
-                <span class="result-value" id="itemCost">-</span>
-            </div>
-            
-            <div class="result-item">
-                <span class="result-label">Bermuda Import Duty (26.5%):</span>
-                <span class="result-value" id="importDuty">-</span>
-            </div>
-            
-            <div class="result-item">
-                <span class="result-label"><span id="vendorResultLabel">USA</span> Delivery Fee:</span>
-                <span class="result-value" id="usaDelivery">-</span>
-            </div>
-            
-            <div class="result-item">
-                <span class="result-label">Ocean Freight & Handling:</span>
-                <span class="result-value" id="freightHandling">-</span>
-            </div>
-            
-            <div class="result-item total-row">
-                <span class="result-label">Total Landed Cost:</span>
-                <span class="result-value" id="totalCost">-</span>
+            <div class="confirmation-checkbox">
+                <div class="checkbox-container">
+                    <input type="checkbox" id="confirmVariants">
+                    <label for="confirmVariants" class="checkbox-label">
+                        I confirm I have double-checked that all product links have the correct sizes, colors, and variants selected. SDL will not be responsible for customer errors if the wrong items are ordered. Let's keep this simple and fun! ✅
+                    </label>
+                </div>
             </div>
 
-            <button type="button" id="createOrderBtn" style="margin-top: 20px;">
-                Create Draft Order in Shopify
-            </button>
+            <div class="button-group">
+                <button type="button" class="secondary-btn" onclick="goToPage(2)">← Back to Review</button>
+                <button type="button" id="createOrderBtn" onclick="createDraftOrder()" disabled>Confirm & Create Order 🎉</button>
+            </div>
         </div>
 
-        <p class="info-text">
+        <p class="info-text" id="infoText">
             This calculator uses intelligent estimation to determine shipping costs based on product category, weight, and price.
             We search multiple data points to provide the most accurate estimate possible.
         </p>
     </div>
 
     <script>
-        let currentCalculation = null;
-        const loadingMessages = [
-            "Searching for product information...",
-            "Analyzing product details...",
-            "Calculating dimensions...",
-            "Determining shipping category...",
-            "Finalizing your quote..."
-        ];
+        let currentPage = 1;
+        let scrapedProducts = [];
+        let vendorGroups = {};
+        let finalCalculation = null;
 
-        // Function to extract vendor name from URL
-        function getVendorFromUrl(url) {
-            try {
-                const urlObj = new URL(url);
-                const hostname = urlObj.hostname.toLowerCase();
+        // Page navigation
+        function goToPage(pageNumber) {
+            // Hide all pages
+            document.querySelectorAll('.page').forEach(page => {
+                page.classList.remove('active');
+            });
+            
+            // Show selected page
+            document.getElementById(`page${pageNumber}`).classList.add('active');
+            
+            // Update progress bar
+            updateProgressBar(pageNumber);
+            
+            currentPage = pageNumber;
+        }
+
+        function updateProgressBar(activeStep) {
+            for (let i = 1; i <= 3; i++) {
+                const step = document.getElementById(`step${i}`);
+                const line = document.getElementById(`line${i}`);
                 
-                // Common vendor mappings
-                if (hostname.includes('wayfair')) return 'Wayfair';
-                if (hostname.includes('amazon')) return 'Amazon';
-                if (hostname.includes('walmart')) return 'Walmart';
-                if (hostname.includes('target')) return 'Target';
-                if (hostname.includes('homedepot')) return 'Home Depot';
-                if (hostname.includes('lowes')) return 'Lowes';
-                if (hostname.includes('overstock')) return 'Overstock';
-                if (hostname.includes('costco')) return 'Costco';
-                if (hostname.includes('ikea')) return 'IKEA';
-                if (hostname.includes('bestbuy')) return 'Best Buy';
-                if (hostname.includes('ebay')) return 'eBay';
-                if (hostname.includes('etsy')) return 'Etsy';
-                if (hostname.includes('macys')) return "Macy's";
-                if (hostname.includes('nordstrom')) return 'Nordstrom';
-                if (hostname.includes('sephora')) return 'Sephora';
-                if (hostname.includes('ulta')) return 'Ulta';
-                if (hostname.includes('apple')) return 'Apple';
-                if (hostname.includes('nike')) return 'Nike';
-                if (hostname.includes('adidas')) return 'Adidas';
-                
-                // Extract domain name as fallback
-                const domain = hostname.replace('www.', '').split('.')[0];
-                return domain.charAt(0).toUpperCase() + domain.slice(1);
-            } catch (e) {
-                return 'USA';
+                if (i < activeStep) {
+                    step.classList.remove('active');
+                    step.classList.add('completed');
+                    if (line) line.classList.add('completed');
+                } else if (i === activeStep) {
+                    step.classList.add('active');
+                    step.classList.remove('completed');
+                } else {
+                    step.classList.remove('active', 'completed');
+                    if (line) line.classList.remove('completed');
+                }
             }
         }
 
-        // Update vendor name when URL changes
-        document.getElementById('productUrl').addEventListener('input', function(e) {
-            const vendor = getVendorFromUrl(e.target.value);
-            
-            // Update delivery fee section
-            document.getElementById('vendorDeliveryLabel').textContent = vendor + ' Delivery Fee';
-            document.getElementById('vendorName').textContent = vendor;
-            
-            // Update result label placeholder
-            document.getElementById('vendorResultLabel').textContent = vendor;
-        });
-
-        document.getElementById('calculatorForm').addEventListener('submit', async (e) => {
+        // Form submission for URLs
+        document.getElementById('urlForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             
-            const productUrl = document.getElementById('productUrl').value;
-            const usShipping = parseFloat(document.getElementById('usShipping').value);
-            const vendor = getVendorFromUrl(productUrl);
+            const urls = document.getElementById('productUrls').value
+                .split('\n')
+                .map(url => url.trim())
+                .filter(url => url && url.startsWith('http'));
             
-            // Update vendor label in results
-            document.getElementById('vendorResultLabel').textContent = vendor;
+            if (urls.length === 0) {
+                alert('Please enter at least one valid product URL');
+                return;
+            }
             
-            // Hide previous results/errors
-            document.getElementById('results').classList.remove('active');
-            document.getElementById('error').classList.remove('active');
-            
-            // Show loading
+            // Go to page 2 and start scraping
+            goToPage(2);
+            await scrapeProducts(urls);
+        });
+
+        // Scrape products
+        async function scrapeProducts(urls) {
             document.getElementById('loading').classList.add('active');
-            document.getElementById('calculateBtn').disabled = true;
-            
-            // Cycle through loading messages
-            let messageIndex = 0;
-            const messageInterval = setInterval(() => {
-                messageIndex = (messageIndex + 1) % loadingMessages.length;
-                document.getElementById('loadingMessage').textContent = loadingMessages[messageIndex];
-            }, 2000);
             
             try {
-                const response = await fetch('/api/calculate', {
+                const response = await fetch('/api/scrape', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify({
-                        url: productUrl,
-                        usShipping: usShipping,
-                        vendor: vendor
-                    })
+                    body: JSON.stringify({ urls })
                 });
                 
-                clearInterval(messageInterval);
-                
                 if (!response.ok) {
-                    throw new Error('Failed to calculate shipping');
+                    throw new Error('Failed to scrape products');
                 }
                 
                 const data = await response.json();
-                currentCalculation = data;
-                currentCalculation.vendor = vendor; // Store vendor name
+                scrapedProducts = data.products || [];
+                vendorGroups = groupProductsByVendor(scrapedProducts);
                 
-                // Update results
-                document.getElementById('itemCost').textContent = `$${data.itemCost.toFixed(2)}`;
-                document.getElementById('importDuty').textContent = `$${data.importDuty.toFixed(2)}`;
-                document.getElementById('usaDelivery').textContent = `$${data.usaDelivery.toFixed(2)}`;
-                document.getElementById('freightHandling').textContent = `$${data.freightHandling.toFixed(2)}`;
-                document.getElementById('totalCost').textContent = `$${data.totalCost.toFixed(2)}`;
-                
-                // Show results
+                displayVendorGroups();
                 document.getElementById('loading').classList.remove('active');
-                document.getElementById('results').classList.add('active');
+                document.getElementById('continueToFinal').disabled = false;
                 
             } catch (error) {
-                clearInterval(messageInterval);
                 document.getElementById('loading').classList.remove('active');
                 document.getElementById('error').classList.add('active');
-                document.getElementById('error').innerHTML = `
-                    <strong>Error:</strong> Unable to calculate shipping costs. Please check the URL and try again.
-                    <br><small>Tip: Make sure the product URL is complete and accessible.</small>
-                `;
-            } finally {
-                document.getElementById('calculateBtn').disabled = false;
+                document.getElementById('error').textContent = 'Failed to load products. Please check your URLs and try again.';
             }
+        }
+
+        // Group products by vendor
+        function groupProductsByVendor(products) {
+            const groups = {};
+            products.forEach(product => {
+                const vendor = product.retailer || 'Unknown';
+                if (!groups[vendor]) {
+                    groups[vendor] = [];
+                }
+                groups[vendor].push(product);
+            });
+            return groups;
+        }
+
+        // Display vendor groups
+        function displayVendorGroups() {
+            const container = document.getElementById('vendorGroups');
+            container.innerHTML = '';
+            
+            Object.entries(vendorGroups).forEach(([vendor, products]) => {
+                const vendorDiv = document.createElement('div');
+                vendorDiv.className = 'vendor-group';
+                
+                vendorDiv.innerHTML = `
+                    <div class="vendor-header">${vendor} Products</div>
+                    ${products.map(product => `
+                        <div class="product-item">
+                            <div class="product-name">${product.name}</div>
+                            <div class="product-details">
+                                Price: ${product.price ? '$' + product.price : 'Price detection needed'} | 
+                                Category: ${product.category} | 
+                                Estimated shipping: $${product.shippingCost || 0}
+                            </div>
+                        </div>
+                    `).join('')}
+                    <div class="delivery-fee-input">
+                        <label for="delivery-${vendor}">
+                            <strong>${vendor} Delivery Fee (if any):</strong><br>
+                            <small>Enter any shipping charges from ${vendor} to our New Jersey address:</small>
+                        </label>
+                        <div style="display: flex; align-items: center; margin-top: 8px;">
+                            <span style="margin-right: 10px;">$</span>
+                            <input type="number" id="delivery-${vendor}" step="0.01" min="0" value="0" placeholder="0.00">
+                        </div>
+                    </div>
+                `;
+                
+                container.appendChild(vendorDiv);
+            });
+        }
+
+        // Calculate and proceed to final page
+        async function calculateAndProceed() {
+            // Collect delivery fees
+            const deliveryFees = {};
+            Object.keys(vendorGroups).forEach(vendor => {
+                const input = document.getElementById(`delivery-${vendor}`);
+                deliveryFees[vendor] = parseFloat(input.value) || 0;
+            });
+            
+            // Calculate totals
+            const calculation = calculateTotals(deliveryFees);
+            finalCalculation = calculation;
+            
+            displayFinalBreakdown(calculation);
+            goToPage(3);
+        }
+
+        // Calculate totals
+        function calculateTotals(deliveryFees) {
+            let totalItemCost = 0;
+            let totalShippingCost = 0;
+            let totalDeliveryFees = 0;
+            
+            scrapedProducts.forEach(product => {
+                totalItemCost += product.price || 0;
+                totalShippingCost += product.shippingCost || 0;
+            });
+            
+            Object.values(deliveryFees).forEach(fee => {
+                totalDeliveryFees += fee;
+            });
+            
+            const dutyAmount = totalItemCost * 0.265; // 26.5% duty
+            const grandTotal = totalItemCost + dutyAmount + totalDeliveryFees + totalShippingCost;
+            
+            return {
+                products: scrapedProducts,
+                deliveryFees,
+                totals: {
+                    totalItemCost,
+                    dutyAmount,
+                    totalDeliveryFees,
+                    totalShippingCost,
+                    grandTotal
+                },
+                originalUrls: document.getElementById('productUrls').value
+                    .split('\n')
+                    .map(url => url.trim())
+                    .filter(url => url && url.startsWith('http'))
+            };
+        }
+
+        // Display final breakdown
+        function displayFinalBreakdown(calculation) {
+            const container = document.getElementById('costBreakdown');
+            const { totals } = calculation;
+            
+            container.innerHTML = `
+                <div class="cost-item">
+                    <span class="cost-label">Item First Cost:</span>
+                    <span class="cost-value">$${totals.totalItemCost.toFixed(2)}</span>
+                </div>
+                <div class="cost-item">
+                    <span class="cost-label">Bermuda Import Duty (26.5%):</span>
+                    <span class="cost-value">$${totals.dutyAmount.toFixed(2)}</span>
+                </div>
+                <div class="cost-item">
+                    <span class="cost-label">USA Delivery Fees:</span>
+                    <span class="cost-value">$${totals.totalDeliveryFees.toFixed(2)}</span>
+                </div>
+                <div class="cost-item">
+                    <span class="cost-label">Ocean Freight & Handling:</span>
+                    <span class="cost-value">$${totals.totalShippingCost.toFixed(2)}</span>
+                </div>
+                <div class="cost-item total-row">
+                    <span class="cost-label">Total Landed Cost:</span>
+                    <span class="cost-value">$${totals.grandTotal.toFixed(2)}</span>
+                </div>
+            `;
+        }
+
+        // Confirmation checkbox handling
+        document.getElementById('confirmVariants').addEventListener('change', function() {
+            document.getElementById('createOrderBtn').disabled = !this.checked;
         });
 
-        document.getElementById('createOrderBtn')?.addEventListener('click', async () => {
-            if (!currentCalculation) return;
+        // Create draft order
+        async function createDraftOrder() {
+            if (!finalCalculation) return;
             
             const btn = document.getElementById('createOrderBtn');
             btn.disabled = true;
             btn.textContent = 'Creating Order...';
+            
+            // Add customer info (you might want to collect this earlier)
+            const customerEmail = prompt('Please enter customer email:');
+            const customerName = prompt('Please enter customer name:');
+            
+            if (!customerEmail || !customerName) {
+                alert('Customer information is required');
+                btn.disabled = false;
+                btn.textContent = 'Confirm & Create Order';
+                return;
+            }
+            
+            finalCalculation.customer = {
+                email: customerEmail,
+                name: customerName
+            };
             
             try {
                 const response = await fetch('/apps/instant-import/create-draft-order', {
@@ -639,7 +830,7 @@
                     headers: {
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify(currentCalculation)
+                    body: JSON.stringify(finalCalculation)
                 });
                 
                 if (!response.ok) {
@@ -648,20 +839,15 @@
                 
                 const data = await response.json();
                 
-                if (data.draftOrder && data.draftOrder.invoice_url) {
-                    window.open(data.draftOrder.invoice_url, '_blank');
-                    btn.textContent = 'Order Created! Opening...';
-                    setTimeout(() => {
-                        btn.textContent = 'Create Another Order';
-                        btn.disabled = false;
-                    }, 2000);
-                }
+                // Go to thank you page instead of alert
+                goToPage(4);
+                
             } catch (error) {
                 alert('Failed to create draft order. Please try again.');
-                btn.textContent = 'Create Draft Order in Shopify';
+                btn.textContent = 'Confirm & Create Order';
                 btn.disabled = false;
             }
-        });
+        }
     </script>
 </body>
 </html>
