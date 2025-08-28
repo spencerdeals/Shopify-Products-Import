@@ -682,3 +682,30 @@ function calculateShippingCost(dimensions, weight, orderTotal = 0) {
   let { length, width, height } = dimensions;
   
   const MAX_SINGLE_BOX = 96;
+  
+  // Calculate dimensional weight
+  const dimensionalWeight = (length * width * height) / 166;
+  const billableWeight = Math.max(weight, dimensionalWeight);
+  
+  // Base shipping cost calculation
+  let shippingCost = 15; // Base rate
+  
+  // Add weight-based charges
+  if (billableWeight > 10) {
+    shippingCost += (billableWeight - 10) * 2;
+  }
+  
+  // Add size-based charges for oversized items
+  if (length > 48 || width > 48 || height > 48) {
+    shippingCost += 25; // Oversized handling fee
+  }
+  
+  // Apply Bermuda duty
+  const dutyAmount = orderTotal * BERMUDA_DUTY_RATE;
+  
+  return {
+    shipping: Math.round(shippingCost * 100) / 100,
+    duty: Math.round(dutyAmount * 100) / 100,
+    total: Math.round((shippingCost + dutyAmount) * 100) / 100
+  };
+}
