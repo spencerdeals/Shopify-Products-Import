@@ -710,7 +710,7 @@ function calculateShippingCost(dimensions, weight, orderTotal = 0) {
   return Math.max(minShipping, Math.round(finalCost * 100) / 100);
 }
 
-// ScrapingBee integration - AGGRESSIVE CONFIGURATION FOR MAXIMUM DATA EXTRACTION
+// ScrapingBee integration - SIMPLIFIED BUT EFFECTIVE
 async function scrapingBeeRequest(url) {
   if (!SCRAPINGBEE_API_KEY) {
     throw new Error('ScrapingBee API key not configured');
@@ -724,43 +724,15 @@ async function scrapingBeeRequest(url) {
       render_js: 'true',
       premium_proxy: 'true',
       country_code: 'us',
-      wait: '5000',           // Increased from 2000 to 5000ms
-      wait_for: 'networkidle', // Wait until network is idle
+      wait: '3000',
       block_ads: 'true',
-      block_resources: 'false',
-      window_width: '1920',    // Desktop resolution for full content
-      window_height: '1080',
-      screenshot: 'false',     // Don't need screenshots, just HTML
-      extract_rules: JSON.stringify({
-        'product_title': {
-          'selector': 'h1#productTitle, h1[data-automation-id="product-title"], h1.product-title, h1[itemprop="name"], meta[property="og:title"]',
-          'output': 'text'
-        },
-        'product_price': {
-          'selector': '.a-price-whole, [data-automation-id="product-price"], .price-current, .sr-only:contains("$"), meta[property="product:price:amount"]',
-          'output': 'text'
-        },
-        'product_image': {
-          'selector': '#landingImage, [data-automation-id="product-primary-image"], img.product-image-main, meta[property="og:image"]',
-          'output': '@src'
-        },
-        'dimensions': {
-          'selector': '*:contains("Dimensions"), *:contains("Size"), *:contains("Measurements")',
-          'output': 'text'
-        },
-        'weight': {
-          'selector': '*:contains("Weight"), *:contains("lbs"), *:contains("pounds")',
-          'output': 'text'
-        }
-      }),
-      stealth_proxy: 'true',   // Maximum stealth
-      session_id: Math.random().toString(36) // Unique session for each request
+      block_resources: 'false'
     });
 
-    console.log(`Making AGGRESSIVE ScrapingBee request for: ${url}`);
+    console.log(`ScrapingBee request for: ${url}`);
     
     const response = await axios.get(`${scrapingBeeUrl}?${params.toString()}`, {
-      timeout: 40000  // Increased timeout to 40 seconds
+      timeout: SCRAPING_TIMEOUT
     });
 
     console.log(`ScrapingBee response size: ${response.data.length} characters`);
@@ -788,14 +760,17 @@ async function parseScrapingBeeHTML(html, url) {
   const retailer = detectRetailer(url);
   const result = {};
   
+  console.log(`Parsing HTML for ${retailer}, content length: ${html.length}`);
+  
   // Enhanced name extraction patterns
   const namePatterns = [
     /<h1[^>]*id="productTitle"[^>]*>([^<]+)</i,
     /<h1[^>]*class="[^"]*product-title[^"]*"[^>]*>([^<]+)</i,
-    /<h1[^>]*data-test="product-title"[^>]*>([^<]+)</i,
+    /<h1[^>]*data-automation-id="product-title"[^>]*>([^<]+)</i,
     /<h1[^>]*class="[^"]*sku-title[^"]*"[^>]*>([^<]+)</i,
     /<h1[^>]*itemprop="name"[^>]*>([^<]+)</i,
     /<meta[^>]*property="og:title"[^>]*content="([^"]+)"/i,
+    /<title>([^<]+)</i,
     /<h1[^>]*>([^<]+)</i
   ];
   
@@ -806,51 +781,45 @@ async function parseScrapingBeeHTML(html, url) {
         .replace(/&#x27;/g, "'")
         .replace(/&quot;/g, '"')
         .replace(/&amp;/g, '&')
-        .replace(/<[^>]*>/g, '');
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/<[^>]*>/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+      console.log(`Found product name: ${result.name.substring(0, 50)}...`);
       break;
     }
   }
   
-  // Enhanced price extraction patterns
-  const pricePatterns = [
-    /class="a-price-whole">([0-9,]+)/i,
-    /class="a-price[^"]*"[^>]*>\s*<span[^>]*>\$([0-9,.]+)/i,
-    /"price":\s*"([0-9,.]+)"/i,
-    /data-price="([0-9,.]+)"/i,
-    /content="\$([0-9,.]+)"/i,
-    /class="[^"]*price[^"]*"[^>]*>\$([0-9,.]+)/i,
-    /"offers":\s*{[^}]*"price":\s*"([0-9,.]+)"/i
-  ];
-  
-  for (const pattern of pricePatterns) {
-    const match = html.match(pattern);
-    if (match && match[1]) {
-      const priceStr = match[1].replace(/,/g, '');
-      const price = parseFloat(priceStr);
-      if (!isNaN(price) && price > 0) {
-        result.price = price;
-        break;
-      }
-    }
-  }
-  
-  // Use intelligent dimension extraction instead of basic patterns
-  // Dimensions will be handled by getIntelligentDimensions
-  
-  // Image extraction
+  // Enhanced image extraction patterns
   const imagePatterns = [
     /<img[^>]*id="landingImage"[^>]*src="([^"]+)"/i,
+    /<img[^>]*data-automation-id="product-primary-image"[^>]*src="([^"]+)"/i,
     /<meta[^>]*property="og:image"[^>]*content="([^"]+)"/i,
-    /<img[^>]*class="[^"]*product[^"]*"[^>]*src="([^"]+)"/i
+    /<img[^>]*class="[^"]*product[^"]*image[^"]*"[^>]*src="([^"]+)"/i,
+    /<img[^>]*class="[^"]*primary[^"]*"[^>]*src="([^"]+)"/i,
+    /<img[^>]*alt="[^"]*product[^"]*"[^>]*src="([^"]+)"/i
   ];
   
   for (const pattern of imagePatterns) {
     const match = html.match(pattern);
     if (match && match[1]) {
-      result.image = match[1];
+      let imageUrl = match[1];
+      // Clean up relative URLs
+      if (imageUrl.startsWith('//')) {
+        imageUrl = 'https:' + imageUrl;
+      } else if (imageUrl.startsWith('/')) {
+        const urlObj = new URL(url);
+        imageUrl = urlObj.origin + imageUrl;
+      }
+      result.image = imageUrl;
+      console.log(`Found product image: ${imageUrl.substring(0, 50)}...`);
       break;
     }
   }
+  
+  // Don't try to extract price - we'll let customers enter it manually
+  result.price = null;
   
   return result;
 }
