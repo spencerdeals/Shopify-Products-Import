@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Instant Import Calculator</title>
+    <title>SDL Instant Imports</title>
     <style>
         * {
             margin: 0;
@@ -105,7 +105,7 @@
             background-color: #4caf50;
         }
 
-        /* Warning boxes - now orange/yellow */
+        /* Warning boxes - orange/yellow */
         .warning-box {
             background: linear-gradient(135deg, #fff8e1 0%, #ffecb3 100%);
             border: 2px solid #ffa726;
@@ -240,7 +240,7 @@
 
         button {
             padding: 15px 30px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #7cb342 0%, #2e7d32 100%);
             color: white;
             border: none;
             border-radius: 10px;
@@ -253,7 +253,7 @@
 
         button:hover {
             transform: translateY(-2px);
-            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+            box-shadow: 0 10px 20px rgba(124, 179, 66, 0.3);
         }
 
         button:disabled {
@@ -272,23 +272,52 @@
             background: linear-gradient(135deg, #90a4ae 0%, #607d8b 100%);
         }
 
-        /* Vendor group styling */
+        /* Vendor group styling with brand colors */
         .vendor-group {
-            background: linear-gradient(135deg, #f3e5f5 0%, #e1bee7 100%);
-            border: 2px solid #ba68c8;
             border-radius: 12px;
             padding: 20px;
             margin-bottom: 20px;
+            border: 2px solid;
+        }
+
+        .vendor-group.amazon {
+            background: linear-gradient(135deg, #fff3e0 0%, #ffe0b3 100%);
+            border-color: #ff9800;
+        }
+
+        .vendor-group.wayfair {
+            background: linear-gradient(135deg, #f3e5f5 0%, #e1bee7 100%);
+            border-color: #ba68c8;
+        }
+
+        .vendor-group.walmart {
+            background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+            border-color: #2196f3;
+        }
+
+        .vendor-group.target {
+            background: linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%);
+            border-color: #f44336;
+        }
+
+        .vendor-group.default {
+            background: linear-gradient(135deg, #f3e5f5 0%, #e1bee7 100%);
+            border-color: #ba68c8;
         }
 
         .vendor-header {
-            color: #6a1b9a;
             font-weight: 600;
             font-size: 18px;
             margin-bottom: 15px;
             display: flex;
             align-items: center;
         }
+
+        .vendor-header.amazon { color: #e65100; }
+        .vendor-header.wayfair { color: #6a1b9a; }
+        .vendor-header.walmart { color: #1565c0; }
+        .vendor-header.target { color: #c62828; }
+        .vendor-header.default { color: #6a1b9a; }
 
         .vendor-header::before {
             content: '🏪';
@@ -297,29 +326,107 @@
         }
 
         .product-item {
-            background: rgba(255, 255, 255, 0.7);
+            background: rgba(255, 255, 255, 0.8);
             border-radius: 8px;
-            padding: 12px;
-            margin-bottom: 10px;
-            border-left: 4px solid #ba68c8;
+            padding: 15px;
+            margin-bottom: 15px;
+            border-left: 4px solid;
+            display: flex;
+            align-items: flex-start;
+            gap: 15px;
+        }
+
+        .product-item.amazon { border-left-color: #ff9800; }
+        .product-item.wayfair { border-left-color: #ba68c8; }
+        .product-item.walmart { border-left-color: #2196f3; }
+        .product-item.target { border-left-color: #f44336; }
+        .product-item.default { border-left-color: #ba68c8; }
+
+        .product-image {
+            width: 80px;
+            height: 80px;
+            object-fit: cover;
+            border-radius: 6px;
+            border: 1px solid #ddd;
+            flex-shrink: 0;
+        }
+
+        .product-details {
+            flex-grow: 1;
         }
 
         .product-name {
             font-weight: 600;
             color: #333;
-            margin-bottom: 4px;
+            margin-bottom: 6px;
         }
 
-        .product-details {
+        .product-name a {
+            color: inherit;
+            text-decoration: none;
+            border-bottom: 1px dashed #666;
+        }
+
+        .product-name a:hover {
+            color: #2196f3;
+            border-bottom-color: #2196f3;
+        }
+
+        .product-info {
             font-size: 13px;
             color: #666;
+            margin-bottom: 10px;
+        }
+
+        .price-input-section {
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 6px;
+            padding: 10px;
+            margin-top: 10px;
+        }
+
+        .price-input-label {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 5px;
+            display: block;
+        }
+
+        .price-input {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .price-input input {
+            width: 100px;
+            padding: 8px;
+            border: 2px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .price-help-text {
+            font-size: 11px;
+            color: #888;
+            margin-top: 5px;
+            font-style: italic;
         }
 
         .delivery-fee-input {
             background: rgba(255, 255, 255, 0.9);
-            border: 2px solid #ba68c8;
+            border: 2px solid;
+            border-radius: 8px;
             margin-top: 15px;
+            padding: 15px;
         }
+
+        .delivery-fee-input.amazon { border-color: #ff9800; }
+        .delivery-fee-input.wayfair { border-color: #ba68c8; }
+        .delivery-fee-input.walmart { border-color: #2196f3; }
+        .delivery-fee-input.target { border-color: #f44336; }
+        .delivery-fee-input.default { border-color: #ba68c8; }
 
         .delivery-fee-input input {
             background: white;
@@ -486,7 +593,7 @@
             <div class="warning-box">
                 <div class="warning-header">Please Note</div>
                 <div class="warning-text">
-                    Before pasting your links, make sure you've selected the correct size, color, or variant on each product page. We can't be responsible for mix-ups if the wrong variant gets ordered! 😊
+                    Before pasting your links, make sure you've selected the correct size, color, or variant on each product page. We can't be responsible for mix-ups if the wrong variant gets ordered!
                 </div>
             </div>
 
@@ -551,18 +658,33 @@ You can add as many as you'd like!"
             
             <div class="cost-breakdown" id="costBreakdown"></div>
 
+            <!-- Estimated Timeframe -->
+            <div class="warning-box" style="margin-bottom: 25px;">
+                <div class="warning-header">Estimated Delivery Timeframe</div>
+                <div class="warning-text">
+                    <strong>Expected delivery to Bermuda: 3-5 weeks</strong><br>
+                    This includes processing time, ocean transit, and customs clearance.
+                </div>
+            </div>
+
             <div class="confirmation-checkbox">
                 <div class="checkbox-container">
                     <input type="checkbox" id="confirmVariants">
                     <label for="confirmVariants" class="checkbox-label">
-                        I confirm I have double-checked that all product links have the correct sizes, colors, and variants selected. SDL will not be responsible for customer errors if the wrong items are ordered. Let's keep this simple and fun! ✅
+                        <strong>I understand and confirm:</strong><br><br>
+                        • I have double-checked that all product links have the correct sizes, colors, and variants selected<br>
+                        • These shipping costs are estimates based on intelligent analysis - actual costs may vary<br>
+                        • SDL may contact me with an updated quote if significant differences are found<br>
+                        • If I don't hear from SDL, my items are confirmed and I can expect delivery within 3-5 weeks<br>
+                        • SDL will not be responsible for customer errors if wrong items are ordered<br><br>
+                        I agree to these terms and wish to proceed with my import request.
                     </label>
                 </div>
             </div>
 
             <div class="button-group">
                 <button type="button" class="secondary-btn" onclick="goToPage(2)">← Back to Review</button>
-                <button type="button" id="createOrderBtn" onclick="createDraftOrder()" disabled>Confirm & Create Order 🎉</button>
+                <button type="button" id="createOrderBtn" onclick="createDraftOrder()" disabled>Confirm & Create Order</button>
             </div>
         </div>
 
@@ -577,6 +699,25 @@ You can add as many as you'd like!"
         let scrapedProducts = [];
         let vendorGroups = {};
         let finalCalculation = null;
+
+        // Check if URL is from SDL/Spencer Deals
+        function isSDLDomain(url) {
+            try {
+                const domain = new URL(url).hostname.toLowerCase();
+                const blockedPatterns = [
+                    'spencer-deals-ltd.myshopify.com',
+                    'sdl.bm',
+                    'spencer-deals',
+                    'spencerdeals',
+                    'sdl.com',
+                    '.sdl.'
+                ];
+                
+                return blockedPatterns.some(pattern => domain.includes(pattern));
+            } catch (e) {
+                return false;
+            }
+        }
 
         // Page navigation
         function goToPage(pageNumber) {
@@ -617,13 +758,26 @@ You can add as many as you'd like!"
         document.getElementById('urlForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             
-            const urls = document.getElementById('productUrls').value
-                .split('\n')
+            const rawText = document.getElementById('productUrls').value.trim();
+            
+            // Split by newlines AND spaces, then clean up
+            const urls = rawText
+                .split(/[\n\r\s]+/)
                 .map(url => url.trim())
-                .filter(url => url && url.startsWith('http'));
+                .filter(url => url && url.startsWith('http'))
+                .filter(url => url.length > 10); // Remove tiny fragments
+            
+            console.log('Parsed URLs:', urls); // Debug log
             
             if (urls.length === 0) {
                 alert('Please enter at least one valid product URL');
+                return;
+            }
+            
+            // Check for SDL domains
+            const sdlUrls = urls.filter(url => isSDLDomain(url));
+            if (sdlUrls.length > 0) {
+                alert('We appreciate the interest, but this calculator is for importing products from other retailers. For items already in our catalog, please contact SDL directly for pricing and availability!');
                 return;
             }
             
@@ -683,22 +837,53 @@ You can add as many as you'd like!"
             container.innerHTML = '';
             
             Object.entries(vendorGroups).forEach(([vendor, products]) => {
+                const vendorClass = vendor.toLowerCase().replace(/\s+/g, '');
                 const vendorDiv = document.createElement('div');
-                vendorDiv.className = 'vendor-group';
+                vendorDiv.className = `vendor-group ${vendorClass}`;
                 
-                vendorDiv.innerHTML = `
-                    <div class="vendor-header">${vendor} Products</div>
-                    ${products.map(product => `
-                        <div class="product-item">
-                            <div class="product-name">${product.name}</div>
+                let vendorHTML = `
+                    <div class="vendor-header ${vendorClass}">${vendor} Products</div>
+                `;
+                
+                products.forEach((product, index) => {
+                    const productId = `${vendor.replace(/\s+/g, '')}-${index}`;
+                    
+                    vendorHTML += `
+                        <div class="product-item ${vendorClass}">
+                            <img src="${product.image}" alt="${product.name}" class="product-image" 
+                                 onerror="this.src='https://placehold.co/80x80/7CB342/FFFFFF/png?text=SDL'">
                             <div class="product-details">
-                                Price: ${product.price ? '$' + product.price : 'Price detection needed'} | 
-                                Category: ${product.category} | 
-                                Estimated shipping: $${product.shippingCost || 0}
+                                <div class="product-name">
+                                    <a href="${product.url}" target="_blank" title="Click to view product page and find price">
+                                        ${product.name}
+                                    </a>
+                                </div>
+                                <div class="product-info">
+                                    Category: ${product.category} | Estimated shipping: $${product.shippingCost || 0}
+                                </div>
+                                <div class="price-input-section">
+                                    <label class="price-input-label" for="price-${productId}">Item Price:</label>
+                                    <div class="price-input">
+                                        <span>$</span>
+                                        <input type="number" 
+                                               id="price-${productId}" 
+                                               step="0.01" 
+                                               min="0" 
+                                               placeholder="0.00"
+                                               data-product-index="${products.indexOf(product)}"
+                                               data-vendor="${vendor}">
+                                    </div>
+                                    <div class="price-help-text">
+                                        Click the product name above to view the original page and find the exact price
+                                    </div>
+                                </div>
                             </div>
                         </div>
-                    `).join('')}
-                    <div class="delivery-fee-input">
+                    `;
+                });
+                
+                vendorDiv.innerHTML = vendorHTML + `
+                    <div class="delivery-fee-input ${vendorClass}">
                         <label for="delivery-${vendor}">
                             <strong>${vendor} Delivery Fee (if any):</strong><br>
                             <small>Enter any shipping charges from ${vendor} to our New Jersey address:</small>
@@ -711,6 +896,20 @@ You can add as many as you'd like!"
                 `;
                 
                 container.appendChild(vendorDiv);
+            });
+            
+            // Add event listeners for price inputs to update product prices
+            document.querySelectorAll('[id^="price-"]').forEach(input => {
+                input.addEventListener('change', function() {
+                    const vendor = this.dataset.vendor;
+                    const productIndex = parseInt(this.dataset.productIndex);
+                    const price = parseFloat(this.value) || 0;
+                    
+                    if (vendorGroups[vendor] && vendorGroups[vendor][productIndex]) {
+                        vendorGroups[vendor][productIndex].price = price;
+                        console.log(`Updated ${vendor} product ${productIndex} price to $${price}`);
+                    }
+                });
             });
         }
 
@@ -737,7 +936,13 @@ You can add as many as you'd like!"
             let totalShippingCost = 0;
             let totalDeliveryFees = 0;
             
-            scrapedProducts.forEach(product => {
+            // Update product prices from input boxes first
+            scrapedProducts.forEach((product, index) => {
+                const priceInput = document.querySelector(`input[data-product-index="${index}"]`);
+                if (priceInput) {
+                    product.price = parseFloat(priceInput.value) || 0;
+                }
+                
                 totalItemCost += product.price || 0;
                 totalShippingCost += product.shippingCost || 0;
             });
@@ -839,8 +1044,10 @@ You can add as many as you'd like!"
                 
                 const data = await response.json();
                 
-                // Go to thank you page instead of alert
-                goToPage(4);
+                alert(`Thank you! Your import request has been created successfully.\n\nOrder #${data.draftOrderNumber}\n\nWe'll review your quote and contact you if any adjustments are needed. If you don't hear from us, expect delivery within 3-5 weeks!`);
+                
+                // Reset form
+                location.reload();
                 
             } catch (error) {
                 alert('Failed to create draft order. Please try again.');
