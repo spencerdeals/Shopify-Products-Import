@@ -836,14 +836,19 @@ async function parseScrapingBeeHTML(html, url) {
     }
   }
   
-  // Enhanced image extraction patterns
+  // Enhanced image extraction patterns with Amazon debugging
   const imagePatterns = [
-    // Amazon specific patterns - try multiple variations
+    // Amazon specific patterns - most comprehensive set
     /<img[^>]*id="landingImage"[^>]*src="([^"]+)"/i,
     /<img[^>]*id="landingImage"[^>]*data-src="([^"]+)"/i,
+    /<img[^>]*id="landingImage"[^>]*data-old-hires="([^"]+)"/i,
     /<img[^>]*class="[^"]*a-dynamic-image[^"]*"[^>]*src="([^"]+)"/i,
+    /<img[^>]*class="[^"]*a-dynamic-image[^"]*"[^>]*data-src="([^"]+)"/i,
     /<img[^>]*data-old-hires="([^"]+)"/i,
     /<img[^>]*data-a-dynamic-image="([^"]+)"/i,
+    // Amazon JSON patterns
+    /"hiRes":"([^"]+)"/i,
+    /"large":"([^"]+\.jpg[^"]*)"/i,
     // Wayfair patterns
     /<img[^>]*data-automation-id="product-primary-image"[^>]*src="([^"]+)"/i,
     // Walmart patterns  
@@ -858,10 +863,15 @@ async function parseScrapingBeeHTML(html, url) {
     /<img[^>]*width="[45]\d\d"[^>]*src="([^"]+)"/i
   ];
   
-  for (const pattern of imagePatterns) {
+  console.log(`Trying ${imagePatterns.length} image patterns for ${retailer}`);
+  
+  for (let i = 0; i < imagePatterns.length; i++) {
+    const pattern = imagePatterns[i];
     const match = html.match(pattern);
     if (match && match[1]) {
       let imageUrl = match[1];
+      console.log(`Image pattern ${i + 1} matched: ${imageUrl.substring(0, 100)}...`);
+      
       // Clean up relative URLs
       if (imageUrl.startsWith('//')) {
         imageUrl = 'https:' + imageUrl;
@@ -869,9 +879,27 @@ async function parseScrapingBeeHTML(html, url) {
         const urlObj = new URL(url);
         imageUrl = urlObj.origin + imageUrl;
       }
-      result.image = imageUrl;
-      console.log(`Found product image: ${imageUrl.substring(0, 50)}...`);
-      break;
+      
+      // Validate the image URL looks reasonable
+      if (imageUrl.includes('.jpg') || imageUrl.includes('.jpeg') || imageUrl.includes('.png') || imageUrl.includes('.webp')) {
+        result.image = imageUrl;
+        console.log(`Found product image: ${imageUrl.substring(0, 50)}...`);
+        break;
+      } else {
+        console.log(`Rejected image URL (no valid extension): ${imageUrl.substring(0, 50)}...`);
+      }
+    }
+  }
+  
+  if (!result.image && retailer === 'Amazon') {
+    console.log('Amazon image extraction failed, checking for JSON data...');
+    // Try to find Amazon's image data in JSON
+    const jsonMatches = html.match(/"colorImages":\s*\{[^}]*"initial":\s*\[[^\]]*\{[^}]*"hiRes":"([^"]+)"/);
+    if (jsonMatches && jsonMatches[1]) {
+      result.image = jsonMatches[1];
+      console.log(`Found Amazon image in JSON: ${jsonMatches[1].substring(0, 50)}...`);
+    } else {
+      console.log('No Amazon JSON image data found either');
     }
   }
   
