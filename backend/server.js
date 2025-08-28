@@ -4,7 +4,6 @@ const rateLimit = require('express-rate-limit');
 const axios = require('axios');
 const path = require('path');
 const { URL } = require('url');
-const { ApifyClient } = require('apify-client');
 require('dotenv').config();
 
 const app = express();
@@ -14,21 +13,15 @@ const PORT = process.env.PORT || 3000;
 const SHOPIFY_DOMAIN = process.env.SHOPIFY_DOMAIN || 'spencer-deals-ltd.myshopify.com';
 const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN || '';
 const SCRAPINGBEE_API_KEY = process.env.SCRAPINGBEE_API_KEY || '';
-const APIFY_API_KEY = process.env.APIFY_API_KEY || '';
 const SCRAPING_TIMEOUT = 30000;  // 30 seconds timeout
 const MAX_CONCURRENT_SCRAPES = 2;
 const BERMUDA_DUTY_RATE = 0.265;
 const USE_SCRAPINGBEE = !!SCRAPINGBEE_API_KEY;
-const USE_APIFY_FOR_AMAZON = !!APIFY_API_KEY;
-
-// Initialize Apify client
-const apifyClient = USE_APIFY_FOR_AMAZON ? new ApifyClient({ token: APIFY_API_KEY }) : null;
 
 console.log('=== SERVER STARTUP ===');
 console.log(`Port: ${PORT}`);
 console.log(`Shopify Domain: ${SHOPIFY_DOMAIN}`);
 console.log(`ScrapingBee: ${USE_SCRAPINGBEE ? 'Enabled' : 'Disabled'}`);
-console.log(`Apify (Amazon): ${USE_APIFY_FOR_AMAZON ? 'Enabled' : 'Disabled'}`);
 console.log('=====================');
 
 // Middleware
@@ -49,7 +42,6 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     port: PORT,
     scrapingBee: USE_SCRAPINGBEE,
-    apify: USE_APIFY_FOR_AMAZON,
     shopifyConfigured: !!SHOPIFY_ACCESS_TOKEN
   });
 });
@@ -235,227 +227,7 @@ function estimateDimensions(category, name = '') {
   };
 }
 
-// ===== APIFY INTEGRATION FUNCTIONS START HERE =====
-
-// Apify Amazon scraper function
-async function scrapeAmazonWithApify(url) {
-  if (!apifyClient) {
-    throw new Error('Apify not configured');
-  }
-
-  try {
-    console.log('🔄 Starting Apify Amazon scrape for:', url);
-    
-    // Using the junglee/Amazon-crawler actor
-    const run = await apifyClient.actor('junglee/Amazon-crawler').call({
-      categoryOrProductUrls: [
-        { url: url, method: "GET" }
-      ],
-      maxItemsPerStartUrl: 1,
-      scraperProductDetails: true,
-      locationDelverableRoutes: [
-        "PRODUCT",
-        "SEARCH", 
-        "OFFERS"
-      ],
-      maxOffersPerStartUrl: 0,
-      useCaptchaSolver: false,
-      proxyCountry: "AUTO_SELECT_PROXY_COUNTRY"
-    });
-
-    console.log('⏳ Apify run started, waiting for results...');
-
-    // Wait for the run to finish (timeout after 60 seconds)
-    await apifyClient.run(run.id).waitForFinish({ waitSecs: 60 });
-
-    // Get the results
-    const { items } = await apifyClient.dataset(run.defaultDatasetId).listItems();
-    
-    if (!items || items.length === 0) {
-      console.log('❌ No results from Apify');
-      throw new Error('No product data found');
-    }
-
-    const product = items[0];
-    console.log('✅ Apify scrape successful');
-
-    return parseApifyAmazonData(product);
-
-  } catch (error) {
-    console.error('❌ Apify Amazon scrape failed:', error.message);
-    throw error;
-  }
-}
-
-// Parse Apify Amazon data
-function parseApifyAmazonData(data) {
-  const result = {
-    name: null,
-    price: null,
-    image: null,
-    dimensions: null,
-    weight: null,
-    brand: null,
-    category: null,
-    inStock: true
-  };
-
-  // Product name
-  result.name = data.title || data.name || 'Unknown Product';
-
-  // Price extraction (handle various price fields)
-  if (data.price) {
-    if (typeof data.price === 'object') {
-      result.price = data.price.value || data.price.amount || null;
-    } else if (typeof data.price === 'string') {
-      const priceMatch = data.price.match(/[\d,]+\.?\d*/);
-      result.price = priceMatch ? parseFloat(priceMatch[0].replace(',', '')) : null;
-    } else {
-      result.price = parseFloat(data.price);
-    }
-  }
-
-  // Fallback price from offer
-  if (!result.price && data.offer?.price) {
-    result.price = parseFloat(data.offer.price);
-  }
-
-  // Image
-  result.image = data.mainImage || data.image || data.images?.[0] || null;
-
-  // Brand
-  result.brand = data.brand || data.manufacturer || null;
-
-  // Category
-  if (data.categories && Array.isArray(data.categories)) {
-    result.category = data.categories[0];
-  } else if (data.category) {
-    result.category = data.category;
-  }
-
-  // Dimensions and Weight from specifications
-  if (data.specifications) {
-    result.dimensions = extractDimensionsFromApify(data.specifications);
-    result.weight = extractWeightFromApify(data.specifications);
-  }
-
-  // Fallback weight extraction
-  if (!result.weight) {
-    if (data.weight) result.weight = parseWeightString(data.weight);
-    else if (data.itemWeight) result.weight = parseWeightString(data.itemWeight);
-    else if (data.shippingWeight) result.weight = parseWeightString(data.shippingWeight);
-  }
-
-  console.log('📦 Parsed Amazon product:', {
-    name: result.name?.substring(0, 50) + '...',
-    price: result.price,
-    hasImage: !!result.image,
-    hasDimensions: !!result.dimensions,
-    weight: result.weight
-  });
-
-  return result;
-}
-
-// Extract dimensions from Apify specifications
-function extractDimensionsFromApify(specs) {
-  if (!specs) return null;
-
-  const dimensionKeys = [
-    'Product Dimensions',
-    'Package Dimensions', 
-    'Item Dimensions',
-    'Dimensions',
-    'Size'
-  ];
-
-  for (const key of dimensionKeys) {
-    if (specs[key]) {
-      const parsed = parseDimensionString(specs[key]);
-      if (parsed) return parsed;
-    }
-  }
-
-  return null;
-}
-
-// Extract weight from Apify specifications
-function extractWeightFromApify(specs) {
-  if (!specs) return null;
-
-  const weightKeys = [
-    'Item Weight',
-    'Product Weight',
-    'Package Weight',
-    'Weight',
-    'Shipping Weight'
-  ];
-
-  for (const key of weightKeys) {
-    if (specs[key]) {
-      const weight = parseWeightString(specs[key]);
-      if (weight) return weight;
-    }
-  }
-
-  return null;
-}
-
-// Parse dimension string helper
-function parseDimensionString(str) {
-  if (!str || typeof str !== 'string') return null;
-
-  const patterns = [
-    /(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*(?:inches|in|")?/i,
-    /(\d+\.?\d*)"?\s*[WL]\s*[x×]\s*(\d+\.?\d*)"?\s*[DW]\s*[x×]\s*(\d+\.?\d*)"?\s*[HT]/i,
-    /L:\s*(\d+\.?\d*).*W:\s*(\d+\.?\d*).*H:\s*(\d+\.?\d*)/i
-  ];
-
-  for (const pattern of patterns) {
-    const match = str.match(pattern);
-    if (match) {
-      const length = parseFloat(match[1]);
-      const width = parseFloat(match[2]);
-      const height = parseFloat(match[3]);
-      
-      if (length > 0 && width > 0 && height > 0 && 
-          length < 200 && width < 200 && height < 200) {
-        return { length, width, height };
-      }
-    }
-  }
-
-  return null;
-}
-
-// Parse weight string helper
-function parseWeightString(weightStr) {
-  if (typeof weightStr === 'number') return weightStr;
-  if (typeof weightStr !== 'string') return null;
-
-  const patterns = [
-    { regex: /(\d+\.?\d*)\s*(?:pounds?|lbs?)/i, multiplier: 1 },
-    { regex: /(\d+\.?\d*)\s*(?:kilograms?|kgs?)/i, multiplier: 2.205 },
-    { regex: /(\d+\.?\d*)\s*(?:grams?|g)/i, multiplier: 0.00220462 },
-    { regex: /(\d+\.?\d*)\s*(?:ounces?|oz)/i, multiplier: 0.0625 }
-  ];
-
-  for (const { regex, multiplier } of patterns) {
-    const match = weightStr.match(regex);
-    if (match) {
-      const weight = parseFloat(match[1]) * multiplier;
-      if (weight > 0 && weight < 1000) {
-        return Math.round(weight * 10) / 10;
-      }
-    }
-  }
-
-  return null;
-}
-
-// ===== END OF APIFY INTEGRATION FUNCTIONS =====
-
-// ===== INTELLIGENT ESTIMATION FUNCTIONS START HERE =====
+// ===== NEW INTELLIGENT ESTIMATION FUNCTIONS START HERE =====
 
 // Enhanced product context extraction
 async function extractFullProductContext(html, url) {
@@ -863,7 +635,7 @@ async function getIntelligentDimensions(html, url, productPrice) {
   };
 }
 
-// ===== END OF INTELLIGENT ESTIMATION FUNCTIONS =====
+// ===== END OF NEW INTELLIGENT ESTIMATION FUNCTIONS =====
 
 function validateDimensions(dimensions, category, name) {
   const { length, width, height } = dimensions;
@@ -1140,66 +912,6 @@ async function parseScrapingBeeHTML(html, url) {
 async function scrapeProduct(url) {
   const retailer = detectRetailer(url);
   
-  // SPECIAL HANDLING FOR AMAZON - Try Apify first
-  if (retailer === 'Amazon' && USE_APIFY_FOR_AMAZON) {
-    try {
-      console.log(`🎯 Using Apify for Amazon product: ${url}`);
-      const apifyData = await scrapeAmazonWithApify(url);
-      
-      if (apifyData && (apifyData.name || apifyData.price)) {
-        const category = categorizeProduct(apifyData.name || '', url);
-        
-        // Use scraped dimensions if available, otherwise estimate
-        let dimensions = apifyData.dimensions;
-        let dimensionSource = 'apify-scraped';
-        let confidence = 'high';
-        
-        if (!dimensions) {
-          console.log(`No dimensions from Apify, using intelligent estimation...`);
-          const intelligentDims = await getIntelligentDimensions(
-            '', 
-            url,
-            apifyData.price
-          );
-          dimensions = intelligentDims;
-          dimensionSource = intelligentDims.source || 'intelligent-estimate';
-          confidence = intelligentDims.confidence || 'medium';
-        }
-        
-        const validatedDimensions = validateDimensions(dimensions, category, apifyData.name);
-        const weight = apifyData.weight || estimateWeight(validatedDimensions, category);
-        const shippingCost = calculateShippingCost(validatedDimensions, weight, apifyData.price || 0);
-        
-        return {
-          id: generateProductId(),
-          name: apifyData.name || 'Amazon Product',
-          price: apifyData.price,
-          image: apifyData.image || 'https://placehold.co/120x120/FF9800/FFFFFF/png?text=Amazon',
-          retailer: retailer,
-          category: apifyData.category || category,
-          dimensions: validatedDimensions,
-          dimensionSource: dimensionSource,
-          confidence: confidence,
-          weight: weight,
-          shippingCost: shippingCost,
-          url: url,
-          needsManualPrice: !apifyData.price,
-          priceMessage: !apifyData.price ? 'Please enter product price manually' : null,
-          quantity: 1,
-          scraped: true,
-          method: 'Apify',
-          brand: apifyData.brand,
-          inStock: apifyData.inStock,
-          estimateWarning: confidence !== 'high' ? 
-            `Dimensions ${dimensionSource === 'apify-scraped' ? 'scraped' : 'estimated'} - Confidence: ${confidence}` : null
-        };
-      }
-    } catch (error) {
-      console.log(`⚠️ Apify failed for Amazon, falling back to ScrapingBee:`, error.message);
-      // Fall through to ScrapingBee logic below
-    }
-  }
-  
   if (USE_SCRAPINGBEE) {
     try {
       console.log(`Using ScrapingBee for ${retailer}: ${url}`);
@@ -1271,9 +983,7 @@ async function scrapeProduct(url) {
     id: generateProductId(),
     name: productName,
     price: null,
-    image: retailer === 'Amazon' ? 
-      'https://placehold.co/120x120/FF9800/FFFFFF/png?text=Amazon' : 
-      'https://placehold.co/120x120/7CB342/FFFFFF/png?text=SDL',
+    image: 'https://placehold.co/120x120/7CB342/FFFFFF/png?text=SDL',
     retailer: retailer,
     category: category,
     dimensions: dimensions,
@@ -1344,7 +1054,7 @@ app.post('/api/scrape', async (req, res) => {
     }
 
     console.log(`Starting to scrape ${validUrls.length} products...`);
-    console.log(`Using ${USE_APIFY_FOR_AMAZON ? 'Apify for Amazon,' : ''} ${USE_SCRAPINGBEE ? 'ScrapingBee for others' : 'Fallback mode only'}`);
+    console.log(`Using ${USE_SCRAPINGBEE ? 'ScrapingBee with intelligent estimation' : 'Fallback mode only'}`);
     
     const products = [];
     for (let i = 0; i < validUrls.length; i += MAX_CONCURRENT_SCRAPES) {
@@ -1378,10 +1088,9 @@ app.post('/api/scrape', async (req, res) => {
       count: products.length,
       scraped: products.filter(p => p.scraped).length,
       pricesFound: products.filter(p => p.price).length,
-      dimensionsFound: products.filter(p => p.dimensionSource === 'scraped' || p.dimensionSource === 'apify-scraped').length,
+      dimensionsFound: products.filter(p => p.dimensionSource === 'scraped').length,
       intelligentEstimates: products.filter(p => p.dimensionSource === 'weight-based' || p.dimensionSource === 'price-based').length,
       fallbacksUsed: products.filter(p => p.confidence === 'fallback').length,
-      apifyUsed: products.filter(p => p.method === 'Apify').length,
       retailers: Object.keys(groupedProducts)
     };
 
@@ -1555,7 +1264,6 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`✅ Health check available at: http://0.0.0.0:${PORT}/health`);
   console.log(`✅ Frontend served at: http://0.0.0.0:${PORT}/`);
   console.log(`✅ Ready to process import quotes with intelligent dimension estimation!`);
-  console.log(`✅ Apify integration ${USE_APIFY_FOR_AMAZON ? 'ACTIVE' : 'DISABLED'} for Amazon products`);
 }).on('error', (err) => {
   console.error('❌ Failed to start server:', err);
   process.exit(1);
