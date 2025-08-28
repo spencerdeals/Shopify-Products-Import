@@ -25,7 +25,7 @@ const USE_APIFY_FOR_AMAZON = apifyScraper.isAvailable();
 if (retailer === 'Amazon' && USE_APIFY_FOR_AMAZON) {
   try {
     console.log(`🎯 Using Apify for Amazon product: ${url}`);
-    const apifyData = await scrapeAmazonWithApify(url);  // OLD LINE
+   
     // ... rest of the code
 
 // TO:
