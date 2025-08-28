@@ -8,6 +8,7 @@
     "cors": "^2.8.5",
     "axios": "^1.6.0",
     "express-rate-limit": "^7.1.5",
-    "dotenv": "^16.3.1"
+    "dotenv": "^16.3.1",
+    "apify-client": "^2.9.3"
   }
 }
