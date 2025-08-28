@@ -13,7 +13,7 @@ const PORT = process.env.PORT || 3000;
 const SHOPIFY_DOMAIN = process.env.SHOPIFY_DOMAIN || 'spencer-deals-ltd.myshopify.com';
 const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN || '';
 const SCRAPINGBEE_API_KEY = process.env.SCRAPINGBEE_API_KEY || '';
-const SCRAPING_TIMEOUT = 45000;  // Increased to 45 seconds for aggressive scraping
+const SCRAPING_TIMEOUT = 30000;  // 30 seconds timeout
 const MAX_CONCURRENT_SCRAPES = 2;
 const BERMUDA_DUTY_RATE = 0.265;
 const USE_SCRAPINGBEE = !!SCRAPINGBEE_API_KEY;
@@ -667,42 +667,51 @@ function calculateShippingCost(dimensions, weight, orderTotal = 0) {
   
   // More realistic minimum cubic feet based on order value
   if (orderTotal > 300) {
-    cubicFeet = Math.max(cubicFeet, 3.5);
+    cubicFeet = Math.max(cubicFeet, 4.5); // Increased from 3.5
   }
   if (orderTotal > 500) {
-    cubicFeet = Math.max(cubicFeet, 6);
+    cubicFeet = Math.max(cubicFeet, 7.5); // Increased from 6
   }
   if (orderTotal > 1000) {
-    cubicFeet = Math.max(cubicFeet, 10);
+    cubicFeet = Math.max(cubicFeet, 12); // Increased from 10
   }
   if (orderTotal > 2000) {
-    cubicFeet = Math.max(cubicFeet, 15);
+    cubicFeet = Math.max(cubicFeet, 18); // Increased from 15
   }
   
-  console.log(`Order value: $${orderTotal}, Cubic feet: ${cubicFeet.toFixed(2)}`);
+  console.log(`Order value: ${orderTotal}, Cubic feet: ${cubicFeet.toFixed(2)}`);
   
-  const baseCost = cubicFeet * 7.5;
+  // INCREASED base rate from $7.50 to $12.50 per cubic foot
+  const baseCost = cubicFeet * 12.5;
   
-  // YOUR MARGIN STRUCTURE
+  // Add realistic handling fees based on order complexity
+  let handlingFees = 35; // Base handling fee
+  if (orderTotal > 500) handlingFees += 25; // Medium order complexity
+  if (orderTotal > 1500) handlingFees += 40; // High order complexity
+  if (orderTotal > 3000) handlingFees += 60; // Very high complexity
+  
+  console.log(`Base shipping: ${baseCost}, Handling fees: ${handlingFees}`);
+  
+  // YOUR MARGIN STRUCTURE (keeping the same)
   let marginMultiplier;
   if (orderTotal < 400) {
     marginMultiplier = 1.45; // 45% margin
   } else if (orderTotal < 1500) {
-    marginMultiplier = 1.30; // 30% margin
+    marginMultiplier = 1.30; // 30% margin  
   } else {
     marginMultiplier = 1.20; // 20% margin
   }
   
-  let finalCost = baseCost * marginMultiplier;
+  let finalCost = (baseCost + handlingFees) * marginMultiplier;
   
-  // Set realistic minimums based on order value
-  const minShipping = orderTotal > 0 ? Math.max(35, orderTotal * 0.15) : 35;
+  // Set more realistic minimums
+  const minShipping = orderTotal > 0 ? Math.max(75, orderTotal * 0.18) : 75; // Increased from 35 and 15%
   
-  // Cap maximum shipping at 50% of order value
+  // INCREASED cap from 50% to 65% of order value for more realistic freight costs
   if (orderTotal > 0) {
-    const maxReasonableShipping = orderTotal * 0.5;
+    const maxReasonableShipping = orderTotal * 0.65; // Increased from 0.5
     if (finalCost > maxReasonableShipping) {
-      console.log(`Shipping cost ${finalCost} exceeds 50% of order value, capping at ${maxReasonableShipping}`);
+      console.log(`Shipping cost ${finalCost} exceeds 65% of order value, capping at ${maxReasonableShipping}`);
       finalCost = Math.min(finalCost, maxReasonableShipping);
     }
   }
@@ -710,7 +719,7 @@ function calculateShippingCost(dimensions, weight, orderTotal = 0) {
   return Math.max(minShipping, Math.round(finalCost * 100) / 100);
 }
 
-// ScrapingBee integration - SIMPLIFIED BUT EFFECTIVE
+// ScrapingBee integration - BASIC WORKING CONFIG
 async function scrapingBeeRequest(url) {
   if (!SCRAPINGBEE_API_KEY) {
     throw new Error('ScrapingBee API key not configured');
@@ -722,11 +731,9 @@ async function scrapingBeeRequest(url) {
       api_key: SCRAPINGBEE_API_KEY,
       url: url,
       render_js: 'true',
-      premium_proxy: 'true',
+      premium_proxy: 'false',  // Disable premium proxy to avoid 400 errors
       country_code: 'us',
-      wait: '3000',
-      block_ads: 'true',
-      block_resources: 'false'
+      wait: '2000'
     });
 
     console.log(`ScrapingBee request for: ${url}`);
@@ -735,19 +742,57 @@ async function scrapingBeeRequest(url) {
       timeout: SCRAPING_TIMEOUT
     });
 
-    console.log(`ScrapingBee response size: ${response.data.length} characters`);
+    console.log(`ScrapingBee SUCCESS - response size: ${response.data.length} characters`);
     return response.data;
   } catch (error) {
-    console.error('ScrapingBee request failed:', error.message);
+    console.error(`ScrapingBee FAILED for ${url}:`, error.response?.data || error.message);
     throw error;
   }
 }
 
-// Enhanced function to search for similar products (simplified)
-async function findSimilarProductDimensions(productName, category, originalPrice) {
-  console.log(`Would search for similar products to: ${productName}`);
-  // For now, return null to use intelligent estimation instead
-  return null;
+// Extract better product name from URL when scraping fails
+function extractProductNameFromUrl(url) {
+  try {
+    const urlObj = new URL(url);
+    const path = urlObj.pathname;
+    
+    // Amazon: Look for product names in URL
+    if (path.includes('/dp/') || path.includes('/product/')) {
+      const segments = path.split('/');
+      for (let i = 0; i < segments.length; i++) {
+        if (segments[i] === 'dp' || segments[i] === 'product') {
+          // Look for readable text in nearby segments
+          const nearby = segments.slice(Math.max(0, i-2), i+3);
+          const readable = nearby.find(seg => seg.length > 3 && !/^[A-Z0-9]+$/.test(seg));
+          if (readable) {
+            return readable.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+          }
+        }
+      }
+    }
+    
+    // Wayfair: Extract from path
+    if (urlObj.hostname.includes('wayfair')) {
+      const match = path.match(/\/([^\/]+)-w\d+/);
+      if (match) {
+        return match[1].replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+      }
+    }
+    
+    // Walmart: Extract from path
+    if (urlObj.hostname.includes('walmart')) {
+      const segments = path.split('/');
+      const ipIndex = segments.indexOf('ip');
+      if (ipIndex > -1 && segments[ipIndex + 1]) {
+        const name = segments[ipIndex + 1].split('/')[0];
+        return name.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+      }
+    }
+    
+    return null;
+  } catch (e) {
+    return null;
+  }
 }
 
 // Simplified intelligent dimension estimation
@@ -793,12 +838,24 @@ async function parseScrapingBeeHTML(html, url) {
   
   // Enhanced image extraction patterns
   const imagePatterns = [
+    // Amazon specific patterns - try multiple variations
     /<img[^>]*id="landingImage"[^>]*src="([^"]+)"/i,
+    /<img[^>]*id="landingImage"[^>]*data-src="([^"]+)"/i,
+    /<img[^>]*class="[^"]*a-dynamic-image[^"]*"[^>]*src="([^"]+)"/i,
+    /<img[^>]*data-old-hires="([^"]+)"/i,
+    /<img[^>]*data-a-dynamic-image="([^"]+)"/i,
+    // Wayfair patterns
     /<img[^>]*data-automation-id="product-primary-image"[^>]*src="([^"]+)"/i,
+    // Walmart patterns  
+    /<img[^>]*data-automation-id="product-image"[^>]*src="([^"]+)"/i,
+    // Generic patterns
     /<meta[^>]*property="og:image"[^>]*content="([^"]+)"/i,
     /<img[^>]*class="[^"]*product[^"]*image[^"]*"[^>]*src="([^"]+)"/i,
     /<img[^>]*class="[^"]*primary[^"]*"[^>]*src="([^"]+)"/i,
-    /<img[^>]*alt="[^"]*product[^"]*"[^>]*src="([^"]+)"/i
+    /<img[^>]*alt="[^"]*product[^"]*"[^>]*src="([^"]+)"/i,
+    // Fallback - any large image
+    /<img[^>]*src="([^"]+)"[^>]*width="[45]\d\d"/i,
+    /<img[^>]*width="[45]\d\d"[^>]*src="([^"]+)"/i
   ];
   
   for (const pattern of imagePatterns) {
@@ -890,9 +947,13 @@ async function scrapeProduct(url) {
   const weight = estimateWeight(dimensions, category);
   const shippingCost = calculateShippingCost(dimensions, weight, 0);
 
+  // Try to extract a better name from URL
+  const extractedName = extractProductNameFromUrl(url);
+  const productName = extractedName ? `${extractedName} (${retailer})` : `${retailer} Product`;
+
   return {
     id: generateProductId(),
-    name: `${retailer} Product`,
+    name: productName,
     price: null,
     image: 'https://placehold.co/120x120/7CB342/FFFFFF/png?text=SDL',
     retailer: retailer,
@@ -904,7 +965,7 @@ async function scrapeProduct(url) {
     shippingCost: shippingCost,
     url: url,
     needsManualPrice: true,
-    priceMessage: 'Price could not be detected automatically - please enter manually',
+    priceMessage: 'Price detection needed',
     quantity: 1,
     scraped: false,
     method: 'Fallback',
