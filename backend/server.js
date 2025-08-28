@@ -65,11 +65,12 @@ app.get('/', (req, res) => {
   });
 });
 
-// Rate limiter (after health check)
+// Rate limiter (after health check) - Fix trust proxy error
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 50,
-  trustProxy: true
+  trustProxy: 1, // Trust first proxy only
+  keyGenerator: (req) => req.ip // Use IP for rate limiting
 });
 app.use('/api/', limiter);
 
@@ -557,16 +558,32 @@ function extractDimensionsFromHTML(html) {
         height: parseFloat(match[3])
       };
       
-      // Validate dimensions are reasonable
-      if (dims.length > 0 && dims.length < 120 &&
-          dims.width > 0 && dims.width < 120 &&
-          dims.height > 0 && dims.height < 120) {
+      console.log(`Raw dimensions found: ${dims.length} x ${dims.width} x ${dims.height}`);
+      
+      // STRICT validation - dimensions must be reasonable for shipping
+      if (dims.length > 0 && dims.length <= 96 &&  // Max 8 feet
+          dims.width > 0 && dims.width <= 96 &&    // Max 8 feet  
+          dims.height > 0 && dims.height <= 96 &&   // Max 8 feet
+          dims.length >= 0.5 && dims.width >= 0.5 && dims.height >= 0.5) { // Min half inch
+        
+        // Calculate cubic feet to double-check
+        const cubicFeet = (dims.length * dims.width * dims.height) / 1728;
+        console.log(`Calculated cubic feet: ${cubicFeet}`);
+        
+        // Reject if cubic feet is unreasonable
+        if (cubicFeet > 50) {
+          console.log(`Cubic feet too large (${cubicFeet}), rejecting scraped dimensions`);
+          return null;
+        }
+        
         // Apply 1.2x buffer to scraped dimensions
         return {
           length: dims.length * 1.2,
           width: dims.width * 1.2,
           height: dims.height * 1.2
         };
+      } else {
+        console.log(`Dimensions failed validation: L:${dims.length} W:${dims.width} H:${dims.height}`);
       }
     }
   }
@@ -899,6 +916,9 @@ async function scrapeProduct(url) {
 app.post('/api/scrape', async (req, res) => {
   try {
     const { urls } = req.body;
+    
+    console.log('Received scrape request with URLs:', urls);
+    
     if (!urls || !Array.isArray(urls) || urls.length === 0) {
       return res.status(400).json({ success: false, error: 'URLs array is required' });
     }
@@ -907,8 +927,15 @@ app.post('/api/scrape', async (req, res) => {
     }
 
     const validUrls = urls.filter(url => {
-      try { new URL(url); return true; } catch { return false; }
+      try { 
+        new URL(url); 
+        return url.length > 10; // Filter out tiny fragments
+      } catch { 
+        return false; 
+      }
     });
+
+    console.log('Valid URLs after filtering:', validUrls);
 
     if (validUrls.length === 0) {
       return res.status(400).json({ success: false, error: 'No valid URLs provided' });
