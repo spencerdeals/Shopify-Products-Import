@@ -13,7 +13,7 @@ const PORT = process.env.PORT || 3000;
 const SHOPIFY_DOMAIN = process.env.SHOPIFY_DOMAIN || 'spencer-deals-ltd.myshopify.com';
 const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN || '';
 const SCRAPINGBEE_API_KEY = process.env.SCRAPINGBEE_API_KEY || '';
-const SCRAPING_TIMEOUT = 25000;
+const SCRAPING_TIMEOUT = 45000;  // Increased to 45 seconds for aggressive scraping
 const MAX_CONCURRENT_SCRAPES = 2;
 const BERMUDA_DUTY_RATE = 0.265;
 const USE_SCRAPINGBEE = !!SCRAPINGBEE_API_KEY;
@@ -710,7 +710,7 @@ function calculateShippingCost(dimensions, weight, orderTotal = 0) {
   return Math.max(minShipping, Math.round(finalCost * 100) / 100);
 }
 
-// ScrapingBee integration
+// ScrapingBee integration - AGGRESSIVE CONFIGURATION FOR MAXIMUM DATA EXTRACTION
 async function scrapingBeeRequest(url) {
   if (!SCRAPINGBEE_API_KEY) {
     throw new Error('ScrapingBee API key not configured');
@@ -724,15 +724,46 @@ async function scrapingBeeRequest(url) {
       render_js: 'true',
       premium_proxy: 'true',
       country_code: 'us',
-      wait: '2000',
+      wait: '5000',           // Increased from 2000 to 5000ms
+      wait_for: 'networkidle', // Wait until network is idle
       block_ads: 'true',
-      block_resources: 'false'
+      block_resources: 'false',
+      window_width: '1920',    // Desktop resolution for full content
+      window_height: '1080',
+      screenshot: 'false',     // Don't need screenshots, just HTML
+      extract_rules: JSON.stringify({
+        'product_title': {
+          'selector': 'h1#productTitle, h1[data-automation-id="product-title"], h1.product-title, h1[itemprop="name"], meta[property="og:title"]',
+          'output': 'text'
+        },
+        'product_price': {
+          'selector': '.a-price-whole, [data-automation-id="product-price"], .price-current, .sr-only:contains("$"), meta[property="product:price:amount"]',
+          'output': 'text'
+        },
+        'product_image': {
+          'selector': '#landingImage, [data-automation-id="product-primary-image"], img.product-image-main, meta[property="og:image"]',
+          'output': '@src'
+        },
+        'dimensions': {
+          'selector': '*:contains("Dimensions"), *:contains("Size"), *:contains("Measurements")',
+          'output': 'text'
+        },
+        'weight': {
+          'selector': '*:contains("Weight"), *:contains("lbs"), *:contains("pounds")',
+          'output': 'text'
+        }
+      }),
+      stealth_proxy: 'true',   // Maximum stealth
+      session_id: Math.random().toString(36) // Unique session for each request
     });
 
+    console.log(`Making AGGRESSIVE ScrapingBee request for: ${url}`);
+    
     const response = await axios.get(`${scrapingBeeUrl}?${params.toString()}`, {
-      timeout: SCRAPING_TIMEOUT
+      timeout: 40000  // Increased timeout to 40 seconds
     });
 
+    console.log(`ScrapingBee response size: ${response.data.length} characters`);
     return response.data;
   } catch (error) {
     console.error('ScrapingBee request failed:', error.message);
@@ -915,21 +946,35 @@ async function scrapeProduct(url) {
 // API Routes
 app.post('/api/scrape', async (req, res) => {
   try {
-    const { urls } = req.body;
+    let { urls } = req.body;
     
     console.log('Received scrape request with URLs:', urls);
     
     if (!urls || !Array.isArray(urls) || urls.length === 0) {
       return res.status(400).json({ success: false, error: 'URLs array is required' });
     }
-    if (urls.length > 20) {
+
+    // BACKEND FAILSAFE: Split concatenated URLs that may have been incorrectly parsed by frontend
+    const expandedUrls = [];
+    urls.forEach(urlString => {
+      // Split each URL string by spaces, then filter for valid URLs
+      const splitUrls = urlString.split(/\s+/)
+        .map(url => url.trim())
+        .filter(url => url.startsWith('http') && url.length > 10);
+      
+      expandedUrls.push(...splitUrls);
+    });
+    
+    console.log('URLs after backend expansion:', expandedUrls);
+    
+    if (expandedUrls.length > 20) {
       return res.status(400).json({ success: false, error: 'Maximum 20 URLs allowed per request' });
     }
 
-    const validUrls = urls.filter(url => {
+    const validUrls = expandedUrls.filter(url => {
       try { 
         new URL(url); 
-        return url.length > 10; // Filter out tiny fragments
+        return url.length > 10;
       } catch { 
         return false; 
       }
