@@ -247,6 +247,76 @@ class ApifyScraper {
 
     return null;
   }
+
+  // New generic parser for other retailers
+  parseGenericData(data) {
+    const result = {
+      name: null,
+      price: null,
+      image: null,
+      dimensions: null,
+      weight: null,
+      brand: null,
+      category: null,
+      inStock: true
+    };
+
+    // Product name
+    result.name = data.title || data.name || 'Unknown Product';
+
+    // Price extraction
+    if (data.price) {
+      if (typeof data.price === 'number') {
+        result.price = data.price;
+      } else if (typeof data.price === 'string') {
+        const priceMatch = data.price.match(/[\d,]+\.?\d*/);
+        result.price = priceMatch ? parseFloat(priceMatch[0].replace(',', '')) : null;
+      }
+    }
+
+    // Image
+    result.image = data.image || null;
+
+    // Try to extract dimensions from description or specifications
+    if (data.description) {
+      result.dimensions = this.extractDimensionsFromText(data.description);
+    }
+
+    console.log('📦 Parsed generic product:', {
+      name: result.name?.substring(0, 50) + '...',
+      price: result.price,
+      hasImage: !!result.image,
+      hasDimensions: !!result.dimensions
+    });
+
+    return result;
+  }
+
+  extractDimensionsFromText(text) {
+    if (!text) return null;
+
+    const patterns = [
+      /(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*(?:inches|in|")?/i,
+      /(\d+\.?\d*)"?\s*[WL]\s*[x×]\s*(\d+\.?\d*)"?\s*[DW]\s*[x×]\s*(\d+\.?\d*)"?\s*[HT]/i,
+      /L:\s*(\d+\.?\d*).*W:\s*(\d+\.?\d*).*H:\s*(\d+\.?\d*)/i
+    ];
+
+    for (const pattern of patterns) {
+      const match = text.match(pattern);
+      if (match) {
+        const length = parseFloat(match[1]);
+        const width = parseFloat(match[2]);
+        const height = parseFloat(match[3]);
+        
+        if (length > 0 && width > 0 && height > 0 && 
+            length < 200 && width < 200 && height < 200) {
+          return { length, width, height };
+        }
+      }
+    }
+
+    return null;
+  }
 }
 
 module.exports = ApifyScraper;

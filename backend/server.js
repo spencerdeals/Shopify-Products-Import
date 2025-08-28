@@ -49,7 +49,7 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     port: PORT,
     scrapingBee: USE_SCRAPINGBEE,
-    apify: USE_APIFY_FOR_AMAZON,
+    apify: USE_APIFY_PRIMARY,
     shopifyConfigured: !!SHOPIFY_ACCESS_TOKEN
   });
 });
