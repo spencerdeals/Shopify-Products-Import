@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node backend/server.js",
     "dev": "nodemon backend/server.js",
-    "railway-build": "echo 'No build step required'",
+    "railway-build": "npm install",
     "railway-start": "node backend/server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
