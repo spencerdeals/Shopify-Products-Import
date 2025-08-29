@@ -255,13 +255,13 @@ function calculateDynamicMargin(subtotal, products) {
   // Base margin tiers based on order value
   let baseMarginRate;
   if (subtotal < 500) {
-    baseMarginRate = 0.20; // 20% for small orders
+    baseMarginRate = 0.25; // 25% for small orders
   } else if (subtotal < 1500) {
-    baseMarginRate = 0.15; // 15% for medium orders
+    baseMarginRate = 0.20; // 20% for medium orders
   } else if (subtotal < 3000) {
-    baseMarginRate = 0.12; // 12% for large orders
+    baseMarginRate = 0.17; // 17% for large orders
   } else {
-    baseMarginRate = 0.10; // 10% for very large orders
+    baseMarginRate = 0.15; // 15% for very large orders
   }
   
   // Calculate total volume for size-based adjustments
@@ -283,7 +283,7 @@ function calculateDynamicMargin(subtotal, products) {
     sizeAdjustment = 0.01; // +1% for small shipments (less efficient)
   }
   
-  const finalMarginRate = Math.min(0.25, baseMarginRate + sizeAdjustment); // Cap at 25%
+  const finalMarginRate = Math.min(0.30, baseMarginRate + sizeAdjustment); // Cap at 30%
   return subtotal * finalMarginRate;
 }
 
