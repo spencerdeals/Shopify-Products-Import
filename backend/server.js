@@ -217,4 +217,600 @@ function estimateDimensions(category, name = '') {
     },
     'books': { 
       length: 8 + Math.random() * 3,
-      width: 5 + Math.random() * 
+      width: 5 + Math.random() * 3,
+      height: 1 + Math.random() * 2
+    },
+    'toys': { 
+      length: 12 + Math.random() * 8,
+      width: 10 + Math.random() * 8,
+      height: 8 + Math.random() * 8
+    },
+    'sports': { 
+      length: 24 + Math.random() * 12,
+      width: 18 + Math.random() * 10,
+      height: 12 + Math.random() * 8
+    },
+    'home-decor': { 
+      length: 12 + Math.random() * 12,
+      width: 10 + Math.random() * 10,
+      height: 12 + Math.random() * 12
+    },
+    'tools': { 
+      length: 18 + Math.random() * 6,
+      width: 12 + Math.random() * 6,
+      height: 6 + Math.random() * 4
+    },
+    'garden': { 
+      length: 24 + Math.random() * 12,
+      width: 18 + Math.random() * 12,
+      height: 12 + Math.random() * 12
+    },
+    'general': { 
+      length: 14 + Math.random() * 8,
+      width: 12 + Math.random() * 6,
+      height: 10 + Math.random() * 6
+    }
+  };
+  
+  const estimate = baseEstimates[category] || baseEstimates['general'];
+  
+  return {
+    length: Math.round(estimate.length * 10) / 10,
+    width: Math.round(estimate.width * 10) / 10,
+    height: Math.round(estimate.height * 10) / 10
+  };
+}
+
+function calculateShippingCost(dimensions, weight, price) {
+  const volume = dimensions.length * dimensions.width * dimensions.height;
+  const cubicFeet = volume / 1728;
+  const dimWeight = cubicFeet * 10;
+  const billableWeight = Math.max(weight, dimWeight);
+  
+  let baseCost = 0;
+  if (billableWeight < 10) baseCost = 25;
+  else if (billableWeight < 30) baseCost = 45;
+  else if (billableWeight < 50) baseCost = 65;
+  else if (billableWeight < 100) baseCost = 85;
+  else if (billableWeight < 200) baseCost = 120;
+  else baseCost = 150 + (billableWeight - 200) * 0.5;
+  
+  const oversizeFee = Math.max(dimensions.length, dimensions.width, dimensions.height) > 48 ? 25 : 0;
+  const valueFee = price > 500 ? price * 0.015 : 0;
+  const handlingFee = 10;
+  
+  const totalCost = baseCost + oversizeFee + valueFee + handlingFee;
+  return Math.round(totalCost);
+}
+
+// Helper function to check if essential data is complete
+function isDataComplete(productData) {
+  return productData && 
+         productData.name && 
+         productData.name !== 'Unknown Product' &&
+         productData.image && 
+         productData.dimensions &&
+         productData.dimensions.length > 0 &&
+         productData.dimensions.width > 0 &&
+         productData.dimensions.height > 0;
+}
+
+// Merge product data from multiple sources
+function mergeProductData(primary, secondary) {
+  if (!primary) return secondary;
+  if (!secondary) return primary;
+  
+  return {
+    name: primary.name || secondary.name,
+    price: primary.price || secondary.price,
+    image: primary.image || secondary.image,
+    dimensions: primary.dimensions || secondary.dimensions,
+    weight: primary.weight || secondary.weight,
+    brand: primary.brand || secondary.brand,
+    category: primary.category || secondary.category,
+    inStock: primary.inStock !== undefined ? primary.inStock : secondary.inStock
+  };
+}
+
+// ScrapingBee scraping function
+async function scrapeWithScrapingBee(url) {
+  if (!USE_SCRAPINGBEE) {
+    throw new Error('ScrapingBee not configured');
+  }
+
+  try {
+    console.log('🐝 Starting ScrapingBee scrape for:', url);
+    
+    const response = await axios.get('https://app.scrapingbee.com/api/v1/', {
+      params: {
+        api_key: SCRAPINGBEE_API_KEY,
+        url: url,
+        render_js: 'true',
+        premium_proxy: 'true',
+        country_code: 'us',
+        block_ads: 'true',
+        extract_rules: JSON.stringify({
+          name: {
+            selector: 'h1, [data-testid="product-title"], .product-title, #productTitle, [itemprop="name"], .product-name, .product-info h1',
+            type: 'text'
+          },
+          price: {
+            selector: '[data-testid="product-price"], .price-now, .price, [itemprop="price"], .product-price, .current-price, span.wux-price-display',
+            type: 'text'
+          },
+          image: {
+            selector: 'img.mainImage, [data-testid="product-image"] img, .product-photo img, #landingImage, [itemprop="image"], .primary-image img',
+            type: 'attribute',
+            attribute: 'src'
+          },
+          description: {
+            selector: '.product-description, [data-testid="product-description"], #feature-bullets, .product-details',
+            type: 'text'
+          },
+          dimensions: {
+            selector: '.product-dimensions, .dimension-list, .product-specs',
+            type: 'text'
+          },
+          weight: {
+            selector: '.product-weight, .shipping-weight',
+            type: 'text'
+          }
+        })
+      },
+      timeout: SCRAPING_TIMEOUT
+    });
+
+    const extractedData = response.data;
+    console.log('✅ ScrapingBee scrape successful');
+    
+    // Parse the extracted data
+    const productData = {
+      name: extractedData.name || null,
+      price: null,
+      image: extractedData.image || null,
+      dimensions: null,
+      weight: null,
+      brand: null,
+      category: null,
+      inStock: true
+    };
+
+    // Parse price
+    if (extractedData.price) {
+      const priceMatch = extractedData.price.match(/[\d,]+\.?\d*/);
+      productData.price = priceMatch ? parseFloat(priceMatch[0].replace(',', '')) : null;
+    }
+
+    // Try to extract dimensions from description or dimensions field
+    if (extractedData.dimensions) {
+      productData.dimensions = parseDimensionString(extractedData.dimensions);
+    }
+    if (!productData.dimensions && extractedData.description) {
+      productData.dimensions = parseDimensionString(extractedData.description);
+    }
+
+    // Parse weight
+    if (extractedData.weight) {
+      productData.weight = parseWeightString(extractedData.weight);
+    }
+
+    return productData;
+
+  } catch (error) {
+    console.error('❌ ScrapingBee scrape failed:', error.message);
+    throw error;
+  }
+}
+
+// Dimension parsing helper
+function parseDimensionString(str) {
+  if (!str || typeof str !== 'string') return null;
+
+  const patterns = [
+    /(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*(?:inches|in|")?/i,
+    /(\d+\.?\d*)"?\s*[WL]\s*[x×]\s*(\d+\.?\d*)"?\s*[DW]\s*[x×]\s*(\d+\.?\d*)"?\s*[HT]/i,
+    /L:\s*(\d+\.?\d*).*W:\s*(\d+\.?\d*).*H:\s*(\d+\.?\d*)/i
+  ];
+
+  for (const pattern of patterns) {
+    const match = str.match(pattern);
+    if (match) {
+      const length = parseFloat(match[1]);
+      const width = parseFloat(match[2]);
+      const height = parseFloat(match[3]);
+      
+      if (length > 0 && width > 0 && height > 0 && 
+          length < 200 && width < 200 && height < 200) {
+        return { length, width, height };
+      }
+    }
+  }
+
+  return null;
+}
+
+// Weight parsing helper
+function parseWeightString(weightStr) {
+  if (typeof weightStr === 'number') return weightStr;
+  if (typeof weightStr !== 'string') return null;
+
+  const patterns = [
+    { regex: /(\d+\.?\d*)\s*(?:pounds?|lbs?)/i, multiplier: 1 },
+    { regex: /(\d+\.?\d*)\s*(?:kilograms?|kgs?)/i, multiplier: 2.205 },
+    { regex: /(\d+\.?\d*)\s*(?:grams?|g)/i, multiplier: 0.00220462 },
+    { regex: /(\d+\.?\d*)\s*(?:ounces?|oz)/i, multiplier: 0.0625 }
+  ];
+
+  for (const { regex, multiplier } of patterns) {
+    const match = weightStr.match(regex);
+    if (match) {
+      const weight = parseFloat(match[1]) * multiplier;
+      if (weight > 0 && weight < 1000) {
+        return Math.round(weight * 10) / 10;
+      }
+    }
+  }
+
+  return null;
+}
+
+// Main product scraping function
+async function scrapeProduct(url) {
+  const productId = generateProductId();
+  const retailer = detectRetailer(url);
+  const isAmazon = retailer === 'Amazon';
+  
+  let productData = null;
+  let scrapingMethod = 'none';
+  
+  console.log(`\n📦 Processing: ${url}`);
+  console.log(`   Retailer: ${retailer}`);
+  
+  // STEP 1: Always try Apify first for all retailers
+  if (USE_APIFY) {
+    try {
+      console.log('   🔄 Attempting Apify scrape...');
+      
+      if (isAmazon) {
+        // Use specialized Amazon scraper
+        productData = await apifyScraper.scrapeAmazon(url);
+      } else {
+        // For non-Amazon retailers, use generic Apify actor
+        // You might need to implement a generic Apify scraper method
+        // For now, we'll try the Amazon scraper which might work for some sites
+        try {
+          productData = await apifyScraper.scrapeAmazon(url);
+        } catch (e) {
+          console.log('   ⚠️ Apify Amazon scraper not suitable for this retailer');
+          productData = null;
+        }
+      }
+      
+      if (productData) {
+        scrapingMethod = 'apify';
+        console.log('   ✅ Apify returned data');
+        
+        // Check if data is complete
+        if (!isDataComplete(productData)) {
+          console.log('   ⚠️ Apify data incomplete, will try ScrapingBee for missing fields');
+        }
+      }
+    } catch (error) {
+      console.log('   ❌ Apify failed:', error.message);
+      productData = null;
+    }
+  }
+  
+  // STEP 2: If Apify failed or returned incomplete data, try ScrapingBee
+  if (USE_SCRAPINGBEE && (!productData || !isDataComplete(productData))) {
+    try {
+      console.log('   🐝 Attempting ScrapingBee scrape...');
+      const scrapingBeeData = await scrapeWithScrapingBee(url);
+      
+      if (scrapingBeeData) {
+        if (!productData) {
+          // Apify failed completely, use ScrapingBee data
+          productData = scrapingBeeData;
+          scrapingMethod = 'scrapingbee';
+          console.log('   ✅ Using ScrapingBee data (Apify failed)');
+        } else {
+          // Merge data - keep Apify data but fill in missing fields from ScrapingBee
+          const mergedData = mergeProductData(productData, scrapingBeeData);
+          
+          // Log what was supplemented
+          if (!productData.name && scrapingBeeData.name) {
+            console.log('   ✅ ScrapingBee provided missing name');
+          }
+          if (!productData.image && scrapingBeeData.image) {
+            console.log('   ✅ ScrapingBee provided missing image');
+          }
+          if (!productData.dimensions && scrapingBeeData.dimensions) {
+            console.log('   ✅ ScrapingBee provided missing dimensions');
+          }
+          
+          productData = mergedData;
+          scrapingMethod = 'apify+scrapingbee';
+        }
+      }
+    } catch (error) {
+      console.log('   ❌ ScrapingBee failed:', error.message);
+    }
+  }
+  
+  // STEP 3: Use intelligent estimation for any missing data
+  if (!productData) {
+    // Both scrapers failed completely
+    productData = {
+      name: 'Product from ' + retailer,
+      price: null,
+      image: null,
+      dimensions: null,
+      weight: null,
+      category: null
+    };
+    scrapingMethod = 'estimation';
+    console.log('   ⚠️ Both scrapers failed, using estimation');
+  }
+  
+  // Fill in missing data with estimations
+  const productName = productData.name || `Product from ${retailer}`;
+  const category = productData.category || categorizeProduct(productName, url);
+  
+  if (!productData.dimensions) {
+    productData.dimensions = estimateDimensions(category, productName);
+    console.log('   📐 Estimated dimensions based on category:', category);
+  }
+  
+  if (!productData.weight) {
+    productData.weight = estimateWeight(productData.dimensions, category);
+    console.log('   ⚖️ Estimated weight based on dimensions');
+  }
+  
+  // Calculate shipping cost
+  const shippingCost = calculateShippingCost(
+    productData.dimensions,
+    productData.weight,
+    productData.price || 100
+  );
+  
+  // Prepare final product object
+  const product = {
+    id: productId,
+    url: url,
+    name: productName,
+    price: productData.price,
+    image: productData.image || 'https://placehold.co/400x400/7CB342/FFFFFF/png?text=SDL',
+    category: category,
+    retailer: retailer,
+    dimensions: productData.dimensions,
+    weight: productData.weight,
+    shippingCost: shippingCost,
+    scrapingMethod: scrapingMethod,
+    dataCompleteness: {
+      hasName: !!productData.name,
+      hasImage: !!productData.image,
+      hasDimensions: !!productData.dimensions,
+      hasWeight: !!productData.weight,
+      hasPrice: !!productData.price
+    }
+  };
+  
+  console.log(`   💰 Shipping cost: $${shippingCost}`);
+  console.log(`   📊 Data source: ${scrapingMethod}`);
+  console.log(`   ✅ Product processed successfully\n`);
+  
+  return product;
+}
+
+// Batch processing with concurrency control
+async function processBatch(urls, batchSize = MAX_CONCURRENT_SCRAPES) {
+  const results = [];
+  for (let i = 0; i < urls.length; i += batchSize) {
+    const batch = urls.slice(i, i + batchSize);
+    const batchResults = await Promise.all(
+      batch.map(url => scrapeProduct(url).catch(error => {
+        console.error(`Failed to process ${url}:`, error);
+        return {
+          id: generateProductId(),
+          url: url,
+          name: 'Failed to load product',
+          category: 'general',
+          retailer: detectRetailer(url),
+          shippingCost: 50,
+          error: true
+        };
+      }))
+    );
+    results.push(...batchResults);
+  }
+  return results;
+}
+
+// API endpoint for scraping
+app.post('/api/scrape', async (req, res) => {
+  try {
+    const { urls } = req.body;
+    
+    if (!urls || !Array.isArray(urls) || urls.length === 0) {
+      return res.status(400).json({ error: 'No URLs provided' });
+    }
+    
+    // Check for SDL domains
+    const sdlUrls = urls.filter(url => isSDLDomain(url));
+    if (sdlUrls.length > 0) {
+      return res.status(400).json({ 
+        error: 'SDL domain detected. This calculator is for importing products from other retailers.' 
+      });
+    }
+    
+    console.log(`\n🚀 Starting batch scrape for ${urls.length} products...`);
+    console.log('   Strategy: Apify (primary) → ScrapingBee (backup) → Estimation (fallback)\n');
+    
+    const products = await processBatch(urls);
+    
+    // Log summary
+    const apifyCount = products.filter(p => p.scrapingMethod === 'apify').length;
+    const scrapingBeeCount = products.filter(p => p.scrapingMethod === 'scrapingbee').length;
+    const combinedCount = products.filter(p => p.scrapingMethod === 'apify+scrapingbee').length;
+    const estimatedCount = products.filter(p => p.scrapingMethod === 'estimation').length;
+    
+    console.log('\n📊 SCRAPING SUMMARY:');
+    console.log(`   Total products: ${products.length}`);
+    console.log(`   Apify only: ${apifyCount}`);
+    console.log(`   ScrapingBee only: ${scrapingBeeCount}`);
+    console.log(`   Combined (Apify + ScrapingBee): ${combinedCount}`);
+    console.log(`   Estimated: ${estimatedCount}`);
+    console.log(`   Success rate: ${((products.length - estimatedCount) / products.length * 100).toFixed(1)}%\n`);
+    
+    res.json({ 
+      products,
+      summary: {
+        total: products.length,
+        scraped: products.length - estimatedCount,
+        estimated: estimatedCount,
+        scrapingMethods: {
+          apify: apifyCount,
+          scrapingBee: scrapingBeeCount,
+          combined: combinedCount,
+          estimation: estimatedCount
+        }
+      }
+    });
+    
+  } catch (error) {
+    console.error('Scraping error:', error);
+    res.status(500).json({ error: 'Failed to scrape products' });
+  }
+});
+
+// Shopify Draft Order Creation
+app.post('/apps/instant-import/create-draft-order', async (req, res) => {
+  try {
+    const { products, deliveryFees, totals, customer, originalUrls } = req.body;
+    
+    if (!customer || !customer.email || !customer.name) {
+      return res.status(400).json({ error: 'Customer information required' });
+    }
+    
+    // Create line items for the draft order
+    const lineItems = [];
+    
+    // Add each product as a line item
+    products.forEach(product => {
+      if (product.price && product.price > 0) {
+        lineItems.push({
+          title: product.name,
+          price: product.price.toFixed(2),
+          quantity: 1,
+          properties: [
+            { name: 'Source URL', value: product.url },
+            { name: 'Retailer', value: product.retailer },
+            { name: 'Category', value: product.category }
+          ]
+        });
+      }
+    });
+    
+    // Add duty as a line item
+    if (totals.dutyAmount > 0) {
+      lineItems.push({
+        title: 'Bermuda Import Duty (26.5%)',
+        price: totals.dutyAmount.toFixed(2),
+        quantity: 1,
+        taxable: false
+      });
+    }
+    
+    // Add delivery fees as line items
+    Object.entries(deliveryFees).forEach(([vendor, fee]) => {
+      if (fee > 0) {
+        lineItems.push({
+          title: `${vendor} US Delivery Fee`,
+          price: fee.toFixed(2),
+          quantity: 1,
+          taxable: false
+        });
+      }
+    });
+    
+    // Add shipping cost as a line item
+    if (totals.totalShippingCost > 0) {
+      lineItems.push({
+        title: 'Ocean Freight & Handling to Bermuda',
+        price: totals.totalShippingCost.toFixed(2),
+        quantity: 1,
+        taxable: false
+      });
+    }
+    
+    // Create the draft order
+    const draftOrderData = {
+      draft_order: {
+        line_items: lineItems,
+        customer: {
+          email: customer.email,
+          first_name: customer.name.split(' ')[0],
+          last_name: customer.name.split(' ').slice(1).join(' ') || ''
+        },
+        email: customer.email,
+        note: `Import Calculator Order\n\nOriginal URLs:\n${originalUrls}`,
+        tags: 'import-calculator, ocean-freight',
+        tax_exempt: true,
+        send_receipt: true,
+        send_fulfillment_receipt: false
+      }
+    };
+    
+    // Make request to Shopify
+    const shopifyResponse = await axios.post(
+      `https://${SHOPIFY_DOMAIN}/admin/api/2023-10/draft_orders.json`,
+      draftOrderData,
+      {
+        headers: {
+          'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+    
+    const draftOrder = shopifyResponse.data.draft_order;
+    
+    // Send the invoice to the customer
+    await axios.post(
+      `https://${SHOPIFY_DOMAIN}/admin/api/2023-10/draft_orders/${draftOrder.id}/send_invoice.json`,
+      {
+        draft_order_invoice: {
+          to: customer.email,
+          from: 'orders@sdl.bm',
+          subject: `Your SDL Import Order #${draftOrder.name} - Ready for Payment`,
+          custom_message: `Thank you for using SDL Instant Imports!\n\nYour import order has been created and is ready for payment. The total includes all items, import duties, and shipping to Bermuda.\n\nExpected delivery: 3-5 weeks after payment.\n\nClick the link below to complete your purchase.`
+        }
+      },
+      {
+        headers: {
+          'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+    
+    res.json({
+      success: true,
+      draftOrderId: draftOrder.id,
+      draftOrderNumber: draftOrder.name,
+      invoiceUrl: draftOrder.invoice_url,
+      totalAmount: totals.grandTotal
+    });
+    
+  } catch (error) {
+    console.error('Draft order creation error:', error.response?.data || error);
+    res.status(500).json({ error: 'Failed to create draft order' });
+  }
+});
+
+// Start server
+app.listen(PORT, () => {
+  console.log(`\n🚀 Server running on port ${PORT}`);
+  console.log(`📍 Frontend: http://localhost:${PORT}`);
+  console.log(`📍 API Health: http://localhost:${PORT}/health\n`);
+});
