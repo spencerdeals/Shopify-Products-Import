@@ -480,7 +480,12 @@ function parseWeightString(weightStr) {
 }
 
 // Main product scraping function
-async function scrapeProduct(url) {
+async function scrapeProduct(url) {// AI CHECK: See if we know this product
+  const knownProduct = await learningSystem.getKnownProduct(url);
+  if (knownProduct) {
+    console.log('   🤖 AI: Using saved product data');
+    return knownProduct;
+  }
   const productId = generateProductId();
   const retailer = detectRetailer(url);
   
@@ -610,7 +615,8 @@ async function scrapeProduct(url) {
   console.log(`   💰 Shipping cost: $${shippingCost}`);
   console.log(`   📊 Data source: ${scrapingMethod}`);
   console.log(`   ✅ Product processed successfully\n`);
-  
+  // AI SAVE: Remember this product for next time
+  await learningSystem.saveProduct(product);
   return product;
 }
 
