@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Completing Your Order - SDL Instant Imports</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+            background: linear-gradient(135deg, #7cb342 0%, #2e7d32 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 600px;
+            width: 100%;
+            padding: 40px;
+            text-align: center;
+        }
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #7cb342;
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            animation: spin 1s linear infinite;
+            margin: 30px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        h1 { color: #333; margin-bottom: 20px; }
+        .message { color: #666; margin: 20px 0; }
+        .error { color: #f44336; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Creating Your Import Order</h1>
+        <div class="spinner"></div>
+        <div class="message" id="status">Please wait while we create your draft order...</div>
+    </div>
+
+    <script>
+        async function completeOrder() {
+            const params = new URLSearchParams(window.location.search);
+            const orderId = params.get('orderId');
+            
+            if (!orderId) {
+                document.getElementById('status').innerHTML = '<span class="error">No order found. Please start over.</span>';
+                return;
+            }
+            
+            try {
+                // Get customer email from Shopify (if logged in)
+                const customerEmail = params.get('email') || prompt('Please enter your email address:');
+                const customerName = params.get('name') || prompt('Please enter your full name:');
+                
+                if (!customerEmail || !customerName) {
+                    throw new Error('Customer information required');
+                }
+                
+                // Retrieve pending order
+                const orderResponse = await fetch(`/api/get-pending-order/${orderId}`);
+                if (!orderResponse.ok) throw new Error('Order not found');
+                
+                const orderData = await orderResponse.json();
+                orderData.customer = { email: customerEmail, name: customerName };
+                
+                // Create draft order
+                const draftResponse = await fetch('/apps/instant-import/create-draft-order', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(orderData)
+                });
+                
+                if (!draftResponse.ok) throw new Error('Failed to create draft order');
+                
+                const result = await draftResponse.json();
+                
+                document.getElementById('status').innerHTML = `
+                    <h2 style="color: #4caf50;">✓ Order Created Successfully!</h2>
+                    <p>Order #${result.draftOrderNumber}</p>
+                    <p>We'll review your order and contact you with final pricing.</p>
+                    <p>Thank you for using SDL Instant Imports!</p>
+                `;
+                
+            } catch (error) {
+                document.getElementById('status').innerHTML = `
+                    <span class="error">Error: ${error.message}</span><br>
+                    <a href="/" style="color: #7cb342; margin-top: 20px; display: inline-block;">Start Over</a>
+                `;
+            }
+        }
+        
+        // Start the process
+        completeOrder();
+    </script>
+</body>
+</html>
