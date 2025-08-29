@@ -312,7 +312,7 @@ function mergeProductData(primary, secondary) {
   };
 }
 
-// ScrapingBee scraping function
+// ScrapingBee scraping function - SIMPLIFIED VERSION
 async function scrapeWithScrapingBee(url) {
   if (!USE_SCRAPINGBEE) {
     throw new Error('ScrapingBee not configured');
@@ -321,53 +321,27 @@ async function scrapeWithScrapingBee(url) {
   try {
     console.log('🐝 Starting ScrapingBee scrape for:', url);
     
-    const response = await axios.get('https://app.scrapingbee.com/api/v1/', {
+    // Simplified request without complex extract_rules
+    const response = await axios({
+      method: 'GET',
+      url: 'https://app.scrapingbee.com/api/v1/',
       params: {
         api_key: SCRAPINGBEE_API_KEY,
         url: url,
-        render_js: 'true',
-        premium_proxy: 'true',
-        country_code: 'us',
-        block_ads: 'true',
-        extract_rules: JSON.stringify({
-          name: {
-            selector: 'h1, [data-testid="product-title"], .product-title, #productTitle, [itemprop="name"], .product-name, .product-info h1',
-            type: 'text'
-          },
-          price: {
-            selector: '[data-testid="product-price"], .price-now, .price, [itemprop="price"], .product-price, .current-price, span.wux-price-display',
-            type: 'text'
-          },
-          image: {
-            selector: 'img.mainImage, [data-testid="product-image"] img, .product-photo img, #landingImage, [itemprop="image"], .primary-image img',
-            type: 'attribute',
-            attribute: 'src'
-          },
-          description: {
-            selector: '.product-description, [data-testid="product-description"], #feature-bullets, .product-details',
-            type: 'text'
-          },
-          dimensions: {
-            selector: '.product-dimensions, .dimension-list, .product-specs',
-            type: 'text'
-          },
-          weight: {
-            selector: '.product-weight, .shipping-weight',
-            type: 'text'
-          }
-        })
+        render_js: 'false',
+        block_ads: 'true'
       },
       timeout: SCRAPING_TIMEOUT
     });
 
-    const extractedData = response.data;
-    console.log('✅ ScrapingBee scrape successful');
+    const html = response.data;
+    console.log('✅ ScrapingBee returned HTML, parsing data...');
     
-    // Parse the extracted data
+    // Parse HTML manually
     const productData = {
-      name: extractedData.name || null,
+      name: null,
       price: null,
-      image: extractedData.image || null,
+      image: null,
       dimensions: null,
       weight: null,
       brand: null,
@@ -375,29 +349,79 @@ async function scrapeWithScrapingBee(url) {
       inStock: true
     };
 
-    // Parse price
-    if (extractedData.price) {
-      const priceMatch = extractedData.price.match(/[\d,]+\.?\d*/);
-      productData.price = priceMatch ? parseFloat(priceMatch[0].replace(',', '')) : null;
+    // Extract title
+    const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+    if (titleMatch) {
+      productData.name = titleMatch[1]
+        .replace(/ - Amazon\.com.*$/i, '')
+        .replace(/ \| .*$/i, '')
+        .trim();
     }
 
-    // Try to extract dimensions from description or dimensions field
-    if (extractedData.dimensions) {
-      productData.dimensions = parseDimensionString(extractedData.dimensions);
-    }
-    if (!productData.dimensions && extractedData.description) {
-      productData.dimensions = parseDimensionString(extractedData.description);
+    // Extract price
+    const pricePatterns = [
+      /\$(\d+(?:,\d{3})*(?:\.\d{2})?)/,
+      /price[^>]*>\s*\$(\d+(?:,\d{3})*(?:\.\d{2})?)/i,
+      /span[^>]*class="[^"]*price[^"]*"[^>]*>\s*\$(\d+(?:,\d{3})*(?:\.\d{2})?)/i
+    ];
+    
+    for (const pattern of pricePatterns) {
+      const match = html.match(pattern);
+      if (match) {
+        productData.price = parseFloat(match[1].replace(/,/g, ''));
+        break;
+      }
     }
 
-    // Parse weight
-    if (extractedData.weight) {
-      productData.weight = parseWeightString(extractedData.weight);
+    // Extract image
+    const imagePatterns = [
+      /id="landingImage"[^>]*src="([^"]+)"/,
+      /class="[^"]*main[^"]*image[^"]*"[^>]*src="([^"]+)"/i,
+      /data-old-hires="([^"]+)"/,
+      /data-a-dynamic-image="{"([^"]+)":/
+    ];
+    
+    for (const pattern of imagePatterns) {
+      const match = html.match(pattern);
+      if (match) {
+        productData.image = match[1];
+        break;
+      }
     }
+
+    // Try to find dimensions in the HTML
+    const dimensionMatch = html.match(/(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*(?:inches|in|")/i);
+    if (dimensionMatch) {
+      productData.dimensions = {
+        length: parseFloat(dimensionMatch[1]),
+        width: parseFloat(dimensionMatch[2]),
+        height: parseFloat(dimensionMatch[3])
+      };
+    }
+
+    // Try to find weight
+    const weightMatch = html.match(/(\d+(?:\.\d+)?)\s*(?:pounds?|lbs?)/i);
+    if (weightMatch) {
+      productData.weight = parseFloat(weightMatch[1]);
+    }
+
+    console.log('📦 ScrapingBee parsed:', {
+      hasName: !!productData.name,
+      hasPrice: !!productData.price,
+      hasImage: !!productData.image,
+      hasDimensions: !!productData.dimensions
+    });
 
     return productData;
 
   } catch (error) {
     console.error('❌ ScrapingBee scrape failed:', error.message);
+    if (error.response) {
+      console.error('Response status:', error.response.status);
+      if (error.response.status === 400) {
+        console.error('Bad Request - Check API key and parameters');
+      }
+    }
     throw error;
   }
 }
@@ -458,7 +482,6 @@ function parseWeightString(weightStr) {
 async function scrapeProduct(url) {
   const productId = generateProductId();
   const retailer = detectRetailer(url);
-  const isAmazon = retailer === 'Amazon';
   
   let productData = null;
   let scrapingMethod = 'none';
@@ -471,20 +494,8 @@ async function scrapeProduct(url) {
     try {
       console.log('   🔄 Attempting Apify scrape...');
       
-      if (isAmazon) {
-        // Use specialized Amazon scraper
-        productData = await apifyScraper.scrapeAmazon(url);
-      } else {
-        // For non-Amazon retailers, use generic Apify actor
-        // You might need to implement a generic Apify scraper method
-        // For now, we'll try the Amazon scraper which might work for some sites
-        try {
-          productData = await apifyScraper.scrapeAmazon(url);
-        } catch (e) {
-          console.log('   ⚠️ Apify Amazon scraper not suitable for this retailer');
-          productData = null;
-        }
-      }
+      // Use the universal scrapeProduct method from apifyScraper
+      productData = await apifyScraper.scrapeProduct(url);
       
       if (productData) {
         scrapingMethod = 'apify';
