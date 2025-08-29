@@ -1,5 +1,5 @@
 // backend/learningSystem.js - Turso Cloud Database Version
-const { createClient } = require('@libsql/client');
+const { createClient } = require('libsql-client');
 
 // Initialize Turso cloud database
 const db = createClient({
