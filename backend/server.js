@@ -7,7 +7,7 @@ const { URL } = require('url');
 const ApifyScraper = require('./apifyScraper');
 require('dotenv').config();
 const UPCItemDB = require('./upcitemdb');
-// const learningSystem = require('./learningSystem');  // TODO: Re-enable after fixing Turso database
+const learningSystem = require('./learningSystem');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -106,6 +106,16 @@ app.get('/test-upc', async (req, res) => {
   }
 });
 
+// Scraping report endpoint
+app.get('/scraping-report', async (req, res) => {
+  try {
+    const report = await learningSystem.getScrapingReport();
+    res.json(report);
+  } catch (error) {
+    res.json({ error: 'Could not generate report' });
+  }
+});
+
 // Root route - serve frontend HTML
 app.get('/', (req, res) => {
   const frontendPath = path.join(__dirname, '../frontend', 'index.html');
@@ -122,6 +132,17 @@ app.get('/', (req, res) => {
           testUpc: '/test-upc'
         }
       });
+    }
+  });
+});
+
+// Serve complete-order page
+app.get('/complete-order.html', (req, res) => {
+  const completePath = path.join(__dirname, '../frontend', 'complete-order.html');
+  res.sendFile(completePath, (err) => {
+    if (err) {
+      console.error('Error serving complete-order page:', err);
+      res.redirect('/');
     }
   });
 });
@@ -545,12 +566,12 @@ function parseWeightString(weightStr) {
 
 // Main product scraping function
 async function scrapeProduct(url) {
-  // TODO: Re-enable AI learning check when database is fixed
-  // const knownProduct = await learningSystem.getKnownProduct(url);
-  // if (knownProduct) {
-  //   console.log('   🤖 AI: Using saved product data');
-  //   return knownProduct;
-  // }
+  // AI CHECK: See if we've seen this exact product before
+  const knownProduct = await learningSystem.getKnownProduct(url);
+  if (knownProduct) {
+    console.log('   🤖 AI: Using saved product data');
+    return knownProduct;
+  }
   
   const productId = generateProductId();
   const retailer = detectRetailer(url);
@@ -668,16 +689,16 @@ async function scrapeProduct(url) {
   const category = productData.category || categorizeProduct(productName, url);
   
   if (!productData.dimensions) {
-    // TODO: Re-enable AI estimation when database is fixed
-    // const aiEstimate = await learningSystem.getSmartEstimation(category, productName, retailer);
-    // if (aiEstimate) {
-    //   productData.dimensions = aiEstimate.dimensions;
-    //   productData.weight = productData.weight || aiEstimate.weight;
-    //   console.log(`   🤖 AI: Applied learned patterns (confidence: ${(aiEstimate.confidence * 100).toFixed(0)}%)`);
-    // } else {
+    // Try AI estimation first
+    const aiEstimate = await learningSystem.getSmartEstimation(category, productName, retailer);
+    if (aiEstimate) {
+      productData.dimensions = aiEstimate.dimensions;
+      productData.weight = productData.weight || aiEstimate.weight;
+      console.log(`   🤖 AI: Applied learned patterns (confidence: ${(aiEstimate.confidence * 100).toFixed(0)}%)`);
+    } else {
       productData.dimensions = estimateDimensions(category, productName);
       console.log('   📐 Estimated dimensions based on category:', category);
-    // }
+    }
   }
   
   if (!productData.weight) {
@@ -718,8 +739,11 @@ async function scrapeProduct(url) {
   console.log(`   📊 Data source: ${scrapingMethod}`);
   console.log(`   ✅ Product processed successfully\n`);
   
-  // TODO: Re-enable AI learning when database is fixed
-  // await learningSystem.saveProduct(product);
+  // Record what worked and what didn't for failure tracking
+  await learningSystem.recordScrapingResult(url, retailer, product, scrapingMethod);
+  
+  // AI SAVE: Remember this product for next time
+  await learningSystem.saveProduct(product);
   
   return product;
 }
@@ -784,8 +808,8 @@ app.post('/api/scrape', async (req, res) => {
     console.log(`   Fully estimated: ${estimatedCount}`);
     console.log(`   Success rate: ${((products.length - estimatedCount) / products.length * 100).toFixed(1)}%\n`);
     
-    // TODO: Re-enable AI insights when database is fixed
-    // await learningSystem.getInsights();
+    // Get AI insights
+    await learningSystem.getInsights();
     
     res.json({ 
       products,
@@ -808,10 +832,45 @@ app.post('/api/scrape', async (req, res) => {
   }
 });
 
+// Store pending orders temporarily (in memory for now, could use Redis later)
+const pendingOrders = new Map();
+
+// Endpoint to store pending order
+app.post('/api/store-pending-order', (req, res) => {
+  const orderId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
+  pendingOrders.set(orderId, {
+    data: req.body,
+    timestamp: Date.now()
+  });
+  
+  // Clean up old orders after 1 hour
+  setTimeout(() => pendingOrders.delete(orderId), 3600000);
+  
+  console.log(`📦 Stored pending order ${orderId}`);
+  res.json({ orderId, success: true });
+});
+
+// Endpoint to retrieve pending order
+app.get('/api/get-pending-order/:orderId', (req, res) => {
+  const order = pendingOrders.get(req.params.orderId);
+  if (order) {
+    console.log(`✅ Retrieved pending order ${req.params.orderId}`);
+    res.json(order.data);
+    pendingOrders.delete(req.params.orderId); // Delete after retrieval
+  } else {
+    console.log(`❌ Order ${req.params.orderId} not found`);
+    res.status(404).json({ error: 'Order not found or expired' });
+  }
+});
+
 // Shopify Draft Order Creation
 app.post('/apps/instant-import/create-draft-order', async (req, res) => {
   try {
     const { products, deliveryFees, totals, customer, originalUrls } = req.body;
+    
+    if (!SHOPIFY_ACCESS_TOKEN) {
+      return res.status(500).json({ error: 'Shopify not configured. Please check API credentials.' });
+    }
     
     if (!customer || !customer.email || !customer.name) {
       return res.status(400).json({ error: 'Customer information required' });
@@ -881,10 +940,12 @@ app.post('/apps/instant-import/create-draft-order', async (req, res) => {
         note: `Import Calculator Order\n\nOriginal URLs:\n${originalUrls}`,
         tags: 'import-calculator, ocean-freight',
         tax_exempt: true,
-        send_receipt: true,
+        send_receipt: false,
         send_fulfillment_receipt: false
       }
     };
+    
+    console.log(`📝 Creating draft order for ${customer.email}...`);
     
     // Make request to Shopify
     const shopifyResponse = await axios.post(
@@ -899,37 +960,24 @@ app.post('/apps/instant-import/create-draft-order', async (req, res) => {
     );
     
     const draftOrder = shopifyResponse.data.draft_order;
+    console.log(`✅ Draft order ${draftOrder.name} created successfully`);
     
-    // Send the invoice to the customer
-    await axios.post(
-      `https://${SHOPIFY_DOMAIN}/admin/api/2023-10/draft_orders/${draftOrder.id}/send_invoice.json`,
-      {
-        draft_order_invoice: {
-          to: customer.email,
-          from: 'orders@sdl.bm',
-          subject: `Your SDL Import Order #${draftOrder.name} - Ready for Payment`,
-          custom_message: `Thank you for using SDL Instant Imports!\n\nYour import order has been created and is ready for payment. The total includes all items, import duties, and shipping to Bermuda.\n\nExpected delivery: 3-5 weeks after payment.\n\nClick the link below to complete your purchase.`
-        }
-      },
-      {
-        headers: {
-          'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN,
-          'Content-Type': 'application/json'
-        }
-      }
-    );
-    
+    // Don't send invoice automatically - let customer complete checkout
     res.json({
       success: true,
       draftOrderId: draftOrder.id,
       draftOrderNumber: draftOrder.name,
       invoiceUrl: draftOrder.invoice_url,
+      checkoutUrl: `https://${SHOPIFY_DOMAIN}/admin/draft_orders/${draftOrder.id}`,
       totalAmount: totals.grandTotal
     });
     
   } catch (error) {
     console.error('Draft order creation error:', error.response?.data || error);
-    res.status(500).json({ error: 'Failed to create draft order' });
+    res.status(500).json({ 
+      error: 'Failed to create draft order. Please try again or contact support.',
+      details: error.response?.data?.errors || error.message
+    });
   }
 });
 
