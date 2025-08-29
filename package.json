@@ -27,6 +27,9 @@
     "apify-client": "2.9.3",
     "@libsql/client": "0.3.6"
   },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  },
   "engines": {
     "node": ">=16.0.0",
     "npm": ">=8.0.0"
