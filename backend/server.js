@@ -6,6 +6,7 @@ const path = require('path');
 const { URL } = require('url');
 const ApifyScraper = require('./apifyScraper');
 require('dotenv').config();
+const UPCItemDB = require('./upcitemdb');
 const learningSystem = require('./learningSystem');
 
 const app = express();
@@ -15,6 +16,9 @@ const PORT = process.env.PORT || 3000;
 const SHOPIFY_DOMAIN = process.env.SHOPIFY_DOMAIN || 'spencer-deals-ltd.myshopify.com';
 const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN || '';
 const SCRAPINGBEE_API_KEY = process.env.SCRAPINGBEE_API_KEY || '';
+const UPCITEMDB_API_KEY = process.env.UPCITEMDB_API_KEY || '';
+const upcItemDB = new UPCItemDB(UPCITEMDB_API_KEY);
+const USE_UPCITEMDB = !!UPCITEMDB_API_KEY;
 const APIFY_API_KEY = process.env.APIFY_API_KEY || '';
 const SCRAPING_TIMEOUT = 30000;  // 30 seconds timeout
 const MAX_CONCURRENT_SCRAPES = 2;
@@ -32,16 +36,19 @@ console.log('');
 console.log('🔍 SCRAPING CONFIGURATION:');
 console.log(`1. Primary: Apify - ${USE_APIFY ? '✅ ENABLED (All Retailers)' : '❌ DISABLED (Missing API Key)'}`);
 console.log(`2. Fallback: ScrapingBee - ${USE_SCRAPINGBEE ? '✅ ENABLED' : '❌ DISABLED (Missing API Key)'}`);
+console.log(`3. Dimension Data: UPCitemdb - ${USE_UPCITEMDB ? '✅ ENABLED' : '❌ DISABLED (Missing API Key)'}`);
 console.log('');
 console.log('📊 SCRAPING STRATEGY:');
-if (USE_APIFY && USE_SCRAPINGBEE) {
-  console.log('✅ OPTIMAL: Apify → ScrapingBee → Intelligent Estimation');
+if (USE_APIFY && USE_SCRAPINGBEE && USE_UPCITEMDB) {
+  console.log('✅ OPTIMAL: Apify → ScrapingBee → UPCitemdb → AI Estimation');
+} else if (USE_APIFY && USE_SCRAPINGBEE) {
+  console.log('⚠️  GOOD: Apify → ScrapingBee → AI Estimation (No UPCitemdb)');
 } else if (USE_APIFY && !USE_SCRAPINGBEE) {
-  console.log('⚠️  LIMITED: Apify → Intelligent Estimation (No ScrapingBee fallback)');
+  console.log('⚠️  LIMITED: Apify → AI Estimation (No ScrapingBee fallback)');
 } else if (!USE_APIFY && USE_SCRAPINGBEE) {
-  console.log('⚠️  LIMITED: ScrapingBee → Intelligent Estimation (No Apify primary)');
+  console.log('⚠️  LIMITED: ScrapingBee → AI Estimation (No Apify primary)');
 } else {
-  console.log('❌ MINIMAL: Intelligent Estimation only (No scrapers configured)');
+  console.log('❌ MINIMAL: AI Estimation only (No scrapers configured)');
 }
 console.log('=====================');
 
@@ -65,7 +72,9 @@ app.get('/health', (req, res) => {
     scraping: {
       primary: USE_APIFY ? 'Apify' : 'None',
       fallback: USE_SCRAPINGBEE ? 'ScrapingBee' : 'None',
-      strategy: USE_APIFY && USE_SCRAPINGBEE ? 'Optimal' : 
+      dimensions: USE_UPCITEMDB ? 'UPCitemdb' : 'None',
+      strategy: USE_APIFY && USE_SCRAPINGBEE && USE_UPCITEMDB ? 'Optimal' : 
+                USE_APIFY && USE_SCRAPINGBEE ? 'Good' :
                 USE_APIFY || USE_SCRAPINGBEE ? 'Limited' : 'Minimal'
     },
     shopifyConfigured: !!SHOPIFY_ACCESS_TOKEN
@@ -480,12 +489,14 @@ function parseWeightString(weightStr) {
 }
 
 // Main product scraping function
-async function scrapeProduct(url) {// AI CHECK: See if we know this product
+async function scrapeProduct(url) {
+  // AI CHECK: See if we know this product
   const knownProduct = await learningSystem.getKnownProduct(url);
   if (knownProduct) {
     console.log('   🤖 AI: Using saved product data');
     return knownProduct;
   }
+  
   const productId = generateProductId();
   const retailer = detectRetailer(url);
   
@@ -554,9 +565,35 @@ async function scrapeProduct(url) {// AI CHECK: See if we know this product
     }
   }
   
-  // STEP 3: Use intelligent estimation for any missing data
+  // STEP 3: Try UPCitemdb if we have a product name but missing dimensions
+  if (USE_UPCITEMDB && productData && productData.name && (!productData.dimensions || !productData.weight)) {
+    try {
+      console.log('   📦 Attempting UPCitemdb lookup...');
+      const upcData = await upcItemDB.searchByName(productData.name);
+      
+      if (upcData) {
+        if (!productData.dimensions && upcData.dimensions) {
+          productData.dimensions = upcData.dimensions;
+          console.log('   ✅ UPCitemdb provided dimensions');
+        }
+        if (!productData.weight && upcData.weight) {
+          productData.weight = upcData.weight;
+          console.log('   ✅ UPCitemdb provided weight');
+        }
+        if (!productData.image && upcData.image) {
+          productData.image = upcData.image;
+          console.log('   ✅ UPCitemdb provided image');
+        }
+        scrapingMethod = scrapingMethod === 'estimation' ? 'upcitemdb' : scrapingMethod + '+upcitemdb';
+      }
+    } catch (error) {
+      console.log('   ❌ UPCitemdb lookup failed:', error.message);
+    }
+  }
+  
+  // STEP 4: Use intelligent estimation for any missing data
   if (!productData) {
-    // Both scrapers failed completely
+    // All methods failed completely
     productData = {
       name: 'Product from ' + retailer,
       price: null,
@@ -566,7 +603,7 @@ async function scrapeProduct(url) {// AI CHECK: See if we know this product
       category: null
     };
     scrapingMethod = 'estimation';
-    console.log('   ⚠️ Both scrapers failed, using estimation');
+    console.log('   ⚠️ All methods failed, using estimation');
   }
   
   // Fill in missing data with estimations
@@ -574,8 +611,16 @@ async function scrapeProduct(url) {// AI CHECK: See if we know this product
   const category = productData.category || categorizeProduct(productName, url);
   
   if (!productData.dimensions) {
-    productData.dimensions = estimateDimensions(category, productName);
-    console.log('   📐 Estimated dimensions based on category:', category);
+    // Try AI estimation first
+    const aiEstimate = await learningSystem.getSmartEstimation(category, productName, retailer);
+    if (aiEstimate) {
+      productData.dimensions = aiEstimate.dimensions;
+      productData.weight = productData.weight || aiEstimate.weight;
+      console.log(`   🤖 AI: Applied learned patterns (confidence: ${(aiEstimate.confidence * 100).toFixed(0)}%)`);
+    } else {
+      productData.dimensions = estimateDimensions(category, productName);
+      console.log('   📐 Estimated dimensions based on category:', category);
+    }
   }
   
   if (!productData.weight) {
@@ -615,8 +660,10 @@ async function scrapeProduct(url) {// AI CHECK: See if we know this product
   console.log(`   💰 Shipping cost: $${shippingCost}`);
   console.log(`   📊 Data source: ${scrapingMethod}`);
   console.log(`   ✅ Product processed successfully\n`);
+  
   // AI SAVE: Remember this product for next time
   await learningSystem.saveProduct(product);
+  
   return product;
 }
 
@@ -662,23 +709,26 @@ app.post('/api/scrape', async (req, res) => {
     }
     
     console.log(`\n🚀 Starting batch scrape for ${urls.length} products...`);
-    console.log('   Strategy: Apify (primary) → ScrapingBee (backup) → Estimation (fallback)\n');
+    console.log('   Strategy: Apify → ScrapingBee → UPCitemdb → AI Estimation\n');
     
     const products = await processBatch(urls);
     
     // Log summary
-    const apifyCount = products.filter(p => p.scrapingMethod === 'apify').length;
-    const scrapingBeeCount = products.filter(p => p.scrapingMethod === 'scrapingbee').length;
-    const combinedCount = products.filter(p => p.scrapingMethod === 'apify+scrapingbee').length;
+    const apifyCount = products.filter(p => p.scrapingMethod?.includes('apify')).length;
+    const scrapingBeeCount = products.filter(p => p.scrapingMethod?.includes('scrapingbee')).length;
+    const upcitemdbCount = products.filter(p => p.scrapingMethod?.includes('upcitemdb')).length;
     const estimatedCount = products.filter(p => p.scrapingMethod === 'estimation').length;
     
     console.log('\n📊 SCRAPING SUMMARY:');
     console.log(`   Total products: ${products.length}`);
-    console.log(`   Apify only: ${apifyCount}`);
-    console.log(`   ScrapingBee only: ${scrapingBeeCount}`);
-    console.log(`   Combined (Apify + ScrapingBee): ${combinedCount}`);
-    console.log(`   Estimated: ${estimatedCount}`);
+    console.log(`   Apify used: ${apifyCount}`);
+    console.log(`   ScrapingBee used: ${scrapingBeeCount}`);
+    console.log(`   UPCitemdb used: ${upcitemdbCount}`);
+    console.log(`   Fully estimated: ${estimatedCount}`);
     console.log(`   Success rate: ${((products.length - estimatedCount) / products.length * 100).toFixed(1)}%\n`);
+    
+    // Get AI insights
+    await learningSystem.getInsights();
     
     res.json({ 
       products,
@@ -689,7 +739,7 @@ app.post('/api/scrape', async (req, res) => {
         scrapingMethods: {
           apify: apifyCount,
           scrapingBee: scrapingBeeCount,
-          combined: combinedCount,
+          upcitemdb: upcitemdbCount,
           estimation: estimatedCount
         }
       }
