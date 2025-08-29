@@ -397,7 +397,7 @@ function calculateTotals(deliveryFees) {
   
   const totalCost = baseCost + oversizeFee + valueFee + handlingFee;
   return Math.round(totalCost);
-}
+
 
 // Helper function to check if essential data is complete
 function isDataComplete(productData) {
