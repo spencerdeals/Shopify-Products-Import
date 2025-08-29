@@ -192,6 +192,7 @@ class LearningSystem {
                 max_price = MAX(max_price, ?),
                 sample_count = ?
                 WHERE category = ?`,
+        )
         updateStmt.run(
             count, weight || row.avg_weight, newCount,
             count, dimensions?.length || row.avg_length, newCount,
