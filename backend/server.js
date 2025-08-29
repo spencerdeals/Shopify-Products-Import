@@ -491,7 +491,7 @@ function parseWeightString(weightStr) {
 // Main product scraping function
 async function scrapeProduct(url) {
   // AI CHECK: See if we know this product
-  const knownProduct = await learningSystem.getKnownProduct(url);
+  // const knownProduct = await learningSystem.getKnownProduct(url);
   if (knownProduct) {
     console.log('   🤖 AI: Using saved product data');
     return knownProduct;
