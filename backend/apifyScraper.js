@@ -6,7 +6,7 @@ try {
   ApifyClient = apifyModule.ApifyClient;
   console.log('✅ Apify client module loaded successfully');
 } catch (error) {
-  console.log('⚠️ Apify client not installed - Amazon scraping will fallback to ScrapingBee');
+  console.log('⚠️ Apify client not installed - Scraping will fallback to ScrapingBee');
   ApifyClient = null;
 }
 
@@ -28,7 +28,7 @@ class ApifyScraper {
     try {
       this.client = new ApifyClient({ token: apiKey });
       this.enabled = true;
-      console.log('✅ Apify scraper initialized for Amazon products');
+      console.log('✅ Apify scraper initialized for all retailers');
     } catch (error) {
       console.error('❌ Failed to initialize Apify client:', error.message);
     }
@@ -38,15 +38,80 @@ class ApifyScraper {
     return this.enabled && this.client !== null;
   }
 
-  async scrapeAmazon(url) {
+  // Main scraping method that routes to appropriate scraper
+  async scrapeProduct(url) {
     if (!this.isAvailable()) {
       throw new Error('Apify not available or not configured');
     }
 
+    const retailer = this.detectRetailer(url);
+    console.log(`🔄 Apify scraping ${retailer} product...`);
+
+    try {
+      let result;
+      
+      // Route to appropriate scraper based on retailer
+      switch(retailer) {
+        case 'Amazon':
+          result = await this.scrapeAmazon(url);
+          break;
+        case 'Wayfair':
+          result = await this.scrapeWayfair(url);
+          break;
+        case 'Walmart':
+          result = await this.scrapeWalmart(url);
+          break;
+        case 'Target':
+          result = await this.scrapeTarget(url);
+          break;
+        case 'Best Buy':
+          result = await this.scrapeBestBuy(url);
+          break;
+        case 'Home Depot':
+          result = await this.scrapeHomeDepot(url);
+          break;
+        default:
+          // Use universal scraper for unknown retailers
+          result = await this.scrapeUniversal(url);
+          break;
+      }
+
+      return result;
+    } catch (error) {
+      console.error(`❌ Apify scrape failed for ${retailer}:`, error.message);
+      throw error;
+    }
+  }
+
+  detectRetailer(url) {
+    try {
+      const domain = new URL(url).hostname.toLowerCase();
+      if (domain.includes('amazon.com')) return 'Amazon';
+      if (domain.includes('wayfair.com')) return 'Wayfair';
+      if (domain.includes('target.com')) return 'Target';
+      if (domain.includes('bestbuy.com')) return 'Best Buy';
+      if (domain.includes('walmart.com')) return 'Walmart';
+      if (domain.includes('homedepot.com')) return 'Home Depot';
+      if (domain.includes('lowes.com')) return 'Lowes';
+      if (domain.includes('costco.com')) return 'Costco';
+      if (domain.includes('macys.com')) return 'Macys';
+      if (domain.includes('ikea.com')) return 'IKEA';
+      if (domain.includes('overstock.com')) return 'Overstock';
+      if (domain.includes('cb2.com')) return 'CB2';
+      if (domain.includes('crateandbarrel.com')) return 'Crate & Barrel';
+      if (domain.includes('westelm.com')) return 'West Elm';
+      if (domain.includes('potterybarn.com')) return 'Pottery Barn';
+      return 'Unknown Retailer';
+    } catch (e) {
+      return 'Unknown Retailer';
+    }
+  }
+
+  // Amazon scraper - your existing implementation
+  async scrapeAmazon(url) {
     try {
       console.log('🔄 Starting Apify Amazon scrape for:', url);
       
-      // Using the junglee/Amazon-crawler actor
       const run = await this.client.actor('junglee/Amazon-crawler').call({
         categoryOrProductUrls: [
           { url: url, method: "GET" }
@@ -64,11 +129,8 @@ class ApifyScraper {
       });
 
       console.log('⏳ Apify run started, waiting for results...');
-
-      // Wait for the run to finish (timeout after 60 seconds)
       await this.client.run(run.id).waitForFinish({ waitSecs: 60 });
 
-      // Get the results
       const { items } = await this.client.dataset(run.defaultDatasetId).listItems();
       
       if (!items || items.length === 0) {
@@ -87,7 +149,458 @@ class ApifyScraper {
     }
   }
 
+  // Universal scraper using web scraper actor
+  async scrapeUniversal(url) {
+    try {
+      console.log('🔄 Starting Apify universal scrape for:', url);
+      
+      const run = await this.client.actor('apify/web-scraper').call({
+        startUrls: [{ url: url }],
+        pseudoUrls: [],
+        linkSelector: '',
+        keepUrlFragments: false,
+        pageFunction: `
+          async function pageFunction(context) {
+            const { $, request } = context;
+            
+            // Try multiple selectors for each field
+            const titleSelectors = [
+              'h1', 
+              '[data-testid="product-title"]',
+              '.product-title',
+              '#productTitle',
+              '[itemprop="name"]',
+              '.product-name',
+              '.product-info h1',
+              '.pdp-title',
+              '.product-details h1'
+            ];
+            
+            const priceSelectors = [
+              '[data-testid="product-price"]',
+              '.price-now',
+              '.price',
+              '[itemprop="price"]',
+              '.product-price',
+              '.current-price',
+              'span.wux-price-display',
+              '.pdp-price',
+              '.sale-price',
+              '[data-price]'
+            ];
+            
+            const imageSelectors = [
+              'img.mainImage',
+              '[data-testid="product-image"] img',
+              '.product-photo img',
+              '#landingImage',
+              '[itemprop="image"]',
+              '.primary-image img',
+              '.product-image img',
+              '.gallery-image img',
+              'picture img'
+            ];
+            
+            // Extract text with fallback
+            function extractText(selectors) {
+              for (const selector of selectors) {
+                const element = $(selector).first();
+                if (element.length) {
+                  return element.text().trim();
+                }
+              }
+              return null;
+            }
+            
+            // Extract image URL
+            function extractImage(selectors) {
+              for (const selector of selectors) {
+                const element = $(selector).first();
+                if (element.length) {
+                  return element.attr('src') || element.attr('data-src');
+                }
+              }
+              return null;
+            }
+            
+            // Extract dimensions from text
+            function extractDimensions() {
+              const text = $('body').text();
+              const patterns = [
+                /(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*(?:inches|in|")/gi,
+                /L:\s*(\d+\.?\d*).*W:\s*(\d+\.?\d*).*H:\s*(\d+\.?\d*)/gi
+              ];
+              
+              for (const pattern of patterns) {
+                const match = text.match(pattern);
+                if (match && match[0]) {
+                  return match[0];
+                }
+              }
+              return null;
+            }
+            
+            return {
+              url: request.url,
+              title: extractText(titleSelectors),
+              price: extractText(priceSelectors),
+              image: extractImage(imageSelectors),
+              description: $('.product-description, .product-details, .product-info').text().slice(0, 500),
+              dimensions: extractDimensions(),
+              timestamp: new Date()
+            };
+          }
+        `,
+        proxyConfiguration: {
+          useApifyProxy: true
+        },
+        maxRequestsPerCrawl: 10,
+        maxRequestRetries: 2,
+        requestHandlerTimeoutSecs: 60
+      });
+
+      console.log('⏳ Waiting for universal scraper...');
+      await this.client.run(run.id).waitForFinish({ waitSecs: 60 });
+
+      const { items } = await this.client.dataset(run.defaultDatasetId).listItems();
+      
+      if (!items || items.length === 0) {
+        throw new Error('No data found');
+      }
+
+      const data = items[0];
+      console.log('✅ Universal scrape successful');
+
+      return this.parseGenericData(data);
+
+    } catch (error) {
+      console.error('❌ Universal scrape failed:', error.message);
+      throw error;
+    }
+  }
+
+  // Wayfair specific scraper
+  async scrapeWayfair(url) {
+    try {
+      console.log('🔄 Starting Apify Wayfair scrape...');
+      
+      // Try using the universal scraper with Wayfair-specific selectors
+      const run = await this.client.actor('apify/web-scraper').call({
+        startUrls: [{ url: url }],
+        pageFunction: `
+          async function pageFunction(context) {
+            const { $, request } = context;
+            
+            const title = $('h1.pl-Heading').text().trim() || 
+                         $('[data-testid="product-title"]').text().trim();
+            
+            const price = $('.SFPrice').text().trim() || 
+                         $('[data-testid="product-price"]').text().trim();
+            
+            const image = $('.ProductDetailImageThumbnail img').attr('src') ||
+                         $('.ImageComponent img').first().attr('src');
+            
+            // Look for dimensions in specifications
+            const dimensions = $('.Specifications').text() || '';
+            
+            return {
+              url: request.url,
+              title: title,
+              price: price,
+              image: image,
+              dimensions: dimensions,
+              brand: $('[data-testid="product-brand"]').text().trim()
+            };
+          }
+        `,
+        proxyConfiguration: {
+          useApifyProxy: true
+        }
+      });
+
+      await this.client.run(run.id).waitForFinish({ waitSecs: 60 });
+      const { items } = await this.client.dataset(run.defaultDatasetId).listItems();
+      
+      if (!items || items.length === 0) {
+        // Fallback to universal scraper
+        return this.scrapeUniversal(url);
+      }
+
+      return this.parseGenericData(items[0]);
+
+    } catch (error) {
+      // Fallback to universal scraper
+      return this.scrapeUniversal(url);
+    }
+  }
+
+  // Walmart specific scraper
+  async scrapeWalmart(url) {
+    try {
+      console.log('🔄 Starting Apify Walmart scrape...');
+      
+      const run = await this.client.actor('apify/web-scraper').call({
+        startUrls: [{ url: url }],
+        pageFunction: `
+          async function pageFunction(context) {
+            const { $, request } = context;
+            
+            const title = $('h1[itemprop="name"]').text().trim() || 
+                         $('h1.prod-ProductTitle').text().trim();
+            
+            const price = $('span[itemprop="price"]').text().trim() || 
+                         $('.price-now').text().trim();
+            
+            const image = $('img.hover-zoom-hero-image').attr('src') ||
+                         $('.prod-hero-image img').attr('src');
+            
+            const specs = $('.product-specifications').text() || '';
+            
+            return {
+              url: request.url,
+              title: title,
+              price: price,
+              image: image,
+              specifications: specs,
+              brand: $('.prod-brandName').text().trim()
+            };
+          }
+        `,
+        proxyConfiguration: {
+          useApifyProxy: true
+        }
+      });
+
+      await this.client.run(run.id).waitForFinish({ waitSecs: 60 });
+      const { items } = await this.client.dataset(run.defaultDatasetId).listItems();
+      
+      if (!items || items.length === 0) {
+        return this.scrapeUniversal(url);
+      }
+
+      return this.parseGenericData(items[0]);
+
+    } catch (error) {
+      return this.scrapeUniversal(url);
+    }
+  }
+
+  // Target specific scraper
+  async scrapeTarget(url) {
+    try {
+      console.log('🔄 Starting Apify Target scrape...');
+      
+      const run = await this.client.actor('apify/web-scraper').call({
+        startUrls: [{ url: url }],
+        pageFunction: `
+          async function pageFunction(context) {
+            const { $, request } = context;
+            
+            const title = $('h1[data-test="product-title"]').text().trim() || 
+                         $('h1.Heading__StyledHeading').text().trim();
+            
+            const price = $('[data-test="product-price"]').text().trim() || 
+                         $('.styles__CurrentPrice').text().trim();
+            
+            const image = $('[data-test="product-image"] img').attr('src') ||
+                         $('.styles__ImageWrapper img').first().attr('src');
+            
+            const details = $('[data-test="item-details-specifications"]').text() || '';
+            
+            return {
+              url: request.url,
+              title: title,
+              price: price,
+              image: image,
+              details: details
+            };
+          }
+        `,
+        proxyConfiguration: {
+          useApifyProxy: true
+        }
+      });
+
+      await this.client.run(run.id).waitForFinish({ waitSecs: 60 });
+      const { items } = await this.client.dataset(run.defaultDatasetId).listItems();
+      
+      if (!items || items.length === 0) {
+        return this.scrapeUniversal(url);
+      }
+
+      return this.parseGenericData(items[0]);
+
+    } catch (error) {
+      return this.scrapeUniversal(url);
+    }
+  }
+
+  // Best Buy specific scraper
+  async scrapeBestBuy(url) {
+    try {
+      console.log('🔄 Starting Apify Best Buy scrape...');
+      
+      const run = await this.client.actor('apify/web-scraper').call({
+        startUrls: [{ url: url }],
+        pageFunction: `
+          async function pageFunction(context) {
+            const { $, request } = context;
+            
+            const title = $('.sku-title h1').text().trim() || 
+                         $('h1.heading-5').text().trim();
+            
+            const price = $('.priceView-customer-price span').first().text().trim() || 
+                         $('.pricing-price__regular-price').text().trim();
+            
+            const image = $('.primary-image img').attr('src') ||
+                         $('.shop-media-gallery img').first().attr('src');
+            
+            const specs = $('.specs-table').text() || '';
+            
+            return {
+              url: request.url,
+              title: title,
+              price: price,
+              image: image,
+              specifications: specs,
+              brand: $('.product-brand a').text().trim()
+            };
+          }
+        `,
+        proxyConfiguration: {
+          useApifyProxy: true
+        }
+      });
+
+      await this.client.run(run.id).waitForFinish({ waitSecs: 60 });
+      const { items } = await this.client.dataset(run.defaultDatasetId).listItems();
+      
+      if (!items || items.length === 0) {
+        return this.scrapeUniversal(url);
+      }
+
+      return this.parseGenericData(items[0]);
+
+    } catch (error) {
+      return this.scrapeUniversal(url);
+    }
+  }
+
+  // Home Depot specific scraper
+  async scrapeHomeDepot(url) {
+    try {
+      console.log('🔄 Starting Apify Home Depot scrape...');
+      
+      const run = await this.client.actor('apify/web-scraper').call({
+        startUrls: [{ url: url }],
+        pageFunction: `
+          async function pageFunction(context) {
+            const { $, request } = context;
+            
+            const title = $('h1.product-details__title').text().trim() || 
+                         $('h1[data-testid="product-title"]').text().trim();
+            
+            const price = $('.price-format__main-price').text().trim() || 
+                         $('[data-testid="product-price"]').text().trim();
+            
+            const image = $('.mediagallery__mainimage img').attr('src') ||
+                         $('.product-image img').first().attr('src');
+            
+            const specs = $('.specifications__table').text() || 
+                         $('.specs-table').text() || '';
+            
+            return {
+              url: request.url,
+              title: title,
+              price: price,
+              image: image,
+              specifications: specs,
+              brand: $('.product-details__brand').text().trim()
+            };
+          }
+        `,
+        proxyConfiguration: {
+          useApifyProxy: true
+        }
+      });
+
+      await this.client.run(run.id).waitForFinish({ waitSecs: 60 });
+      const { items } = await this.client.dataset(run.defaultDatasetId).listItems();
+      
+      if (!items || items.length === 0) {
+        return this.scrapeUniversal(url);
+      }
+
+      return this.parseGenericData(items[0]);
+
+    } catch (error) {
+      return this.scrapeUniversal(url);
+    }
+  }
+
+  // Parse Amazon data (your existing implementation)
   parseAmazonData(data) {
+    const result = {
+      name: null,
+      price: null,
+      image: null,
+      dimensions: null,
+      weight: null,
+      brand: null,
+      category: null,
+      inStock: true
+    };
+
+    result.name = data.title || data.name || 'Unknown Product';
+
+    if (data.price) {
+      if (typeof data.price === 'object') {
+        result.price = data.price.value || data.price.amount || null;
+      } else if (typeof data.price === 'string') {
+        const priceMatch = data.price.match(/[\d,]+\.?\d*/);
+        result.price = priceMatch ? parseFloat(priceMatch[0].replace(',', '')) : null;
+      } else {
+        result.price = parseFloat(data.price);
+      }
+    }
+
+    if (!result.price && data.offer?.price) {
+      result.price = parseFloat(data.offer.price);
+    }
+
+    result.image = data.mainImage || data.image || data.images?.[0] || null;
+    result.brand = data.brand || data.manufacturer || null;
+
+    if (data.categories && Array.isArray(data.categories)) {
+      result.category = data.categories[0];
+    } else if (data.category) {
+      result.category = data.category;
+    }
+
+    if (data.specifications) {
+      result.dimensions = this.extractDimensionsFromSpecs(data.specifications);
+      result.weight = this.extractWeightFromSpecs(data.specifications);
+    }
+
+    if (!result.weight) {
+      if (data.weight) result.weight = this.parseWeightString(data.weight);
+      else if (data.itemWeight) result.weight = this.parseWeightString(data.itemWeight);
+      else if (data.shippingWeight) result.weight = this.parseWeightString(data.shippingWeight);
+    }
+
+    console.log('📦 Parsed Amazon product:', {
+      name: result.name?.substring(0, 50) + '...',
+      price: result.price,
+      hasImage: !!result.image,
+      hasDimensions: !!result.dimensions,
+      weight: result.weight
+    });
+
+    return result;
+  }
+
+  // Parse generic data for all other retailers
+  parseGenericData(data) {
     const result = {
       name: null,
       price: null,
@@ -102,50 +615,36 @@ class ApifyScraper {
     // Product name
     result.name = data.title || data.name || 'Unknown Product';
 
-    // Price extraction (handle various price fields)
+    // Price extraction
     if (data.price) {
-      if (typeof data.price === 'object') {
-        result.price = data.price.value || data.price.amount || null;
+      if (typeof data.price === 'number') {
+        result.price = data.price;
       } else if (typeof data.price === 'string') {
         const priceMatch = data.price.match(/[\d,]+\.?\d*/);
         result.price = priceMatch ? parseFloat(priceMatch[0].replace(',', '')) : null;
-      } else {
-        result.price = parseFloat(data.price);
       }
     }
 
-    // Fallback price from offer
-    if (!result.price && data.offer?.price) {
-      result.price = parseFloat(data.offer.price);
-    }
-
     // Image
-    result.image = data.mainImage || data.image || data.images?.[0] || null;
+    result.image = data.image || null;
 
     // Brand
-    result.brand = data.brand || data.manufacturer || null;
+    result.brand = data.brand || null;
 
-    // Category
-    if (data.categories && Array.isArray(data.categories)) {
-      result.category = data.categories[0];
-    } else if (data.category) {
-      result.category = data.category;
+    // Try to extract dimensions from various fields
+    const textToSearch = [
+      data.dimensions,
+      data.specifications, 
+      data.details,
+      data.description
+    ].filter(Boolean).join(' ');
+
+    if (textToSearch) {
+      result.dimensions = this.extractDimensionsFromText(textToSearch);
+      result.weight = this.extractWeightFromText(textToSearch);
     }
 
-    // Dimensions and Weight from specifications
-    if (data.specifications) {
-      result.dimensions = this.extractDimensionsFromSpecs(data.specifications);
-      result.weight = this.extractWeightFromSpecs(data.specifications);
-    }
-
-    // Fallback weight extraction
-    if (!result.weight) {
-      if (data.weight) result.weight = this.parseWeightString(data.weight);
-      else if (data.itemWeight) result.weight = this.parseWeightString(data.itemWeight);
-      else if (data.shippingWeight) result.weight = this.parseWeightString(data.shippingWeight);
-    }
-
-    console.log('📦 Parsed Amazon product:', {
+    console.log('📦 Parsed generic product:', {
       name: result.name?.substring(0, 50) + '...',
       price: result.price,
       hasImage: !!result.image,
@@ -198,6 +697,37 @@ class ApifyScraper {
     return null;
   }
 
+  extractDimensionsFromText(text) {
+    if (!text) return null;
+
+    const patterns = [
+      /(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*(?:inches|in|")?/i,
+      /(\d+\.?\d*)"?\s*[WL]\s*[x×]\s*(\d+\.?\d*)"?\s*[DW]\s*[x×]\s*(\d+\.?\d*)"?\s*[HT]/i,
+      /L:\s*(\d+\.?\d*).*W:\s*(\d+\.?\d*).*H:\s*(\d+\.?\d*)/i
+    ];
+
+    for (const pattern of patterns) {
+      const match = text.match(pattern);
+      if (match) {
+        const length = parseFloat(match[1]);
+        const width = parseFloat(match[2]);
+        const height = parseFloat(match[3]);
+        
+        if (length > 0 && width > 0 && height > 0 && 
+            length < 200 && width < 200 && height < 200) {
+          return { length, width, height };
+        }
+      }
+    }
+
+    return null;
+  }
+
+  extractWeightFromText(text) {
+    if (!text) return null;
+    return this.parseWeightString(text);
+  }
+
   parseDimensionString(str) {
     if (!str || typeof str !== 'string') return null;
 
@@ -241,76 +771,6 @@ class ApifyScraper {
         const weight = parseFloat(match[1]) * multiplier;
         if (weight > 0 && weight < 1000) {
           return Math.round(weight * 10) / 10;
-        }
-      }
-    }
-
-    return null;
-  }
-
-  // New generic parser for other retailers
-  parseGenericData(data) {
-    const result = {
-      name: null,
-      price: null,
-      image: null,
-      dimensions: null,
-      weight: null,
-      brand: null,
-      category: null,
-      inStock: true
-    };
-
-    // Product name
-    result.name = data.title || data.name || 'Unknown Product';
-
-    // Price extraction
-    if (data.price) {
-      if (typeof data.price === 'number') {
-        result.price = data.price;
-      } else if (typeof data.price === 'string') {
-        const priceMatch = data.price.match(/[\d,]+\.?\d*/);
-        result.price = priceMatch ? parseFloat(priceMatch[0].replace(',', '')) : null;
-      }
-    }
-
-    // Image
-    result.image = data.image || null;
-
-    // Try to extract dimensions from description or specifications
-    if (data.description) {
-      result.dimensions = this.extractDimensionsFromText(data.description);
-    }
-
-    console.log('📦 Parsed generic product:', {
-      name: result.name?.substring(0, 50) + '...',
-      price: result.price,
-      hasImage: !!result.image,
-      hasDimensions: !!result.dimensions
-    });
-
-    return result;
-  }
-
-  extractDimensionsFromText(text) {
-    if (!text) return null;
-
-    const patterns = [
-      /(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*(?:inches|in|")?/i,
-      /(\d+\.?\d*)"?\s*[WL]\s*[x×]\s*(\d+\.?\d*)"?\s*[DW]\s*[x×]\s*(\d+\.?\d*)"?\s*[HT]/i,
-      /L:\s*(\d+\.?\d*).*W:\s*(\d+\.?\d*).*H:\s*(\d+\.?\d*)/i
-    ];
-
-    for (const pattern of patterns) {
-      const match = text.match(pattern);
-      if (match) {
-        const length = parseFloat(match[1]);
-        const width = parseFloat(match[2]);
-        const height = parseFloat(match[3]);
-        
-        if (length > 0 && width > 0 && height > 0 && 
-            length < 200 && width < 200 && height < 200) {
-          return { length, width, height };
         }
       }
     }
