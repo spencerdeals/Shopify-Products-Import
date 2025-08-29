@@ -1,4 +1,4 @@
-// backend/learningSystem.js - Turso Cloud Database Version
+// backend/learningSystem.js - Local SQLite Database Version
 const Database = require('better-sqlite3');
 const path = require('path');
 
