@@ -250,6 +250,43 @@ function calculateShippingCost(dimensions, weight, price) {
   return Math.round(totalCost);
 }
 
+// Calculate dynamic margin based on order value and size
+function calculateDynamicMargin(subtotal, products) {
+  // Base margin tiers based on order value
+  let baseMarginRate;
+  if (subtotal < 500) {
+    baseMarginRate = 0.20; // 20% for small orders
+  } else if (subtotal < 1500) {
+    baseMarginRate = 0.15; // 15% for medium orders
+  } else if (subtotal < 3000) {
+    baseMarginRate = 0.12; // 12% for large orders
+  } else {
+    baseMarginRate = 0.10; // 10% for very large orders
+  }
+  
+  // Calculate total volume for size-based adjustments
+  let totalVolume = 0;
+  if (products && Array.isArray(products)) {
+    products.forEach(product => {
+      if (product.dimensions) {
+        const volume = (product.dimensions.length * product.dimensions.width * product.dimensions.height) / 1728; // cubic feet
+        totalVolume += volume;
+      }
+    });
+  }
+  
+  // Size-based margin adjustments
+  let sizeAdjustment = 0;
+  if (totalVolume > 10) {
+    sizeAdjustment = 0.02; // +2% for large/bulky shipments
+  } else if (totalVolume < 2) {
+    sizeAdjustment = 0.01; // +1% for small shipments (less efficient)
+  }
+  
+  const finalMarginRate = Math.min(0.25, baseMarginRate + sizeAdjustment); // Cap at 25%
+  return subtotal * finalMarginRate;
+}
+
 function estimateDimensions(category, name = '') {
   const text = name.toLowerCase();
   
@@ -385,7 +422,7 @@ function calculateTotals(deliveryFees) {
     
     const dutyAmount = totalItemCost * 0.265; // 26.5% duty
     const subtotal = totalItemCost + dutyAmount + totalDeliveryFees + totalShippingCost;
-    const sdlMargin = subtotal * 0.15; // SDL 15% margin
+    const sdlMargin = calculateDynamicMargin(subtotal, scrapedProducts); // Dynamic SDL margin
     const grandTotal = subtotal + sdlMargin;
     
     return {
