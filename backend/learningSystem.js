@@ -1,19 +1,18 @@
 // backend/learningSystem.js - Turso Cloud Database Version
-const { createClient } = require('libsql-client');
+const Database = require('better-sqlite3');
+const path = require('path');
 
-// Initialize Turso cloud database
-const db = createClient({
-  url: process.env.TURSO_DATABASE_URL,
-  authToken: process.env.TURSO_AUTH_TOKEN,
-});
+// Initialize local SQLite database (compatible with WebContainer)
+const dbPath = path.join(__dirname, 'learning.db');
+const db = new Database(dbPath);
 
-console.log('🔄 Connecting to Turso cloud database...');
+console.log('🔄 Connecting to local SQLite database...');
 
 // Initialize database tables
 async function initDatabase() {
   try {
     // Main product knowledge base
-    await db.execute(`
+    db.exec(`
       CREATE TABLE IF NOT EXISTS products (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         url TEXT UNIQUE,
@@ -34,7 +33,7 @@ async function initDatabase() {
     `);
 
     // Category learning patterns
-    await db.execute(`
+    db.exec(`
       CREATE TABLE IF NOT EXISTS category_patterns (
         category TEXT PRIMARY KEY,
         avg_weight REAL,
@@ -50,7 +49,7 @@ async function initDatabase() {
     `);
 
     // Retailer success patterns
-    await db.execute(`
+    db.exec(`
       CREATE TABLE IF NOT EXISTS retailer_patterns (
         retailer TEXT PRIMARY KEY,
         success_rate REAL,
@@ -62,7 +61,7 @@ async function initDatabase() {
     `);
 
     // Scraping failures tracking
-    await db.execute(`
+    db.exec(`
       CREATE TABLE IF NOT EXISTS scraping_failures (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         url TEXT,
@@ -76,7 +75,7 @@ async function initDatabase() {
       )
     `);
 
-    console.log('✅ Turso AI Learning Database initialized');
+    console.log('✅ SQLite AI Learning Database initialized');
   } catch (error) {
     console.error('❌ Database initialization error:', error);
   }
@@ -89,25 +88,21 @@ class LearningSystem {
   // Check if we've seen this exact product before
   async getKnownProduct(url) {
     try {
-      const result = await db.execute({
-        sql: `SELECT * FROM products 
+      const stmt = db.prepare(`SELECT * FROM products 
               WHERE url = ? 
               AND datetime(last_updated) > datetime('now', '-30 days')
-              AND confidence > 0.7`,
-        args: [url]
-      });
+              AND confidence > 0.7`);
+      const result = stmt.get(url);
 
-      if (result.rows && result.rows.length > 0) {
-        const product = result.rows[0];
+      if (result) {
+        const product = result;
         
         // Increase confidence each time we successfully retrieve
-        await db.execute({
-          sql: `UPDATE products 
+        const updateStmt = db.prepare(`UPDATE products 
                 SET times_seen = times_seen + 1,
                     confidence = MIN(1.0, confidence + 0.05)
-                WHERE url = ?`,
-          args: [url]
-        });
+                WHERE url = ?`);
+        updateStmt.run(url);
         
         return product;
       }
@@ -131,23 +126,19 @@ class LearningSystem {
       if (weight) confidence += 0.1;
       
       // Check if product exists
-      const existing = await db.execute({
-        sql: 'SELECT times_seen FROM products WHERE url = ?',
-        args: [url]
-      });
+      const existingStmt = db.prepare('SELECT times_seen FROM products WHERE url = ?');
+      const existing = existingStmt.get(url);
       
-      const timesSeen = existing.rows.length > 0 ? existing.rows[0].times_seen + 1 : 1;
+      const timesSeen = existing ? existing.times_seen + 1 : 1;
       
-      await db.execute({
-        sql: `INSERT OR REPLACE INTO products 
+      const insertStmt = db.prepare(`INSERT OR REPLACE INTO products 
               (url, name, retailer, category, price, weight, length, width, height, image, scrape_method, confidence, times_seen)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        args: [
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+      insertStmt.run(
           url, name, retailer, category, price, weight,
           dimensions?.length || 0, dimensions?.width || 0, dimensions?.height || 0,
           image, scrapingMethod, confidence, timesSeen
-        ]
-      });
+      );
       
       // Update category patterns
       await this.updateCategoryPatterns(category, dimensions, weight, price);
@@ -165,18 +156,15 @@ class LearningSystem {
     if (!category) return;
 
     try {
-      const result = await db.execute({
-        sql: 'SELECT * FROM category_patterns WHERE category = ?',
-        args: [category]
-      });
+      const stmt = db.prepare('SELECT * FROM category_patterns WHERE category = ?');
+      const result = stmt.get(category);
 
-      if (result.rows.length === 0) {
+      if (!result) {
         // First time seeing this category
-        await db.execute({
-          sql: `INSERT INTO category_patterns 
+        const insertStmt = db.prepare(`INSERT INTO category_patterns 
                 (category, avg_weight, avg_length, avg_width, avg_height, min_weight, max_weight, min_price, max_price, sample_count)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
-          args: [
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`);
+        insertStmt.run(
             category,
             weight || 0,
             dimensions?.length || 0,
@@ -186,16 +174,14 @@ class LearningSystem {
             weight || 999999,
             price || 0,
             price || 999999
-          ]
-        });
+        );
       } else {
         // Update running averages
-        const row = result.rows[0];
+        const row = result;
         const count = row.sample_count;
         const newCount = count + 1;
         
-        await db.execute({
-          sql: `UPDATE category_patterns SET
+        const updateStmt = db.prepare(`UPDATE category_patterns SET
                 avg_weight = ((avg_weight * ?) + ?) / ?,
                 avg_length = ((avg_length * ?) + ?) / ?,
                 avg_width = ((avg_width * ?) + ?) / ?,
@@ -206,7 +192,7 @@ class LearningSystem {
                 max_price = MAX(max_price, ?),
                 sample_count = ?
                 WHERE category = ?`,
-          args: [
+        updateStmt.run(
             count, weight || row.avg_weight, newCount,
             count, dimensions?.length || row.avg_length, newCount,
             count, dimensions?.width || row.avg_width, newCount,
@@ -217,8 +203,7 @@ class LearningSystem {
             price || row.max_price,
             newCount,
             category
-          ]
-        });
+        );
       }
     } catch (error) {
       console.error('Error updating category patterns:', error);
@@ -228,33 +213,27 @@ class LearningSystem {
   // Track which scraping methods work best for each retailer
   async updateRetailerSuccess(retailer, method, wasSuccessful) {
     try {
-      const result = await db.execute({
-        sql: 'SELECT * FROM retailer_patterns WHERE retailer = ?',
-        args: [retailer]
-      });
+      const stmt = db.prepare('SELECT * FROM retailer_patterns WHERE retailer = ?');
+      const result = stmt.get(retailer);
 
-      if (result.rows.length === 0) {
-        await db.execute({
-          sql: `INSERT INTO retailer_patterns 
+      if (!result) {
+        const insertStmt = db.prepare(`INSERT INTO retailer_patterns 
                 (retailer, success_rate, best_method, total_attempts, successful_scrapes)
-                VALUES (?, ?, ?, 1, ?)`,
-          args: [retailer, wasSuccessful ? 100 : 0, method, wasSuccessful ? 1 : 0]
-        });
+                VALUES (?, ?, ?, 1, ?)`);
+        insertStmt.run(retailer, wasSuccessful ? 100 : 0, method, wasSuccessful ? 1 : 0);
       } else {
-        const row = result.rows[0];
+        const row = result;
         const newTotal = row.total_attempts + 1;
         const newSuccess = row.successful_scrapes + (wasSuccessful ? 1 : 0);
         const newRate = (newSuccess / newTotal) * 100;
         
-        await db.execute({
-          sql: `UPDATE retailer_patterns SET
+        const updateStmt = db.prepare(`UPDATE retailer_patterns SET
                 success_rate = ?,
                 best_method = CASE WHEN ? THEN ? ELSE best_method END,
                 total_attempts = ?,
                 successful_scrapes = ?
-                WHERE retailer = ?`,
-          args: [newRate, wasSuccessful, method, newTotal, newSuccess, retailer]
-        });
+                WHERE retailer = ?`);
+        updateStmt.run(newRate, wasSuccessful, method, newTotal, newSuccess, retailer);
       }
     } catch (error) {
       console.error('Error updating retailer patterns:', error);
@@ -265,19 +244,17 @@ class LearningSystem {
   async getSmartEstimation(category, productName, retailer) {
     try {
       // First, look for similar products
-      const similarResult = await db.execute({
-        sql: `SELECT * FROM products 
+      const similarStmt = db.prepare(`SELECT * FROM products 
               WHERE category = ? 
               AND retailer = ?
               AND confidence > 0.6
               ORDER BY times_seen DESC
-              LIMIT 10`,
-        args: [category, retailer]
-      });
+              LIMIT 10`);
+      const similarResult = similarStmt.all(category, retailer);
 
-      if (similarResult.rows && similarResult.rows.length > 3) {
+      if (similarResult && similarResult.length > 3) {
         // We have enough data to make a smart guess
-        const similarProducts = similarResult.rows;
+        const similarProducts = similarResult;
         const avgDimensions = {
           length: this.calculateSmartAverage(similarProducts.map(p => p.length)),
           width: this.calculateSmartAverage(similarProducts.map(p => p.width)),
@@ -296,15 +273,13 @@ class LearningSystem {
       }
 
       // Fall back to category patterns
-      const patternResult = await db.execute({
-        sql: `SELECT * FROM category_patterns 
+      const patternStmt = db.prepare(`SELECT * FROM category_patterns 
               WHERE category = ? 
-              AND sample_count > 5`,
-        args: [category]
-      });
+              AND sample_count > 5`);
+      const patternResult = patternStmt.get(category);
 
-      if (patternResult.rows && patternResult.rows.length > 0) {
-        const pattern = patternResult.rows[0];
+      if (patternResult) {
+        const pattern = patternResult;
         console.log(`   🤖 AI: Using patterns from ${pattern.sample_count} ${category} products`);
         
         return {
@@ -354,19 +329,17 @@ class LearningSystem {
       
       // If anything is missing, record it
       if (missing.name || missing.price || missing.image || missing.dimensions) {
-        await db.execute({
-          sql: `INSERT INTO scraping_failures 
+        const insertStmt = db.prepare(`INSERT INTO scraping_failures 
                (url, retailer, missing_name, missing_price, missing_image, missing_dimensions)
-               VALUES (?, ?, ?, ?, ?, ?)`,
-          args: [
+               VALUES (?, ?, ?, ?, ?, ?)`);
+        insertStmt.run(
             url, 
             retailer, 
             missing.name ? 1 : 0, 
             missing.price ? 1 : 0, 
             missing.image ? 1 : 0, 
             missing.dimensions ? 1 : 0
-          ]
-        });
+        );
         
         console.log(`   ⚠️ Missing data for ${retailer}:`, missing);
       }
@@ -378,7 +351,7 @@ class LearningSystem {
   // Generate scraping report
   async getScrapingReport() {
     try {
-      const failuresByRetailer = await db.execute(`
+      const stmt = db.prepare(`
         SELECT 
           retailer,
           COUNT(*) as total_failures,
@@ -391,11 +364,12 @@ class LearningSystem {
         GROUP BY retailer
         ORDER BY total_failures DESC
       `);
+      const failuresByRetailer = stmt.all();
       
       return {
-        problemRetailers: failuresByRetailer.rows,
-        recommendation: failuresByRetailer.rows[0] ? 
-          `${failuresByRetailer.rows[0].retailer} needs attention - ${failuresByRetailer.rows[0].total_failures} failures this week` : 
+        problemRetailers: failuresByRetailer,
+        recommendation: failuresByRetailer[0] ? 
+          `${failuresByRetailer[0].retailer} needs attention - ${failuresByRetailer[0].total_failures} failures this week` : 
           'All retailers working well'
       };
     } catch (error) {
@@ -410,22 +384,16 @@ class LearningSystem {
       const insights = {};
       
       // Get category insights
-      const categoriesResult = await db.execute(
-        'SELECT * FROM category_patterns WHERE sample_count > 5 ORDER BY sample_count DESC'
-      );
-      insights.categories = categoriesResult.rows;
+      const categoriesStmt = db.prepare('SELECT * FROM category_patterns WHERE sample_count > 5 ORDER BY sample_count DESC');
+      insights.categories = categoriesStmt.all();
       
       // Get retailer insights
-      const retailersResult = await db.execute(
-        'SELECT * FROM retailer_patterns ORDER BY success_rate DESC'
-      );
-      insights.retailers = retailersResult.rows;
+      const retailersStmt = db.prepare('SELECT * FROM retailer_patterns ORDER BY success_rate DESC');
+      insights.retailers = retailersStmt.all();
       
       // Get total products learned
-      const statsResult = await db.execute(
-        'SELECT COUNT(*) as total, AVG(confidence) as avg_confidence FROM products'
-      );
-      const stats = statsResult.rows[0];
+      const statsStmt = db.prepare('SELECT COUNT(*) as total, AVG(confidence) as avg_confidence FROM products');
+      const stats = statsStmt.get();
       insights.totalProducts = stats.total;
       insights.avgConfidence = stats.avg_confidence;
       
