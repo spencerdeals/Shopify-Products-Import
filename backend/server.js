@@ -492,10 +492,10 @@ function parseWeightString(weightStr) {
 async function scrapeProduct(url) {
   // AI CHECK: See if we know this product
   // const knownProduct = await learningSystem.getKnownProduct(url);
-  if (knownProduct) {
-    console.log('   🤖 AI: Using saved product data');
-    return knownProduct;
-  }
+  // if (knownProduct) {
+  // console.log('   🤖 AI: Using saved product data');
+  //  return knownProduct;
+ // }
   
   const productId = generateProductId();
   const retailer = detectRetailer(url);
