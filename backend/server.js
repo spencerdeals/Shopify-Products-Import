@@ -346,24 +346,53 @@ function estimateBoxDimensions(productDimensions, category) {
   };
 }
 
-function calculateShippingCost(dimensions, weight, price) {
-  const volume = dimensions.length * dimensions.width * dimensions.height;
-  const cubicFeet = volume / 1728;
+function calculateTotals(deliveryFees) {
+    let totalItemCost = 0;
+    let totalShippingCost = 0;
+    let totalDeliveryFees = 0;
+    
+    // Update product prices from input boxes first
+    scrapedProducts.forEach((product, index) => {
+        const priceInput = document.querySelector(`input[data-product-index="${index}"]`);
+        if (priceInput) {
+            product.price = parseFloat(priceInput.value) || 0;
+        }
+        
+        totalItemCost += product.price || 0;
+        totalShippingCost += product.shippingCost || 0;
+    });
+    
+    Object.values(deliveryFees).forEach(fee => {
+        totalDeliveryFees += fee;
+    });
+    
+    const dutyAmount = totalItemCost * 0.265; // 26.5% duty
+    const subtotal = totalItemCost + dutyAmount + totalDeliveryFees + totalShippingCost;
+    const sdlMargin = subtotal * 0.15; // SDL 15% margin
+    const grandTotal = subtotal + sdlMargin;
+    
+    return {
+        products: scrapedProducts,
+        deliveryFees,
+        totals: {
+            totalItemCost,
+            dutyAmount,
+            totalDeliveryFees,
+            totalShippingCost,
+            sdlMargin,
+            grandTotal
+        },
+        originalUrls: document.getElementById('productUrls').value
+            .split('\n')
+            .map(url => url.trim())
+            .filter(url => url && url.startsWith('http'))
+    };
+}
   
-  // Use $8 per cubic foot as discussed
-  let baseCost = cubicFeet * SHIPPING_RATE_PER_CUBIC_FOOT;
-  
-  // Minimum charge
-  baseCost = Math.max(baseCost, 25);
-  
-  // Add surcharges for oversized items
-  const oversizeFee = Math.max(dimensions.length, dimensions.width, dimensions.height) > 48 ? 25 : 0;
-  
-  // Add value-based insurance fee for expensive items
-  const valueFee = price > 500 ? price * 0.015 : 0;
-  
-  // Handling fee
-  const handlingFee = 10;
+  // Add surcharges
+  const oversizeFee = Math.max(dimensions.length, dimensions.width, dimensions.height) > 48 ? 50 : 0;
+  const valueFee = price > 500 ? price * 0.02 : 0;
+  const handlingFee = 15;
   
   const totalCost = baseCost + oversizeFee + valueFee + handlingFee;
   return Math.round(totalCost);
