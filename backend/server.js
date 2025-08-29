@@ -234,6 +234,22 @@ function estimateWeight(dimensions, category) {
   return Math.round(estimatedWeight * 10) / 10;
 }
 
+function calculateShippingCost(dimensions, weight, price) {
+  if (!dimensions || !weight) return 50; // Default fallback
+  
+  const volume = dimensions.length * dimensions.width * dimensions.height;
+  const cubicFeet = volume / 1728; // Convert cubic inches to cubic feet
+  const baseCost = cubicFeet * SHIPPING_RATE_PER_CUBIC_FOOT;
+  
+  // Add surcharges
+  const oversizeFee = Math.max(dimensions.length, dimensions.width, dimensions.height) > 48 ? 50 : 0;
+  const valueFee = price > 500 ? price * 0.02 : 0;
+  const handlingFee = 15;
+  
+  const totalCost = baseCost + oversizeFee + valueFee + handlingFee;
+  return Math.round(totalCost);
+}
+
 function estimateDimensions(category, name = '') {
   const text = name.toLowerCase();
   
@@ -389,15 +405,6 @@ function calculateTotals(deliveryFees) {
             .filter(url => url && url.startsWith('http'))
     };
 }
-  
-  // Add surcharges
-  const oversizeFee = Math.max(dimensions.length, dimensions.width, dimensions.height) > 48 ? 50 : 0;
-  const valueFee = price > 500 ? price * 0.02 : 0;
-  const handlingFee = 15;
-  
-  const totalCost = baseCost + oversizeFee + valueFee + handlingFee;
-  return Math.round(totalCost);
-
 
 // Helper function to check if essential data is complete
 function isDataComplete(productData) {
