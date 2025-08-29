@@ -61,6 +61,21 @@ async function initDatabase() {
       )
     `);
 
+    // Scraping failures tracking
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS scraping_failures (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        url TEXT,
+        retailer TEXT,
+        missing_name INTEGER DEFAULT 0,
+        missing_price INTEGER DEFAULT 0,
+        missing_image INTEGER DEFAULT 0,
+        missing_dimensions INTEGER DEFAULT 0,
+        error_message TEXT,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
     console.log('✅ Turso AI Learning Database initialized');
   } catch (error) {
     console.error('❌ Database initialization error:', error);
@@ -325,6 +340,68 @@ class LearningSystem {
     }
     
     return filtered.reduce((a, b) => a + b, 0) / filtered.length;
+  }
+
+  // Record scraping results for failure tracking
+  async recordScrapingResult(url, retailer, productData, scrapingMethod) {
+    try {
+      const missing = {
+        name: !productData.name || productData.name === 'Unknown Product' || productData.name.includes('Product from'),
+        price: !productData.price,
+        image: !productData.image || productData.image.includes('placehold'),
+        dimensions: !productData.dimensions
+      };
+      
+      // If anything is missing, record it
+      if (missing.name || missing.price || missing.image || missing.dimensions) {
+        await db.execute({
+          sql: `INSERT INTO scraping_failures 
+               (url, retailer, missing_name, missing_price, missing_image, missing_dimensions)
+               VALUES (?, ?, ?, ?, ?, ?)`,
+          args: [
+            url, 
+            retailer, 
+            missing.name ? 1 : 0, 
+            missing.price ? 1 : 0, 
+            missing.image ? 1 : 0, 
+            missing.dimensions ? 1 : 0
+          ]
+        });
+        
+        console.log(`   ⚠️ Missing data for ${retailer}:`, missing);
+      }
+    } catch (error) {
+      console.error('Error recording scraping result:', error);
+    }
+  }
+
+  // Generate scraping report
+  async getScrapingReport() {
+    try {
+      const failuresByRetailer = await db.execute(`
+        SELECT 
+          retailer,
+          COUNT(*) as total_failures,
+          SUM(missing_name) as missing_names,
+          SUM(missing_price) as missing_prices,
+          SUM(missing_image) as missing_images,
+          SUM(missing_dimensions) as missing_dimensions
+        FROM scraping_failures
+        WHERE datetime(timestamp) > datetime('now', '-7 days')
+        GROUP BY retailer
+        ORDER BY total_failures DESC
+      `);
+      
+      return {
+        problemRetailers: failuresByRetailer.rows,
+        recommendation: failuresByRetailer.rows[0] ? 
+          `${failuresByRetailer.rows[0].retailer} needs attention - ${failuresByRetailer.rows[0].total_failures} failures this week` : 
+          'All retailers working well'
+      };
+    } catch (error) {
+      console.error('Error generating report:', error);
+      return { error: 'Could not generate report' };
+    }
   }
 
   // Get insights about scraping performance
