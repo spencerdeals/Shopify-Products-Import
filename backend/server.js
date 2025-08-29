@@ -7,7 +7,7 @@ const { URL } = require('url');
 const ApifyScraper = require('./apifyScraper');
 require('dotenv').config();
 const UPCItemDB = require('./upcitemdb');
-// const learningSystem = require('./learningSystem');
+// const learningSystem = require('./learningSystem');  // TODO: Re-enable after fixing Turso database
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -24,6 +24,7 @@ const SCRAPING_TIMEOUT = 30000;  // 30 seconds timeout
 const MAX_CONCURRENT_SCRAPES = 2;
 const BERMUDA_DUTY_RATE = 0.265;
 const USE_SCRAPINGBEE = !!SCRAPINGBEE_API_KEY;
+const SHIPPING_RATE_PER_CUBIC_FOOT = 8; // $8 per cubic foot as discussed
 
 // Initialize Apify scraper
 const apifyScraper = new ApifyScraper(APIFY_API_KEY);
@@ -81,6 +82,30 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Test endpoint for UPCitemdb
+app.get('/test-upc', async (req, res) => {
+  if (!USE_UPCITEMDB) {
+    return res.json({ 
+      success: false, 
+      message: 'UPCitemdb not configured' 
+    });
+  }
+  
+  try {
+    const testProduct = await upcItemDB.searchByName('Apple iPhone 15 Pro');
+    res.json({
+      success: true,
+      testProduct: testProduct,
+      message: testProduct ? 'UPCitemdb is working!' : 'UPCitemdb connected but no results for test query'
+    });
+  } catch (error) {
+    res.json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 // Root route - serve frontend HTML
 app.get('/', (req, res) => {
   const frontendPath = path.join(__dirname, '../frontend', 'index.html');
@@ -93,7 +118,8 @@ app.get('/', (req, res) => {
         endpoints: {
           health: '/health',
           scrape: 'POST /api/scrape',
-          createOrder: 'POST /apps/instant-import/create-draft-order'
+          createOrder: 'POST /apps/instant-import/create-draft-order',
+          testUpc: '/test-upc'
         }
       });
     }
@@ -271,22 +297,51 @@ function estimateDimensions(category, name = '') {
   };
 }
 
+// Convert product dimensions to shipping box dimensions
+function estimateBoxDimensions(productDimensions, category) {
+  if (!productDimensions) return null;
+  
+  // Add padding based on category
+  const paddingFactors = {
+    'electronics': 1.3,  // More padding for fragile items
+    'appliances': 1.2,
+    'furniture': 1.1,   // Less padding for large items
+    'clothing': 1.4,     // More padding for soft goods
+    'books': 1.2,
+    'toys': 1.25,
+    'sports': 1.2,
+    'home-decor': 1.35,  // More padding for fragile decor
+    'tools': 1.15,
+    'garden': 1.2,
+    'general': 1.25
+  };
+  
+  const factor = paddingFactors[category] || 1.25;
+  
+  return {
+    length: Math.round(productDimensions.length * factor * 10) / 10,
+    width: Math.round(productDimensions.width * factor * 10) / 10,
+    height: Math.round(productDimensions.height * factor * 10) / 10
+  };
+}
+
 function calculateShippingCost(dimensions, weight, price) {
   const volume = dimensions.length * dimensions.width * dimensions.height;
   const cubicFeet = volume / 1728;
-  const dimWeight = cubicFeet * 10;
-  const billableWeight = Math.max(weight, dimWeight);
   
-  let baseCost = 0;
-  if (billableWeight < 10) baseCost = 25;
-  else if (billableWeight < 30) baseCost = 45;
-  else if (billableWeight < 50) baseCost = 65;
-  else if (billableWeight < 100) baseCost = 85;
-  else if (billableWeight < 200) baseCost = 120;
-  else baseCost = 150 + (billableWeight - 200) * 0.5;
+  // Use $8 per cubic foot as discussed
+  let baseCost = cubicFeet * SHIPPING_RATE_PER_CUBIC_FOOT;
   
+  // Minimum charge
+  baseCost = Math.max(baseCost, 25);
+  
+  // Add surcharges for oversized items
   const oversizeFee = Math.max(dimensions.length, dimensions.width, dimensions.height) > 48 ? 25 : 0;
+  
+  // Add value-based insurance fee for expensive items
   const valueFee = price > 500 ? price * 0.015 : 0;
+  
+  // Handling fee
   const handlingFee = 10;
   
   const totalCost = baseCost + oversizeFee + valueFee + handlingFee;
@@ -490,12 +545,12 @@ function parseWeightString(weightStr) {
 
 // Main product scraping function
 async function scrapeProduct(url) {
-  // AI CHECK: See if we know this product
+  // TODO: Re-enable AI learning check when database is fixed
   // const knownProduct = await learningSystem.getKnownProduct(url);
   // if (knownProduct) {
-  // console.log('   🤖 AI: Using saved product data');
-  //  return knownProduct;
- // }
+  //   console.log('   🤖 AI: Using saved product data');
+  //   return knownProduct;
+  // }
   
   const productId = generateProductId();
   const retailer = detectRetailer(url);
@@ -572,9 +627,11 @@ async function scrapeProduct(url) {
       const upcData = await upcItemDB.searchByName(productData.name);
       
       if (upcData) {
+        // UPCitemdb returns PRODUCT dimensions, convert to BOX dimensions
         if (!productData.dimensions && upcData.dimensions) {
-          productData.dimensions = upcData.dimensions;
-          console.log('   ✅ UPCitemdb provided dimensions');
+          const category = productData.category || categorizeProduct(productData.name || '', url);
+          productData.dimensions = estimateBoxDimensions(upcData.dimensions, category);
+          console.log('   ✅ UPCitemdb provided product dimensions, converted to box dimensions');
         }
         if (!productData.weight && upcData.weight) {
           productData.weight = upcData.weight;
@@ -611,16 +668,16 @@ async function scrapeProduct(url) {
   const category = productData.category || categorizeProduct(productName, url);
   
   if (!productData.dimensions) {
-    // Try AI estimation first
-    const aiEstimate = await learningSystem.getSmartEstimation(category, productName, retailer);
-    if (aiEstimate) {
-      productData.dimensions = aiEstimate.dimensions;
-      productData.weight = productData.weight || aiEstimate.weight;
-      console.log(`   🤖 AI: Applied learned patterns (confidence: ${(aiEstimate.confidence * 100).toFixed(0)}%)`);
-    } else {
+    // TODO: Re-enable AI estimation when database is fixed
+    // const aiEstimate = await learningSystem.getSmartEstimation(category, productName, retailer);
+    // if (aiEstimate) {
+    //   productData.dimensions = aiEstimate.dimensions;
+    //   productData.weight = productData.weight || aiEstimate.weight;
+    //   console.log(`   🤖 AI: Applied learned patterns (confidence: ${(aiEstimate.confidence * 100).toFixed(0)}%)`);
+    // } else {
       productData.dimensions = estimateDimensions(category, productName);
       console.log('   📐 Estimated dimensions based on category:', category);
-    }
+    // }
   }
   
   if (!productData.weight) {
@@ -661,8 +718,8 @@ async function scrapeProduct(url) {
   console.log(`   📊 Data source: ${scrapingMethod}`);
   console.log(`   ✅ Product processed successfully\n`);
   
-  // AI SAVE: Remember this product for next time
-  await learningSystem.saveProduct(product);
+  // TODO: Re-enable AI learning when database is fixed
+  // await learningSystem.saveProduct(product);
   
   return product;
 }
@@ -727,8 +784,8 @@ app.post('/api/scrape', async (req, res) => {
     console.log(`   Fully estimated: ${estimatedCount}`);
     console.log(`   Success rate: ${((products.length - estimatedCount) / products.length * 100).toFixed(1)}%\n`);
     
-    // Get AI insights
-    await learningSystem.getInsights();
+    // TODO: Re-enable AI insights when database is fixed
+    // await learningSystem.getInsights();
     
     res.json({ 
       products,
