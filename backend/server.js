@@ -7,6 +7,8 @@ const { URL } = require('url');
 const ApifyScraper = require('./apifyScraper');
 require('dotenv').config();
 
+const learningSystem = require('./learningSystem');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
