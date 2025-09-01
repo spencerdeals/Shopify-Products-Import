@@ -7,8 +7,7 @@ const { URL } = require('url');
 const ApifyScraper = require('./apifyScraper');
 require('dotenv').config();
 const UPCItemDB = require('./upcitemdb');
-const learningSystem = require('./learningSystem');
-
+// const learningSystem = require('./learningSystem');  // TODO: Re-enable with PostgreSQL later
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -107,16 +106,6 @@ app.get('/test-upc', async (req, res) => {
   }
 });
 
-// Scraping report endpoint
-app.get('/scraping-report', async (req, res) => {
-  try {
-    const report = await learningSystem.getScrapingReport();
-    res.json(report);
-  } catch (error) {
-    res.json({ error: 'Could not generate report' });
-  }
-});
-
 // Root route - serve frontend HTML
 app.get('/', (req, res) => {
   const frontendPath = path.join(__dirname, '../frontend', 'index.html');
@@ -148,12 +137,12 @@ app.get('/complete-order.html', (req, res) => {
   });
 });
 
-// Rate limiter (after health check) - Fix trust proxy error
+// Rate limiter (after health check)
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 50,
-  trustProxy: 1, // Trust first proxy only
-  keyGenerator: (req) => req.ip // Use IP for rate limiting
+  trustProxy: 1,
+  keyGenerator: (req) => req.ip
 });
 app.use('/api/', limiter);
 
@@ -232,59 +221,6 @@ function estimateWeight(dimensions, category) {
   const density = densityFactors[category] || 8;
   const estimatedWeight = Math.max(1, cubicFeet * density);
   return Math.round(estimatedWeight * 10) / 10;
-}
-
-function calculateShippingCost(dimensions, weight, price) {
-  if (!dimensions || !weight) return 50; // Default fallback
-  
-  const volume = dimensions.length * dimensions.width * dimensions.height;
-  const cubicFeet = volume / 1728; // Convert cubic inches to cubic feet
-  const baseCost = cubicFeet * SHIPPING_RATE_PER_CUBIC_FOOT;
-  
-  // Add surcharges
-  const oversizeFee = Math.max(dimensions.length, dimensions.width, dimensions.height) > 48 ? 50 : 0;
-  const valueFee = price > 500 ? price * 0.02 : 0;
-  const handlingFee = 15;
-  
-  const totalCost = baseCost + oversizeFee + valueFee + handlingFee;
-  return Math.round(totalCost);
-}
-
-// Calculate dynamic margin based on order value and size
-function calculateDynamicMargin(subtotal, products) {
-  // Base margin tiers based on order value
-  let baseMarginRate;
-  if (subtotal < 500) {
-    baseMarginRate = 0.25; // 25% for small orders
-  } else if (subtotal < 1500) {
-    baseMarginRate = 0.20; // 20% for medium orders
-  } else if (subtotal < 3000) {
-    baseMarginRate = 0.17; // 17% for large orders
-  } else {
-    baseMarginRate = 0.15; // 15% for very large orders
-  }
-  
-  // Calculate total volume for size-based adjustments
-  let totalVolume = 0;
-  if (products && Array.isArray(products)) {
-    products.forEach(product => {
-      if (product.dimensions) {
-        const volume = (product.dimensions.length * product.dimensions.width * product.dimensions.height) / 1728; // cubic feet
-        totalVolume += volume;
-      }
-    });
-  }
-  
-  // Size-based margin adjustments
-  let sizeAdjustment = 0;
-  if (totalVolume > 10) {
-    sizeAdjustment = 0.02; // +2% for large/bulky shipments
-  } else if (totalVolume < 2) {
-    sizeAdjustment = 0.01; // +1% for small shipments (less efficient)
-  }
-  
-  const finalMarginRate = Math.min(0.30, baseMarginRate + sizeAdjustment); // Cap at 30%
-  return subtotal * finalMarginRate;
 }
 
 function estimateDimensions(category, name = '') {
@@ -398,48 +334,28 @@ function estimateBoxDimensions(productDimensions, category) {
     width: Math.round(productDimensions.width * factor * 10) / 10,
     height: Math.round(productDimensions.height * factor * 10) / 10
   };
+}
 
-function calculateTotals(deliveryFees) {
-    let totalItemCost = 0;
-    let totalShippingCost = 0;
-    let totalDeliveryFees = 0;
-    
-    // Update product prices from input boxes first
-    scrapedProducts.forEach((product, index) => {
-        const priceInput = document.querySelector(`input[data-product-index="${index}"]`);
-        if (priceInput) {
-            product.price = parseFloat(priceInput.value) || 0;
-        }
-        
-        totalItemCost += product.price || 0;
-        totalShippingCost += product.shippingCost || 0;
-    });
-    
-    Object.values(deliveryFees).forEach(fee => {
-        totalDeliveryFees += fee;
-    });
-    
-    const dutyAmount = totalItemCost * 0.265; // 26.5% duty
-    const subtotal = totalItemCost + dutyAmount + totalDeliveryFees + totalShippingCost;
-    const sdlMargin = calculateDynamicMargin(subtotal, scrapedProducts); // Dynamic SDL margin
-    const grandTotal = subtotal + sdlMargin;
-    
-    return {
-        products: scrapedProducts,
-        deliveryFees,
-        totals: {
-            totalItemCost,
-            dutyAmount,
-            totalDeliveryFees,
-            totalShippingCost,
-            sdlMargin,
-            grandTotal
-        },
-        originalUrls: document.getElementById('productUrls').value
-            .split('\n')
-            .map(url => url.trim())
-            .filter(url => url && url.startsWith('http'))
-    };
+function calculateShippingCost(dimensions, weight, price) {
+  if (!dimensions) {
+    // No dimensions available, use a default based on price
+    return Math.max(25, price * 0.15);
+  }
+  
+  // Calculate volume in cubic feet
+  const cubicInches = dimensions.length * dimensions.width * dimensions.height;
+  const cubicFeet = cubicInches / 1728;
+  
+  // Base rate: $8 per cubic foot
+  const baseCost = Math.max(15, cubicFeet * SHIPPING_RATE_PER_CUBIC_FOOT);
+  
+  // Add surcharges
+  const oversizeFee = Math.max(dimensions.length, dimensions.width, dimensions.height) > 48 ? 50 : 0;
+  const valueFee = price > 500 ? price * 0.02 : 0;
+  const handlingFee = 15;
+  
+  const totalCost = baseCost + oversizeFee + valueFee + handlingFee;
+  return Math.round(totalCost);
 }
 
 // Helper function to check if essential data is complete
@@ -471,32 +387,45 @@ function mergeProductData(primary, secondary) {
   };
 }
 
-// ScrapingBee scraping function - SIMPLIFIED VERSION
+// ScrapingBee scraping function - ENHANCED WITH AI EXTRACTION
 async function scrapeWithScrapingBee(url) {
   if (!USE_SCRAPINGBEE) {
     throw new Error('ScrapingBee not configured');
   }
 
   try {
-    console.log('🐝 Starting ScrapingBee scrape for:', url);
+    console.log('🐝 Starting ScrapingBee AI extraction for:', url);
     
-    // Simplified request without complex extract_rules
+    // Use AI extraction for universal compatibility
     const response = await axios({
       method: 'GET',
       url: 'https://app.scrapingbee.com/api/v1/',
       params: {
         api_key: SCRAPINGBEE_API_KEY,
         url: url,
-        render_js: 'false',
-        block_ads: 'true'
+        premium_proxy: 'true',
+        country_code: 'us',
+        render_js: 'true',
+        wait: '3000',  // Wait for page to load
+        ai_extract_rules: JSON.stringify({
+          price: "Product Price in USD",
+          title: "Product Title or Name",
+          description: "Product Description",
+          dimensions: "Product Dimensions, Package Dimensions, or Size",
+          weight: "Product Weight or Shipping Weight",
+          brand: "Brand Name or Manufacturer",
+          availability: "Stock Status or Availability",
+          image: "Main Product Image URL"
+        })
       },
       timeout: SCRAPING_TIMEOUT
     });
 
-    const html = response.data;
-    console.log('✅ ScrapingBee returned HTML, parsing data...');
+    console.log('✅ ScrapingBee AI extraction completed');
     
-    // Parse HTML manually
+    // Parse the AI-extracted data
+    const extracted = response.data;
+    
     const productData = {
       name: null,
       price: null,
@@ -508,73 +437,107 @@ async function scrapeWithScrapingBee(url) {
       inStock: true
     };
 
-    // Extract title
-    const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
-    if (titleMatch) {
-      productData.name = titleMatch[1]
-        .replace(/ - Amazon\.com.*$/i, '')
-        .replace(/ \| .*$/i, '')
-        .trim();
+    // Extract product name
+    if (extracted.title) {
+      productData.name = extracted.title.trim();
+      console.log('   📝 AI extracted title:', productData.name.substring(0, 50) + '...');
     }
 
-    // Extract price
-    const pricePatterns = [
-      /\$(\d+(?:,\d{3})*(?:\.\d{2})?)/,
-      /price[^>]*>\s*\$(\d+(?:,\d{3})*(?:\.\d{2})?)/i,
-      /span[^>]*class="[^"]*price[^"]*"[^>]*>\s*\$(\d+(?:,\d{3})*(?:\.\d{2})?)/i
-    ];
-    
-    for (const pattern of pricePatterns) {
-      const match = html.match(pattern);
-      if (match) {
-        productData.price = parseFloat(match[1].replace(/,/g, ''));
-        break;
+    // Parse the price from AI extraction - robust parsing
+    if (extracted.price) {
+      // Try multiple patterns to extract price
+      const pricePatterns = [
+        /[\$£€]?\s*(\d+(?:,\d{3})*(?:\.\d{2})?)/,  // $123.45 or 123.45
+        /(\d+(?:,\d{3})*(?:\.\d{2})?)\s*[\$£€]/,  // 123.45$
+        /USD\s*(\d+(?:,\d{3})*(?:\.\d{2})?)/i,     // USD 123.45
+        /(\d+(?:\.\d{2})?)/                         // Just numbers
+      ];
+      
+      for (const pattern of pricePatterns) {
+        const match = extracted.price.match(pattern);
+        if (match) {
+          productData.price = parseFloat(match[1].replace(/,/g, ''));
+          if (productData.price > 0 && productData.price < 1000000) {
+            console.log('   💰 AI extracted price: $' + productData.price);
+            break;
+          }
+        }
       }
     }
 
-    // Extract image
-    const imagePatterns = [
-      /id="landingImage"[^>]*src="([^"]+)"/,
-      /class="[^"]*main[^"]*image[^"]*"[^>]*src="([^"]+)"/i,
-      /data-old-hires="([^"]+)"/,
-      /data-a-dynamic-image="{"([^"]+)":/
-    ];
-    
-    for (const pattern of imagePatterns) {
-      const match = html.match(pattern);
-      if (match) {
-        productData.image = match[1];
-        break;
+    // Parse dimensions if AI found them
+    if (extracted.dimensions) {
+      const dimPatterns = [
+        /(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)/i,
+        /L:\s*(\d+(?:\.\d+)?).*W:\s*(\d+(?:\.\d+)?).*H:\s*(\d+(?:\.\d+)?)/i,
+        /(\d+(?:\.\d+)?)"?\s*[WL]\s*[x×]\s*(\d+(?:\.\d+)?)"?\s*[DW]\s*[x×]\s*(\d+(?:\.\d+)?)"?\s*[HT]/i
+      ];
+      
+      for (const pattern of dimPatterns) {
+        const match = extracted.dimensions.match(pattern);
+        if (match) {
+          productData.dimensions = {
+            length: parseFloat(match[1]),
+            width: parseFloat(match[2]),
+            height: parseFloat(match[3])
+          };
+          console.log('   📏 AI extracted dimensions:', productData.dimensions);
+          break;
+        }
       }
     }
 
-    // Try to find dimensions in the HTML
-    const dimensionMatch = html.match(/(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*(?:inches|in|")/i);
-    if (dimensionMatch) {
-      productData.dimensions = {
-        length: parseFloat(dimensionMatch[1]),
-        width: parseFloat(dimensionMatch[2]),
-        height: parseFloat(dimensionMatch[3])
-      };
+    // Parse weight if AI found it
+    if (extracted.weight) {
+      const weightPatterns = [
+        /(\d+(?:\.\d+)?)\s*(?:pounds?|lbs?)/i,
+        /(\d+(?:\.\d+)?)\s*(?:kilograms?|kgs?)/i,
+        /(\d+(?:\.\d+)?)\s*(?:ounces?|oz)/i
+      ];
+      
+      for (const pattern of weightPatterns) {
+        const match = extracted.weight.match(pattern);
+        if (match) {
+          let weight = parseFloat(match[1]);
+          // Convert to pounds if needed
+          if (/kg/i.test(extracted.weight)) weight *= 2.205;
+          if (/oz/i.test(extracted.weight)) weight *= 0.0625;
+          
+          productData.weight = Math.round(weight * 10) / 10;
+          console.log('   ⚖️ AI extracted weight:', productData.weight + ' lbs');
+          break;
+        }
+      }
     }
 
-    // Try to find weight
-    const weightMatch = html.match(/(\d+(?:\.\d+)?)\s*(?:pounds?|lbs?)/i);
-    if (weightMatch) {
-      productData.weight = parseFloat(weightMatch[1]);
+    // Extract brand
+    if (extracted.brand) {
+      productData.brand = extracted.brand.trim();
     }
 
-    console.log('📦 ScrapingBee parsed:', {
+    // Extract image URL
+    if (extracted.image) {
+      productData.image = extracted.image;
+    }
+
+    // Check availability
+    if (extracted.availability) {
+      const outOfStockKeywords = /out of stock|unavailable|sold out|not available/i;
+      productData.inStock = !outOfStockKeywords.test(extracted.availability);
+    }
+
+    console.log('📦 ScrapingBee AI results:', {
       hasName: !!productData.name,
       hasPrice: !!productData.price,
       hasImage: !!productData.image,
-      hasDimensions: !!productData.dimensions
+      hasDimensions: !!productData.dimensions,
+      hasWeight: !!productData.weight
     });
 
     return productData;
 
   } catch (error) {
-    console.error('❌ ScrapingBee scrape failed:', error.message);
+    console.error('❌ ScrapingBee AI extraction failed:', error.message);
     if (error.response) {
       console.error('Response status:', error.response.status);
       if (error.response.status === 400) {
@@ -585,66 +548,14 @@ async function scrapeWithScrapingBee(url) {
   }
 }
 
-// Dimension parsing helper
-function parseDimensionString(str) {
-  if (!str || typeof str !== 'string') return null;
-
-  const patterns = [
-    /(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*(?:inches|in|")?/i,
-    /(\d+\.?\d*)"?\s*[WL]\s*[x×]\s*(\d+\.?\d*)"?\s*[DW]\s*[x×]\s*(\d+\.?\d*)"?\s*[HT]/i,
-    /L:\s*(\d+\.?\d*).*W:\s*(\d+\.?\d*).*H:\s*(\d+\.?\d*)/i
-  ];
-
-  for (const pattern of patterns) {
-    const match = str.match(pattern);
-    if (match) {
-      const length = parseFloat(match[1]);
-      const width = parseFloat(match[2]);
-      const height = parseFloat(match[3]);
-      
-      if (length > 0 && width > 0 && height > 0 && 
-          length < 200 && width < 200 && height < 200) {
-        return { length, width, height };
-      }
-    }
-  }
-
-  return null;
-}
-
-// Weight parsing helper
-function parseWeightString(weightStr) {
-  if (typeof weightStr === 'number') return weightStr;
-  if (typeof weightStr !== 'string') return null;
-
-  const patterns = [
-    { regex: /(\d+\.?\d*)\s*(?:pounds?|lbs?)/i, multiplier: 1 },
-    { regex: /(\d+\.?\d*)\s*(?:kilograms?|kgs?)/i, multiplier: 2.205 },
-    { regex: /(\d+\.?\d*)\s*(?:grams?|g)/i, multiplier: 0.00220462 },
-    { regex: /(\d+\.?\d*)\s*(?:ounces?|oz)/i, multiplier: 0.0625 }
-  ];
-
-  for (const { regex, multiplier } of patterns) {
-    const match = weightStr.match(regex);
-    if (match) {
-      const weight = parseFloat(match[1]) * multiplier;
-      if (weight > 0 && weight < 1000) {
-        return Math.round(weight * 10) / 10;
-      }
-    }
-  }
-
-  return null;
-}
-
 // Main product scraping function
 async function scrapeProduct(url) {
   // AI CHECK: See if we've seen this exact product before
-  const knownProduct = await learningSystem.getKnownProduct(url);
-  if (knownProduct) {
-    console.log('   🤖 AI: Using saved product data');
-    return knownProduct;
-  }
+  // const knownProduct = await learningSystem.getKnownProduct(url);
+  // if (knownProduct) {
+  //   console.log('   🤖 AI: Using saved product data');
+  //   return knownProduct;
+  // }
   
   const productId = generateProductId();
   const retailer = detectRetailer(url);
@@ -678,10 +589,10 @@ async function scrapeProduct(url) {
     }
   }
   
-  // STEP 2: If Apify failed or returned incomplete data, try ScrapingBee
+  // STEP 2: If Apify failed or returned incomplete data, try ScrapingBee with AI
   if (USE_SCRAPINGBEE && (!productData || !isDataComplete(productData))) {
     try {
-      console.log('   🐝 Attempting ScrapingBee scrape...');
+      console.log('   🐝 Attempting ScrapingBee AI extraction...');
       const scrapingBeeData = await scrapeWithScrapingBee(url);
       
       if (scrapingBeeData) {
@@ -689,20 +600,23 @@ async function scrapeProduct(url) {
           // Apify failed completely, use ScrapingBee data
           productData = scrapingBeeData;
           scrapingMethod = 'scrapingbee';
-          console.log('   ✅ Using ScrapingBee data (Apify failed)');
+          console.log('   ✅ Using ScrapingBee AI data (Apify failed)');
         } else {
           // Merge data - keep Apify data but fill in missing fields from ScrapingBee
           const mergedData = mergeProductData(productData, scrapingBeeData);
           
           // Log what was supplemented
           if (!productData.name && scrapingBeeData.name) {
-            console.log('   ✅ ScrapingBee provided missing name');
+            console.log('   ✅ ScrapingBee AI provided missing name');
+          }
+          if (!productData.price && scrapingBeeData.price) {
+            console.log('   ✅ ScrapingBee AI provided missing price');
           }
           if (!productData.image && scrapingBeeData.image) {
-            console.log('   ✅ ScrapingBee provided missing image');
+            console.log('   ✅ ScrapingBee AI provided missing image');
           }
           if (!productData.dimensions && scrapingBeeData.dimensions) {
-            console.log('   ✅ ScrapingBee provided missing dimensions');
+            console.log('   ✅ ScrapingBee AI provided missing dimensions');
           }
           
           productData = mergedData;
@@ -710,7 +624,7 @@ async function scrapeProduct(url) {
         }
       }
     } catch (error) {
-      console.log('   ❌ ScrapingBee failed:', error.message);
+      console.log('   ❌ ScrapingBee AI extraction failed:', error.message);
     }
   }
   
@@ -763,15 +677,15 @@ async function scrapeProduct(url) {
   
   if (!productData.dimensions) {
     // Try AI estimation first
-    const aiEstimate = await learningSystem.getSmartEstimation(category, productName, retailer);
-    if (aiEstimate) {
-      productData.dimensions = aiEstimate.dimensions;
-      productData.weight = productData.weight || aiEstimate.weight;
-      console.log(`   🤖 AI: Applied learned patterns (confidence: ${(aiEstimate.confidence * 100).toFixed(0)}%)`);
-    } else {
+    // const aiEstimate = await learningSystem.getSmartEstimation(category, productName, retailer);
+    // if (aiEstimate) {
+    //   productData.dimensions = aiEstimate.dimensions;
+    //   productData.weight = productData.weight || aiEstimate.weight;
+    //   console.log(`   🤖 AI: Applied learned patterns (confidence: ${(aiEstimate.confidence * 100).toFixed(0)}%)`);
+    // } else {
       productData.dimensions = estimateDimensions(category, productName);
       console.log('   📐 Estimated dimensions based on category:', category);
-    }
+    // }
   }
   
   if (!productData.weight) {
@@ -813,10 +727,10 @@ async function scrapeProduct(url) {
   console.log(`   ✅ Product processed successfully\n`);
   
   // Record what worked and what didn't for failure tracking
-  await learningSystem.recordScrapingResult(url, retailer, product, scrapingMethod);
+  // await learningSystem.recordScrapingResult(url, retailer, product, scrapingMethod);
   
   // AI SAVE: Remember this product for next time
-  await learningSystem.saveProduct(product);
+  // await learningSystem.saveProduct(product);
   
   return product;
 }
@@ -863,7 +777,7 @@ app.post('/api/scrape', async (req, res) => {
     }
     
     console.log(`\n🚀 Starting batch scrape for ${urls.length} products...`);
-    console.log('   Strategy: Apify → ScrapingBee → UPCitemdb → AI Estimation\n');
+    console.log('   Strategy: Apify → ScrapingBee AI → UPCitemdb → Estimation\n');
     
     const products = await processBatch(urls);
     
@@ -876,13 +790,13 @@ app.post('/api/scrape', async (req, res) => {
     console.log('\n📊 SCRAPING SUMMARY:');
     console.log(`   Total products: ${products.length}`);
     console.log(`   Apify used: ${apifyCount}`);
-    console.log(`   ScrapingBee used: ${scrapingBeeCount}`);
+    console.log(`   ScrapingBee AI used: ${scrapingBeeCount}`);
     console.log(`   UPCitemdb used: ${upcitemdbCount}`);
     console.log(`   Fully estimated: ${estimatedCount}`);
     console.log(`   Success rate: ${((products.length - estimatedCount) / products.length * 100).toFixed(1)}%\n`);
     
     // Get AI insights
-    await learningSystem.getInsights();
+    // await learningSystem.getInsights();
     
     res.json({ 
       products,
