@@ -398,7 +398,6 @@ function estimateBoxDimensions(productDimensions, category) {
     width: Math.round(productDimensions.width * factor * 10) / 10,
     height: Math.round(productDimensions.height * factor * 10) / 10
   };
-}
 
 function calculateTotals(deliveryFees) {
     let totalItemCost = 0;
