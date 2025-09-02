@@ -851,6 +851,59 @@ app.get('/api/get-pending-order/:orderId', (req, res) => {
   }
 });
 
+// NEW: Checkout sessions for Shopify redirect
+const checkoutSessions = new Map();
+
+app.post('/api/prepare-shopify-checkout', async (req, res) => {
+  try {
+    const checkoutData = req.body;
+    
+    // Generate unique checkout ID
+    const checkoutId = 'import_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    
+    // Store the checkout data
+    checkoutSessions.set(checkoutId, {
+      ...checkoutData,
+      createdAt: new Date(),
+      status: 'pending'
+    });
+    
+    // Auto-cleanup after 24 hours
+    setTimeout(() => {
+      checkoutSessions.delete(checkoutId);
+    }, 24 * 60 * 60 * 1000);
+    
+    // Create the redirect URL to your Shopify site
+    const redirectUrl = `https://sdl.bm/pages/import-checkout?session=${checkoutId}`;
+    
+    console.log(`Created checkout session: ${checkoutId}`);
+    
+    res.json({
+      checkoutId,
+      redirectUrl,
+      success: true
+    });
+    
+  } catch (error) {
+    console.error('Error preparing checkout:', error);
+    res.status(500).json({ error: 'Failed to prepare checkout' });
+  }
+});
+
+// Endpoint to retrieve checkout data (for Shopify to call)
+app.get('/api/get-checkout/:checkoutId', (req, res) => {
+  const { checkoutId } = req.params;
+  const checkoutData = checkoutSessions.get(checkoutId);
+  
+  if (!checkoutData) {
+    return res.status(404).json({ error: 'Checkout session not found or expired' });
+  }
+  
+  // Add CORS headers for Shopify
+  res.header('Access-Control-Allow-Origin', 'https://sdl.bm');
+  res.json(checkoutData);
+});
+
 // Shopify Draft Order Creation
 app.post('/apps/instant-import/create-draft-order', async (req, res) => {
   try {
