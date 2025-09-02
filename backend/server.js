@@ -245,7 +245,7 @@ function detectRetailer(url) {
   try {
     const domain = new URL(url).hostname.toLowerCase();
     
-    // Major retailers detection (keeping your existing list)
+    // Major retailers detection
     if (domain.includes('amazon.com')) return 'Amazon';
     if (domain.includes('wayfair.com')) return 'Wayfair';
     if (domain.includes('walmart.com')) return 'Walmart';
@@ -256,7 +256,25 @@ function detectRetailer(url) {
     if (domain.includes('costco.com')) return 'Costco';
     if (domain.includes('ikea.com')) return 'IKEA';
     if (domain.includes('ebay.com')) return 'eBay';
-    // Add more as needed
+    if (domain.includes('etsy.com')) return 'Etsy';
+    if (domain.includes('overstock.com')) return 'Overstock';
+    if (domain.includes('bedbathandbeyond.com')) return 'Bed Bath & Beyond';
+    if (domain.includes('crateandbarrel.com')) return 'Crate & Barrel';
+    if (domain.includes('potterybarn.com')) return 'Pottery Barn';
+    if (domain.includes('westelm.com')) return 'West Elm';
+    if (domain.includes('cb2.com')) return 'CB2';
+    if (domain.includes('article.com')) return 'Article';
+    if (domain.includes('ashleyfurniture.com')) return 'Ashley Furniture';
+    if (domain.includes('lazyboy.com')) return 'La-Z-Boy';
+    if (domain.includes('macys.com')) return 'Macys';
+    if (domain.includes('nordstrom.com')) return 'Nordstrom';
+    if (domain.includes('sephora.com')) return 'Sephora';
+    if (domain.includes('ulta.com')) return 'Ulta';
+    if (domain.includes('nike.com')) return 'Nike';
+    if (domain.includes('adidas.com')) return 'Adidas';
+    if (domain.includes('gap.com')) return 'Gap';
+    if (domain.includes('oldnavy.com')) return 'Old Navy';
+    if (domain.includes('lunafurn.com')) return 'Luna Furniture';
     
     return 'Other Retailer';
   } catch (e) {
@@ -400,10 +418,80 @@ function calculateShippingCost(dimensions, weight, price) {
   return Math.round(totalCost);
 }
 
+// ==================== ORDER STAGE MANAGEMENT ====================
+
+async function updateOrderStage(orderId, stage) {
+  const stages = {
+    1: 'payment-received',
+    2: 'ordered-from-vendor',
+    3: 'at-nj-warehouse',
+    4: 'ready-for-delivery',
+    5: 'delivered'
+  };
+  
+  const stageDescriptions = {
+    1: '💳 Payment Received - Need to order from vendor',
+    2: '📦 Ordered from Vendor - Waiting for delivery to NJ',
+    3: '🏭 At NJ Warehouse - Preparing for shipment',
+    4: '✅ Ready for Delivery/Collection in Bermuda',
+    5: '🎉 Delivered - Order complete'
+  };
+  
+  try {
+    const orderResponse = await axios.get(
+      `https://${SHOPIFY_DOMAIN}/admin/api/2023-10/orders/${orderId}.json`,
+      {
+        headers: {
+          'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN
+        }
+      }
+    );
+    
+    const order = orderResponse.data.order;
+    
+    // Update tags based on stage
+    let newTags = order.tags
+      .split(',')
+      .filter(tag => !tag.trim().startsWith('stage-'))
+      .filter(tag => !tag.includes('IMPORT-ACTION-REQUIRED'));
+    
+    // Add new stage tag
+    newTags.push(`stage-${stage}-${stages[stage]}`);
+    
+    // If stage 1, add action required tag
+    if (stage === 1) {
+      newTags.push('🚨IMPORT-ACTION-REQUIRED');
+    }
+    
+    // Update order
+    await axios.put(
+      `https://${SHOPIFY_DOMAIN}/admin/api/2023-10/orders/${orderId}.json`,
+      {
+        order: {
+          id: orderId,
+          tags: newTags.join(','),
+          note: order.note + `\n\n[${new Date().toISOString()}] Status Update: ${stageDescriptions[stage]}`
+        }
+      },
+      {
+        headers: {
+          'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN
+        }
+      }
+    );
+    
+    console.log(`✅ Order ${orderId} updated to: ${stageDescriptions[stage]}`);
+    return true;
+    
+  } catch (error) {
+    console.error('Error updating order stage:', error.response?.data || error);
+    return false;
+  }
+}
+
 // Scraping function
 async function scrapeWithScrapingBee(url) {
   if (TEST_MODE) {
-    // Return mock data in test mode
     return {
       price: 99.99,
       title: 'Test Product',
@@ -519,20 +607,26 @@ async function sendOrderEmail(orderData) {
     const msg = {
       to: EMAIL_TO_ADMIN,
       from: EMAIL_FROM,
-      subject: `New Import Order: ${orderData.orderId}`,
+      subject: `🚨 New Import Order: ${orderData.orderId}`,
       html: `
-        <h2>New Import Order Received</h2>
+        <h2>🚨 New Import Order - ACTION REQUIRED</h2>
         <p><strong>Order ID:</strong> ${orderData.orderId}</p>
         <p><strong>Total:</strong> $${orderData.totals.grandTotal.toFixed(2)}</p>
         <p><strong>Products:</strong> ${orderData.products.length} items</p>
-        <p><strong>Customer:</strong> ${orderData.customer?.email || 'Guest'}</p>
         <hr>
-        <p>View details in your admin dashboard.</p>
+        <h3>Products to Order from Vendors:</h3>
+        ${orderData.products.map(p => `
+          <p>• ${p.name}<br>
+          URL: ${p.url}<br>
+          Price: $${p.price}</p>
+        `).join('')}
+        <hr>
+        <p><strong>⚠️ ACTION REQUIRED: Order these items from the vendors!</strong></p>
       `
     };
     
     await sendgrid.send(msg);
-    console.log('✉️ Order email sent');
+    console.log('✉️ Import order email sent');
   } catch (error) {
     console.error('Email error:', error);
   }
@@ -563,7 +657,7 @@ async function exportToGoogleSheets(orderData) {
       orderData.totals?.dutyAmount || 0,
       orderData.totals?.totalShippingAndHandling || 0,
       orderData.totals?.grandTotal || 0,
-      orderData.status || 'pending'
+      'stage-1-payment-received'
     ];
     
     await sheets.spreadsheets.values.append({
@@ -585,7 +679,8 @@ function storeOrder(orderData) {
     ...orderData,
     id: orderData.orderId || generateOrderId(),
     createdAt: new Date().toISOString(),
-    status: 'pending'
+    status: 'pending',
+    currentStage: 1
   };
   
   ORDERS_DB.orders.push(order);
@@ -686,7 +781,7 @@ app.post('/api/scrape', scrapeRateLimiter, async (req, res) => {
   }
 });
 
-// Create checkout/draft order
+// Create checkout/draft order with IMPORT visibility
 app.post('/api/prepare-shopify-checkout', orderRateLimiter, async (req, res) => {
   try {
     const checkoutData = req.body;
@@ -768,14 +863,30 @@ app.post('/api/prepare-shopify-checkout', orderRateLimiter, async (req, res) => 
     const draftOrderData = {
       draft_order: {
         line_items: lineItems,
-        note: `Import Calculator Order #${orderId}\nTimestamp: ${new Date().toISOString()}`,
-        tags: 'import-calculator, ocean-freight, guest-checkout',
+        note: `🚨 IMPORT ORDER - ACTION REQUIRED 🚨
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚠️ MANUALLY ORDER THESE ITEMS FROM VENDORS ⚠️
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Order ID: ${orderId}
+Created: ${new Date().toISOString()}
+
+PRODUCTS TO ORDER:
+${checkoutData.products.map(p => `• ${p.name}\n  URL: ${p.url}\n  Price: $${p.price}`).join('\n\n')}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+After ordering from vendors, update stage to "Ordered from Vendor"`,
+        
+        tags: '🚨IMPORT-ACTION-REQUIRED, import-calculator, stage-1-payment-received, needs-vendor-order',
         tax_exempt: true,
         send_receipt: true,
         send_fulfillment_receipt: true,
         note_attributes: [
+          { name: '⚠️ ORDER TYPE', value: '🚨 IMPORT - MANUAL ACTION REQUIRED' },
+          { name: '📦 STATUS', value: 'NEEDS VENDOR ORDERING' },
           { name: 'import_order', value: 'true' },
-          { name: 'order_id', value: orderId }
+          { name: 'order_id', value: orderId },
+          { name: 'current_stage', value: '1' }
         ]
       }
     };
@@ -807,7 +918,7 @@ app.post('/api/prepare-shopify-checkout', orderRateLimiter, async (req, res) => 
     order.shopifyInvoiceUrl = draftOrder.invoice_url;
     saveOrdersDB();
     
-    console.log(`✅ Draft order ${draftOrder.name} created`);
+    console.log(`✅ Import draft order ${draftOrder.name} created with ACTION REQUIRED flag`);
     
     // Return the invoice URL for direct checkout
     res.json({
@@ -889,6 +1000,47 @@ app.post('/api/admin/order/:orderId/status', (req, res) => {
   res.json({ success: true, order });
 });
 
+// Update order stage endpoint
+app.post('/api/admin/order/:orderId/stage', async (req, res) => {
+  const { password, stage } = req.body;
+  const { orderId } = req.params;
+  
+  if (password !== ADMIN_PASSWORD) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  const success = await updateOrderStage(orderId, stage);
+  
+  const stageNames = {
+    1: 'Payment Received',
+    2: 'Ordered from Vendor',
+    3: 'At NJ Warehouse',
+    4: 'Ready for Delivery/Collection',
+    5: 'Delivered'
+  };
+  
+  // Update local database
+  const order = ORDERS_DB.orders.find(o => 
+    o.shopifyOrderId === orderId || 
+    o.shopifyDraftOrderId === orderId || 
+    o.id === orderId || 
+    o.orderId === orderId
+  );
+  
+  if (order) {
+    order.currentStage = stage;
+    order.stageUpdatedAt = new Date().toISOString();
+    saveOrdersDB();
+  }
+  
+  res.json({ 
+    success,
+    stage,
+    stageName: stageNames[stage],
+    message: success ? `Order updated to: ${stageNames[stage]}` : 'Failed to update order'
+  });
+});
+
 // Learning insights
 app.get('/api/learning-insights', (req, res) => {
   const insights = {
@@ -956,7 +1108,6 @@ app.post('/webhooks/shopify/order-created', async (req, res) => {
 });
 
 app.post('/webhooks/shopify/order-updated', async (req, res) => {
-  // Similar webhook verification
   console.log(`📦 Shopify order updated: ${req.body.name}`);
   res.status(200).send('OK');
 });
