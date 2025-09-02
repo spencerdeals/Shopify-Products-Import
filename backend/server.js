@@ -26,8 +26,9 @@ const SHIPPING_RATE_PER_CUBIC_FOOT = 6;
 const CARD_FEE_RATE = 0.0325;  // 3.25% card processing fee
 const TEST_MODE = process.env.TEST_MODE === 'true';
 
-// Initialize Apify scraper
-const apifyScraper = new ApifyScraper(APIFY_API_KEY);
+// Initialize Apify scraper (TEMPORARILY DISABLED FOR DEBUGGING)
+const ENABLE_APIFY = false;  // Set to true when ready to test Apify again
+const apifyScraper = ENABLE_APIFY ? new ApifyScraper(APIFY_API_KEY) : { isAvailable: () => false };
 
 // Email configuration (optional)
 const EMAIL_FROM = process.env.EMAIL_FROM || 'orders@sdl.bm';
@@ -591,21 +592,29 @@ async function scrapeWithScrapingBee(url) {
   
   const retailer = detectRetailer(url);
   
-  // Use Apify for Wayfair if available
+  // Use Apify for Wayfair if available (with quick timeout)
   if (retailer === 'Wayfair' && apifyScraper.isAvailable()) {
     try {
-      console.log('   🔄 Using Apify for Wayfair...');
-      const apifyResult = await apifyScraper.scrapeWayfair(url);
+      console.log('   🔄 Trying Apify for Wayfair (10s timeout)...');
       
-      if (apifyResult) {
+      // Set a 10 second timeout for Apify
+      const apifyPromise = apifyScraper.scrapeWayfair(url);
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Apify timeout')), 10000)
+      );
+      
+      const apifyResult = await Promise.race([apifyPromise, timeoutPromise]);
+      
+      if (apifyResult && apifyResult.price) {
+        console.log('   ✅ Apify successful for Wayfair');
         return {
           price: apifyResult.price,
-          title: apifyResult.name,
+          title: apifyResult.name || apifyResult.title,
           image: apifyResult.image
         };
       }
     } catch (error) {
-      console.log('   ❌ Apify failed for Wayfair, falling back to ScrapingBee:', error.message);
+      console.log('   ⏱️ Apify timed out or failed, using ScrapingBee...');
     }
   }
   
