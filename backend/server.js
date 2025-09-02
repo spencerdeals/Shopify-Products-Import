@@ -1,29 +1,4 @@
-// ScrapingBee with RETAILER-SPECIFIC extraction rules
-async function scrapeWithScrapingBee(url) {
-  if (!USE_SCRAPINGBEE) {
-    throw new Error('ScrapingBee not configured');
-  }
-
-  try {
-    console.log('   🐝 ScrapingBee starting...');
-    
-    const retailer = detectRetailer(url);
-    
-    // Use different extraction rules based on retailer
-    let extractRules = {};
-    
-    if (retailer === 'Amazon') {
-      extractRules = {
-        price: "span.a-price-whole, span.a-price-range, span.a-price.a-text-price.a-size-medium, [data-a-color='price'] span, .a-price-range",
-        title: "h1#title, h1.a-size-large, span#productTitle",
-        image: "img#landingImage@src, div.imgTagWrapper img@src, img.a-dynamic-image@src",
-        dimensions: "tr:contains('Dimensions'), tr:contains('Package'), tr:contains('Size'), .a-section:contains('x'), .product-facts-detail",
-        weight: "tr:contains('Weight'), tr:contains('weight'), .a-section:contains('pounds'), .a-section:contains('lbs')",
-        brand: "a#bylineInfo, span.by-line a, tr:contains('Brand'), tr:contains('Manufacturer')"
-      };
-    } else if (retailer === 'Wayfair') {
-      extractRules = {
-        price: "[data-enzyme-id='PriceBlock'] span, .SFPrice, .BaseProductPrice, .Productconst express = require('express');
+const express = require('express');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const axios = require('axios');
@@ -45,7 +20,7 @@ const upcItemDB = new UPCItemDB(UPCITEMDB_API_KEY);
 const USE_UPCITEMDB = !!UPCITEMDB_API_KEY;
 const APIFY_API_KEY = process.env.APIFY_API_KEY || '';
 const SCRAPING_TIMEOUT = 30000;
-const MAX_CONCURRENT_SCRAPES = 2;
+const MAX_CONCURRENT_SCRAPES = 1;
 const BERMUDA_DUTY_RATE = 0.265;
 const USE_SCRAPINGBEE = !!SCRAPINGBEE_API_KEY;
 const SHIPPING_RATE_PER_CUBIC_FOOT = 8;
@@ -53,11 +28,10 @@ const SHIPPING_RATE_PER_CUBIC_FOOT = 8;
 // BOL-BASED SHIPPING PATTERNS FROM YOUR HISTORICAL DATA
 const BOL_PATTERNS = {
   furniture: {
-    avgWeight: 348,  // Based on your BOL data
+    avgWeight: 348,
     avgCubicFeet: 49.5,
     minCubicFeet: 9,
     maxCubicFeet: 171,
-    // Dimension ranges from your actual shipments
     dimensions: {
       sofa: { length: 84, width: 38, height: 36, weight: 185 },
       chair: { length: 36, width: 32, height: 38, weight: 65 },
@@ -151,7 +125,8 @@ app.get('/api/test-scrape', async (req, res) => {
         dimensions: product.dimensions,
         weight: product.weight,
         shippingCost: product.shippingCost,
-        scrapingMethod: product.scrapingMethod
+        scrapingMethod: product.scrapingMethod,
+        dataCompleteness: product.dataCompleteness
       },
       raw: product
     });
@@ -225,6 +200,15 @@ function detectRetailer(url) {
     if (domain.includes('bestbuy.com')) return 'Best Buy';
     if (domain.includes('walmart.com')) return 'Walmart';
     if (domain.includes('homedepot.com')) return 'Home Depot';
+    if (domain.includes('lowes.com')) return 'Lowes';
+    if (domain.includes('costco.com')) return 'Costco';
+    if (domain.includes('macys.com')) return 'Macys';
+    if (domain.includes('ikea.com')) return 'IKEA';
+    if (domain.includes('overstock.com')) return 'Overstock';
+    if (domain.includes('cb2.com')) return 'CB2';
+    if (domain.includes('crateandbarrel.com')) return 'Crate & Barrel';
+    if (domain.includes('westelm.com')) return 'West Elm';
+    if (domain.includes('potterybarn.com')) return 'Pottery Barn';
     return 'Unknown Retailer';
   } catch (e) {
     return 'Unknown Retailer';
@@ -250,6 +234,10 @@ function categorizeProduct(name, url) {
   if (/\b(shirt|pants|dress|jacket|coat|shoes|boots|sneakers|clothing|apparel|jeans|sweater|hoodie|shorts|skirt)\b/.test(text)) return 'clothing';
   if (/\b(book|novel|textbook|magazine|journal)\b/.test(text)) return 'books';
   if (/\b(toy|game|puzzle|doll|action.figure|lego|playset|board.game|video.game)\b/.test(text)) return 'toys';
+  if (/\b(exercise|fitness|gym|bike|bicycle|treadmill|weights|dumbbells|yoga|golf|tennis|basketball|football|soccer)\b/.test(text)) return 'sports';
+  if (/\b(decor|decoration|vase|picture|frame|artwork|painting|candle|lamp|mirror|pillow|curtain|rug|carpet)\b/.test(text)) return 'home-decor';
+  if (/\b(tool|hardware|drill|saw|hammer|screwdriver|wrench|toolbox)\b/.test(text)) return 'tools';
+  if (/\b(garden|plant|pot|soil|fertilizer|hose|mower|outdoor)\b/.test(text)) return 'garden';
   return 'general';
 }
 
@@ -355,42 +343,146 @@ function calculateShippingCost(dimensions, weight, price) {
   return Math.round(totalCost);
 }
 
-// ScrapingBee with AI extraction
+// Enhanced ScrapingBee with retailer-specific extraction
 async function scrapeWithScrapingBee(url) {
   if (!USE_SCRAPINGBEE) {
     throw new Error('ScrapingBee not configured');
   }
 
   try {
-    console.log('🐝 Starting ScrapingBee AI extraction for:', url);
+    const retailer = detectRetailer(url);
+    console.log(`   🐝 ScrapingBee starting for ${retailer}...`);
     
-    const response = await axios({
+    // First, try with specific CSS selectors for each retailer
+    let scrapingParams = {
+      api_key: SCRAPINGBEE_API_KEY,
+      url: url,
+      premium_proxy: 'true',
+      country_code: 'us',
+      render_js: 'true',
+      wait: '5000',  // Wait longer for dynamic content
+      wait_for: 'networkidle',  // Wait for network to be idle
+      block_resources: 'false',  // Load all resources including images
+      screenshot: 'false'
+    };
+    
+    // Add retailer-specific extraction rules
+    if (retailer === 'Amazon') {
+      scrapingParams.extract_rules = JSON.stringify({
+        price: {
+          selector: 'span.a-price-whole, span.a-price-range, .a-price.a-text-price.a-size-medium.apexPriceToPay, .a-price-range, span[data-a-color="price"] span',
+          type: 'text'
+        },
+        title: {
+          selector: 'h1#title span, h1.a-size-large span, span#productTitle',
+          type: 'text'
+        },
+        image: {
+          selector: 'img#landingImage, div.imgTagWrapper img, img.a-dynamic-image, div[data-component-type="s-product-image"] img',
+          type: '@src'
+        }
+      });
+    } else if (retailer === 'Wayfair') {
+      scrapingParams.extract_rules = JSON.stringify({
+        price: {
+          selector: '[data-enzyme-id="PriceBlock"] span, .SFPrice, .ProductDetailInfoBlock span[data-enzyme-id*="Price"], .BasePriceBlock__BasePrice',
+          type: 'text'
+        },
+        title: {
+          selector: 'h1.pl-Heading-heading, h1[data-enzyme-id="ProductName"], header h1',
+          type: 'text'
+        },
+        image: {
+          selector: 'img.InlineCarousel__StyledImage, img[data-enzyme-id="carousel-image"], .ProductDetailImageCarousel img',
+          type: '@src'
+        }
+      });
+    } else if (retailer === 'Walmart') {
+      scrapingParams.extract_rules = JSON.stringify({
+        price: {
+          selector: 'span[itemprop="price"], span.price-now, .price-characteristic, [data-testid="price-wrap"] span, span[data-automation-id="product-price"]',
+          type: 'text'
+        },
+        title: {
+          selector: 'h1[itemprop="name"], h1.prod-ProductTitle, h1[data-automation-id="productName"], main h1',
+          type: 'text'
+        },
+        image: {
+          selector: 'img.hover-zoom-hero-image, img[data-testid="hero-image"], .prod-hero-image img, div[data-testid="image-carousel"] img',
+          type: '@src'
+        }
+      });
+    } else {
+      // Generic extraction for unknown retailers
+      scrapingParams.extract_rules = JSON.stringify({
+        price: {
+          selector: '[class*="price"], [data-testid*="price"], .price, span.price, .product-price',
+          type: 'text'
+        },
+        title: {
+          selector: 'h1, [class*="product-title"], [class*="product-name"], .title',
+          type: 'text'
+        },
+        image: {
+          selector: 'img[class*="product"], img[alt*="product"], .gallery img, main img',
+          type: '@src'
+        }
+      });
+    }
+    
+    // First attempt with CSS selectors
+    let response = await axios({
       method: 'GET',
       url: 'https://app.scrapingbee.com/api/v1/',
-      params: {
+      params: scrapingParams,
+      timeout: 45000  // 45 second timeout
+    });
+    
+    let extracted = response.data;
+    
+    // If CSS extraction didn't work well, try AI extraction as fallback
+    if (!extracted.title || !extracted.price || !extracted.image) {
+      console.log('   🤖 CSS extraction incomplete, trying AI extraction...');
+      
+      const aiParams = {
         api_key: SCRAPINGBEE_API_KEY,
         url: url,
         premium_proxy: 'true',
         country_code: 'us',
         render_js: 'true',
-        wait: '3000',
+        wait: '5000',
+        wait_for: 'networkidle',
         ai_extract_rules: JSON.stringify({
-          price: "Product Price in USD",
-          title: "Product Title or Name",
-          description: "Product Description",
+          price: "Product Price in USD, Sale Price, Current Price, or Discounted Price",
+          title: "Product Title, Product Name, or Main Heading",
+          image: "Main Product Image URL, Primary Product Photo, or Hero Image",
+          description: "Product Description or Details",
           dimensions: "Product Dimensions, Package Dimensions, or Size",
           weight: "Product Weight or Shipping Weight",
-          brand: "Brand Name or Manufacturer",
-          availability: "Stock Status or Availability",
-          image: "Main Product Image URL"
+          brand: "Brand Name, Manufacturer, or Sold By",
+          availability: "Stock Status, Availability, or In Stock"
         })
-      },
-      timeout: SCRAPING_TIMEOUT
-    });
-
-    console.log('✅ ScrapingBee AI extraction completed');
+      };
+      
+      const aiResponse = await axios({
+        method: 'GET',
+        url: 'https://app.scrapingbee.com/api/v1/',
+        params: aiParams,
+        timeout: 45000
+      });
+      
+      // Merge CSS and AI results, preferring CSS when available
+      extracted = {
+        ...aiResponse.data,
+        ...Object.fromEntries(
+          Object.entries(extracted).filter(([_, v]) => v != null && v !== '')
+        )
+      };
+    }
     
-    const extracted = response.data;
+    console.log('   ✅ ScrapingBee extraction completed');
+    
+    // Parse the extracted data
     const productData = {
       name: null,
       price: null,
@@ -401,39 +493,82 @@ async function scrapeWithScrapingBee(url) {
       category: null,
       inStock: true
     };
-
+    
     // Extract product name
     if (extracted.title) {
       productData.name = extracted.title.trim();
-      console.log('   📝 AI extracted title:', productData.name.substring(0, 50) + '...');
+      console.log('   📝 Extracted title:', productData.name.substring(0, 50) + '...');
     }
-
-    // Parse price with multiple patterns
+    
+    // Parse price with enhanced patterns
     if (extracted.price) {
+      const priceStr = extracted.price.toString();
+      
+      // Enhanced price patterns
       const pricePatterns = [
-        /[\$£€]?\s*(\d+(?:,\d{3})*(?:\.\d{2})?)/,
-        /(\d+(?:,\d{3})*(?:\.\d{2})?)\s*[\$£€]/,
-        /USD\s*(\d+(?:,\d{3})*(?:\.\d{2})?)/i,
-        /(\d+(?:\.\d{2})?)/
+        /\$\s*(\d+(?:,\d{3})*(?:\.\d{2})?)/,           // $123.45
+        /(\d+(?:,\d{3})*(?:\.\d{2})?)\s*\$/,           // 123.45$
+        /USD\s*(\d+(?:,\d{3})*(?:\.\d{2})?)/i,         // USD 123.45
+        /(\d+(?:,\d{3})*)\.\d{2}/,                     // 1,234.56
+        /(\d+(?:\.\d{2})?)/                            // 123.45
       ];
       
       for (const pattern of pricePatterns) {
-        const match = extracted.price.match(pattern);
+        const match = priceStr.match(pattern);
         if (match) {
-          productData.price = parseFloat(match[1].replace(/,/g, ''));
-          if (productData.price > 0 && productData.price < 1000000) {
-            console.log('   💰 AI extracted price: $' + productData.price);
+          const price = parseFloat(match[1].replace(/,/g, ''));
+          if (price > 0 && price < 1000000) {
+            productData.price = price;
+            console.log('   💰 Extracted price: $' + productData.price);
             break;
           }
         }
       }
+      
+      // If still no price, try to find any number that looks like a price
+      if (!productData.price) {
+        const numbers = priceStr.match(/\d+(?:\.\d{2})?/g);
+        if (numbers) {
+          for (const num of numbers) {
+            const price = parseFloat(num);
+            if (price > 10 && price < 10000) {  // Reasonable price range
+              productData.price = price;
+              console.log('   💰 Extracted price (fallback): $' + productData.price);
+              break;
+            }
+          }
+        }
+      }
     }
-
-    // Parse dimensions
+    
+    // Extract image URL - fix relative URLs
+    if (extracted.image) {
+      let imageUrl = extracted.image;
+      
+      // Handle relative URLs
+      if (imageUrl.startsWith('//')) {
+        imageUrl = 'https:' + imageUrl;
+      } else if (imageUrl.startsWith('/')) {
+        const baseUrl = new URL(url);
+        imageUrl = baseUrl.origin + imageUrl;
+      }
+      
+      // Validate it's a real image URL
+      if (imageUrl.match(/\.(jpg|jpeg|png|gif|webp|svg)/i) || 
+          imageUrl.includes('images') || 
+          imageUrl.includes('media') ||
+          imageUrl.includes('product')) {
+        productData.image = imageUrl;
+        console.log('   🖼️ Extracted image URL');
+      }
+    }
+    
+    // Parse dimensions if available
     if (extracted.dimensions) {
       const dimPatterns = [
         /(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)/i,
-        /L:\s*(\d+(?:\.\d+)?).*W:\s*(\d+(?:\.\d+)?).*H:\s*(\d+(?:\.\d+)?)/i
+        /L:\s*(\d+(?:\.\d+)?).*W:\s*(\d+(?:\.\d+)?).*H:\s*(\d+(?:\.\d+)?)/i,
+        /(\d+(?:\.\d+)?)"?\s*[WL]\s*[x×]\s*(\d+(?:\.\d+)?)"?\s*[DW]\s*[x×]\s*(\d+(?:\.\d+)?)"?\s*[HT]/i
       ];
       
       for (const pattern of dimPatterns) {
@@ -444,13 +579,13 @@ async function scrapeWithScrapingBee(url) {
             width: parseFloat(match[2]),
             height: parseFloat(match[3])
           };
-          console.log('   📏 AI extracted dimensions:', productData.dimensions);
+          console.log('   📏 Extracted dimensions:', productData.dimensions);
           break;
         }
       }
     }
-
-    // Parse weight
+    
+    // Parse weight if available
     if (extracted.weight) {
       const weightPatterns = [
         { regex: /(\d+(?:\.\d+)?)\s*(?:pounds?|lbs?)/i, multiplier: 1 },
@@ -462,32 +597,40 @@ async function scrapeWithScrapingBee(url) {
         const match = extracted.weight.match(regex);
         if (match) {
           productData.weight = Math.round(parseFloat(match[1]) * multiplier * 10) / 10;
-          console.log('   ⚖️ AI extracted weight:', productData.weight + ' lbs');
+          console.log('   ⚖️ Extracted weight:', productData.weight + ' lbs');
           break;
         }
       }
     }
-
-    if (extracted.brand) productData.brand = extracted.brand.trim();
-    if (extracted.image) productData.image = extracted.image;
     
+    // Extract brand
+    if (extracted.brand) {
+      productData.brand = extracted.brand.trim();
+    }
+    
+    // Check availability
     if (extracted.availability) {
-      const outOfStock = /out of stock|unavailable|sold out/i;
+      const outOfStock = /out of stock|unavailable|sold out|not available/i;
       productData.inStock = !outOfStock.test(extracted.availability);
     }
-
-    console.log('📦 ScrapingBee AI results:', {
+    
+    console.log('   📦 ScrapingBee results:', {
       hasName: !!productData.name,
       hasPrice: !!productData.price,
       hasImage: !!productData.image,
       hasDimensions: !!productData.dimensions,
       hasWeight: !!productData.weight
     });
-
+    
     return productData;
-
+    
   } catch (error) {
-    console.error('❌ ScrapingBee AI extraction failed:', error.message);
+    console.error('   ❌ ScrapingBee failed:', error.message);
+    if (error.response?.status === 400) {
+      console.error('   Bad Request - Check API parameters');
+    } else if (error.response?.status === 500) {
+      console.error('   ScrapingBee server error - Page may be too complex');
+    }
     throw error;
   }
 }
@@ -503,25 +646,31 @@ async function scrapeProduct(url) {
   console.log(`\n📦 Processing: ${url}`);
   console.log(`   Retailer: ${retailer}`);
   
-  // Try Apify first WITH TIMEOUT
+  // STEP 1: Try Apify with proper timeout
   if (USE_APIFY) {
     try {
       console.log('   🔄 Attempting Apify scrape (30s timeout)...');
       
-      // Wrap Apify call in a timeout promise
-      const apifyPromise = apifyScraper.scrapeProduct(url);
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Apify timeout after 30s')), 30000)
-      );
+      // Create timeout promise
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Apify timeout after 30s')), 30000);
+      });
       
+      // Race between Apify and timeout
+      const apifyPromise = apifyScraper.scrapeProduct(url);
       productData = await Promise.race([apifyPromise, timeoutPromise]);
       
-      if (productData && productData.name && productData.name !== 'Unknown Product') {
+      // Check if we got good data
+      if (productData && 
+          productData.name && 
+          productData.name !== 'Unknown Product' && 
+          productData.price && 
+          productData.price > 0) {
         scrapingMethod = 'apify';
-        console.log('   ✅ Apify returned data');
+        console.log('   ✅ Apify returned complete data');
       } else {
-        console.log('   ⚠️ Apify returned incomplete data');
-        productData = null;
+        console.log('   ⚠️ Apify data incomplete, will try ScrapingBee');
+        // Don't null out productData yet - we might be able to merge it
       }
     } catch (error) {
       console.log('   ❌ Apify failed:', error.message);
@@ -529,56 +678,91 @@ async function scrapeProduct(url) {
     }
   }
   
-  // ALWAYS try ScrapingBee if Apify didn't get complete data
-  if (USE_SCRAPINGBEE && (!productData || !productData.price || productData.name === 'Unknown Product')) {
-    try {
-      console.log('   🐝 Attempting ScrapingBee AI extraction...');
-      const scrapingBeeData = await scrapeWithScrapingBee(url);
-      
-      if (scrapingBeeData) {
-        if (!productData || productData.name === 'Unknown Product') {
-          // Use ScrapingBee data completely
-          productData = scrapingBeeData;
-          scrapingMethod = 'scrapingbee';
-          console.log('   ✅ Using ScrapingBee data');
-        } else {
-          // Merge data - fill in missing fields
-          productData = {
-            name: productData.name !== 'Unknown Product' ? productData.name : scrapingBeeData.name,
-            price: productData.price || scrapingBeeData.price,
-            image: productData.image || scrapingBeeData.image,
-            dimensions: productData.dimensions || scrapingBeeData.dimensions,
-            weight: productData.weight || scrapingBeeData.weight,
-            brand: productData.brand || scrapingBeeData.brand,
-            category: productData.category || scrapingBeeData.category
-          };
-          scrapingMethod = 'apify+scrapingbee';
-          console.log('   ✅ Merged Apify + ScrapingBee data');
+  // STEP 2: Try ScrapingBee if Apify failed or incomplete
+  if (USE_SCRAPINGBEE) {
+    // Always try ScrapingBee for these retailers as Apify struggles with them
+    const difficultRetailers = ['Wayfair', 'Walmart', 'Target'];
+    const shouldTryScrapingBee = !productData || 
+                                  !productData.price || 
+                                  !productData.image ||
+                                  productData.name === 'Unknown Product' ||
+                                  difficultRetailers.includes(retailer);
+    
+    if (shouldTryScrapingBee) {
+      try {
+        console.log('   🐝 Attempting ScrapingBee extraction...');
+        const scrapingBeeData = await scrapeWithScrapingBee(url);
+        
+        if (scrapingBeeData) {
+          if (!productData || !productData.name || productData.name === 'Unknown Product') {
+            // Replace completely with ScrapingBee data
+            productData = scrapingBeeData;
+            scrapingMethod = 'scrapingbee';
+            console.log('   ✅ Using ScrapingBee data');
+          } else {
+            // Merge data - keep good data from both
+            const mergedData = {
+              name: productData.name !== 'Unknown Product' ? productData.name : scrapingBeeData.name,
+              price: productData.price || scrapingBeeData.price,
+              image: productData.image || scrapingBeeData.image,
+              dimensions: productData.dimensions || scrapingBeeData.dimensions,
+              weight: productData.weight || scrapingBeeData.weight,
+              brand: productData.brand || scrapingBeeData.brand,
+              category: productData.category || scrapingBeeData.category,
+              inStock: productData.inStock !== undefined ? productData.inStock : scrapingBeeData.inStock
+            };
+            
+            productData = mergedData;
+            scrapingMethod = 'apify+scrapingbee';
+            console.log('   ✅ Merged Apify + ScrapingBee data');
+            
+            // Log what was filled in
+            if (!productData.price && scrapingBeeData.price) {
+              console.log('     + ScrapingBee provided price');
+            }
+            if (!productData.image && scrapingBeeData.image) {
+              console.log('     + ScrapingBee provided image');
+            }
+          }
         }
+      } catch (error) {
+        console.log('   ❌ ScrapingBee failed:', error.message);
       }
-    } catch (error) {
-      console.log('   ❌ ScrapingBee failed:', error.message);
     }
   }
   
-  // Try UPCitemdb for dimensions
-  if (USE_UPCITEMDB && productData && productData.name && !productData.dimensions) {
+  // STEP 3: Try UPCitemdb for dimensions if we have a name
+  if (USE_UPCITEMDB && productData && productData.name && (!productData.dimensions || !productData.weight)) {
     try {
       console.log('   📦 Attempting UPCitemdb lookup...');
       const upcData = await upcItemDB.searchByName(productData.name);
       
-      if (upcData && upcData.dimensions) {
+      if (upcData) {
         const category = categorizeProduct(productData.name || '', url);
-        productData.dimensions = estimateBoxDimensions(upcData.dimensions, category);
-        console.log('   ✅ UPCitemdb provided dimensions');
-        scrapingMethod += '+upcitemdb';
+        
+        if (!productData.dimensions && upcData.dimensions) {
+          productData.dimensions = estimateBoxDimensions(upcData.dimensions, category);
+          console.log('   ✅ UPCitemdb provided dimensions');
+        }
+        
+        if (!productData.weight && upcData.weight) {
+          productData.weight = upcData.weight;
+          console.log('   ✅ UPCitemdb provided weight');
+        }
+        
+        if (!productData.image && upcData.image) {
+          productData.image = upcData.image;
+          console.log('   ✅ UPCitemdb provided image');
+        }
+        
+        scrapingMethod += scrapingMethod === 'none' ? 'upcitemdb' : '+upcitemdb';
       }
     } catch (error) {
       console.log('   ❌ UPCitemdb failed:', error.message);
     }
   }
   
-  // Fill missing data with BOL-based estimation
+  // STEP 4: Create a default if nothing worked
   if (!productData) {
     productData = {
       name: null,
@@ -588,13 +772,36 @@ async function scrapeProduct(url) {
       weight: null
     };
     scrapingMethod = 'estimation';
+    console.log('   ⚠️ All scraping methods failed');
   }
   
-  // Generate better product names for unknown items
-  const productName = productData.name && productData.name !== 'Unknown Product' 
-    ? productData.name 
-    : `${retailer} Item ${Date.now().toString().slice(-4)}`;
+  // Generate better product names
+  let productName = productData.name;
+  
+  // Check if name is missing or generic
+  if (!productName || productName === 'Unknown Product' || productName.includes('Product from')) {
+    // Try to extract something from the URL
+    const urlParts = url.split('/');
+    const lastPart = urlParts[urlParts.length - 1] || urlParts[urlParts.length - 2];
     
+    // Clean up common URL patterns
+    let urlHint = lastPart
+      .replace(/\.(html|htm|aspx|php|jsp)$/i, '')
+      .replace(/[?#].*$/, '')
+      .replace(/[-_]/g, ' ')
+      .slice(0, 30);
+    
+    if (urlHint && urlHint.length > 5) {
+      productName = `${retailer} - ${urlHint}...`;
+    } else {
+      // Use numbered naming as fallback
+      const timestamp = Date.now().toString().slice(-4);
+      productName = `${retailer} Item ${timestamp}`;
+    }
+    
+    console.log('   📝 Generated name:', productName);
+  }
+  
   const category = categorizeProduct(productName, url);
   
   // Use BOL-based estimation for missing dimensions
@@ -607,6 +814,21 @@ async function scrapeProduct(url) {
   if (!productData.weight) {
     productData.weight = estimateWeightFromBOL(productData.dimensions, category);
     console.log('   ⚖️ Applied BOL-based weight estimate');
+  }
+  
+  // Fix image URL if needed
+  if (!productData.image || productData.image === 'null' || productData.image === '') {
+    // Use a better placeholder with retailer branding
+    const placeholderColors = {
+      'Amazon': '7CB342/FFFFFF',
+      'Wayfair': 'BA68C8/FFFFFF',
+      'Walmart': '2196F3/FFFFFF',
+      'Target': 'F44336/FFFFFF',
+      'Unknown Retailer': '9E9E9E/FFFFFF'
+    };
+    const color = placeholderColors[retailer] || '7CB342/FFFFFF';
+    productData.image = `https://placehold.co/400x400/${color}/png?text=${encodeURIComponent(retailer)}`;
+    console.log('   🖼️ Using placeholder image');
   }
   
   // Calculate shipping cost
@@ -622,7 +844,7 @@ async function scrapeProduct(url) {
     url: url,
     name: productName,
     price: productData.price,
-    image: productData.image || 'https://placehold.co/400x400/7CB342/FFFFFF/png?text=SDL',
+    image: productData.image,
     category: category,
     retailer: retailer,
     dimensions: productData.dimensions,
@@ -630,37 +852,50 @@ async function scrapeProduct(url) {
     shippingCost: shippingCost,
     scrapingMethod: scrapingMethod,
     dataCompleteness: {
-      hasName: !!productData.name,
-      hasImage: !!productData.image,
+      hasName: !!productData.name && productData.name !== 'Unknown Product',
+      hasImage: !!productData.image && !productData.image.includes('placehold'),
       hasDimensions: !!productData.dimensions,
       hasWeight: !!productData.weight,
-      hasPrice: !!productData.price
+      hasPrice: !!productData.price && productData.price > 0
     }
   };
   
+  // Log final summary
   console.log(`   💰 Shipping cost: $${shippingCost}`);
   console.log(`   📊 Data source: ${scrapingMethod}`);
-  console.log(`   ✅ Product processed successfully\n`);
+  console.log(`   📈 Completeness: ${Object.values(product.dataCompleteness).filter(v => v).length}/5`);
+  console.log(`   ✅ Product processed\n`);
   
   return product;
 }
 
 // Batch processing with better error handling and sequential fallback
-async function processBatch(urls, batchSize = 1) {  // Process one at a time for reliability
+async function processBatch(urls, batchSize = 1) {
   const results = [];
-  const vendorCounts = {};  // Track item counts per vendor
+  const vendorCounts = {};
+  
+  console.log(`\n🚀 Starting sequential processing of ${urls.length} products...`);
+  console.log('   Strategy: Apify → ScrapingBee → UPCitemdb → BOL Estimation\n');
   
   for (let i = 0; i < urls.length; i++) {
     const url = urls[i];
-    console.log(`\n[${i + 1}/${urls.length}] Processing URL...`);
+    console.log(`[${i + 1}/${urls.length}] Processing URL...`);
     
     try {
       const product = await scrapeProduct(url);
       results.push(product);
-    } catch (error) {
-      console.error(`Failed to process ${url}:`, error.message);
       
-      // Create a fallback product with better naming
+      // Track successful scrapes
+      if (product.dataCompleteness.hasPrice) {
+        console.log(`   ✅ Successfully scraped: ${product.name.substring(0, 40)}...`);
+      } else {
+        console.log(`   ⚠️ Partial data for: ${product.name.substring(0, 40)}...`);
+      }
+      
+    } catch (error) {
+      console.error(`   ❌ Failed to process ${url}:`, error.message);
+      
+      // Create fallback product
       const retailer = detectRetailer(url);
       const vendorCount = (vendorCounts[retailer] || 0) + 1;
       vendorCounts[retailer] = vendorCount;
@@ -675,22 +910,41 @@ async function processBatch(urls, batchSize = 1) {  // Process one at a time for
         url: url,
         name: `${retailer} Item ${vendorCount}`,
         price: null,
-        image: 'https://placehold.co/400x400/7CB342/FFFFFF/png?text=No+Image',
+        image: `https://placehold.co/400x400/F44336/FFFFFF/png?text=Error`,
         category: category,
         retailer: retailer,
         dimensions: dimensions,
         weight: weight,
         shippingCost: shippingCost,
         scrapingMethod: 'failed',
-        error: true
+        error: true,
+        dataCompleteness: {
+          hasName: false,
+          hasImage: false,
+          hasDimensions: false,
+          hasWeight: false,
+          hasPrice: false
+        }
       });
     }
     
-    // Add a small delay between products to avoid rate limiting
+    // Add delay between products to avoid rate limiting
     if (i < urls.length - 1) {
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      console.log('   ⏳ Waiting 2 seconds before next product...');
+      await new Promise(resolve => setTimeout(resolve, 2000));
     }
   }
+  
+  // Log final summary
+  const successful = results.filter(p => p.dataCompleteness.hasPrice).length;
+  const partial = results.filter(p => !p.error && !p.dataCompleteness.hasPrice).length;
+  const failed = results.filter(p => p.error).length;
+  
+  console.log('\n📊 BATCH PROCESSING SUMMARY:');
+  console.log(`   ✅ Successful: ${successful}/${urls.length}`);
+  console.log(`   ⚠️ Partial data: ${partial}/${urls.length}`);
+  console.log(`   ❌ Failed: ${failed}/${urls.length}`);
+  console.log(`   📈 Success rate: ${((successful / urls.length) * 100).toFixed(1)}%\n`);
   
   return results;
 }
