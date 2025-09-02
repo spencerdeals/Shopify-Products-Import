@@ -1632,30 +1632,44 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
             
             const btn = document.getElementById('createOrderBtn');
             btn.disabled = true;
-            btn.textContent = 'Preparing order...';
+            btn.textContent = 'Preparing checkout...';
             
             try {
-                // Store order data
-                const response = await fetch('/api/store-pending-order', {
+                // Store order data and get redirect URL
+                const response = await fetch('/api/prepare-shopify-checkout', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(finalCalculation)
+                    body: JSON.stringify({
+                        ...finalCalculation,
+                        timestamp: new Date().toISOString()
+                    })
                 });
                 
-                if (!response.ok) {
-                    throw new Error('Failed to store order');
-                }
+                if (!response.ok) throw new Error('Failed to prepare checkout');
                 
-                const { orderId } = await response.json();
+                const { checkoutId, redirectUrl } = await response.json();
                 
-                // Redirect to Shopify or complete order
-                const shopifyUrl = `https://spencer-deals-ltd.myshopify.com/account/register?return_url=${encodeURIComponent(window.location.origin + '/complete-order.html?orderId=' + orderId)}`;
+                // Store checkout ID in session storage
+                sessionStorage.setItem('import_checkout_id', checkoutId);
                 
-                window.location.href = shopifyUrl;
+                // Show message before redirect
+                btn.textContent = 'Redirecting to checkout...';
+                
+                // Redirect to your Shopify site
+                // Use window.top to break out of iframe if embedded
+                setTimeout(() => {
+                    if (window.top !== window) {
+                        // We're in an iframe
+                        window.top.location.href = redirectUrl;
+                    } else {
+                        // Normal redirect
+                        window.location.href = redirectUrl;
+                    }
+                }, 1000);
                 
             } catch (error) {
-                console.error('Error preparing order:', error);
-                alert('Failed to prepare order. Please try again or contact support.');
+                console.error('Error preparing checkout:', error);
+                alert('Failed to prepare checkout. Please try again or contact support.');
                 btn.disabled = false;
                 btn.textContent = 'Confirm & Create Order';
             }
