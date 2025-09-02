@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Instant Imports - Ocean Freight Calculator</title>
+    <title>SDL Instant Imports - Ocean Freight Calculator</title>
     <style>
         * {
             margin: 0;
@@ -1021,6 +1021,7 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
         let vendorGroups = {};
         let finalCalculation = null;
         let confirmedPrices = new Set();
+        let confirmedDeliveryFees = new Set();
 
         // Check if URL is from SDL
         function isSDLDomain(url) {
@@ -1097,6 +1098,7 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
             vendorGroups = {};
             finalCalculation = null;
             confirmedPrices.clear();
+            confirmedDeliveryFees.clear();
             document.getElementById('continueToFinal').disabled = true;
             document.getElementById('createOrderBtn').disabled = true;
             document.getElementById('confirmVariants').checked = false;
@@ -1219,6 +1221,56 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
                 const continueBtn = document.getElementById('continueToFinal');
                 continueBtn.style.animation = 'pulse 2s infinite';
             }
+        }
+
+        // Delivery fee functions
+        function handleDeliveryFeeChange(vendor) {
+            const input = document.getElementById(`delivery-${vendor}`);
+            const confirmBtn = document.getElementById(`confirm-delivery-${vendor}`);
+            const statusDiv = document.getElementById(`delivery-status-${vendor}`);
+            
+            // If value changed after confirmation, unconfirm it
+            if (confirmedDeliveryFees.has(vendor)) {
+                confirmedDeliveryFees.delete(vendor);
+                input.classList.remove('confirmed');
+                confirmBtn.textContent = '✓ Confirm';
+                confirmBtn.classList.remove('confirmed');
+                confirmBtn.disabled = false;
+                statusDiv.textContent = '⏳ Please confirm the new delivery fee';
+                statusDiv.className = 'price-status pending';
+            }
+            
+            // Update visual state
+            if (parseFloat(input.value) > 0) {
+                input.classList.add('has-value');
+            } else {
+                input.classList.remove('has-value');
+            }
+        }
+
+        function confirmDeliveryFee(vendor) {
+            const input = document.getElementById(`delivery-${vendor}`);
+            const confirmBtn = document.getElementById(`confirm-delivery-${vendor}`);
+            const statusDiv = document.getElementById(`delivery-status-${vendor}`);
+            const fee = parseFloat(input.value) || 0;
+            
+            // Mark as confirmed
+            confirmedDeliveryFees.add(vendor);
+            
+            // Update UI
+            input.classList.add('confirmed');
+            input.disabled = true;
+            
+            confirmBtn.textContent = 'Confirmed ✓';
+            confirmBtn.classList.add('confirmed');
+            confirmBtn.disabled = true;
+            
+            if (fee > 0) {
+                statusDiv.textContent = `✓ Delivery fee confirmed: $${fee.toFixed(2)}`;
+            } else {
+                statusDiv.textContent = '✓ Confirmed - Free delivery to NJ';
+            }
+            statusDiv.className = 'price-status confirmed';
         }
 
         // Handle form submission
@@ -1408,9 +1460,31 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
                             <strong>${vendor} Delivery Fee (if any):</strong><br>
                             <small>Enter any shipping charges from ${vendor} to our New Jersey address:</small>
                         </label>
-                        <div style="display: flex; align-items: center; margin-top: 10px;">
-                            <span style="margin-right: 10px; font-size: 18px;">$</span>
-                            <input type="number" id="delivery-${vendor}" step="0.01" min="0" value="0" placeholder="0.00">
+                        <div class="price-input-container" style="margin-top: 10px;">
+                            <div class="price-input">
+                                <span>$</span>
+                                <input type="number" 
+                                       id="delivery-${vendor}" 
+                                       step="0.01" 
+                                       min="0" 
+                                       value="0" 
+                                       placeholder="0.00"
+                                       onchange="handleDeliveryFeeChange('${vendor}')">
+                            </div>
+                            <div class="price-buttons">
+                                <button type="button" class="price-btn check-price-btn"
+                                        onclick="alert('Calculate shipping to:\\n\\nSealine Freight Forwarder\\n614 Progress Street\\nElizabeth, NJ 07201')">
+                                    📍 Show Address
+                                </button>
+                                <button type="button" id="confirm-delivery-${vendor}"
+                                        class="price-btn confirm-price-btn"
+                                        onclick="confirmDeliveryFee('${vendor}')">
+                                    ✓ Confirm
+                                </button>
+                            </div>
+                        </div>
+                        <div id="delivery-status-${vendor}" class="price-status pending">
+                            ⏳ Please verify and confirm delivery fee (enter 0 if free shipping)
                         </div>
                     </div>
                 `;
@@ -1462,16 +1536,32 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
         }
 
         async function calculateAndProceed() {
-            // Count unconfirmed prices
+            // Check unconfirmed product prices
             const unconfirmedInputs = Array.from(document.querySelectorAll('.price-input input:not(.confirmed):not(.deleted .price-input input)'));
-            const unconfirmedCount = unconfirmedInputs.filter(input => {
+            const activeInputs = unconfirmedInputs.filter(input => {
                 const productItem = input.closest('.product-item');
                 return productItem && !productItem.classList.contains('deleted');
-            }).length;
+            });
             
-            if (unconfirmedCount > 0) {
-                const proceed = confirm(`You have ${unconfirmedCount} unconfirmed price(s). These may cause delays. Continue anyway?`);
-                if (!proceed) return;
+            // Check unconfirmed delivery fees
+            const vendorsWithFees = Object.keys(vendorGroups).filter(vendor => {
+                const input = document.getElementById(`delivery-${vendor}`);
+                return input && parseFloat(input.value) > 0;
+            });
+            
+            const unconfirmedDeliveryFees = vendorsWithFees.filter(vendor => !confirmedDeliveryFees.has(vendor));
+            
+            let warningMessage = '';
+            if (activeInputs.length > 0) {
+                warningMessage += `You have ${activeInputs.length} unconfirmed product price(s).\n`;
+            }
+            if (unconfirmedDeliveryFees.length > 0) {
+                warningMessage += `You have ${unconfirmedDeliveryFees.length} unconfirmed delivery fee(s).\n`;
+            }
+            
+            if (warningMessage) {
+                warningMessage += '\nUnconfirmed values may cause delays. Continue anyway?';
+                if (!confirm(warningMessage)) return;
             }
             
             // Collect delivery fees
