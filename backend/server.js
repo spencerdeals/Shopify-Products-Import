@@ -738,7 +738,7 @@ app.post('/apps/instant-import/create-draft-order', async (req, res) => {
       }
     });
     
-    // Add fees
+    // Add duty as a line item
     if (totals.dutyAmount > 0) {
       lineItems.push({
         title: 'Bermuda Import Duty (26.5%)',
@@ -748,6 +748,7 @@ app.post('/apps/instant-import/create-draft-order', async (req, res) => {
       });
     }
     
+    // Add delivery fees as line items
     Object.entries(deliveryFees).forEach(([vendor, fee]) => {
       if (fee > 0) {
         lineItems.push({
@@ -759,10 +760,11 @@ app.post('/apps/instant-import/create-draft-order', async (req, res) => {
       }
     });
     
-    if (totals.totalShippingCost > 0) {
+    // Add combined shipping & handling (includes SDL margin)
+    if (totals.totalShippingAndHandling > 0) {
       lineItems.push({
-        title: 'Ocean Freight & Handling to Bermuda',
-        price: totals.totalShippingCost.toFixed(2),
+        title: 'Shipping & Handling to Bermuda',
+        price: totals.totalShippingAndHandling.toFixed(2),
         quantity: 1,
         taxable: false
       });
