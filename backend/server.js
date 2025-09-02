@@ -229,13 +229,33 @@ app.get('/health', (req, res) => {
 const scrapeRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 50,
-  message: 'Too many scraping requests, please try again later'
+  message: 'Too many scraping requests, please try again later',
+  standardHeaders: true,
+  legacyHeaders: false,
+  // Fix for Railway deployment
+  keyGenerator: (req) => {
+    return req.headers['x-forwarded-for']?.split(',')[0] || 
+           req.connection.remoteAddress || 
+           req.ip;
+  },
+  skip: (req) => {
+    // Skip rate limiting for health checks
+    return req.path === '/health';
+  }
 });
 
 const orderRateLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   max: 10,
-  message: 'Too many order attempts, please try again later'
+  message: 'Too many order attempts, please try again later',
+  standardHeaders: true,
+  legacyHeaders: false,
+  // Fix for Railway deployment
+  keyGenerator: (req) => {
+    return req.headers['x-forwarded-for']?.split(',')[0] || 
+           req.connection.remoteAddress || 
+           req.ip;
+  }
 });
 
 // Utilities
