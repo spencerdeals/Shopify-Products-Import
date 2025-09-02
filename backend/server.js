@@ -18,8 +18,8 @@ const SHOPIFY_WEBHOOK_SECRET = process.env.SHOPIFY_WEBHOOK_SECRET || '';
 const SCRAPINGBEE_API_KEY = process.env.SCRAPINGBEE_API_KEY || '7Z45R9U0PVA9SCI5P4R6RACA0PZUVSWDGNXCZ0OV0EXA17FAVC0PANLM6FAFDDO1PE7MRSZX4JT3SDIG';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'sdl2024admin';
 const BERMUDA_DUTY_RATE = 0.265;
-const SHIPPING_RATE_PER_CUBIC_FOOT = 6;  // Changed from 8 to 6
-const SDL_MARGIN_RATE = 0.15;
+const SHIPPING_RATE_PER_CUBIC_FOOT = 6;
+const CARD_FEE_RATE = 0.0325;  // 3.25% card processing fee
 const TEST_MODE = process.env.TEST_MODE === 'true';
 
 // Email configuration (optional)
@@ -174,6 +174,7 @@ console.log(`Port: ${PORT}`);
 console.log(`Shopify: ${SHOPIFY_ACCESS_TOKEN ? 'CONNECTED' : 'NOT CONFIGURED'}`);
 console.log(`Email: ${sendgrid ? 'ENABLED' : 'DISABLED'}`);
 console.log(`Google Sheets: ${GOOGLE_SERVICE_ACCOUNT_KEY ? 'ENABLED' : 'DISABLED'}`);
+console.log('Margin Structure: TIERED (40%/30%/25%/20% by volume)');
 console.log('====================================\n');
 
 // Middleware
@@ -209,6 +210,7 @@ app.get('/health', (req, res) => {
     status: 'OK',
     timestamp: new Date().toISOString(),
     environment: TEST_MODE ? 'test' : 'production',
+    marginStructure: 'tiered',
     services: {
       shopify: !!SHOPIFY_ACCESS_TOKEN,
       email: !!sendgrid,
@@ -356,9 +358,10 @@ function getLearnedData(url) {
   return null;
 }
 
-function estimateDimensionsFromBOL(category, name = '') {
+function estimateDimensionsFromBOL(category, name = '', retailer = '') {
   const text = name.toLowerCase();
   
+  // Check learned patterns first
   if (LEARNING_DB.patterns[category] && LEARNING_DB.patterns[category].dimensions.length > 0) {
     const dims = LEARNING_DB.patterns[category].dimensions;
     const avgDim = dims[dims.length - 1];
@@ -368,6 +371,29 @@ function estimateDimensionsFromBOL(category, name = '') {
   const patterns = BOL_PATTERNS[category] || BOL_PATTERNS.general;
   
   if (category === 'furniture') {
+    // Flat-pack retailers: reduce dimensions by 10% to account for reality (conservative)
+    if (retailer === 'Wayfair' || retailer === 'IKEA' || retailer === 'Amazon') {
+      let baseDims;
+      
+      if (text.includes('sofa') || text.includes('couch')) {
+        baseDims = patterns.dimensions.sofa;
+      } else if (text.includes('chair')) {
+        baseDims = patterns.dimensions.chair;
+      } else if (text.includes('table')) {
+        baseDims = patterns.dimensions.table;
+      } else {
+        baseDims = patterns.dimensions.default;
+      }
+      
+      // Reduce volume by ~10% for flat-pack reality (keeping buffer)
+      return {
+        length: baseDims.length,
+        width: Math.round(baseDims.width * 0.9),
+        height: Math.round(baseDims.height * 0.9)
+      };
+    }
+    
+    // Traditional furniture stores - use full dimensions
     if (text.includes('sofa') || text.includes('couch')) return patterns.dimensions.sofa;
     if (text.includes('chair')) return patterns.dimensions.chair;
     if (text.includes('table')) return patterns.dimensions.table;
@@ -398,6 +424,41 @@ function estimateWeightFromBOL(dimensions, category) {
   const weightPerCubic = patterns.avgWeight / patterns.avgCubicFeet;
   const estimatedWeight = Math.max(10, cubicFeet * weightPerCubic);
   return Math.round(estimatedWeight);
+}
+
+// ==================== NEW TIERED MARGIN CALCULATION ====================
+
+function calculateSDLMargin(cubicFeet, landedCost) {
+  // Volume-based tiers
+  let marginRate;
+  if (cubicFeet < 10) {
+    marginRate = 0.40;  // 40%
+  } else if (cubicFeet < 20) {
+    marginRate = 0.30;  // 30%
+  } else if (cubicFeet < 50) {
+    marginRate = 0.25;  // 25%
+  } else {
+    marginRate = 0.20;  // 20%
+  }
+  
+  // Value caps - use the smaller of volume tier and cap
+  if (landedCost > 5000) {
+    marginRate = Math.min(marginRate, 0.15);  // Max 15%
+  } else if (landedCost > 3000) {
+    marginRate = Math.min(marginRate, 0.20);  // Max 20%
+  } else if (landedCost > 1000) {
+    marginRate = Math.min(marginRate, 0.25);  // Max 25%
+  }
+  
+  console.log(`   📊 Margin calculation: ${cubicFeet.toFixed(1)} ft³, $${landedCost.toFixed(2)} → ${(marginRate * 100).toFixed(0)}%`);
+  
+  return marginRate;
+}
+
+function roundToNinetyFive(amount) {
+  // Round to nearest .95 ending
+  const rounded = Math.floor(amount) + 0.95;
+  return rounded;
 }
 
 function calculateShippingCost(dimensions, weight, price) {
@@ -598,7 +659,7 @@ async function scrapeWithScrapingBee(url) {
   }
 }
 
-// Process product
+// Process product with TIERED MARGIN calculation
 async function processProduct(url, index, total) {
   console.log(`\n[${index}/${total}] Processing: ${url.substring(0, 80)}...`);
   
@@ -621,9 +682,29 @@ async function processProduct(url, index, total) {
   
   const productName = scraped.title || `${retailer} Product ${index}`;
   const category = categorizeProduct(productName, url);
-  const dimensions = estimateDimensionsFromBOL(category, productName);
+  const dimensions = estimateDimensionsFromBOL(category, productName, retailer);
   const weight = estimateWeightFromBOL(dimensions, category);
-  const shippingCost = calculateShippingCost(dimensions, weight, scraped.price || 100);
+  
+  // Calculate cubic feet for margin calculation
+  const cubicInches = dimensions.length * dimensions.width * dimensions.height;
+  const cubicFeet = cubicInches / 1728;
+  
+  // Base shipping cost
+  const baseShippingCost = calculateShippingCost(dimensions, weight, scraped.price || 100);
+  
+  // Calculate landed cost for margin determination
+  const itemPrice = scraped.price || 100;
+  const duty = itemPrice * BERMUDA_DUTY_RATE;
+  const landedCostPreMargin = itemPrice + duty + baseShippingCost;
+  
+  // Get the appropriate margin rate
+  const marginRate = calculateSDLMargin(cubicFeet, landedCostPreMargin);
+  
+  // Calculate margin amount
+  const marginAmount = landedCostPreMargin * marginRate;
+  
+  // Total shipping with margin included
+  const totalShippingWithMargin = baseShippingCost + marginAmount;
   
   const product = {
     id: productId,
@@ -635,7 +716,11 @@ async function processProduct(url, index, total) {
     retailer: retailer,
     dimensions: dimensions,
     weight: weight,
-    shippingCost: shippingCost,
+    cubicFeet: cubicFeet,
+    baseShippingCost: baseShippingCost,
+    shippingCost: totalShippingWithMargin,  // This includes margin
+    marginRate: marginRate,
+    marginAmount: marginAmount,
     scrapingMethod: scraped.price ? 'scrapingbee' : 'estimated',
     dataCompleteness: {
       hasName: !!scraped.title,
@@ -649,7 +734,9 @@ async function processProduct(url, index, total) {
   learnFromProduct(url, product);
   
   console.log(`   Price: ${scraped.price ? '$' + scraped.price : 'Not found'}`);
-  console.log(`   Shipping: $${shippingCost}`);
+  console.log(`   Volume: ${cubicFeet.toFixed(1)} ft³`);
+  console.log(`   Margin: ${(marginRate * 100).toFixed(0)}% ($${marginAmount.toFixed(2)})`);
+  console.log(`   Total Shipping: $${totalShippingWithMargin.toFixed(2)}`);
   
   return product;
 }
@@ -673,7 +760,8 @@ async function sendOrderEmail(orderData) {
         ${orderData.products.map(p => `
           <p>• ${p.name}<br>
           URL: ${p.url}<br>
-          Price: $${p.price}</p>
+          Price: $${p.price}<br>
+          Margin: ${(p.marginRate * 100).toFixed(0)}%</p>
         `).join('')}
         <hr>
         <p><strong>⚠️ ACTION REQUIRED: Order these items from the vendors!</strong></p>
@@ -767,6 +855,7 @@ app.post('/api/scrape', scrapeRateLimiter, async (req, res) => {
     
     console.log(`\n========================================`);
     console.log(`BATCH SCRAPE: ${urls.length} products`);
+    console.log(`Margin Structure: TIERED`);
     console.log(`========================================`);
     
     const products = [];
@@ -791,7 +880,10 @@ app.post('/api/scrape', scrapeRateLimiter, async (req, res) => {
           retailer: retailer,
           dimensions: BOL_PATTERNS.general.dimensions.default,
           weight: 50,
+          cubicFeet: 25,
           shippingCost: 100,
+          marginRate: 0.25,
+          marginAmount: 25,
           scrapingMethod: 'error',
           error: true,
           dataCompleteness: {
@@ -818,6 +910,14 @@ app.post('/api/scrape', scrapeRateLimiter, async (req, res) => {
     console.log(`  Scraped: ${successful - fromCache}`);
     console.log(`  From cache: ${fromCache}`);
     console.log(`  Failed: ${products.length - successful}`);
+    
+    // Log margin distribution
+    const marginSummary = products.reduce((acc, p) => {
+      const rate = Math.round((p.marginRate || 0.25) * 100);
+      acc[rate] = (acc[rate] || 0) + 1;
+      return acc;
+    }, {});
+    console.log(`  Margin distribution:`, marginSummary);
     console.log(`========================================\n`);
     
     res.json({ 
@@ -826,7 +926,8 @@ app.post('/api/scrape', scrapeRateLimiter, async (req, res) => {
         total: products.length,
         scraped: successful,
         fromCache: fromCache,
-        failed: products.length - successful
+        failed: products.length - successful,
+        marginDistribution: marginSummary
       }
     });
     
@@ -836,11 +937,32 @@ app.post('/api/scrape', scrapeRateLimiter, async (req, res) => {
   }
 });
 
-// Create checkout/draft order with IMPORT visibility
+// Create checkout/draft order with IMPORT visibility and TIERED MARGINS
 app.post('/api/prepare-shopify-checkout', orderRateLimiter, async (req, res) => {
   try {
     const checkoutData = req.body;
     const orderId = generateOrderId();
+    
+    // Recalculate with proper margins for final order
+    let totalWithMargins = 0;
+    let totalCardFees = 0;
+    
+    // Calculate totals with card fees
+    checkoutData.products.forEach(product => {
+      if (product.price && product.price > 0) {
+        const duty = product.price * BERMUDA_DUTY_RATE;
+        const baseTotal = product.price + duty + (product.shippingCost || 0);
+        totalWithMargins += baseTotal;
+      }
+    });
+    
+    // Add card processing fee
+    totalCardFees = totalWithMargins * CARD_FEE_RATE;
+    const finalGrandTotal = roundToNinetyFive(totalWithMargins + totalCardFees);
+    
+    // Update totals
+    checkoutData.totals.cardFees = totalCardFees;
+    checkoutData.totals.grandTotal = finalGrandTotal;
     
     // Store order in database
     const order = storeOrder({
@@ -867,7 +989,7 @@ app.post('/api/prepare-shopify-checkout', orderRateLimiter, async (req, res) => 
     // Create Shopify draft order
     const lineItems = [];
     
-    // Add products
+    // Add products with margin info
     checkoutData.products.forEach(product => {
       if (product.price && product.price > 0) {
         lineItems.push({
@@ -877,7 +999,9 @@ app.post('/api/prepare-shopify-checkout', orderRateLimiter, async (req, res) => 
           properties: [
             { name: 'Source URL', value: product.url },
             { name: 'Retailer', value: product.retailer },
-            { name: 'Category', value: product.category }
+            { name: 'Category', value: product.category },
+            { name: 'Volume', value: `${(product.cubicFeet || 0).toFixed(1)} ft³` },
+            { name: 'Margin Rate', value: `${((product.marginRate || 0.25) * 100).toFixed(0)}%` }
           ]
         });
       }
@@ -905,11 +1029,21 @@ app.post('/api/prepare-shopify-checkout', orderRateLimiter, async (req, res) => 
       }
     });
     
-    // Add shipping & handling
+    // Add shipping & handling (includes margin)
     if (checkoutData.totals.totalShippingAndHandling > 0) {
       lineItems.push({
         title: 'Ocean Freight & Handling to Bermuda',
         price: checkoutData.totals.totalShippingAndHandling.toFixed(2),
+        quantity: 1,
+        taxable: false
+      });
+    }
+    
+    // Add card processing fee
+    if (totalCardFees > 0) {
+      lineItems.push({
+        title: 'Card Processing Fee (3.25%)',
+        price: totalCardFees.toFixed(2),
         quantity: 1,
         taxable: false
       });
@@ -925,14 +1059,19 @@ app.post('/api/prepare-shopify-checkout', orderRateLimiter, async (req, res) => 
 
 Order ID: ${orderId}
 Created: ${new Date().toISOString()}
+Margin Structure: TIERED
 
 PRODUCTS TO ORDER:
-${checkoutData.products.map(p => `• ${p.name}\n  URL: ${p.url}\n  Price: $${p.price}`).join('\n\n')}
+${checkoutData.products.map(p => `• ${p.name}
+  URL: ${p.url}
+  Price: $${p.price}
+  Volume: ${(p.cubicFeet || 0).toFixed(1)} ft³
+  Margin: ${((p.marginRate || 0.25) * 100).toFixed(0)}%`).join('\n\n')}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 After ordering from vendors, update stage to "Ordered from Vendor"`,
         
-        tags: '🚨IMPORT-ACTION-REQUIRED, import-calculator, stage-1-payment-received, needs-vendor-order',
+        tags: '🚨IMPORT-ACTION-REQUIRED, import-calculator, stage-1-payment-received, needs-vendor-order, tiered-margin',
         tax_exempt: true,
         send_receipt: true,
         send_fulfillment_receipt: true,
@@ -941,7 +1080,8 @@ After ordering from vendors, update stage to "Ordered from Vendor"`,
           { name: '📦 STATUS', value: 'NEEDS VENDOR ORDERING' },
           { name: 'import_order', value: 'true' },
           { name: 'order_id', value: orderId },
-          { name: 'current_stage', value: '1' }
+          { name: 'current_stage', value: '1' },
+          { name: 'margin_structure', value: 'tiered' }
         ]
       }
     };
@@ -973,7 +1113,7 @@ After ordering from vendors, update stage to "Ordered from Vendor"`,
     order.shopifyInvoiceUrl = draftOrder.invoice_url;
     saveOrdersDB();
     
-    console.log(`✅ Import draft order ${draftOrder.name} created with ACTION REQUIRED flag`);
+    console.log(`✅ Import draft order ${draftOrder.name} created with TIERED margins`);
     
     // Return the invoice URL for direct checkout
     res.json({
@@ -1096,13 +1236,14 @@ app.post('/api/admin/order/:orderId/stage', async (req, res) => {
   });
 });
 
-// Learning insights
+// Learning insights with margin analysis
 app.get('/api/learning-insights', (req, res) => {
   const insights = {
     total_products_learned: Object.keys(LEARNING_DB.products).length,
     categories_tracked: Object.keys(LEARNING_DB.patterns),
     retailer_success_rates: {},
-    recent_products: []
+    recent_products: [],
+    margin_structure: 'tiered'
   };
   
   Object.entries(LEARNING_DB.retailer_stats).forEach(([retailer, stats]) => {
@@ -1120,7 +1261,8 @@ app.get('/api/learning-insights', (req, res) => {
     name: p.name,
     price: p.price,
     retailer: p.retailer,
-    times_seen: p.times_seen
+    times_seen: p.times_seen,
+    margin_rate: p.marginRate || 0.25
   }));
   
   res.json(insights);
@@ -1176,7 +1318,9 @@ if (TEST_MODE) {
           name: 'Test Product 1',
           price: 99.99,
           url: 'https://example.com/product1',
-          retailer: 'Test Store'
+          retailer: 'Test Store',
+          cubicFeet: 5,
+          marginRate: 0.40
         }
       ],
       totals: {
@@ -1231,6 +1375,7 @@ app.listen(PORT, () => {
   console.log(`📍 Frontend: http://localhost:${PORT}`);
   console.log(`💚 Health: http://localhost:${PORT}/health`);
   console.log(`📊 Admin Orders: http://localhost:${PORT}/api/admin/orders?password=${ADMIN_PASSWORD}`);
+  console.log(`💰 Margin Structure: TIERED (40%/30%/25%/20% by volume)`);
   if (TEST_MODE) {
     console.log(`🧪 Test Mode: ENABLED`);
     console.log(`   - Create test order: /api/test/create-sample-order`);
