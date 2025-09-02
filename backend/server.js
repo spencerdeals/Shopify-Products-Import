@@ -437,7 +437,7 @@ async function scrapeWithScrapingBee(url) {
   }
 }
 
-// Main product scraping function
+// Main product scraping function with better timeout handling
 async function scrapeProduct(url) {
   const productId = generateProductId();
   const retailer = detectRetailer(url);
@@ -448,39 +448,57 @@ async function scrapeProduct(url) {
   console.log(`\n📦 Processing: ${url}`);
   console.log(`   Retailer: ${retailer}`);
   
-  // Try Apify first
+  // Try Apify first WITH TIMEOUT
   if (USE_APIFY) {
     try {
-      console.log('   🔄 Attempting Apify scrape...');
-      productData = await apifyScraper.scrapeProduct(url);
-      if (productData) {
+      console.log('   🔄 Attempting Apify scrape (30s timeout)...');
+      
+      // Wrap Apify call in a timeout promise
+      const apifyPromise = apifyScraper.scrapeProduct(url);
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Apify timeout after 30s')), 30000)
+      );
+      
+      productData = await Promise.race([apifyPromise, timeoutPromise]);
+      
+      if (productData && productData.name && productData.name !== 'Unknown Product') {
         scrapingMethod = 'apify';
         console.log('   ✅ Apify returned data');
+      } else {
+        console.log('   ⚠️ Apify returned incomplete data');
+        productData = null;
       }
     } catch (error) {
       console.log('   ❌ Apify failed:', error.message);
+      productData = null;
     }
   }
   
-  // Try ScrapingBee if needed
-  if (USE_SCRAPINGBEE && (!productData || !productData.price)) {
+  // ALWAYS try ScrapingBee if Apify didn't get complete data
+  if (USE_SCRAPINGBEE && (!productData || !productData.price || productData.name === 'Unknown Product')) {
     try {
       console.log('   🐝 Attempting ScrapingBee AI extraction...');
       const scrapingBeeData = await scrapeWithScrapingBee(url);
       
       if (scrapingBeeData) {
-        if (!productData) {
+        if (!productData || productData.name === 'Unknown Product') {
+          // Use ScrapingBee data completely
           productData = scrapingBeeData;
           scrapingMethod = 'scrapingbee';
+          console.log('   ✅ Using ScrapingBee data');
         } else {
-          // Merge data
+          // Merge data - fill in missing fields
           productData = {
-            ...productData,
+            name: productData.name !== 'Unknown Product' ? productData.name : scrapingBeeData.name,
             price: productData.price || scrapingBeeData.price,
+            image: productData.image || scrapingBeeData.image,
             dimensions: productData.dimensions || scrapingBeeData.dimensions,
-            weight: productData.weight || scrapingBeeData.weight
+            weight: productData.weight || scrapingBeeData.weight,
+            brand: productData.brand || scrapingBeeData.brand,
+            category: productData.category || scrapingBeeData.category
           };
           scrapingMethod = 'apify+scrapingbee';
+          console.log('   ✅ Merged Apify + ScrapingBee data');
         }
       }
     } catch (error) {
@@ -568,27 +586,49 @@ async function scrapeProduct(url) {
   return product;
 }
 
-// Batch processing
-async function processBatch(urls, batchSize = MAX_CONCURRENT_SCRAPES) {
+// Batch processing with better error handling and sequential fallback
+async function processBatch(urls, batchSize = 1) {  // Process one at a time for reliability
   const results = [];
-  for (let i = 0; i < urls.length; i += batchSize) {
-    const batch = urls.slice(i, i + batchSize);
-    const batchResults = await Promise.all(
-      batch.map(url => scrapeProduct(url).catch(error => {
-        console.error(`Failed to process ${url}:`, error);
-        return {
-          id: generateProductId(),
-          url: url,
-          name: 'Failed to load product',
-          category: 'general',
-          retailer: detectRetailer(url),
-          shippingCost: 50,
-          error: true
-        };
-      }))
-    );
-    results.push(...batchResults);
+  
+  for (let i = 0; i < urls.length; i++) {
+    const url = urls[i];
+    console.log(`\n[${i + 1}/${urls.length}] Processing URL...`);
+    
+    try {
+      const product = await scrapeProduct(url);
+      results.push(product);
+    } catch (error) {
+      console.error(`Failed to process ${url}:`, error.message);
+      
+      // Create a fallback product with estimation
+      const retailer = detectRetailer(url);
+      const category = 'general';
+      const dimensions = estimateDimensionsFromBOL(category, '');
+      const weight = estimateWeightFromBOL(dimensions, category);
+      const shippingCost = calculateShippingCost(dimensions, weight, 100);
+      
+      results.push({
+        id: generateProductId(),
+        url: url,
+        name: `Product from ${retailer} (Unable to load details)`,
+        price: null,
+        image: 'https://placehold.co/400x400/7CB342/FFFFFF/png?text=No+Image',
+        category: category,
+        retailer: retailer,
+        dimensions: dimensions,
+        weight: weight,
+        shippingCost: shippingCost,
+        scrapingMethod: 'failed',
+        error: true
+      });
+    }
+    
+    // Add a small delay between products to avoid rate limiting
+    if (i < urls.length - 1) {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
   }
+  
   return results;
 }
 
