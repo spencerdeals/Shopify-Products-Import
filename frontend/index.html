@@ -927,13 +927,13 @@ You can add as many as you'd like!"
             const shipping = product.shippingCost || 50;
             const subtotal = price + duty + shipping;
             const sdlMargin = subtotal * 0.15;
-            const totalLanded = subtotal + sdlMargin;
+            const shippingAndHandling = shipping + sdlMargin;  // Combined
+            const totalLanded = price + duty + shippingAndHandling;
             
-            document.getElementById(`item-cost-${productId}`).textContent = `$${price.toFixed(2)}`;
-            document.getElementById(`duty-cost-${productId}`).textContent = `$${duty.toFixed(2)}`;
-            document.getElementById(`shipping-cost-${productId}`).textContent = `$${shipping.toFixed(2)}`;
-            document.getElementById(`service-cost-${productId}`).textContent = `$${sdlMargin.toFixed(2)}`;
-            document.getElementById(`total-cost-${productId}`).textContent = `$${totalLanded.toFixed(2)}`;
+            document.getElementById(`item-cost-${productId}`).textContent = `${price.toFixed(2)}`;
+            document.getElementById(`duty-cost-${productId}`).textContent = `${duty.toFixed(2)}`;
+            document.getElementById(`shipping-cost-${productId}`).textContent = `${shippingAndHandling.toFixed(2)}`;
+            document.getElementById(`total-cost-${productId}`).textContent = `${totalLanded.toFixed(2)}`;
             
             document.getElementById(`cost-summary-${productId}`).classList.add('visible');
             
@@ -1144,12 +1144,8 @@ You can add as many as you'd like!"
                                         <span id="duty-cost-${productId}">$0.00</span>
                                     </div>
                                     <div class="cost-summary-row">
-                                        <span>Ocean Freight:</span>
+                                        <span>Shipping & Handling:</span>
                                         <span id="shipping-cost-${productId}">$0.00</span>
-                                    </div>
-                                    <div class="cost-summary-row">
-                                        <span>SDL Service (15%):</span>
-                                        <span id="service-cost-${productId}">$0.00</span>
                                     </div>
                                     <div class="cost-summary-row cost-summary-total">
                                         <span>Total Landed Cost:</span>
@@ -1269,7 +1265,8 @@ You can add as many as you'd like!"
             const dutyAmount = totalItemCost * 0.265;
             const subtotal = totalItemCost + dutyAmount + totalDeliveryFees + totalShippingCost;
             const sdlMargin = subtotal * 0.15;
-            const grandTotal = subtotal + sdlMargin;
+            const totalShippingAndHandling = totalShippingCost + sdlMargin;  // Combined
+            const grandTotal = totalItemCost + dutyAmount + totalDeliveryFees + totalShippingAndHandling;
             
             return {
                 products: activeProducts,
@@ -1279,8 +1276,7 @@ You can add as many as you'd like!"
                     totalItemCost,
                     dutyAmount,
                     totalDeliveryFees,
-                    totalShippingCost,
-                    sdlMargin,
+                    totalShippingAndHandling,  // Combined shipping + SDL margin
                     grandTotal
                 },
                 originalUrls: document.getElementById('productUrls').value
@@ -1304,17 +1300,17 @@ You can add as many as you'd like!"
                     const shipping = product.shippingCost || 50;
                     const subtotal = product.price + duty + shipping;
                     const sdlMargin = subtotal * 0.15;
-                    const totalLanded = subtotal + sdlMargin;
+                    const shippingAndHandling = shipping + sdlMargin;  // Combined
+                    const totalLanded = product.price + duty + shippingAndHandling;
                     
                     productBreakdown += `
                         <div style="background: #f0f0f0; padding: 10px; margin-bottom: 10px; border-radius: 8px;">
                             <div style="font-weight: 600; margin-bottom: 5px;">${product.name.substring(0, 50)}...</div>
                             <div style="font-size: 12px; color: #666;">
-                                Price: $${product.price.toFixed(2)} + 
-                                Duty: $${duty.toFixed(2)} + 
-                                Shipping: $${shipping.toFixed(2)} + 
-                                SDL: $${sdlMargin.toFixed(2)} = 
-                                <strong style="color: #2e7d32;">$${totalLanded.toFixed(2)}</strong>
+                                Price: ${product.price.toFixed(2)} + 
+                                Duty: ${duty.toFixed(2)} + 
+                                Shipping & Handling: ${shippingAndHandling.toFixed(2)} = 
+                                <strong style="color: #2e7d32;">${totalLanded.toFixed(2)}</strong>
                             </div>
                         </div>
                     `;
@@ -1331,27 +1327,23 @@ You can add as many as you'd like!"
                 <h3 style="margin-bottom: 15px; color: #333;">Order Total Summary</h3>
                 <div class="cost-item">
                     <span class="cost-label">Total Item Cost (${products.length} items):</span>
-                    <span class="cost-value">$${totals.totalItemCost.toFixed(2)}</span>
+                    <span class="cost-value">${totals.totalItemCost.toFixed(2)}</span>
                 </div>
                 <div class="cost-item">
                     <span class="cost-label">Bermuda Import Duty (26.5%):</span>
-                    <span class="cost-value">$${totals.dutyAmount.toFixed(2)}</span>
+                    <span class="cost-value">${totals.dutyAmount.toFixed(2)}</span>
                 </div>
                 <div class="cost-item">
                     <span class="cost-label">USA Delivery Fees:</span>
-                    <span class="cost-value">$${totals.totalDeliveryFees.toFixed(2)}</span>
+                    <span class="cost-value">${totals.totalDeliveryFees.toFixed(2)}</span>
                 </div>
                 <div class="cost-item">
-                    <span class="cost-label">Ocean Freight & Handling:</span>
-                    <span class="cost-value">$${totals.totalShippingCost.toFixed(2)}</span>
-                </div>
-                <div class="cost-item">
-                    <span class="cost-label">SDL Service Fee (15%):</span>
-                    <span class="cost-value">$${totals.sdlMargin.toFixed(2)}</span>
+                    <span class="cost-label">Shipping & Handling to Bermuda:</span>
+                    <span class="cost-value">${totals.totalShippingAndHandling.toFixed(2)}</span>
                 </div>
                 <div class="cost-item total-row">
                     <span class="cost-label">Total Landed Cost:</span>
-                    <span class="cost-value">$${totals.grandTotal.toFixed(2)}</span>
+                    <span class="cost-value">${totals.grandTotal.toFixed(2)}</span>
                 </div>
             `;
         }
