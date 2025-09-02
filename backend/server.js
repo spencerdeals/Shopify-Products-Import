@@ -17,6 +17,22 @@ const SCRAPINGBEE_API_KEY = process.env.SCRAPINGBEE_API_KEY || '7Z45R9U0PVA9SCI5
 const BERMUDA_DUTY_RATE = 0.265;
 const SHIPPING_RATE_PER_CUBIC_FOOT = 8;
 
+// Google Sheets configuration
+const GOOGLE_SHEET_ID = process.env.GOOGLE_SHEET_ID;
+const GOOGLE_SERVICE_ACCOUNT_KEY = process.env.GOOGLE_SERVICE_ACCOUNT_KEY ? 
+  JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_KEY) : null;
+
+// Load Google APIs if configured
+let google = null;
+if (GOOGLE_SERVICE_ACCOUNT_KEY) {
+  try {
+    google = require('googleapis').google;
+    console.log('✅ Google Sheets API configured');
+  } catch (error) {
+    console.log('⚠️ Google APIs not installed. Run: npm install googleapis');
+  }
+}
+
 // Learning Database - In-Memory with File Persistence
 const LEARNING_DB_PATH = path.join(__dirname, 'learning_data.json');
 let LEARNING_DB = {
@@ -106,6 +122,7 @@ console.log(`Shopify Domain: ${SHOPIFY_DOMAIN}`);
 console.log('ScrapingBee: ENABLED');
 console.log('Learning System: ACTIVE');
 console.log('BOL Database: 177 historical shipments');
+console.log('Google Sheets:', GOOGLE_SERVICE_ACCOUNT_KEY ? 'CONFIGURED' : 'NOT CONFIGURED');
 console.log('=====================\n');
 
 // Middleware
@@ -125,7 +142,8 @@ app.get('/health', (req, res) => {
     learning: {
       products_learned: Object.keys(LEARNING_DB.products).length,
       patterns_identified: Object.keys(LEARNING_DB.patterns).length
-    }
+    },
+    google_sheets: !!GOOGLE_SERVICE_ACCOUNT_KEY
   });
 });
 
@@ -236,7 +254,7 @@ function detectRetailer(url) {
     if (domain.includes('rugsusa.com')) return 'Rugs USA';
     if (domain.includes('ruggable.com')) return 'Ruggable';
     
-    // Electronics & Tech
+    // Electronics & Tech  
     if (domain.includes('bestbuy.com')) return 'Best Buy';
     if (domain.includes('newegg.com')) return 'Newegg';
     if (domain.includes('bhphotovideo.com') || domain.includes('bhphoto.com')) return 'B&H Photo';
@@ -277,7 +295,7 @@ function detectRetailer(url) {
     if (domain.includes('flooranddecor.com')) return 'Floor & Decor';
     if (domain.includes('lumberliquidators.com')) return 'Lumber Liquidators';
     
-    // Fashion & Apparel
+    // Fashion & Apparel (80+ stores)
     if (domain.includes('nike.com')) return 'Nike';
     if (domain.includes('adidas.com')) return 'Adidas';
     if (domain.includes('puma.com')) return 'Puma';
@@ -851,7 +869,7 @@ app.get('/api/get-pending-order/:orderId', (req, res) => {
   }
 });
 
-// NEW: Checkout sessions for Shopify redirect
+// NEW: Checkout sessions for Shopify redirect with GUEST CHECKOUT
 const checkoutSessions = new Map();
 
 app.post('/api/prepare-shopify-checkout', async (req, res) => {
@@ -873,8 +891,19 @@ app.post('/api/prepare-shopify-checkout', async (req, res) => {
       checkoutSessions.delete(checkoutId);
     }, 24 * 60 * 60 * 1000);
     
-    // Create the redirect URL to your Shopify site
-    const redirectUrl = `https://sdl.bm/pages/import-checkout?session=${checkoutId}`;
+    // Export to Google Sheets immediately (if configured)
+    if (google && GOOGLE_SERVICE_ACCOUNT_KEY && GOOGLE_SHEET_ID) {
+      await exportToGoogleSheets({
+        checkoutId,
+        status: 'checkout_started',
+        products: checkoutData.products,
+        totals: checkoutData.totals,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    // Create the redirect URL - GUEST CHECKOUT (no login required)
+    const redirectUrl = `https://sdl.bm/pages/import-checkout?session=${checkoutId}&guest=true`;
     
     console.log(`Created checkout session: ${checkoutId}`);
     
@@ -901,10 +930,121 @@ app.get('/api/get-checkout/:checkoutId', (req, res) => {
   
   // Add CORS headers for Shopify
   res.header('Access-Control-Allow-Origin', 'https://sdl.bm');
+  res.header('Access-Control-Allow-Credentials', 'true');
   res.json(checkoutData);
 });
 
-// Shopify Draft Order Creation
+// Google Sheets Export Function
+async function exportToGoogleSheets(orderData) {
+  if (!google || !GOOGLE_SERVICE_ACCOUNT_KEY || !GOOGLE_SHEET_ID) {
+    console.log('Google Sheets not configured');
+    return;
+  }
+  
+  try {
+    const auth = new google.auth.GoogleAuth({
+      credentials: GOOGLE_SERVICE_ACCOUNT_KEY,
+      scopes: ['https://www.googleapis.com/auth/spreadsheets']
+    });
+    
+    const sheets = google.sheets({ version: 'v4', auth });
+    
+    // Prepare row data
+    const row = [
+      new Date().toISOString(), // Timestamp
+      orderData.checkoutId || orderData.orderNumber || '',
+      orderData.customerEmail || '',
+      orderData.customerName || '',
+      orderData.products ? orderData.products.map(p => p.name).join('; ') : '',
+      orderData.products ? orderData.products.map(p => p.url).join('\n') : '',
+      orderData.totals?.totalItemCost || 0,
+      orderData.totals?.dutyAmount || 0,
+      orderData.totals?.totalShippingAndHandling || 0,
+      orderData.totals?.grandTotal || 0,
+      orderData.status || 'pending'
+    ];
+    
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: GOOGLE_SHEET_ID,
+      range: 'Orders!A:K',
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: [row] }
+    });
+    
+    console.log('✅ Order exported to Google Sheets');
+  } catch (error) {
+    console.error('Error exporting to Google Sheets:', error);
+  }
+}
+
+// Webhook for Shopify order creation (after guest checkout)
+app.post('/webhooks/shopify/order-created', async (req, res) => {
+  const order = req.body;
+  
+  // Check if this is an import order
+  if (order.note_attributes?.find(attr => attr.name === 'import_order')) {
+    const sessionId = order.note_attributes.find(attr => attr.name === 'session_id')?.value;
+    
+    if (sessionId && checkoutSessions.has(sessionId)) {
+      const checkoutData = checkoutSessions.get(sessionId);
+      
+      // Export final order to Google Sheets
+      await exportToGoogleSheets({
+        ...checkoutData,
+        orderNumber: order.name,
+        customerEmail: order.email,
+        customerName: `${order.customer?.first_name || ''} ${order.customer?.last_name || ''}`,
+        status: 'confirmed',
+        orderTotal: order.total_price,
+        orderId: order.id
+      });
+      
+      // Send account invitation if customer doesn't exist
+      if (order.customer && !order.customer.account_activation_url) {
+        await sendAccountInvite(order);
+      }
+      
+      // Clean up session
+      checkoutSessions.delete(sessionId);
+    }
+  }
+  
+  res.status(200).send('OK');
+});
+
+// Send account activation email after order (for guest checkout)
+async function sendAccountInvite(order) {
+  if (!SHOPIFY_ACCESS_TOKEN) return;
+  
+  try {
+    const response = await axios.post(
+      `https://${SHOPIFY_DOMAIN}/admin/api/2024-01/customers.json`,
+      {
+        customer: {
+          email: order.email,
+          first_name: order.customer?.first_name || '',
+          last_name: order.customer?.last_name || '',
+          send_email_invite: true,
+          tags: 'import-customer, guest-checkout',
+          note: `First order: ${order.name}`
+        }
+      },
+      {
+        headers: {
+          'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+    
+    console.log(`✅ Account invite sent to ${order.email}`);
+  } catch (error) {
+    // Customer might already exist, that's ok
+    console.log(`Customer ${order.email} already exists or invite failed`);
+  }
+}
+
+// Shopify Draft Order Creation (backup method)
 app.post('/apps/instant-import/create-draft-order', async (req, res) => {
   try {
     const { products, deliveryFees, totals, customer, originalUrls } = req.body;
@@ -913,9 +1053,15 @@ app.post('/apps/instant-import/create-draft-order', async (req, res) => {
       return res.status(500).json({ error: 'Shopify not configured' });
     }
     
-    if (!customer || !customer.email || !customer.name) {
-      return res.status(400).json({ error: 'Customer information required' });
-    }
+    // Export to Google Sheets
+    await exportToGoogleSheets({
+      customerEmail: customer?.email,
+      customerName: customer?.name,
+      products,
+      totals,
+      status: 'draft_order',
+      originalUrls
+    });
     
     const lineItems = [];
     
@@ -969,12 +1115,12 @@ app.post('/apps/instant-import/create-draft-order', async (req, res) => {
     const draftOrderData = {
       draft_order: {
         line_items: lineItems,
-        customer: {
+        customer: customer ? {
           email: customer.email,
           first_name: customer.name.split(' ')[0],
           last_name: customer.name.split(' ').slice(1).join(' ') || ''
-        },
-        email: customer.email,
+        } : null,
+        email: customer?.email,
         note: `Import Calculator Order\n\nOriginal URLs:\n${originalUrls}`,
         tags: 'import-calculator, ocean-freight',
         tax_exempt: true,
@@ -983,7 +1129,7 @@ app.post('/apps/instant-import/create-draft-order', async (req, res) => {
       }
     };
     
-    console.log(`Creating draft order for ${customer.email}...`);
+    console.log(`Creating draft order${customer ? ' for ' + customer.email : ''}...`);
     
     const shopifyResponse = await axios.post(
       `https://${SHOPIFY_DOMAIN}/admin/api/2023-10/draft_orders.json`,
