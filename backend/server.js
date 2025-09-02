@@ -18,7 +18,7 @@ const SHOPIFY_WEBHOOK_SECRET = process.env.SHOPIFY_WEBHOOK_SECRET || '';
 const SCRAPINGBEE_API_KEY = process.env.SCRAPINGBEE_API_KEY || '7Z45R9U0PVA9SCI5P4R6RACA0PZUVSWDGNXCZ0OV0EXA17FAVC0PANLM6FAFDDO1PE7MRSZX4JT3SDIG';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'sdl2024admin';
 const BERMUDA_DUTY_RATE = 0.265;
-const SHIPPING_RATE_PER_CUBIC_FOOT = 7;
+const SHIPPING_RATE_PER_CUBIC_FOOT = 6;  // Changed from 8 to 6
 const SDL_MARGIN_RATE = 0.15;
 const TEST_MODE = process.env.TEST_MODE === 'true';
 
@@ -489,7 +489,7 @@ async function updateOrderStage(orderId, stage) {
   }
 }
 
-// Scraping function
+// ENHANCED SCRAPING FUNCTION WITH WAYFAIR SUPPORT
 async function scrapeWithScrapingBee(url) {
   if (TEST_MODE) {
     return {
@@ -499,26 +499,66 @@ async function scrapeWithScrapingBee(url) {
     };
   }
   
+  const retailer = detectRetailer(url);
+  
   try {
     console.log('   🐝 ScrapingBee requesting...');
+    
+    // Special parameters for Wayfair
+    let scrapingParams = {
+      api_key: SCRAPINGBEE_API_KEY,
+      url: url,
+      premium_proxy: 'true',
+      country_code: 'us',
+      render_js: 'true',
+      wait: '3000',
+      timeout: 30000
+    };
+    
+    if (retailer === 'Wayfair') {
+      console.log('   🏠 Special Wayfair handling...');
+      
+      // Wayfair-specific selectors
+      scrapingParams.wait = '5000';
+      scrapingParams.wait_for = '.SFPrice, [data-test-id="price-display"]';
+      scrapingParams.js_scenario = JSON.stringify({
+        instructions: [
+          { wait: 2000 },
+          { scroll_y: 500 },
+          { wait: 2000 },
+          { scroll_y: 300 },
+          { wait: 1000 }
+        ]
+      });
+      scrapingParams.extract_rules = JSON.stringify({
+        price: {
+          selector: '[data-test-id="price-display"] .lp, .SFPrice, .BasePriceBlock__amount, .StandardPriceBlock__salePrice, [class*="Price__amount"], [class*="PriceV2"], .ProductDetailInfoBlock__price-marker, span[data-enzyme-id="PriceBlock"]',
+          type: 'text'
+        },
+        title: {
+          selector: 'h1.pl-h1, h1[data-test-id="product-title"], h1[class*="ProductDetailInfoBlock__header"], h1[class*="Heading"], .ProductDetailInfoBlock__productName, header h1',
+          type: 'text'
+        },
+        image: {
+          selector: '[data-test-id="carousel-image"] img, .ProductDetailImageCarousel__image img, [class*="ImageContainer"] img, .CarouselImage img, .pboqr1-1 img',
+          type: 'attribute',
+          attribute: 'src'
+        }
+      });
+    } else {
+      // Default extraction rules for other retailers
+      scrapingParams.ai_extract_rules = JSON.stringify({
+        price: "Product Price",
+        title: "Product Title",
+        image: "Product Image URL"
+      });
+    }
     
     const response = await axios({
       method: 'GET',
       url: 'https://app.scrapingbee.com/api/v1',
-      params: {
-        api_key: SCRAPINGBEE_API_KEY,
-        url: url,
-        premium_proxy: 'true',
-        country_code: 'us',
-        render_js: 'true',
-        wait: '3000',
-        ai_extract_rules: JSON.stringify({
-          price: "Product Price",
-          title: "Product Title",
-          image: "Product Image URL"
-        })
-      },
-      timeout: 30000
+      params: scrapingParams,
+      timeout: 35000
     });
     
     const data = response.data;
@@ -527,18 +567,33 @@ async function scrapeWithScrapingBee(url) {
     let title = data.title || null;
     let image = data.image || null;
     
+    // Parse price
     if (data.price) {
       const priceStr = data.price.toString();
-      const priceMatch = priceStr.match(/\$?([\d,]+\.?\d*)/);
+      // Clean up Wayfair price format
+      const cleanPrice = priceStr.replace(/[^\d.,]/g, '').replace(/,/g, '');
+      const priceMatch = cleanPrice.match(/([\d]+\.?\d*)/);
       if (priceMatch) {
-        price = parseFloat(priceMatch[1].replace(/,/g, ''));
+        price = parseFloat(priceMatch[1]);
       }
     }
+    
+    // Clean up title
+    if (title) {
+      title = title.trim().replace(/\s+/g, ' ');
+    }
+    
+    // Clean up image URL
+    if (image && !image.startsWith('http')) {
+      image = 'https:' + image;
+    }
+    
+    console.log(`   ${retailer} scrape result: ${price ? '✓ Price found' : '✗ No price'}, ${title ? '✓ Title found' : '✗ No title'}`);
     
     return { price, title, image };
     
   } catch (error) {
-    console.log('   ❌ ScrapingBee error:', error.message);
+    console.log(`   ❌ ScrapingBee error for ${retailer}:`, error.message);
     return { price: null, title: null, image: null };
   }
 }
