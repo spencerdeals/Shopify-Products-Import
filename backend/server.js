@@ -8,9 +8,6 @@ const { URL } = require('url');
 const crypto = require('crypto');
 require('dotenv').config();
 
-// Import Apify scraper for Wayfair
-const ApifyScraper = require('./apifyScraper');
-
 const app = express();
 const PORT = process.env.PORT || 8080;
 
@@ -19,16 +16,11 @@ const SHOPIFY_DOMAIN = process.env.SHOPIFY_DOMAIN || 'spencer-deals-ltd.myshopif
 const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN || '';
 const SHOPIFY_WEBHOOK_SECRET = process.env.SHOPIFY_WEBHOOK_SECRET || '';
 const SCRAPINGBEE_API_KEY = process.env.SCRAPINGBEE_API_KEY || '7Z45R9U0PVA9SCI5P4R6RACA0PZUVSWDGNXCZ0OV0EXA17FAVC0PANLM6FAFDDO1PE7MRSZX4JT3SDIG';
-const APIFY_API_KEY = process.env.APIFY_API_KEY || '';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'sdl2024admin';
 const BERMUDA_DUTY_RATE = 0.265;
 const SHIPPING_RATE_PER_CUBIC_FOOT = 6;
 const CARD_FEE_RATE = 0.0325;  // 3.25% card processing fee
 const TEST_MODE = process.env.TEST_MODE === 'true';
-
-// Initialize Apify scraper (TEMPORARILY DISABLED FOR DEBUGGING)
-const ENABLE_APIFY = false;  // Set to true when ready to test Apify again
-const apifyScraper = ENABLE_APIFY ? new ApifyScraper(APIFY_API_KEY) : { isAvailable: () => false };
 
 // Email configuration (optional)
 const EMAIL_FROM = process.env.EMAIL_FROM || 'orders@sdl.bm';
@@ -592,36 +584,10 @@ async function scrapeWithScrapingBee(url) {
   
   const retailer = detectRetailer(url);
   
-  // Use Apify for Wayfair if available (with quick timeout)
-  if (retailer === 'Wayfair' && apifyScraper.isAvailable()) {
-    try {
-      console.log('   🔄 Trying Apify for Wayfair (10s timeout)...');
-      
-      // Set a 10 second timeout for Apify
-      const apifyPromise = apifyScraper.scrapeWayfair(url);
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Apify timeout')), 10000)
-      );
-      
-      const apifyResult = await Promise.race([apifyPromise, timeoutPromise]);
-      
-      if (apifyResult && apifyResult.price) {
-        console.log('   ✅ Apify successful for Wayfair');
-        return {
-          price: apifyResult.price,
-          title: apifyResult.name || apifyResult.title,
-          image: apifyResult.image
-        };
-      }
-    } catch (error) {
-      console.log('   ⏱️ Apify timed out or failed, using ScrapingBee...');
-    }
-  }
-  
-  // Use ScrapingBee for all other retailers or as fallback
   try {
     console.log('   🐝 ScrapingBee requesting...');
     
+    // Special parameters for Wayfair
     let scrapingParams = {
       api_key: SCRAPINGBEE_API_KEY,
       url: url,
@@ -633,28 +599,14 @@ async function scrapeWithScrapingBee(url) {
     };
     
     if (retailer === 'Wayfair') {
-      console.log('   🏠 ScrapingBee fallback for Wayfair...');
-      // Simplified approach for Wayfair
+      console.log('   🏠 Special Wayfair handling...');
+      
+      // Simplified Wayfair approach - just use AI extraction
       scrapingParams.wait = '5000';
-      scrapingParams.block_resources = 'false';
-      scrapingParams.javascript_snippet = `
-        document.querySelectorAll('button[aria-label*="close"], button[aria-label*="Close"], .Modal__close').forEach(el => el.click());
-        await new Promise(r => setTimeout(r, 1000));
-      `;
-      scrapingParams.extract_rules = JSON.stringify({
-        price: {
-          selector: '.SFPrice, .NumericalStepper__price, .ProductDetailInfoBlock__price-marker, [data-enzyme-id="WayfairPrice"], .StandardPriceBlock__price',
-          type: 'text'
-        },
-        title: {
-          selector: 'h1.pl-Heading-h1, header h1, .ProductDetailInfoBlock__header h1',
-          type: 'text'
-        },
-        image: {
-          selector: '.ProductDetailImageThumbnail img, .pboqr1-1 img',
-          type: 'attribute',
-          attribute: 'src'
-        }
+      scrapingParams.ai_extract_rules = JSON.stringify({
+        price: "Product Price or Sale Price",
+        title: "Product Title or Name",
+        image: "Main Product Image URL"
       });
     } else {
       // Default extraction rules for other retailers
