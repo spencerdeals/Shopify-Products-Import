@@ -8,6 +8,9 @@ const { URL } = require('url');
 const crypto = require('crypto');
 require('dotenv').config();
 
+// Import Apify scraper for Wayfair
+const ApifyScraper = require('./apifyScraper');
+
 const app = express();
 const PORT = process.env.PORT || 8080;
 
@@ -16,11 +19,15 @@ const SHOPIFY_DOMAIN = process.env.SHOPIFY_DOMAIN || 'spencer-deals-ltd.myshopif
 const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN || '';
 const SHOPIFY_WEBHOOK_SECRET = process.env.SHOPIFY_WEBHOOK_SECRET || '';
 const SCRAPINGBEE_API_KEY = process.env.SCRAPINGBEE_API_KEY || '7Z45R9U0PVA9SCI5P4R6RACA0PZUVSWDGNXCZ0OV0EXA17FAVC0PANLM6FAFDDO1PE7MRSZX4JT3SDIG';
+const APIFY_API_KEY = process.env.APIFY_API_KEY || '';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'sdl2024admin';
 const BERMUDA_DUTY_RATE = 0.265;
 const SHIPPING_RATE_PER_CUBIC_FOOT = 6;
 const CARD_FEE_RATE = 0.0325;  // 3.25% card processing fee
 const TEST_MODE = process.env.TEST_MODE === 'true';
+
+// Initialize Apify scraper
+const apifyScraper = new ApifyScraper(APIFY_API_KEY);
 
 // Email configuration (optional)
 const EMAIL_FROM = process.env.EMAIL_FROM || 'orders@sdl.bm';
@@ -174,6 +181,8 @@ console.log(`Port: ${PORT}`);
 console.log(`Shopify: ${SHOPIFY_ACCESS_TOKEN ? 'CONNECTED' : 'NOT CONFIGURED'}`);
 console.log(`Email: ${sendgrid ? 'ENABLED' : 'DISABLED'}`);
 console.log(`Google Sheets: ${GOOGLE_SERVICE_ACCOUNT_KEY ? 'ENABLED' : 'DISABLED'}`);
+console.log(`Apify: ${apifyScraper.isAvailable() ? 'ENABLED (Wayfair priority)' : 'DISABLED'}`);
+console.log(`ScrapingBee: ${SCRAPINGBEE_API_KEY ? 'ENABLED' : 'DISABLED'}`);
 console.log('Margin Structure: TIERED (40%/30%/25%/20% by volume)');
 console.log('====================================\n');
 
@@ -582,10 +591,28 @@ async function scrapeWithScrapingBee(url) {
   
   const retailer = detectRetailer(url);
   
+  // Use Apify for Wayfair if available
+  if (retailer === 'Wayfair' && apifyScraper.isAvailable()) {
+    try {
+      console.log('   🔄 Using Apify for Wayfair...');
+      const apifyResult = await apifyScraper.scrapeWayfair(url);
+      
+      if (apifyResult) {
+        return {
+          price: apifyResult.price,
+          title: apifyResult.name,
+          image: apifyResult.image
+        };
+      }
+    } catch (error) {
+      console.log('   ❌ Apify failed for Wayfair, falling back to ScrapingBee:', error.message);
+    }
+  }
+  
+  // Use ScrapingBee for all other retailers or as fallback
   try {
     console.log('   🐝 ScrapingBee requesting...');
     
-    // Special parameters for Wayfair
     let scrapingParams = {
       api_key: SCRAPINGBEE_API_KEY,
       url: url,
@@ -597,31 +624,25 @@ async function scrapeWithScrapingBee(url) {
     };
     
     if (retailer === 'Wayfair') {
-      console.log('   🏠 Special Wayfair handling...');
-      
-      // Wayfair-specific selectors
+      console.log('   🏠 ScrapingBee fallback for Wayfair...');
+      // Simplified approach for Wayfair
       scrapingParams.wait = '5000';
-      scrapingParams.wait_for = '.SFPrice, [data-test-id="price-display"]';
-      scrapingParams.js_scenario = JSON.stringify({
-        instructions: [
-          { wait: 2000 },
-          { scroll_y: 500 },
-          { wait: 2000 },
-          { scroll_y: 300 },
-          { wait: 1000 }
-        ]
-      });
+      scrapingParams.block_resources = 'false';
+      scrapingParams.javascript_snippet = `
+        document.querySelectorAll('button[aria-label*="close"], button[aria-label*="Close"], .Modal__close').forEach(el => el.click());
+        await new Promise(r => setTimeout(r, 1000));
+      `;
       scrapingParams.extract_rules = JSON.stringify({
         price: {
-          selector: '[data-test-id="price-display"] .lp, .SFPrice, .BasePriceBlock__amount, .StandardPriceBlock__salePrice, [class*="Price__amount"], [class*="PriceV2"], .ProductDetailInfoBlock__price-marker, span[data-enzyme-id="PriceBlock"]',
+          selector: '.SFPrice, .NumericalStepper__price, .ProductDetailInfoBlock__price-marker, [data-enzyme-id="WayfairPrice"], .StandardPriceBlock__price',
           type: 'text'
         },
         title: {
-          selector: 'h1.pl-h1, h1[data-test-id="product-title"], h1[class*="ProductDetailInfoBlock__header"], h1[class*="Heading"], .ProductDetailInfoBlock__productName, header h1',
+          selector: 'h1.pl-Heading-h1, header h1, .ProductDetailInfoBlock__header h1',
           type: 'text'
         },
         image: {
-          selector: '[data-test-id="carousel-image"] img, .ProductDetailImageCarousel__image img, [class*="ImageContainer"] img, .CarouselImage img, .pboqr1-1 img',
+          selector: '.ProductDetailImageThumbnail img, .pboqr1-1 img',
           type: 'attribute',
           attribute: 'src'
         }
