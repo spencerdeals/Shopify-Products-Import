@@ -3,6 +3,7 @@ const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const axios = require('axios');
 const path = require('path');
+const fs = require('fs');
 const { URL } = require('url');
 require('dotenv').config();
 
@@ -15,6 +16,34 @@ const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN || '';
 const SCRAPINGBEE_API_KEY = process.env.SCRAPINGBEE_API_KEY || '7Z45R9U0PVA9SCI5P4R6RACA0PZUVSWDGNXCZ0OV0EXA17FAVC0PANLM6FAFDDO1PE7MRSZX4JT3SDIG';
 const BERMUDA_DUTY_RATE = 0.265;
 const SHIPPING_RATE_PER_CUBIC_FOOT = 8;
+
+// Learning Database - In-Memory with File Persistence
+const LEARNING_DB_PATH = path.join(__dirname, 'learning_data.json');
+let LEARNING_DB = {
+  products: {},      // URL -> product data mapping
+  patterns: {},      // Category patterns
+  retailer_stats: {}, // Success rates by retailer
+  bol_patterns: {}   // BOL historical patterns
+};
+
+// Load existing learning data
+try {
+  if (fs.existsSync(LEARNING_DB_PATH)) {
+    LEARNING_DB = JSON.parse(fs.readFileSync(LEARNING_DB_PATH, 'utf8'));
+    console.log('✅ Loaded learning database with', Object.keys(LEARNING_DB.products).length, 'products');
+  }
+} catch (error) {
+  console.log('📝 Starting with fresh learning database');
+}
+
+// Save learning data
+function saveLearningDB() {
+  try {
+    fs.writeFileSync(LEARNING_DB_PATH, JSON.stringify(LEARNING_DB, null, 2));
+  } catch (error) {
+    console.error('Error saving learning database:', error);
+  }
+}
 
 // BOL-BASED SHIPPING PATTERNS FROM YOUR HISTORICAL DATA
 const BOL_PATTERNS = {
@@ -75,7 +104,8 @@ console.log('=== SERVER STARTUP ===');
 console.log(`Port: ${PORT}`);
 console.log(`Shopify Domain: ${SHOPIFY_DOMAIN}`);
 console.log('ScrapingBee: ENABLED');
-console.log('BOL Database: 177 historical shipments loaded');
+console.log('Learning System: ACTIVE');
+console.log('BOL Database: 177 historical shipments');
 console.log('=====================\n');
 
 // Middleware
@@ -91,7 +121,11 @@ app.get('/health', (req, res) => {
   res.json({ 
     status: 'OK',
     timestamp: new Date().toISOString(),
-    port: PORT
+    port: PORT,
+    learning: {
+      products_learned: Object.keys(LEARNING_DB.products).length,
+      patterns_identified: Object.keys(LEARNING_DB.patterns).length
+    }
   });
 });
 
@@ -165,8 +199,80 @@ function categorizeProduct(name, url) {
   return 'general';
 }
 
+// LEARNING FUNCTIONS
+function learnFromProduct(url, productData) {
+  // Save product data for future use
+  LEARNING_DB.products[url] = {
+    ...productData,
+    last_updated: new Date().toISOString(),
+    times_seen: (LEARNING_DB.products[url]?.times_seen || 0) + 1
+  };
+  
+  // Update category patterns
+  if (productData.category && productData.price) {
+    if (!LEARNING_DB.patterns[productData.category]) {
+      LEARNING_DB.patterns[productData.category] = {
+        prices: [],
+        weights: [],
+        dimensions: []
+      };
+    }
+    
+    const pattern = LEARNING_DB.patterns[productData.category];
+    if (productData.price) pattern.prices.push(productData.price);
+    if (productData.weight) pattern.weights.push(productData.weight);
+    if (productData.dimensions) pattern.dimensions.push(productData.dimensions);
+    
+    // Keep only last 100 samples per category
+    if (pattern.prices.length > 100) pattern.prices.shift();
+    if (pattern.weights.length > 100) pattern.weights.shift();
+    if (pattern.dimensions.length > 100) pattern.dimensions.shift();
+  }
+  
+  // Update retailer success stats
+  const retailer = productData.retailer;
+  if (!LEARNING_DB.retailer_stats[retailer]) {
+    LEARNING_DB.retailer_stats[retailer] = {
+      attempts: 0,
+      successes: 0
+    };
+  }
+  LEARNING_DB.retailer_stats[retailer].attempts++;
+  if (productData.price) {
+    LEARNING_DB.retailer_stats[retailer].successes++;
+  }
+  
+  // Save to disk
+  saveLearningDB();
+}
+
+function getLearnedData(url) {
+  // Check if we've seen this URL before
+  if (LEARNING_DB.products[url]) {
+    const learned = LEARNING_DB.products[url];
+    const hoursSinceUpdate = (Date.now() - new Date(learned.last_updated).getTime()) / (1000 * 60 * 60);
+    
+    // Use cached data if less than 24 hours old
+    if (hoursSinceUpdate < 24) {
+      console.log('   📚 Using learned data from previous scrape');
+      return learned;
+    }
+  }
+  return null;
+}
+
 function estimateDimensionsFromBOL(category, name = '') {
   const text = name.toLowerCase();
+  
+  // First check learned patterns
+  if (LEARNING_DB.patterns[category] && LEARNING_DB.patterns[category].dimensions.length > 0) {
+    const dims = LEARNING_DB.patterns[category].dimensions;
+    const avgDim = dims[dims.length - 1]; // Use most recent
+    console.log('   📊 Using learned dimensions from', dims.length, 'previous', category, 'products');
+    return avgDim;
+  }
+  
+  // Fall back to BOL patterns
   const patterns = BOL_PATTERNS[category] || BOL_PATTERNS.general;
   
   if (category === 'furniture') {
@@ -194,6 +300,14 @@ function estimateDimensionsFromBOL(category, name = '') {
 }
 
 function estimateWeightFromBOL(dimensions, category) {
+  // Check learned patterns first
+  if (LEARNING_DB.patterns[category] && LEARNING_DB.patterns[category].weights.length > 0) {
+    const weights = LEARNING_DB.patterns[category].weights;
+    const avgWeight = weights.reduce((a, b) => a + b, 0) / weights.length;
+    console.log('   📊 Using learned weight from', weights.length, 'previous', category, 'products');
+    return Math.round(avgWeight);
+  }
+  
   const patterns = BOL_PATTERNS[category] || BOL_PATTERNS.general;
   const cubicInches = dimensions.length * dimensions.width * dimensions.height;
   const cubicFeet = cubicInches / 1728;
@@ -220,16 +334,12 @@ function calculateShippingCost(dimensions, weight, price) {
   return Math.round(totalCost);
 }
 
-// SIMPLIFIED ROBUST SCRAPING - Like your friend's approach
-async function scrapeWithScrapingBee(url, productIndex, totalProducts) {
-  console.log(`[${productIndex}/${totalProducts}] Scraping: ${url.substring(0, 60)}...`);
-  
+// SCRAPING WITH LEARNING
+async function scrapeWithScrapingBee(url) {
   const retailer = detectRetailer(url);
-  console.log(`   Retailer: ${retailer}`);
   
   try {
-    // Simple AI extraction - just get the essentials
-    console.log('   Requesting data from ScrapingBee...');
+    console.log('   🐝 ScrapingBee requesting...');
     
     const response = await axios({
       method: 'GET',
@@ -242,20 +352,18 @@ async function scrapeWithScrapingBee(url, productIndex, totalProducts) {
         render_js: 'true',
         wait: '3000',
         ai_extract_rules: JSON.stringify({
-          price: "Product Price in USD",
-          title: "Product Title or Name",
-          image: "Main Product Image URL"
+          price: "Product Price",
+          title: "Product Title",
+          image: "Product Image URL"
         })
       },
-      timeout: 30000  // 30 second timeout
+      timeout: 30000
     });
     
     const data = response.data;
-    console.log('   Response received from ScrapingBee');
     
-    // Parse the simple response
     let price = null;
-    let title = data.title || `${retailer} Product`;
+    let title = data.title || null;
     let image = data.image || null;
     
     // Parse price
@@ -264,86 +372,80 @@ async function scrapeWithScrapingBee(url, productIndex, totalProducts) {
       const priceMatch = priceStr.match(/\$?([\d,]+\.?\d*)/);
       if (priceMatch) {
         price = parseFloat(priceMatch[1].replace(/,/g, ''));
-        console.log(`   Price found: $${price}`);
       }
     }
     
-    if (data.title) {
-      console.log(`   Title found: ${data.title.substring(0, 50)}...`);
-    }
-    
-    return {
-      success: true,
-      data: { price, title, image }
-    };
+    return { price, title, image };
     
   } catch (error) {
-    console.log(`   ScrapingBee failed: ${error.message}`);
-    return {
-      success: false,
-      error: error.message
-    };
+    console.log('   ❌ ScrapingBee error:', error.message);
+    return { price: null, title: null, image: null };
   }
 }
 
-// Main product processing - ALWAYS returns a product
+// MAIN PROCESSING - GUARANTEED TO RETURN A PRODUCT
 async function processProduct(url, index, total) {
+  console.log(`\n[${index}/${total}] Processing: ${url.substring(0, 80)}...`);
+  
   const productId = generateProductId();
   const retailer = detectRetailer(url);
+  console.log(`   Retailer: ${retailer}`);
   
-  // Try to scrape
-  const scraped = await scrapeWithScrapingBee(url, index, total);
-  
-  let productName = `${retailer} Item ${index}`;
-  let price = null;
-  let image = null;
-  let scrapingMethod = 'failed';
-  
-  if (scraped.success && scraped.data) {
-    if (scraped.data.title) {
-      productName = scraped.data.title;
-    }
-    price = scraped.data.price;
-    image = scraped.data.image;
-    scrapingMethod = 'scrapingbee';
+  // Check if we have learned data for this URL
+  const learned = getLearnedData(url);
+  if (learned && learned.price) {
+    console.log('   ✅ Using cached data from learning system');
+    return {
+      ...learned,
+      id: productId,
+      url: url,
+      fromCache: true
+    };
   }
   
-  // Categorize and estimate
+  // Try to scrape new data
+  const scraped = await scrapeWithScrapingBee(url);
+  
+  // Build product object with whatever we have
+  const productName = scraped.title || `${retailer} Product ${index}`;
   const category = categorizeProduct(productName, url);
   const dimensions = estimateDimensionsFromBOL(category, productName);
   const weight = estimateWeightFromBOL(dimensions, category);
-  const shippingCost = calculateShippingCost(dimensions, weight, price || 100);
+  const shippingCost = calculateShippingCost(dimensions, weight, scraped.price || 100);
   
-  // Always return a product object
   const product = {
     id: productId,
     url: url,
     name: productName,
-    price: price,
-    image: image || `https://placehold.co/400x400/7CB342/FFFFFF/png?text=${encodeURIComponent(retailer)}`,
+    price: scraped.price,
+    image: scraped.image || `https://placehold.co/400x400/7CB342/FFFFFF/png?text=${encodeURIComponent(retailer)}`,
     category: category,
     retailer: retailer,
     dimensions: dimensions,
     weight: weight,
     shippingCost: shippingCost,
-    scrapingMethod: scrapingMethod,
+    scrapingMethod: scraped.price ? 'scrapingbee' : 'estimated',
     dataCompleteness: {
-      hasName: productName !== `${retailer} Item ${index}`,
-      hasPrice: !!price,
-      hasImage: !!image,
-      hasDimensions: true,  // Always estimated
-      hasWeight: true       // Always estimated
+      hasName: !!scraped.title,
+      hasPrice: !!scraped.price,
+      hasImage: !!scraped.image,
+      hasDimensions: true,
+      hasWeight: true
     }
   };
   
+  // Learn from this scrape
+  learnFromProduct(url, product);
+  
+  console.log(`   Price: ${scraped.price ? '$' + scraped.price : 'Not found'}`);
   console.log(`   Category: ${category}`);
   console.log(`   Shipping: $${shippingCost}`);
-  console.log(`   Status: ${scrapingMethod === 'scrapingbee' ? 'Scraped' : 'Estimated'}\n`);
+  console.log(`   Learning: Saved for future use`);
   
   return product;
 }
 
-// API endpoint - PROCESS ALL URLS
+// API ENDPOINT - PROCESS ALL URLS WITHOUT DROPPING ANY
 app.post('/api/scrape', async (req, res) => {
   try {
     const { urls } = req.body;
@@ -361,33 +463,28 @@ app.post('/api/scrape', async (req, res) => {
     }
     
     console.log(`\n========================================`);
-    console.log(`Starting batch scrape for ${urls.length} products`);
-    console.log(`========================================\n`);
+    console.log(`BATCH SCRAPE: ${urls.length} products`);
+    console.log(`Learning DB: ${Object.keys(LEARNING_DB.products).length} products known`);
+    console.log(`========================================`);
     
     const products = [];
     
-    // Process each URL sequentially with delay
+    // Process EVERY URL - no exceptions
     for (let i = 0; i < urls.length; i++) {
       const url = urls[i];
       
       try {
         const product = await processProduct(url, i + 1, urls.length);
         products.push(product);
-        
-        // Delay between requests to avoid rate limiting
-        if (i < urls.length - 1) {
-          console.log('Waiting 2 seconds before next product...\n');
-          await new Promise(resolve => setTimeout(resolve, 2000));
-        }
       } catch (error) {
-        console.error(`Failed to process URL ${i + 1}: ${error.message}`);
+        console.error(`Error processing URL ${i + 1}:`, error.message);
         
-        // Still add a product even if processing failed
+        // STILL ADD A PRODUCT EVEN ON ERROR
         const retailer = detectRetailer(url);
-        products.push({
+        const fallbackProduct = {
           id: generateProductId(),
           url: url,
-          name: `${retailer} Item ${i + 1}`,
+          name: `${retailer} Product ${i + 1}`,
           price: null,
           image: `https://placehold.co/400x400/F44336/FFFFFF/png?text=Error`,
           category: 'general',
@@ -404,29 +501,75 @@ app.post('/api/scrape', async (req, res) => {
             hasDimensions: false,
             hasWeight: false
           }
-        });
+        };
+        products.push(fallbackProduct);
+      }
+      
+      // Small delay between requests
+      if (i < urls.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1500));
       }
     }
     
-    // Summary
+    // Calculate summary
     const successful = products.filter(p => p.dataCompleteness.hasPrice).length;
+    const fromCache = products.filter(p => p.fromCache).length;
+    
     console.log(`\n========================================`);
-    console.log(`RESULTS: ${successful}/${urls.length} products scraped successfully`);
+    console.log(`RESULTS: ${products.length} products processed`);
+    console.log(`  Scraped: ${successful - fromCache}`);
+    console.log(`  From cache: ${fromCache}`);
+    console.log(`  Failed: ${products.length - successful}`);
+    console.log(`Learning DB now has ${Object.keys(LEARNING_DB.products).length} products`);
     console.log(`========================================\n`);
     
+    // ALWAYS return exactly the number of products that were requested
     res.json({ 
-      products,
+      products: products,
       summary: {
         total: products.length,
         scraped: successful,
-        estimated: products.length - successful
+        fromCache: fromCache,
+        failed: products.length - successful
       }
     });
     
   } catch (error) {
-    console.error('Scraping error:', error);
+    console.error('Fatal scraping error:', error);
     res.status(500).json({ error: 'Failed to scrape products: ' + error.message });
   }
+});
+
+// Learning insights endpoint
+app.get('/api/learning-insights', (req, res) => {
+  const insights = {
+    total_products_learned: Object.keys(LEARNING_DB.products).length,
+    categories_tracked: Object.keys(LEARNING_DB.patterns),
+    retailer_success_rates: {},
+    recent_products: []
+  };
+  
+  // Calculate success rates
+  Object.entries(LEARNING_DB.retailer_stats).forEach(([retailer, stats]) => {
+    insights.retailer_success_rates[retailer] = {
+      success_rate: ((stats.successes / stats.attempts) * 100).toFixed(1) + '%',
+      total_attempts: stats.attempts
+    };
+  });
+  
+  // Get 5 most recent products
+  const products = Object.values(LEARNING_DB.products)
+    .sort((a, b) => new Date(b.last_updated) - new Date(a.last_updated))
+    .slice(0, 5);
+  
+  insights.recent_products = products.map(p => ({
+    name: p.name,
+    price: p.price,
+    retailer: p.retailer,
+    times_seen: p.times_seen
+  }));
+  
+  res.json(insights);
 });
 
 // Store pending orders
@@ -508,7 +651,7 @@ app.post('/apps/instant-import/create-draft-order', async (req, res) => {
       }
     });
     
-    // Add shipping & handling
+    // Add shipping & handling (includes hidden SDL margin)
     if (totals.totalShippingAndHandling > 0) {
       lineItems.push({
         title: 'Shipping & Handling to Bermuda',
@@ -537,7 +680,6 @@ app.post('/apps/instant-import/create-draft-order', async (req, res) => {
     
     console.log(`Creating draft order for ${customer.email}...`);
     
-    const axios = require('axios');
     const shopifyResponse = await axios.post(
       `https://${SHOPIFY_DOMAIN}/admin/api/2023-10/draft_orders.json`,
       draftOrderData,
@@ -571,7 +713,8 @@ app.post('/apps/instant-import/create-draft-order', async (req, res) => {
 
 // Start server
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`\nServer running on port ${PORT}`);
   console.log(`Frontend: http://localhost:${PORT}`);
-  console.log(`Health: http://localhost:${PORT}/health\n`);
+  console.log(`Health: http://localhost:${PORT}/health`);
+  console.log(`Learning insights: http://localhost:${PORT}/api/learning-insights\n`);
 });
