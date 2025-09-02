@@ -1,4 +1,29 @@
-const express = require('express');
+// ScrapingBee with RETAILER-SPECIFIC extraction rules
+async function scrapeWithScrapingBee(url) {
+  if (!USE_SCRAPINGBEE) {
+    throw new Error('ScrapingBee not configured');
+  }
+
+  try {
+    console.log('   🐝 ScrapingBee starting...');
+    
+    const retailer = detectRetailer(url);
+    
+    // Use different extraction rules based on retailer
+    let extractRules = {};
+    
+    if (retailer === 'Amazon') {
+      extractRules = {
+        price: "span.a-price-whole, span.a-price-range, span.a-price.a-text-price.a-size-medium, [data-a-color='price'] span, .a-price-range",
+        title: "h1#title, h1.a-size-large, span#productTitle",
+        image: "img#landingImage@src, div.imgTagWrapper img@src, img.a-dynamic-image@src",
+        dimensions: "tr:contains('Dimensions'), tr:contains('Package'), tr:contains('Size'), .a-section:contains('x'), .product-facts-detail",
+        weight: "tr:contains('Weight'), tr:contains('weight'), .a-section:contains('pounds'), .a-section:contains('lbs')",
+        brand: "a#bylineInfo, span.by-line a, tr:contains('Brand'), tr:contains('Manufacturer')"
+      };
+    } else if (retailer === 'Wayfair') {
+      extractRules = {
+        price: "[data-enzyme-id='PriceBlock'] span, .SFPrice, .BaseProductPrice, .Productconst express = require('express');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const axios = require('axios');
@@ -106,6 +131,36 @@ app.get('/health', (req, res) => {
       bolData: 'Active'
     }
   });
+});
+
+// Diagnostic endpoint to see what's being scraped
+app.get('/api/test-scrape', async (req, res) => {
+  const testUrl = req.query.url || 'https://www.amazon.com/dp/B09XQF2YJF';
+  
+  try {
+    console.log('\n=== TEST SCRAPE ===');
+    const product = await scrapeProduct(testUrl);
+    
+    res.json({
+      success: true,
+      url: testUrl,
+      scraped: {
+        name: product.name,
+        price: product.price,
+        image: product.image,
+        dimensions: product.dimensions,
+        weight: product.weight,
+        shippingCost: product.shippingCost,
+        scrapingMethod: product.scrapingMethod
+      },
+      raw: product
+    });
+  } catch (error) {
+    res.json({
+      success: false,
+      error: error.message
+    });
+  }
 });
 
 // Test endpoint for UPCitemdb
@@ -526,7 +581,7 @@ async function scrapeProduct(url) {
   // Fill missing data with BOL-based estimation
   if (!productData) {
     productData = {
-      name: 'Product from ' + retailer,
+      name: null,
       price: null,
       image: null,
       dimensions: null,
@@ -535,7 +590,11 @@ async function scrapeProduct(url) {
     scrapingMethod = 'estimation';
   }
   
-  const productName = productData.name || `Product from ${retailer}`;
+  // Generate better product names for unknown items
+  const productName = productData.name && productData.name !== 'Unknown Product' 
+    ? productData.name 
+    : `${retailer} Item ${Date.now().toString().slice(-4)}`;
+    
   const category = categorizeProduct(productName, url);
   
   // Use BOL-based estimation for missing dimensions
@@ -589,6 +648,7 @@ async function scrapeProduct(url) {
 // Batch processing with better error handling and sequential fallback
 async function processBatch(urls, batchSize = 1) {  // Process one at a time for reliability
   const results = [];
+  const vendorCounts = {};  // Track item counts per vendor
   
   for (let i = 0; i < urls.length; i++) {
     const url = urls[i];
@@ -600,8 +660,11 @@ async function processBatch(urls, batchSize = 1) {  // Process one at a time for
     } catch (error) {
       console.error(`Failed to process ${url}:`, error.message);
       
-      // Create a fallback product with estimation
+      // Create a fallback product with better naming
       const retailer = detectRetailer(url);
+      const vendorCount = (vendorCounts[retailer] || 0) + 1;
+      vendorCounts[retailer] = vendorCount;
+      
       const category = 'general';
       const dimensions = estimateDimensionsFromBOL(category, '');
       const weight = estimateWeightFromBOL(dimensions, category);
@@ -610,7 +673,7 @@ async function processBatch(urls, batchSize = 1) {  // Process one at a time for
       results.push({
         id: generateProductId(),
         url: url,
-        name: `Product from ${retailer} (Unable to load details)`,
+        name: `${retailer} Item ${vendorCount}`,
         price: null,
         image: 'https://placehold.co/400x400/7CB342/FFFFFF/png?text=No+Image',
         category: category,
