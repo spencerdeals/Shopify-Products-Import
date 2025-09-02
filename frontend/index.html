@@ -1,70 +1,1396 @@
-// Page navigation
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SDL Instant Imports</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #7cb342 0%, #2e7d32 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 900px;
+            width: 100%;
+            padding: 40px;
+            position: relative;
+            overflow: hidden;
+            min-height: 500px;
+        }
+
+        .container::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 5px;
+            background: linear-gradient(90deg, #7cb342 0%, #2e7d32 100%);
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+            text-align: center;
+        }
+
+        .subtitle {
+            color: #666;
+            text-align: center;
+            margin-bottom: 25px;
+            font-size: 14px;
+        }
+
+        .progress-bar {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 30px;
+        }
+
+        .progress-step {
+            display: flex;
+            align-items: center;
+            margin: 0 10px;
+        }
+
+        .progress-circle {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            background-color: #e0e0e0;
+            color: #666;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 14px;
+            margin-right: 8px;
+        }
+
+        .progress-circle.active {
+            background-color: #7cb342;
+            color: white;
+        }
+
+        .progress-circle.completed {
+            background-color: #4caf50;
+            color: white;
+        }
+
+        .progress-line {
+            width: 40px;
+            height: 2px;
+            background-color: #e0e0e0;
+            margin: 0 5px;
+        }
+
+        .progress-line.completed {
+            background-color: #4caf50;
+        }
+
+        .warning-box {
+            background: linear-gradient(135deg, #fff8e1 0%, #ffecb3 100%);
+            border: 2px solid #ffa726;
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 25px;
+            position: relative;
+        }
+
+        .warning-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+            color: #e65100;
+            font-weight: 600;
+            font-size: 15px;
+        }
+
+        .warning-header::before {
+            content: '⚠️';
+            margin-right: 8px;
+            font-size: 18px;
+        }
+
+        .warning-text {
+            color: #bf360c;
+            line-height: 1.5;
+            font-size: 14px;
+        }
+
+        .critical-warning {
+            background: linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%);
+            border: 2px solid #f44336;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 25px;
+        }
+
+        .critical-warning .warning-header {
+            color: #c62828;
+            font-size: 16px;
+        }
+
+        .critical-warning .warning-text {
+            color: #c62828;
+            font-weight: 500;
+        }
+
+        .forwarder-address {
+            background: linear-gradient(135deg, #e8f5e9 0%, #f1f8e9 100%);
+            border: 2px solid #66bb6a;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 25px;
+            position: relative;
+        }
+
+        .forwarder-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 12px;
+            color: #2e7d32;
+            font-weight: 600;
+            font-size: 16px;
+        }
+
+        .forwarder-header::before {
+            content: '🚚';
+            margin-right: 8px;
+            font-size: 20px;
+        }
+
+        .forwarder-name {
+            color: #2e7d32;
+            font-weight: 600;
+            font-size: 18px;
+            margin-bottom: 5px;
+        }
+
+        .forwarder-details {
+            color: #555;
+            line-height: 1.6;
+            margin-bottom: 10px;
+        }
+
+        .forwarder-note {
+            color: #2e7d32;
+            font-weight: 700;
+            font-size: 15px;
+            margin-top: 15px;
+            padding: 12px;
+            border-top: 2px solid #4caf50;
+            background: rgba(76, 175, 80, 0.1);
+            border-radius: 6px;
+        }
+
+        .page {
+            display: none;
+        }
+
+        .page.active {
+            display: block;
+            animation: fadeIn 0.5s;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .input-group {
+            margin-bottom: 25px;
+        }
+
+        label {
+            display: block;
+            color: #555;
+            margin-bottom: 8px;
+            font-weight: 500;
+            font-size: 14px;
+        }
+
+        input, textarea {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 16px;
+            transition: all 0.3s;
+            background-color: #f8f9fa;
+            font-family: inherit;
+        }
+
+        textarea {
+            min-height: 120px;
+            resize: vertical;
+        }
+
+        input:focus, textarea:focus {
+            outline: none;
+            border-color: #7cb342;
+            background-color: white;
+            box-shadow: 0 0 0 3px rgba(124, 179, 66, 0.1);
+        }
+
+        button {
+            padding: 15px 30px;
+            background: linear-gradient(135deg, #7cb342 0%, #2e7d32 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.3s, box-shadow 0.3s;
+            margin: 10px 5px;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(124, 179, 66, 0.3);
+        }
+
+        button:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .button-group {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 30px;
+        }
+
+        .secondary-btn {
+            background: linear-gradient(135deg, #90a4ae 0%, #607d8b 100%);
+        }
+
+        .vendor-group {
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            border: 2px solid;
+        }
+
+        .vendor-group.amazon {
+            background: linear-gradient(135deg, #fff3e0 0%, #ffe0b3 100%);
+            border-color: #ff9800;
+        }
+
+        .vendor-group.wayfair {
+            background: linear-gradient(135deg, #f3e5f5 0%, #e1bee7 100%);
+            border-color: #ba68c8;
+        }
+
+        .vendor-group.walmart {
+            background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+            border-color: #2196f3;
+        }
+
+        .vendor-group.target {
+            background: linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%);
+            border-color: #f44336;
+        }
+
+        .vendor-group.default {
+            background: linear-gradient(135deg, #f3e5f5 0%, #e1bee7 100%);
+            border-color: #ba68c8;
+        }
+
+        .vendor-header {
+            font-weight: 600;
+            font-size: 18px;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+        }
+
+        .vendor-header.amazon { color: #e65100; }
+        .vendor-header.wayfair { color: #6a1b9a; }
+        .vendor-header.walmart { color: #1565c0; }
+        .vendor-header.target { color: #c62828; }
+        .vendor-header.default { color: #6a1b9a; }
+
+        .vendor-header::before {
+            content: '🏪';
+            margin-right: 10px;
+            font-size: 22px;
+        }
+
+        .product-item {
+            background: rgba(255, 255, 255, 0.8);
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+            border-left: 4px solid;
+            display: flex;
+            align-items: flex-start;
+            gap: 15px;
+        }
+
+        .product-item.amazon { border-left-color: #ff9800; }
+        .product-item.wayfair { border-left-color: #ba68c8; }
+        .product-item.walmart { border-left-color: #2196f3; }
+        .product-item.target { border-left-color: #f44336; }
+        .product-item.default { border-left-color: #ba68c8; }
+
+        .product-item.confirmed {
+            background: rgba(200, 255, 200, 0.3);
+            border: 2px solid #4caf50;
+        }
+
+        .product-item.deleted {
+            opacity: 0.3;
+            pointer-events: none;
+            text-decoration: line-through;
+        }
+
+        .product-cost-summary {
+            background: rgba(255, 255, 255, 0.95);
+            border: 2px solid #4caf50;
+            border-radius: 8px;
+            padding: 12px;
+            margin-top: 12px;
+            display: none;
+        }
+
+        .product-cost-summary.visible {
+            display: block;
+        }
+
+        .cost-summary-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 6px;
+            font-size: 13px;
+        }
+
+        .cost-summary-total {
+            font-weight: 700;
+            font-size: 16px;
+            color: #2e7d32;
+            border-top: 2px solid #4caf50;
+            padding-top: 8px;
+            margin-top: 8px;
+        }
+
+        .delete-product-btn {
+            background: linear-gradient(135deg, #f44336 0%, #c62828 100%);
+            padding: 8px 16px;
+            margin-top: 10px;
+            font-size: 13px;
+        }
+
+        .delete-product-btn:hover {
+            background: linear-gradient(135deg, #c62828 0%, #b71c1c 100%);
+        }
+
+        .product-image {
+            width: 80px;
+            height: 80px;
+            object-fit: cover;
+            border-radius: 6px;
+            border: 1px solid #ddd;
+            flex-shrink: 0;
+        }
+
+        .product-details {
+            flex-grow: 1;
+        }
+
+        .product-name {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 6px;
+        }
+
+        .product-name a {
+            color: inherit;
+            text-decoration: none;
+            border-bottom: 1px dashed #666;
+        }
+
+        .product-name a:hover {
+            color: #2196f3;
+            border-bottom-color: #2196f3;
+        }
+
+        .product-info {
+            font-size: 13px;
+            color: #666;
+            margin-bottom: 10px;
+        }
+
+        .price-input-section {
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 6px;
+            padding: 10px;
+            margin-top: 10px;
+        }
+
+        .price-input-label {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 5px;
+            display: block;
+        }
+
+        .price-input-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .price-input {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            flex: 1;
+        }
+
+        .price-input input {
+            width: 100px;
+            padding: 8px;
+            border: 2px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .price-input input.confirmed {
+            background: #e8f5e9;
+            border-color: #4caf50;
+        }
+
+        .price-input input:disabled {
+            background: #f0f0f0;
+            cursor: not-allowed;
+        }
+
+        .price-buttons {
+            display: flex;
+            gap: 5px;
+        }
+
+        .price-btn {
+            padding: 6px 12px;
+            font-size: 12px;
+            border-radius: 6px;
+            min-width: 70px;
+        }
+
+        .check-price-btn {
+            background: linear-gradient(135deg, #2196f3 0%, #1976d2 100%);
+        }
+
+        .confirm-price-btn {
+            background: linear-gradient(135deg, #4caf50 0%, #388e3c 100%);
+        }
+
+        .confirm-price-btn.confirmed {
+            background: linear-gradient(135deg, #388e3c 0%, #2e7d32 100%);
+        }
+
+        .price-status {
+            font-size: 11px;
+            margin-top: 5px;
+            font-weight: 600;
+        }
+
+        .price-status.confirmed {
+            color: #4caf50;
+        }
+
+        .price-status.pending {
+            color: #ff9800;
+        }
+
+        .delivery-fee-input {
+            background: rgba(255, 255, 255, 0.9);
+            border: 2px solid;
+            border-radius: 8px;
+            margin-top: 15px;
+            padding: 15px;
+        }
+
+        .delivery-fee-input.amazon { border-color: #ff9800; }
+        .delivery-fee-input.wayfair { border-color: #ba68c8; }
+        .delivery-fee-input.walmart { border-color: #2196f3; }
+        .delivery-fee-input.target { border-color: #f44336; }
+        .delivery-fee-input.default { border-color: #ba68c8; }
+
+        .delivery-fee-input input {
+            background: white;
+        }
+
+        .cost-breakdown {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 25px;
+        }
+
+        .cost-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .cost-item:last-child {
+            border-bottom: none;
+        }
+
+        .cost-label {
+            color: #555;
+            font-size: 14px;
+        }
+
+        .cost-value {
+            color: #333;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .total-row {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 2px solid #7cb342;
+            background: rgba(124, 179, 66, 0.1);
+            border-radius: 8px;
+            padding: 15px;
+        }
+
+        .total-row .cost-label {
+            font-size: 18px;
+            color: #333;
+            font-weight: 600;
+        }
+
+        .total-row .cost-value {
+            font-size: 20px;
+            color: #7cb342;
+            font-weight: 700;
+        }
+
+        .confirmation-checkbox {
+            background: linear-gradient(135deg, #fff3e0 0%, #ffcc80 100%);
+            border: 2px solid #ff9800;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 25px;
+        }
+
+        .checkbox-container {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+        }
+
+        .checkbox-container input[type="checkbox"] {
+            margin-top: 4px;
+            width: auto;
+            flex-shrink: 0;
+        }
+
+        .checkbox-label {
+            color: #e65100;
+            font-size: 14px;
+            line-height: 1.5;
+            cursor: pointer;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            margin: 30px 0;
+        }
+
+        .loading.active {
+            display: block;
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #7cb342;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .loading-text {
+            margin-top: 15px;
+            color: #666;
+            font-size: 14px;
+        }
+
+        .error {
+            display: none;
+            background: linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%);
+            border: 2px solid #f44336;
+            color: #c62828;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+
+        .error.active {
+            display: block;
+        }
+
+        .info-text {
+            color: #666;
+            font-size: 12px;
+            text-align: center;
+            margin-top: 20px;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>SDL Instant Imports (Ocean Freight)</h1>
+        <p class="subtitle">Get accurate shipping costs for your Bermuda imports</p>
+        
+        <div class="progress-bar">
+            <div class="progress-step">
+                <div class="progress-circle active" id="step1">1</div>
+                <span>Add Products</span>
+            </div>
+            <div class="progress-line" id="line1"></div>
+            <div class="progress-step">
+                <div class="progress-circle" id="step2">2</div>
+                <span>Review & Fees</span>
+            </div>
+            <div class="progress-line" id="line2"></div>
+            <div class="progress-step">
+                <div class="progress-circle" id="step3">3</div>
+                <span>Confirm Order</span>
+            </div>
+        </div>
+
+        <div class="page active" id="page1">
+            <div class="warning-box">
+                <div class="warning-header">Please Note</div>
+                <div class="warning-text">
+                    Before pasting your links, make sure you've selected the correct size, color, or variant on each product page. We can't be responsible for mix-ups if the wrong variant gets ordered!
+                </div>
+            </div>
+
+            <form id="urlForm">
+                <div class="input-group">
+                    <label for="productUrls">Product URLs</label>
+                    <textarea 
+                        id="productUrls" 
+                        name="productUrls" 
+                        placeholder="Paste your product URLs here, one per line:
+https://www.amazon.com/product1
+https://www.wayfair.com/product2
+https://www.target.com/product3
+
+You can add as many as you'd like!"
+                        required
+                    ></textarea>
+                </div>
+
+                <div class="button-group">
+                    <div></div>
+                    <button type="submit">Continue to Review →</button>
+                </div>
+            </form>
+        </div>
+
+        <div class="page" id="page2">
+            <h2 style="margin-bottom: 20px; color: #333;">Review Your Products</h2>
+            
+            <div class="critical-warning">
+                <div class="warning-header">IMPORTANT: Verify All Prices</div>
+                <div class="warning-text">
+                    Incorrect prices will delay your order! Please:<br>
+                    • Click "Check Price" to open each product page<br>
+                    • Enter the exact price shown on the retailer's website<br>
+                    • Click "Confirm" to lock in each price<br><br>
+                    Orders with unconfirmed or incorrect prices may be held for verification, causing 1-2 week delays.
+                </div>
+            </div>
+
+            <div class="forwarder-address">
+                <div class="forwarder-header">USA Freight Forwarder Address</div>
+                <div class="forwarder-name">Sealine Freight Forwarder</div>
+                <div class="forwarder-details">
+                    614 Progress Street<br>
+                    Elizabeth, NJ 07201<br>
+                    New Jersey, USA
+                </div>
+                <div class="forwarder-note">
+                    Use this address when calculating shipping costs from US retailers to get accurate delivery totals.
+                </div>
+            </div>
+
+            <div id="vendorGroups"></div>
+
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <div class="loading-text">Searching for product information... This may take 1-2 minutes, please wait.</div>
+            </div>
+
+            <div class="error" id="error"></div>
+
+            <div class="button-group">
+                <button type="button" class="secondary-btn" onclick="handleBackToProducts()">← Back to Products</button>
+                <button type="button" id="continueToFinal" onclick="calculateAndProceed()" disabled>Calculate Total →</button>
+            </div>
+        </div>
+
+        <div class="page" id="page3">
+            <h2 style="margin-bottom: 20px; color: #333;">Final Cost Breakdown</h2>
+            
+            <div class="cost-breakdown" id="costBreakdown"></div>
+
+            <div class="warning-box" style="margin-bottom: 25px;">
+                <div class="warning-header">Estimated Delivery Timeframe</div>
+                <div class="warning-text">
+                    <strong>Expected delivery to Bermuda: 3-5 weeks</strong><br>
+                    This includes processing time, ocean transit, and customs clearance.
+                </div>
+            </div>
+
+            <div class="confirmation-checkbox">
+                <div class="checkbox-container">
+                    <input type="checkbox" id="confirmVariants">
+                    <label for="confirmVariants" class="checkbox-label">
+                        <strong>I understand and confirm:</strong><br><br>
+                        • I have double-checked that all product links have the correct sizes, colors, and variants selected<br>
+                        • I have verified and confirmed all product prices<br>
+                        • These shipping costs are estimates based on intelligent analysis - actual costs may vary<br>
+                        • SDL may contact me with an updated quote if significant differences are found<br>
+                        • If I don't hear from SDL, my items are confirmed and I can expect delivery within 3-5 weeks<br>
+                        • SDL will not be responsible for customer errors if wrong items are ordered<br><br>
+                        I agree to these terms and wish to proceed with my import request.
+                    </label>
+                </div>
+            </div>
+
+            <div class="button-group">
+                <button type="button" class="secondary-btn" onclick="handleBackToReview()">← Back to Review</button>
+                <button type="button" id="createOrderBtn" onclick="createDraftOrder()" disabled>Confirm & Create Order</button>
+            </div>
+        </div>
+
+        <p class="info-text" id="infoText">
+            This calculator uses intelligent estimation to determine shipping costs based on product category, weight, and price.
+            We search multiple data points to provide the most accurate estimate possible.
+        </p>
+    </div>
+
+    <script type="text/javascript">
+        // Initialize variables
+        let currentPage = 1;
+        let scrapedProducts = [];
+        let vendorGroups = {};
+        let finalCalculation = null;
+        let confirmedPrices = new Set();
+
+        // Check if URL is from SDL
+        function isSDLDomain(url) {
+            try {
+                const domain = new URL(url).hostname.toLowerCase();
+                const blockedPatterns = ['spencer-deals-ltd.myshopify.com', 'sdl.bm', 'spencer-deals'];
+                return blockedPatterns.some(pattern => domain.includes(pattern));
+            } catch (e) {
+                return false;
+            }
+        }
+
+        // Page navigation
         function goToPage(pageNumber) {
-            // Hide all pages
             document.querySelectorAll('.page').forEach(page => {
                 page.classList.remove('active');
             });
             
-            // Show selected page
             document.getElementById(`page${pageNumber}`).classList.add('active');
-            
-            // Update progress bar
             updateProgressBar(pageNumber);
             
-            // Reset state when going back to page 1
             if (pageNumber === 1) {
                 resetToFirstPage();
             }
             
             currentPage = pageNumber;
         }
-        
-        // Handle back to products button with loading feedback
+
+        function updateProgressBar(activeStep) {
+            for (let i = 1; i <= 3; i++) {
+                const step = document.getElementById(`step${i}`);
+                const line = document.getElementById(`line${i}`);
+                
+                if (i < activeStep) {
+                    step.classList.remove('active');
+                    step.classList.add('completed');
+                    if (line) line.classList.add('completed');
+                } else if (i === activeStep) {
+                    step.classList.add('active');
+                    step.classList.remove('completed');
+                } else {
+                    step.classList.remove('active', 'completed');
+                    if (line) line.classList.remove('completed');
+                }
+            }
+        }
+
         function handleBackToProducts() {
-            // Provide immediate feedback
             const backBtn = event.target;
             backBtn.textContent = 'Resetting...';
             backBtn.disabled = true;
             
-            // Small delay for visual feedback
             setTimeout(() => {
                 goToPage(1);
                 backBtn.textContent = '← Back to Products';
                 backBtn.disabled = false;
             }, 300);
         }
-        
-        // Reset function for going back to page 1
+
+        function handleBackToReview() {
+            goToPage(2);
+        }
+
         function resetToFirstPage() {
-            // Clear the URL input
             document.getElementById('productUrls').value = '';
-            
-            // Clear any error messages
             document.getElementById('error').classList.remove('active');
             document.getElementById('error').textContent = '';
-            
-            // Clear loading state
             document.getElementById('loading').classList.remove('active');
-            
-            // Clear vendor groups
             document.getElementById('vendorGroups').innerHTML = '';
-            
-            // Reset data
             scrapedProducts = [];
             vendorGroups = {};
             finalCalculation = null;
             confirmedPrices.clear();
-            
-            // Reset buttons
             document.getElementById('continueToFinal').disabled = true;
             document.getElementById('createOrderBtn').disabled = true;
             document.getElementById('confirmVariants').checked = false;
-            
-            // Clear cost breakdown
             document.getElementById('costBreakdown').innerHTML = '';
-            
-            // Focus on the URL input for better UX
             setTimeout(() => {
                 document.getElementById('productUrls').focus();
             }, 100);
         }
+
+        function checkPrice(url) {
+            window.open(url, '_blank');
+        }
+
+        function confirmPrice(productId, vendor, productIndex) {
+            const priceInput = document.getElementById(`price-${productId}`);
+            const price = parseFloat(priceInput.value);
+            
+            if (!price || price <= 0) {
+                alert('Please enter a valid price before confirming');
+                return;
+            }
+            
+            if (vendorGroups[vendor] && vendorGroups[vendor][productIndex]) {
+                vendorGroups[vendor][productIndex].price = price;
+                vendorGroups[vendor][productIndex].priceConfirmed = true;
+            }
+            
+            const product = vendorGroups[vendor][productIndex];
+            const duty = price * 0.265;
+            const shipping = product.shippingCost || 50;
+            const subtotal = price + duty + shipping;
+            const sdlMargin = subtotal * 0.15;
+            const totalLanded = subtotal + sdlMargin;
+            
+            document.getElementById(`item-cost-${productId}`).textContent = `$${price.toFixed(2)}`;
+            document.getElementById(`duty-cost-${productId}`).textContent = `$${duty.toFixed(2)}`;
+            document.getElementById(`shipping-cost-${productId}`).textContent = `$${shipping.toFixed(2)}`;
+            document.getElementById(`service-cost-${productId}`).textContent = `$${sdlMargin.toFixed(2)}`;
+            document.getElementById(`total-cost-${productId}`).textContent = `$${totalLanded.toFixed(2)}`;
+            
+            document.getElementById(`cost-summary-${productId}`).classList.add('visible');
+            
+            confirmedPrices.add(productId);
+            
+            priceInput.classList.add('confirmed');
+            priceInput.disabled = true;
+            
+            const confirmBtn = document.getElementById(`confirm-btn-${productId}`);
+            confirmBtn.textContent = 'Confirmed ✓';
+            confirmBtn.classList.add('confirmed');
+            confirmBtn.disabled = true;
+            
+            const statusDiv = document.getElementById(`status-${productId}`);
+            statusDiv.textContent = '✓ Price confirmed - See total cost below';
+            statusDiv.className = 'price-status confirmed';
+            
+            const productItem = priceInput.closest('.product-item');
+            productItem.classList.add('confirmed');
+            
+            checkAllPricesConfirmed();
+        }
+
+        function deleteProduct(vendor, productIndex, productId) {
+            if (!confirm('Are you sure you want to remove this product from your order?')) {
+                return;
+            }
+            
+            if (vendorGroups[vendor] && vendorGroups[vendor][productIndex]) {
+                vendorGroups[vendor][productIndex].deleted = true;
+            }
+            
+            confirmedPrices.delete(productId);
+            
+            const productItem = document.getElementById(`product-item-${productId}`);
+            productItem.classList.add('deleted');
+            
+            setTimeout(() => {
+                productItem.style.display = 'none';
+                
+                const vendorProducts = vendorGroups[vendor].filter(p => !p.deleted);
+                if (vendorProducts.length === 0) {
+                    const vendorGroup = document.getElementById(`vendor-${vendor}`);
+                    if (vendorGroup) {
+                        vendorGroup.style.display = 'none';
+                    }
+                }
+            }, 300);
+            
+            checkAllPricesConfirmed();
+        }
+
+        function checkAllPricesConfirmed() {
+            const allPriceInputs = document.querySelectorAll('[id^="price-"]:not(.deleted [id^="price-"])');
+            const activeInputs = Array.from(allPriceInputs).filter(input => {
+                const productItem = input.closest('.product-item');
+                return !productItem.classList.contains('deleted');
+            });
+            
+            const allConfirmed = activeInputs.every(input => 
+                input.classList.contains('confirmed') || parseFloat(input.value) > 0
+            );
+            
+            const hasActiveProducts = activeInputs.length > 0;
+            
+            document.getElementById('continueToFinal').disabled = !hasActiveProducts;
+            
+            if (allConfirmed && hasActiveProducts) {
+                const continueBtn = document.getElementById('continueToFinal');
+                continueBtn.style.animation = 'pulse 1s';
+            }
+        }
+
+        document.getElementById('urlForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const rawText = document.getElementById('productUrls').value.trim();
+            const urls = rawText
+                .split(/[\n\r\s]+/)
+                .map(url => url.trim())
+                .filter(url => url && url.startsWith('http'))
+                .filter(url => url.length > 10);
+            
+            if (urls.length === 0) {
+                alert('Please enter at least one valid product URL');
+                return;
+            }
+            
+            const sdlUrls = urls.filter(url => isSDLDomain(url));
+            if (sdlUrls.length > 0) {
+                alert('This calculator is for importing products from other retailers.');
+                return;
+            }
+            
+            goToPage(2);
+            await scrapeProducts(urls);
+        });
+
+        async function scrapeProducts(urls) {
+            document.getElementById('loading').classList.add('active');
+            
+            try {
+                const response = await fetch('/api/scrape', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ urls })
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Failed to scrape products');
+                }
+                
+                const data = await response.json();
+                scrapedProducts = data.products || [];
+                vendorGroups = groupProductsByVendor(scrapedProducts);
+                
+                displayVendorGroups();
+                document.getElementById('loading').classList.remove('active');
+                document.getElementById('continueToFinal').disabled = false;
+                
+            } catch (error) {
+                document.getElementById('loading').classList.remove('active');
+                document.getElementById('error').classList.add('active');
+                document.getElementById('error').textContent = 'Failed to load products. Please try again.';
+            }
+        }
+
+        function groupProductsByVendor(products) {
+            const groups = {};
+            products.forEach(product => {
+                const vendor = product.retailer || 'Unknown';
+                if (!groups[vendor]) {
+                    groups[vendor] = [];
+                }
+                groups[vendor].push(product);
+            });
+            return groups;
+        }
+
+        function displayVendorGroups() {
+            const container = document.getElementById('vendorGroups');
+            container.innerHTML = '';
+            
+            Object.entries(vendorGroups).forEach(([vendor, products]) => {
+                const vendorClass = vendor.toLowerCase().replace(/\s+/g, '');
+                const vendorDiv = document.createElement('div');
+                vendorDiv.className = `vendor-group ${vendorClass}`;
+                vendorDiv.id = `vendor-${vendor}`;
+                
+                let vendorHTML = `<div class="vendor-header ${vendorClass}">${vendor} Products</div>`;
+                
+                products.forEach((product, index) => {
+                    if (product.deleted) return;
+                    
+                    const productId = `${vendor.replace(/\s+/g, '')}-${index}`;
+                    const hasScrapedPrice = product.price && product.price > 0;
+                    
+                    vendorHTML += `
+                        <div class="product-item ${vendorClass}" id="product-item-${productId}">
+                            <img src="${product.image}" alt="${product.name}" class="product-image" 
+                                 onerror="this.src='https://placehold.co/80x80/7CB342/FFFFFF/png?text=SDL'">
+                            <div class="product-details">
+                                <div class="product-name">
+                                    <a href="${product.url}" target="_blank">${product.name}</a>
+                                </div>
+                                <div class="product-info">
+                                    Category: ${product.category} | Estimated shipping: $${product.shippingCost || 0}
+                                </div>
+                                <div class="price-input-section">
+                                    <label class="price-input-label" for="price-${productId}">
+                                        Item Price: ${hasScrapedPrice ? `(Found: $${product.price})` : '(Not found - please check)'}
+                                    </label>
+                                    <div class="price-input-container">
+                                        <div class="price-input">
+                                            <span>$</span>
+                                            <input type="number" 
+                                                   id="price-${productId}" 
+                                                   step="0.01" 
+                                                   min="0" 
+                                                   value="${hasScrapedPrice ? product.price : ''}"
+                                                   placeholder="0.00"
+                                                   data-product-index="${products.indexOf(product)}"
+                                                   data-vendor="${vendor}">
+                                        </div>
+                                        <div class="price-buttons">
+                                            <button type="button" class="price-btn check-price-btn"
+                                                    onclick="checkPrice('${product.url}')">
+                                                Check Price
+                                            </button>
+                                            <button type="button" id="confirm-btn-${productId}"
+                                                    class="price-btn confirm-price-btn"
+                                                    onclick="confirmPrice('${productId}', '${vendor}', ${index})">
+                                                Confirm
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div id="status-${productId}" class="price-status pending">
+                                        ${hasScrapedPrice ? 'Please verify and confirm price' : 'Price required'}
+                                    </div>
+                                </div>
+                                <div class="product-cost-summary" id="cost-summary-${productId}">
+                                    <div class="cost-summary-row">
+                                        <span>Item Cost:</span>
+                                        <span id="item-cost-${productId}">$0.00</span>
+                                    </div>
+                                    <div class="cost-summary-row">
+                                        <span>Import Duty (26.5%):</span>
+                                        <span id="duty-cost-${productId}">$0.00</span>
+                                    </div>
+                                    <div class="cost-summary-row">
+                                        <span>Ocean Freight:</span>
+                                        <span id="shipping-cost-${productId}">$0.00</span>
+                                    </div>
+                                    <div class="cost-summary-row">
+                                        <span>SDL Service (15%):</span>
+                                        <span id="service-cost-${productId}">$0.00</span>
+                                    </div>
+                                    <div class="cost-summary-row cost-summary-total">
+                                        <span>Total Landed Cost:</span>
+                                        <span id="total-cost-${productId}">$0.00</span>
+                                    </div>
+                                    <button type="button" class="delete-product-btn"
+                                            onclick="deleteProduct('${vendor}', ${index}, '${productId}')">
+                                        🗑️ Remove Product
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                vendorDiv.innerHTML = vendorHTML + `
+                    <div class="delivery-fee-input ${vendorClass}">
+                        <label for="delivery-${vendor}">
+                            <strong>${vendor} Delivery Fee (if any):</strong><br>
+                            <small>Enter any shipping charges from ${vendor} to our New Jersey address:</small>
+                        </label>
+                        <div style="display: flex; align-items: center; margin-top: 8px;">
+                            <span style="margin-right: 10px;">$</span>
+                            <input type="number" id="delivery-${vendor}" step="0.01" min="0" value="0" placeholder="0.00">
+                        </div>
+                    </div>
+                `;
+                
+                container.appendChild(vendorDiv);
+            });
+            
+            attachPriceListeners();
+        }
+
+        function attachPriceListeners() {
+            document.querySelectorAll('[id^="price-"]').forEach(input => {
+                input.addEventListener('change', function() {
+                    const vendor = this.dataset.vendor;
+                    const productIndex = parseInt(this.dataset.productIndex);
+                    const price = parseFloat(this.value) || 0;
+                    
+                    if (vendorGroups[vendor] && vendorGroups[vendor][productIndex]) {
+                        vendorGroups[vendor][productIndex].price = price;
+                        
+                        const productId = `${vendor.replace(/\s+/g, '')}-${productIndex}`;
+                        if (confirmedPrices.has(productId) && !this.disabled) {
+                            confirmedPrices.delete(productId);
+                            this.classList.remove('confirmed');
+                            
+                            const costSummary = document.getElementById(`cost-summary-${productId}`);
+                            if (costSummary) {
+                                costSummary.classList.remove('visible');
+                            }
+                            
+                            const confirmBtn = document.getElementById(`confirm-btn-${productId}`);
+                            confirmBtn.textContent = 'Confirm';
+                            confirmBtn.classList.remove('confirmed');
+                            confirmBtn.disabled = false;
+                            
+                            const statusDiv = document.getElementById(`status-${productId}`);
+                            statusDiv.textContent = 'Please verify and confirm price';
+                            statusDiv.className = 'price-status pending';
+                            
+                            const productItem = this.closest('.product-item');
+                            productItem.classList.remove('confirmed');
+                        }
+                    }
+                });
+            });
+        }
+
+        async function calculateAndProceed() {
+            const unconfirmedCount = document.querySelectorAll('.price-input input:not(.confirmed)').length;
+            if (unconfirmedCount > 0) {
+                const proceed = confirm(`You have ${unconfirmedCount} unconfirmed price(s). Continue anyway?`);
+                if (!proceed) return;
+            }
+            
+            const deliveryFees = {};
+            Object.keys(vendorGroups).forEach(vendor => {
+                const input = document.getElementById(`delivery-${vendor}`);
+                deliveryFees[vendor] = parseFloat(input.value) || 0;
+            });
+            
+            const calculation = calculateTotals(deliveryFees);
+            finalCalculation = calculation;
+            
+            displayFinalBreakdown(calculation);
+            goToPage(3);
+        }
+
+        function calculateTotals(deliveryFees) {
+            let totalItemCost = 0;
+            let totalShippingCost = 0;
+            let totalDeliveryFees = 0;
+            const activeProducts = [];
+            
+            scrapedProducts.forEach((product, index) => {
+                if (product.deleted) return;
+                
+                const priceInput = document.querySelector(`input[data-product-index="${index}"]`);
+                if (priceInput) {
+                    product.price = parseFloat(priceInput.value) || 0;
+                }
+                
+                if (product.price > 0) {
+                    totalItemCost += product.price;
+                    totalShippingCost += product.shippingCost || 0;
+                    activeProducts.push(product);
+                }
+            });
+            
+            Object.values(deliveryFees).forEach(fee => {
+                totalDeliveryFees += fee;
+            });
+            
+            const dutyAmount = totalItemCost * 0.265;
+            const subtotal = totalItemCost + dutyAmount + totalDeliveryFees + totalShippingCost;
+            const sdlMargin = subtotal * 0.15;
+            const grandTotal = subtotal + sdlMargin;
+            
+            return {
+                products: activeProducts,
+                deletedCount: scrapedProducts.filter(p => p.deleted).length,
+                deliveryFees,
+                totals: {
+                    totalItemCost,
+                    dutyAmount,
+                    totalDeliveryFees,
+                    totalShippingCost,
+                    sdlMargin,
+                    grandTotal
+                },
+                originalUrls: document.getElementById('productUrls').value
+                    .split('\n')
+                    .map(url => url.trim())
+                    .filter(url => url && url.startsWith('http'))
+            };
+        }
+
+        function displayFinalBreakdown(calculation) {
+            const container = document.getElementById('costBreakdown');
+            const { totals, products, deletedCount } = calculation;
+            
+            let productBreakdown = '';
+            
+            if (products.length > 0) {
+                productBreakdown = `<h3 style="margin-bottom: 15px; color: #333;">Product-by-Product Breakdown</h3>`;
+                
+                products.forEach(product => {
+                    const duty = product.price * 0.265;
+                    const shipping = product.shippingCost || 50;
+                    const subtotal = product.price + duty + shipping;
+                    const sdlMargin = subtotal * 0.15;
+                    const totalLanded = subtotal + sdlMargin;
+                    
+                    productBreakdown += `
+                        <div style="background: #f0f0f0; padding: 10px; margin-bottom: 10px; border-radius: 8px;">
+                            <div style="font-weight: 600; margin-bottom: 5px;">${product.name.substring(0, 50)}...</div>
+                            <div style="font-size: 12px; color: #666;">
+                                Price: $${product.price.toFixed(2)} + 
+                                Duty: $${duty.toFixed(2)} + 
+                                Shipping: $${shipping.toFixed(2)} + 
+                                SDL: $${sdlMargin.toFixed(2)} = 
+                                <strong style="color: #2e7d32;">$${totalLanded.toFixed(2)}</strong>
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                if (deletedCount > 0) {
+                    productBreakdown += `<div style="font-style: italic; color: #666; margin-top: 10px;">${deletedCount} product(s) removed from order</div>`;
+                }
+                
+                productBreakdown += `<hr style="margin: 20px 0; border: 1px solid #ddd;">`;
+            }
+            
+            container.innerHTML = productBreakdown + `
+                <h3 style="margin-bottom: 15px; color: #333;">Order Total Summary</h3>
+                <div class="cost-item">
+                    <span class="cost-label">Total Item Cost (${products.length} items):</span>
+                    <span class="cost-value">$${totals.totalItemCost.toFixed(2)}</span>
+                </div>
+                <div class="cost-item">
+                    <span class="cost-label">Bermuda Import Duty (26.5%):</span>
+                    <span class="cost-value">$${totals.dutyAmount.toFixed(2)}</span>
+                </div>
+                <div class="cost-item">
+                    <span class="cost-label">USA Delivery Fees:</span>
+                    <span class="cost-value">$${totals.totalDeliveryFees.toFixed(2)}</span>
+                </div>
+                <div class="cost-item">
+                    <span class="cost-label">Ocean Freight & Handling:</span>
+                    <span class="cost-value">$${totals.totalShippingCost.toFixed(2)}</span>
+                </div>
+                <div class="cost-item">
+                    <span class="cost-label">SDL Service Fee (15%):</span>
+                    <span class="cost-value">$${totals.sdlMargin.toFixed(2)}</span>
+                </div>
+                <div class="cost-item total-row">
+                    <span class="cost-label">Total Landed Cost:</span>
+                    <span class="cost-value">$${totals.grandTotal.toFixed(2)}</span>
+                </div>
+            `;
+        }
+
+        document.getElementById('confirmVariants').addEventListener('change', function() {
+            document.getElementById('createOrderBtn').disabled = !this.checked;
+        });
+
+        async function createDraftOrder() {
+            if (!finalCalculation) return;
+            
+            const btn = document.getElementById('createOrderBtn');
+            btn.disabled = true;
+            btn.textContent = 'Preparing order...';
+            
+            try {
+                const response = await fetch('/api/store-pending-order', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(finalCalculation)
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Failed to store order');
+                }
+                
+                const { orderId } = await response.json();
+                
+                const shopifyUrl = `https://spencer-deals-ltd.myshopify.com/account/register?return_url=${encodeURIComponent(window.location.origin + '/complete-order.html?orderId=' + orderId)}`;
+                
+                window.location.href = shopifyUrl;
+                
+            } catch (error) {
+                console.error('Error preparing order:', error);
+                alert('Failed to prepare order. Please try again.');
+                btn.disabled = false;
+                btn.textContent = 'Confirm & Create Order';
+            }
+        }
+    </script>
+</body>
+</html>
