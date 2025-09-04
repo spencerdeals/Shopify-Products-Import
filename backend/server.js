@@ -603,28 +603,63 @@ async function scrapeWithScrapingBee(url) {
   const retailer = detectRetailer(url);
   
   // Try Apify first for Wayfair
-  if (retailer === 'Wayfair' && ENABLE_APIFY && apifyScraper && apifyScraper.isAvailable()) {
+  if (retailer === 'Wayfair' && ENABLE_APIFY && APIFY_API_KEY) {
     try {
-      console.log('   🔄 Using Apify for Wayfair...');
+      console.log('   🔄 Using Apify Wayfair Actor...');
       
-      // Timeout wrapper for Apify (10 seconds max)
-      const apifyPromise = apifyScraper.scrapeWayfair(url);
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Apify timeout')), 10000)
-      );
+      // Using the dedicated Wayfair actor
+      const { ApifyClient } = require('apify-client');
+      const client = new ApifyClient({ token: APIFY_API_KEY });
       
-      const apifyResult = await Promise.race([apifyPromise, timeoutPromise]);
+      // Using epctex/wayfair-scraper actor (most reliable)
+      const run = await client.actor('epctex/wayfair-scraper').call({
+        startUrls: [{ url: url }],
+        maxItems: 1,
+        proxy: {
+          useApifyProxy: true,
+          apifyProxyGroups: ['RESIDENTIAL']  // Residential IPs work better
+        }
+      });
       
-      if (apifyResult && apifyResult.price) {
-        console.log('   ✅ Apify scraped successfully');
+      // Wait for the actor to finish (max 30 seconds)
+      const result = await client.run(run.id).waitForFinish({ waitSecs: 30 });
+      
+      // Get the results
+      const { items } = await client.dataset(run.defaultDatasetId).listItems();
+      
+      if (items && items.length > 0) {
+        const item = items[0];
+        console.log('   ✅ Wayfair Actor success!');
+        
+        // Extract price (handle sale prices)
+        let price = null;
+        if (item.price) {
+          // Price might be in various formats
+          if (typeof item.price === 'object') {
+            price = item.price.value || item.price.amount || item.price.min || null;
+          } else if (typeof item.price === 'string') {
+            price = parseFloat(item.price.replace(/[^0-9.]/g, ''));
+          } else {
+            price = parseFloat(item.price);
+          }
+        } else if (item.salePrice) {
+          price = parseFloat(item.salePrice);
+        } else if (item.pricing?.price) {
+          price = parseFloat(item.pricing.price);
+        }
+        
+        console.log('   💰 Wayfair price:', price);
+        console.log('   📝 Wayfair title:', item.name || item.title);
+        
         return {
-          price: apifyResult.price,
-          title: apifyResult.name || apifyResult.title,
-          image: apifyResult.image
+          price: price,
+          title: item.name || item.title || item.productName,
+          image: item.mainImage || item.images?.[0] || item.image
         };
       }
     } catch (apifyError) {
-      console.log('   ⚠️ Apify failed, falling back to ScrapingBee:', apifyError.message);
+      console.log('   ⚠️ Wayfair Actor failed:', apifyError.message);
+      // Fall back to ScrapingBee
     }
   }
   
@@ -675,7 +710,7 @@ async function scrapeWithScrapingBee(url) {
       method: 'GET',
       url: 'https://app.scrapingbee.com/api/v1',
       params: scrapingParams,
-      timeout: 35000
+      timeout: 20000  // Reduced from 35000
     });
     
     const data = response.data;
