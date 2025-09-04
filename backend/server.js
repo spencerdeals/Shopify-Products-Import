@@ -1469,7 +1469,8 @@ app.listen(PORT, () => {
   console.log(`📍 Frontend: http://localhost:${PORT}`);
   console.log(`💚 Health: http://localhost:${PORT}/health`);
   console.log(`📊 Admin Orders: http://localhost:${PORT}/api/admin/orders?password=${ADMIN_PASSWORD}`);
-  console.log(`💰 Margin Structure: TIERED (40%/30%/25%/20% by volume)`);
+  console.log(`💰 Margin Structure: TIERED (20%/25%/22%/18%/15% by volume)`);
+  console.log(`📄 Documentation Fee: $10 per vendor`);
   if (TEST_MODE) {
     console.log(`🧪 Test Mode: ENABLED`);
     console.log(`   - Create test order: /api/test/create-sample-order`);
