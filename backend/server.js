@@ -1,4 +1,27 @@
-const express = require('express');
+// Try Apify first for Wayfair
+  if (retailer === 'Wayfair' && ENABLE_APIFY && APIFY_API_KEY) {
+    try {
+      console.log('   🔄 Using Apify Wayfair Actor...');
+      
+      // Create client directly here since we have the API key
+      const { ApifyClient } = require('apify-client');
+      const client = new ApifyClient({ token: APIFY_API_KEY });
+      
+      console.log('   📦 Calling mscraper/wayfair-scraper...');
+      
+      // Using mscraper/wayfair-scraper actor (the one you have)
+      const run = await client.actor('mscraper/wayfair-scraper').call({
+        startUrls: [url],
+        maxProducts: 1,
+        proxy: {
+          useApifyProxy: true,
+          apifyProxyGroups: ['RESIDENTIAL']
+        }
+      });
+      
+      console.log('   ⏳ Waiting for Wayfair actor to complete...');
+      
+      // Wait for the actor to finish (maxconst express = require('express');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const axios = require('axios');
@@ -601,6 +624,8 @@ async function scrapeWithScrapingBee(url) {
   }
   
   const retailer = detectRetailer(url);
+  
+  console.log(`   🔍 Debug: Wayfair check - ENABLE_APIFY: ${ENABLE_APIFY}, Has API Key: ${!!APIFY_API_KEY}, Retailer: ${retailer}`);
   
   // Try Apify first for Wayfair
   if (retailer === 'Wayfair' && ENABLE_APIFY && APIFY_API_KEY) {
