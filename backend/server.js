@@ -32,9 +32,26 @@ const GOOGLE_SHEET_ID = process.env.GOOGLE_SHEET_ID;
 const GOOGLE_SERVICE_ACCOUNT_KEY = process.env.GOOGLE_SERVICE_ACCOUNT_KEY ? 
   JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_KEY) : null;
 
-// Load Google APIs if configured
+// Load optional APIs
 let google = null;
 let sendgrid = null;
+let ApifyScraper = null;
+let apifyScraper = null;
+
+// Apify configuration (for Wayfair and difficult sites)
+const APIFY_API_KEY = process.env.APIFY_API_KEY || '';
+const ENABLE_APIFY = false;  // Set to true when you add API key
+
+// Initialize Apify if available
+try {
+  ApifyScraper = require('./apifyScraper');
+  apifyScraper = new ApifyScraper(APIFY_API_KEY);
+  if (ENABLE_APIFY && apifyScraper.isAvailable()) {
+    console.log('✅ Apify initialized for Wayfair scraping');
+  }
+} catch (error) {
+  console.log('⚠️ Apify not configured:', error.message);
+}
 
 if (GOOGLE_SERVICE_ACCOUNT_KEY) {
   try {
@@ -174,6 +191,7 @@ console.log(`Port: ${PORT}`);
 console.log(`Shopify: ${SHOPIFY_ACCESS_TOKEN ? 'CONNECTED' : 'NOT CONFIGURED'}`);
 console.log(`Email: ${sendgrid ? 'ENABLED' : 'DISABLED'}`);
 console.log(`Google Sheets: ${GOOGLE_SERVICE_ACCOUNT_KEY ? 'ENABLED' : 'DISABLED'}`);
+console.log(`Apify: ${ENABLE_APIFY && apifyScraper?.isAvailable() ? 'ENABLED (Wayfair priority)' : 'DISABLED'}`);
 console.log(`ScrapingBee: ${SCRAPINGBEE_API_KEY ? 'ENABLED' : 'DISABLED'}`);
 console.log('Margin Structure: TIERED (40%/30%/25%/20% by volume)');
 console.log('====================================\n');
@@ -216,7 +234,8 @@ app.get('/health', (req, res) => {
       shopify: !!SHOPIFY_ACCESS_TOKEN,
       email: !!sendgrid,
       google_sheets: !!GOOGLE_SERVICE_ACCOUNT_KEY,
-      scraping: !!SCRAPINGBEE_API_KEY
+      scraping: !!SCRAPINGBEE_API_KEY,
+      apify: ENABLE_APIFY && apifyScraper?.isAvailable()
     },
     stats: {
       products_learned: Object.keys(LEARNING_DB.products).length,
@@ -583,6 +602,33 @@ async function scrapeWithScrapingBee(url) {
   
   const retailer = detectRetailer(url);
   
+  // Try Apify first for Wayfair
+  if (retailer === 'Wayfair' && ENABLE_APIFY && apifyScraper && apifyScraper.isAvailable()) {
+    try {
+      console.log('   🔄 Using Apify for Wayfair...');
+      
+      // Timeout wrapper for Apify (10 seconds max)
+      const apifyPromise = apifyScraper.scrapeWayfair(url);
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Apify timeout')), 10000)
+      );
+      
+      const apifyResult = await Promise.race([apifyPromise, timeoutPromise]);
+      
+      if (apifyResult && apifyResult.price) {
+        console.log('   ✅ Apify scraped successfully');
+        return {
+          price: apifyResult.price,
+          title: apifyResult.name || apifyResult.title,
+          image: apifyResult.image
+        };
+      }
+    } catch (apifyError) {
+      console.log('   ⚠️ Apify failed, falling back to ScrapingBee:', apifyError.message);
+    }
+  }
+  
+  // ScrapingBee as primary or fallback
   try {
     console.log('   🐝 ScrapingBee requesting...');
     
@@ -598,14 +644,23 @@ async function scrapeWithScrapingBee(url) {
     };
     
     if (retailer === 'Wayfair') {
-      console.log('   🏠 Special Wayfair handling...');
+      console.log('   🏠 ScrapingBee fallback for Wayfair...');
       
-      // Simplified Wayfair approach - just use AI extraction
+      // Use AI extraction with stealth settings
       scrapingParams.wait = '5000';
+      scrapingParams.stealth_proxy = 'true';
+      scrapingParams.js_scenario = JSON.stringify({
+        instructions: [
+          { wait: 1000 },
+          { wait_for: '.pl-Heading' },
+          { evaluate: "document.querySelectorAll('[aria-label*=\"Close\"]').forEach(el => el.click())" }
+        ]
+      });
       scrapingParams.ai_extract_rules = JSON.stringify({
-        price: "Product Price or Sale Price",
-        title: "Product Title or Name",
-        image: "Main Product Image URL"
+        price: "Product Price, Sale Price, or Current Price in USD",
+        original_price: "Original Price or Regular Price if on sale",
+        title: "Product Title, Product Name, or Item Name",
+        image: "Main Product Image URL, Primary Image, or First Gallery Image"
       });
     } else {
       // Default extraction rules for other retailers
@@ -629,20 +684,23 @@ async function scrapeWithScrapingBee(url) {
     let title = data.title || null;
     let image = data.image || null;
     
-    // Parse price
-    if (data.price) {
-      const priceStr = data.price.toString();
+    // Parse price - check both price and original_price for Wayfair sales
+    const priceToCheck = data.price || data.original_price;
+    if (priceToCheck) {
+      const priceStr = priceToCheck.toString();
       // Clean up Wayfair price format
       const cleanPrice = priceStr.replace(/[^\d.,]/g, '').replace(/,/g, '');
       const priceMatch = cleanPrice.match(/([\d]+\.?\d*)/);
       if (priceMatch) {
         price = parseFloat(priceMatch[1]);
+        console.log('   💰 Price extracted: $' + price);
       }
     }
     
     // Clean up title
     if (title) {
       title = title.trim().replace(/\s+/g, ' ');
+      console.log('   📝 Title extracted:', title.substring(0, 50) + '...');
     }
     
     // Clean up image URL
@@ -650,7 +708,7 @@ async function scrapeWithScrapingBee(url) {
       image = 'https:' + image;
     }
     
-    console.log(`   ${retailer} scrape result: ${price ? '✓ Price found' : '✗ No price'}, ${title ? '✓ Title found' : '✗ No title'}`);
+    console.log(`   ${retailer} scrape result: ${price ? '✓ Price found' : '✗ No price'}, ${title ? '✓ Title found' : '✗ No title'}, ${image ? '✓ Image found' : '✗ No image'}`);
     
     return { price, title, image };
     
