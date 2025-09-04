@@ -174,7 +174,6 @@ console.log(`Port: ${PORT}`);
 console.log(`Shopify: ${SHOPIFY_ACCESS_TOKEN ? 'CONNECTED' : 'NOT CONFIGURED'}`);
 console.log(`Email: ${sendgrid ? 'ENABLED' : 'DISABLED'}`);
 console.log(`Google Sheets: ${GOOGLE_SERVICE_ACCOUNT_KEY ? 'ENABLED' : 'DISABLED'}`);
-console.log(`Apify: ${apifyScraper.isAvailable() ? 'ENABLED (Wayfair priority)' : 'DISABLED'}`);
 console.log(`ScrapingBee: ${SCRAPINGBEE_API_KEY ? 'ENABLED' : 'DISABLED'}`);
 console.log('Margin Structure: TIERED (40%/30%/25%/20% by volume)');
 console.log('====================================\n');
