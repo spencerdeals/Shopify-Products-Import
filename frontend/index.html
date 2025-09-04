@@ -961,17 +961,17 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
             <div class="critical-warning">
                 <div class="warning-header">⚠️ CRITICAL: Verify All Prices</div>
                 <div class="warning-text">
-                    Incorrect prices will delay your order! Please:<br><br>
+                    Incorrect prices could delay your estimated import window! Please:<br><br>
                     • Click "Check Price" to open each product page<br>
-                    • Enter the exact price shown on the retailer's website<br>
+                    • Enter the exact price shown on the retailer's website (if different from what is shown)<br>
                     • Click "Confirm" to lock in each price<br><br>
-                    Orders with unconfirmed or incorrect prices may be held for verification, causing 1-2 week delays.
+                    Accurate pricing ensures your order arrives within the expected timeframe.
                 </div>
             </div>
 
             <div class="forwarder-address">
                 <div class="forwarder-header">USA Freight Forwarder Address</div>
-                <div class="forwarder-name">Sealine Freight Forwarder</div>
+                <div class="forwarder-name">Ocean Freight Forwarder</div>
                 <div class="forwarder-details">
                     614 Progress Street<br>
                     Elizabeth, NJ 07201<br>
@@ -1422,8 +1422,8 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
                                     <label class="price-input-label" for="price-${productId}">
                                         Item Price: 
                                         ${hasScrapedPrice ? 
-                                            `<span class="price-found">✓ Found: $${displayPrice}</span>` : 
-                                            `<span class="price-missing">⚠️ Not found - please check</span>`}
+                                            `<span class="price-found">✓ Found: $${displayPrice} (verify & update if different)</span>` : 
+                                            `<span class="price-missing">⚠️ Not found - please check retailer website</span>`}
                                     </label>
                                     <div class="price-input-container">
                                         <div class="price-input">
@@ -1503,7 +1503,7 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
                             </div>
                             <div class="price-buttons">
                                 <button type="button" class="price-btn check-price-btn"
-                                        onclick="alert('Calculate shipping to:\\n\\nSealine Freight Forwarder\\n614 Progress Street\\nElizabeth, NJ 07201')">
+                                        onclick="alert('Calculate shipping to:\\n\\nOcean Freight Forwarder\\n614 Progress Street\\nElizabeth, NJ 07201')">
                                     📍 Show Address
                                 </button>
                                 <button type="button" id="confirm-delivery-${vendor}"
