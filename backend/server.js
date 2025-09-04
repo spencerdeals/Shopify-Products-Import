@@ -19,11 +19,11 @@ const SCRAPINGBEE_API_KEY = process.env.SCRAPINGBEE_API_KEY || '7Z45R9U0PVA9SCI5
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'sdl2024admin';
 const BERMUDA_DUTY_RATE = 0.265;
 const SHIPPING_RATE_PER_CUBIC_FOOT = 6;
-const CARD_FEE_RATE = 0.0325;
+const CARD_FEE_RATE = 0.0325;  // 3.25% card processing fee
 const TEST_MODE = process.env.TEST_MODE === 'true';
 const DOCUMENTATION_FEE_PER_VENDOR = 10;  // $10 per vendor
 
-// Email configuration
+// Email configuration (optional)
 const EMAIL_FROM = process.env.EMAIL_FROM || 'orders@sdl.bm';
 const EMAIL_TO_ADMIN = process.env.EMAIL_TO_ADMIN || 'admin@sdl.bm';
 const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY || '';
@@ -39,17 +39,17 @@ let sendgrid = null;
 let ApifyScraper = null;
 let apifyScraper = null;
 
-// ==================== APIFY CONFIGURATION ====================
+// Apify configuration (for Wayfair and difficult sites)
 const APIFY_API_KEY = process.env.APIFY_API_KEY || '';
-const ENABLE_APIFY = true;  // ✅ ENABLED - API KEY IS IN RAILWAY
+const ENABLE_APIFY = true;  // ✅ ENABLED - API key is in Railway
 
-// Initialize Apify
+// Initialize Apify if available
 try {
   if (ENABLE_APIFY && APIFY_API_KEY) {
     const { ApifyClient } = require('apify-client');
     console.log('✅ Apify initialized for Wayfair scraping');
   } else if (ENABLE_APIFY && !APIFY_API_KEY) {
-    console.log('⚠️ ENABLE_APIFY is true but no API key found');
+    console.log('⚠️ ENABLE_APIFY is true but no API key found in environment');
   }
 } catch (error) {
   console.log('⚠️ Apify client not installed:', error.message);
@@ -74,7 +74,7 @@ if (SENDGRID_API_KEY) {
   }
 }
 
-// Learning Database
+// Learning Database - In-Memory with File Persistence
 const LEARNING_DB_PATH = path.join(__dirname, 'learning_data.json');
 const ORDERS_DB_PATH = path.join(__dirname, 'orders_data.json');
 
@@ -193,7 +193,7 @@ console.log(`Port: ${PORT}`);
 console.log(`Shopify: ${SHOPIFY_ACCESS_TOKEN ? 'CONNECTED' : 'NOT CONFIGURED'}`);
 console.log(`Email: ${sendgrid ? 'ENABLED' : 'DISABLED'}`);
 console.log(`Google Sheets: ${GOOGLE_SERVICE_ACCOUNT_KEY ? 'ENABLED' : 'DISABLED'}`);
-console.log(`Apify: ${ENABLE_APIFY && APIFY_API_KEY ? '✅ ENABLED FOR WAYFAIR' : '❌ DISABLED'}`);
+console.log(`Apify: ${ENABLE_APIFY && APIFY_API_KEY ? '✅ ENABLED (Wayfair priority)' : '❌ DISABLED'}`);
 console.log(`ScrapingBee: ${SCRAPINGBEE_API_KEY ? 'ENABLED' : 'DISABLED'}`);
 console.log('Margin Structure: TIERED (20%/25%/22%/18%/15% by volume)');
 console.log(`Documentation Fee: $${DOCUMENTATION_FEE_PER_VENDOR} per vendor`);
@@ -205,12 +205,12 @@ app.use(cors({
   credentials: true
 }));
 app.use(express.json({ limit: '5mb' }));
-app.use(express.raw({ type: 'application/json' }));
+app.use(express.raw({ type: 'application/json' })); // For webhooks
 app.set('trust proxy', true);
 
 // Security headers
 app.use((req, res, next) => {
-  res.setHeader('X-Frame-Options', 'ALLOWALL');
+  res.setHeader('X-Frame-Options', 'ALLOWALL'); // Allow iframe embedding
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-XSS-Protection', '1; mode=block');
   next();
@@ -255,12 +255,14 @@ const scrapeRateLimiter = rateLimit({
   message: 'Too many scraping requests, please try again later',
   standardHeaders: true,
   legacyHeaders: false,
+  // Fix for Railway deployment
   keyGenerator: (req) => {
     return req.headers['x-forwarded-for']?.split(',')[0] || 
            req.connection.remoteAddress || 
            req.ip;
   },
   skip: (req) => {
+    // Skip rate limiting for health checks
     return req.path === '/health';
   }
 });
@@ -271,6 +273,7 @@ const orderRateLimiter = rateLimit({
   message: 'Too many order attempts, please try again later',
   standardHeaders: true,
   legacyHeaders: false,
+  // Fix for Railway deployment
   keyGenerator: (req) => {
     return req.headers['x-forwarded-for']?.split(',')[0] || 
            req.connection.remoteAddress || 
@@ -287,6 +290,7 @@ function detectRetailer(url) {
   try {
     const domain = new URL(url).hostname.toLowerCase();
     
+    // Major retailers detection
     if (domain.includes('amazon.com')) return 'Amazon';
     if (domain.includes('wayfair.com')) return 'Wayfair';
     if (domain.includes('walmart.com')) return 'Walmart';
@@ -366,6 +370,7 @@ function learnFromProduct(url, productData) {
     if (productData.weight) pattern.weights.push(productData.weight);
     if (productData.dimensions) pattern.dimensions.push(productData.dimensions);
     
+    // Keep only last 100 samples
     if (pattern.prices.length > 100) pattern.prices.shift();
     if (pattern.weights.length > 100) pattern.weights.shift();
     if (pattern.dimensions.length > 100) pattern.dimensions.shift();
@@ -399,6 +404,7 @@ function getLearnedData(url) {
 function estimateDimensionsFromBOL(category, name = '', retailer = '') {
   const text = name.toLowerCase();
   
+  // Check learned patterns first
   if (LEARNING_DB.patterns[category] && LEARNING_DB.patterns[category].dimensions.length > 0) {
     const dims = LEARNING_DB.patterns[category].dimensions;
     const avgDim = dims[dims.length - 1];
@@ -408,6 +414,7 @@ function estimateDimensionsFromBOL(category, name = '', retailer = '') {
   const patterns = BOL_PATTERNS[category] || BOL_PATTERNS.general;
   
   if (category === 'furniture') {
+    // Flat-pack retailers: reduce dimensions by 10% to account for reality (conservative)
     if (retailer === 'Wayfair' || retailer === 'IKEA' || retailer === 'Amazon') {
       let baseDims;
       
@@ -421,6 +428,7 @@ function estimateDimensionsFromBOL(category, name = '', retailer = '') {
         baseDims = patterns.dimensions.default;
       }
       
+      // Reduce volume by ~10% for flat-pack reality (keeping buffer)
       return {
         length: baseDims.length,
         width: Math.round(baseDims.width * 0.9),
@@ -428,6 +436,7 @@ function estimateDimensionsFromBOL(category, name = '', retailer = '') {
       };
     }
     
+    // Traditional furniture stores - use full dimensions
     if (text.includes('sofa') || text.includes('couch')) return patterns.dimensions.sofa;
     if (text.includes('chair')) return patterns.dimensions.chair;
     if (text.includes('table')) return patterns.dimensions.table;
@@ -461,28 +470,29 @@ function estimateWeightFromBOL(dimensions, category) {
 }
 
 // ==================== NEW LOWER MARGIN CALCULATION ====================
+
 function calculateSDLMargin(cubicFeet, landedCost) {
-  // Lower margins for better pricing
+  // Lower volume-based tiers for competitive pricing
   let marginRate;
   if (cubicFeet < 5) {
-    marginRate = 0.20;  // 20% for small items
+    marginRate = 0.20;  // 20% for small items (was 40%)
   } else if (cubicFeet < 10) {
-    marginRate = 0.25;  // 25%
+    marginRate = 0.25;  // 25% (was 40%)
   } else if (cubicFeet < 20) {
-    marginRate = 0.22;  // 22%
+    marginRate = 0.22;  // 22% (was 30%)
   } else if (cubicFeet < 50) {
-    marginRate = 0.18;  // 18%
+    marginRate = 0.18;  // 18% (was 25%)
   } else {
-    marginRate = 0.15;  // 15% for large items
+    marginRate = 0.15;  // 15% for large items (was 20%)
   }
   
-  // Value caps
+  // Value caps - use the smaller of volume tier and cap
   if (landedCost > 5000) {
-    marginRate = Math.min(marginRate, 0.12);
+    marginRate = Math.min(marginRate, 0.12);  // Max 12% for expensive items
   } else if (landedCost > 3000) {
-    marginRate = Math.min(marginRate, 0.15);
+    marginRate = Math.min(marginRate, 0.15);  // Max 15%
   } else if (landedCost > 1000) {
-    marginRate = Math.min(marginRate, 0.18);
+    marginRate = Math.min(marginRate, 0.18);  // Max 18%
   }
   
   console.log(`   📊 Margin calculation: ${cubicFeet.toFixed(1)} ft³, $${landedCost.toFixed(2)} → ${(marginRate * 100).toFixed(0)}%`);
@@ -491,6 +501,7 @@ function calculateSDLMargin(cubicFeet, landedCost) {
 }
 
 function roundToNinetyFive(amount) {
+  // Round to nearest .95 ending
   const rounded = Math.floor(amount) + 0.95;
   return rounded;
 }
@@ -513,7 +524,78 @@ function calculateShippingCost(dimensions, weight, price) {
   return Math.round(totalCost);
 }
 
-// ==================== ENHANCED SCRAPING WITH WAYFAIR SUPPORT ====================
+// ==================== ORDER STAGE MANAGEMENT ====================
+
+async function updateOrderStage(orderId, stage) {
+  const stages = {
+    1: 'payment-received',
+    2: 'ordered-from-vendor',
+    3: 'at-nj-warehouse',
+    4: 'ready-for-delivery',
+    5: 'delivered'
+  };
+  
+  const stageDescriptions = {
+    1: '💳 Payment Received - Need to order from vendor',
+    2: '📦 Ordered from Vendor - Waiting for delivery to NJ',
+    3: '🏭 At NJ Warehouse - Preparing for shipment',
+    4: '✅ Ready for Delivery/Collection in Bermuda',
+    5: '🎉 Delivered - Order complete'
+  };
+  
+  try {
+    const orderResponse = await axios.get(
+      `https://${SHOPIFY_DOMAIN}/admin/api/2023-10/orders/${orderId}.json`,
+      {
+        headers: {
+          'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN
+        }
+      }
+    );
+    
+    const order = orderResponse.data.order;
+    
+    // Update tags based on stage
+    let newTags = order.tags
+      .split(',')
+      .filter(tag => !tag.trim().startsWith('stage-'))
+      .filter(tag => !tag.includes('IMPORT-ACTION-REQUIRED'));
+    
+    // Add new stage tag
+    newTags.push(`stage-${stage}-${stages[stage]}`);
+    
+    // If stage 1, add action required tag
+    if (stage === 1) {
+      newTags.push('🚨IMPORT-ACTION-REQUIRED');
+    }
+    
+    // Update order
+    await axios.put(
+      `https://${SHOPIFY_DOMAIN}/admin/api/2023-10/orders/${orderId}.json`,
+      {
+        order: {
+          id: orderId,
+          tags: newTags.join(','),
+          note: order.note + `\n\n[${new Date().toISOString()}] Status Update: ${stageDescriptions[stage]}`
+        }
+      },
+      {
+        headers: {
+          'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN
+        }
+      }
+    );
+    
+    console.log(`✅ Order ${orderId} updated to: ${stageDescriptions[stage]}`);
+    return true;
+    
+  } catch (error) {
+    console.error('Error updating order stage:', error.response?.data || error);
+    return false;
+  }
+}
+
+// ENHANCED SCRAPING FUNCTION WITH WAYFAIR SUPPORT
 async function scrapeWithScrapingBee(url) {
   if (TEST_MODE) {
     return {
@@ -525,9 +607,9 @@ async function scrapeWithScrapingBee(url) {
   
   const retailer = detectRetailer(url);
   
-  console.log(`   🔍 Apify Check - ENABLE_APIFY: ${ENABLE_APIFY}, Has API Key: ${!!APIFY_API_KEY}, Retailer: ${retailer}`);
+  console.log(`   🔍 Debug: Wayfair check - ENABLE_APIFY: ${ENABLE_APIFY}, Has API Key: ${!!APIFY_API_KEY}, Retailer: ${retailer}`);
   
-  // ==================== WAYFAIR APIFY ACTOR ====================
+  // Try Apify first for Wayfair
   if (retailer === 'Wayfair' && ENABLE_APIFY && APIFY_API_KEY) {
     try {
       console.log('   🔄 Using Apify Wayfair Actor...');
@@ -535,22 +617,22 @@ async function scrapeWithScrapingBee(url) {
       const { ApifyClient } = require('apify-client');
       const client = new ApifyClient({ token: APIFY_API_KEY });
       
-      // Using epctex/wayfair-scraper actor
+      // Using epctex/wayfair-scraper actor (most reliable)
       const run = await client.actor('epctex/wayfair-scraper').call({
         startUrls: [{ url: url }],
         maxItems: 1,
         proxy: {
           useApifyProxy: true,
-          apifyProxyGroups: ['RESIDENTIAL']
+          apifyProxyGroups: ['RESIDENTIAL']  // Residential IPs work better
         }
       });
       
       console.log('   ⏳ Waiting for Wayfair actor to complete...');
       
-      // Wait for completion (max 30 seconds)
+      // Wait for the actor to finish (max 30 seconds)
       const result = await client.run(run.id).waitForFinish({ waitSecs: 30 });
       
-      // Get results
+      // Get the results
       const { items } = await client.dataset(run.defaultDatasetId).listItems();
       
       if (items && items.length > 0) {
@@ -560,6 +642,7 @@ async function scrapeWithScrapingBee(url) {
         // Extract price (handle sale prices)
         let price = null;
         if (item.price) {
+          // Price might be in various formats
           if (typeof item.price === 'object') {
             price = item.price.value || item.price.amount || item.price.min || null;
           } else if (typeof item.price === 'string') {
@@ -582,19 +665,17 @@ async function scrapeWithScrapingBee(url) {
           image: item.mainImage || item.images?.[0] || item.image
         };
       }
-      
-      console.log('   ⚠️ Wayfair Actor returned no items');
-      
     } catch (apifyError) {
       console.log('   ⚠️ Wayfair Actor failed:', apifyError.message);
       // Fall back to ScrapingBee
     }
   }
   
-  // ==================== SCRAPINGBEE FALLBACK ====================
+  // ScrapingBee as primary or fallback
   try {
     console.log('   🐝 ScrapingBee requesting...');
     
+    // Special parameters for Wayfair
     let scrapingParams = {
       api_key: SCRAPINGBEE_API_KEY,
       url: url,
@@ -608,6 +689,7 @@ async function scrapeWithScrapingBee(url) {
     if (retailer === 'Wayfair') {
       console.log('   🏠 ScrapingBee fallback for Wayfair...');
       
+      // Use AI extraction with stealth settings
       scrapingParams.wait = '5000';
       scrapingParams.stealth_proxy = 'true';
       scrapingParams.js_scenario = JSON.stringify({
@@ -624,6 +706,7 @@ async function scrapeWithScrapingBee(url) {
         image: "Main Product Image URL, Primary Image, or First Gallery Image"
       });
     } else {
+      // Default extraction rules for other retailers
       scrapingParams.ai_extract_rules = JSON.stringify({
         price: "Product Price",
         title: "Product Title",
@@ -635,7 +718,7 @@ async function scrapeWithScrapingBee(url) {
       method: 'GET',
       url: 'https://app.scrapingbee.com/api/v1',
       params: scrapingParams,
-      timeout: 20000
+      timeout: 20000  // Reduced from 35000
     });
     
     const data = response.data;
@@ -644,9 +727,11 @@ async function scrapeWithScrapingBee(url) {
     let title = data.title || null;
     let image = data.image || null;
     
+    // Parse price - check both price and original_price for Wayfair sales
     const priceToCheck = data.price || data.original_price;
     if (priceToCheck) {
       const priceStr = priceToCheck.toString();
+      // Clean up Wayfair price format
       const cleanPrice = priceStr.replace(/[^\d.,]/g, '').replace(/,/g, '');
       const priceMatch = cleanPrice.match(/([\d]+\.?\d*)/);
       if (priceMatch) {
@@ -655,11 +740,13 @@ async function scrapeWithScrapingBee(url) {
       }
     }
     
+    // Clean up title
     if (title) {
       title = title.trim().replace(/\s+/g, ' ');
       console.log('   📝 Title extracted:', title.substring(0, 50) + '...');
     }
     
+    // Clean up image URL
     if (image && !image.startsWith('http')) {
       image = 'https:' + image;
     }
@@ -700,17 +787,25 @@ async function processProduct(url, index, total) {
   const dimensions = estimateDimensionsFromBOL(category, productName, retailer);
   const weight = estimateWeightFromBOL(dimensions, category);
   
+  // Calculate cubic feet for margin calculation
   const cubicInches = dimensions.length * dimensions.width * dimensions.height;
   const cubicFeet = cubicInches / 1728;
   
+  // Base shipping cost
   const baseShippingCost = calculateShippingCost(dimensions, weight, scraped.price || 100);
   
+  // Calculate landed cost for margin determination
   const itemPrice = scraped.price || 100;
   const duty = itemPrice * BERMUDA_DUTY_RATE;
   const landedCostPreMargin = itemPrice + duty + baseShippingCost;
   
+  // Get the appropriate margin rate
   const marginRate = calculateSDLMargin(cubicFeet, landedCostPreMargin);
+  
+  // Calculate margin amount
   const marginAmount = landedCostPreMargin * marginRate;
+  
+  // Total shipping with margin included
   const totalShippingWithMargin = baseShippingCost + marginAmount;
   
   const product = {
@@ -725,7 +820,7 @@ async function processProduct(url, index, total) {
     weight: weight,
     cubicFeet: cubicFeet,
     baseShippingCost: baseShippingCost,
-    shippingCost: totalShippingWithMargin,
+    shippingCost: totalShippingWithMargin,  // This includes margin
     marginRate: marginRate,
     marginAmount: marginAmount,
     scrapingMethod: scraped.price ? 'scrapingbee' : 'estimated',
@@ -748,7 +843,105 @@ async function processProduct(url, index, total) {
   return product;
 }
 
-// API ENDPOINTS
+// Email functions
+async function sendOrderEmail(orderData) {
+  if (!sendgrid) return;
+  
+  try {
+    const msg = {
+      to: EMAIL_TO_ADMIN,
+      from: EMAIL_FROM,
+      subject: `🚨 New Import Order: ${orderData.orderId}`,
+      html: `
+        <h2>🚨 New Import Order - ACTION REQUIRED</h2>
+        <p><strong>Order ID:</strong> ${orderData.orderId}</p>
+        <p><strong>Total:</strong> $${orderData.totals.grandTotal.toFixed(2)}</p>
+        <p><strong>Products:</strong> ${orderData.products.length} items</p>
+        <p><strong>Documentation Fee:</strong> $${(orderData.totals.documentationFee || 0).toFixed(2)}</p>
+        <hr>
+        <h3>Products to Order from Vendors:</h3>
+        ${orderData.products.map(p => `
+          <p>• ${p.name}<br>
+          URL: ${p.url}<br>
+          Price: $${p.price}<br>
+          Margin: ${(p.marginRate * 100).toFixed(0)}%</p>
+        `).join('')}
+        <hr>
+        <p><strong>⚠️ ACTION REQUIRED: Order these items from the vendors!</strong></p>
+      `
+    };
+    
+    await sendgrid.send(msg);
+    console.log('✉️ Import order email sent');
+  } catch (error) {
+    console.error('Email error:', error);
+  }
+}
+
+// Google Sheets export
+async function exportToGoogleSheets(orderData) {
+  if (!google || !GOOGLE_SERVICE_ACCOUNT_KEY || !GOOGLE_SHEET_ID) {
+    return;
+  }
+  
+  try {
+    const auth = new google.auth.GoogleAuth({
+      credentials: GOOGLE_SERVICE_ACCOUNT_KEY,
+      scopes: ['https://www.googleapis.com/auth/spreadsheets']
+    });
+    
+    const sheets = google.sheets({ version: 'v4', auth });
+    
+    const row = [
+      new Date().toISOString(),
+      orderData.orderId || '',
+      orderData.customer?.email || 'Guest',
+      orderData.customer?.name || '',
+      orderData.products ? orderData.products.map(p => p.name).join('; ') : '',
+      orderData.products ? orderData.products.map(p => p.url).join('\n') : '',
+      orderData.totals?.totalItemCost || 0,
+      orderData.totals?.dutyAmount || 0,
+      orderData.totals?.totalShippingAndHandling || 0,
+      orderData.totals?.documentationFee || 0,
+      orderData.totals?.grandTotal || 0,
+      'stage-1-payment-received'
+    ];
+    
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: GOOGLE_SHEET_ID,
+      range: 'Orders!A:L',
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: [row] }
+    });
+    
+    console.log('✅ Order exported to Google Sheets');
+  } catch (error) {
+    console.error('Google Sheets error:', error);
+  }
+}
+
+// Store order in database
+function storeOrder(orderData) {
+  const order = {
+    ...orderData,
+    id: orderData.orderId || generateOrderId(),
+    createdAt: new Date().toISOString(),
+    status: 'pending',
+    currentStage: 1
+  };
+  
+  ORDERS_DB.orders.push(order);
+  ORDERS_DB.stats.total_orders++;
+  ORDERS_DB.stats.total_revenue += orderData.totals?.grandTotal || 0;
+  ORDERS_DB.stats.average_order_value = ORDERS_DB.stats.total_revenue / ORDERS_DB.stats.total_orders;
+  
+  saveOrdersDB();
+  return order;
+}
+
+// ==================== API ENDPOINTS ====================
+
+// Scrape products
 app.post('/api/scrape', scrapeRateLimiter, async (req, res) => {
   try {
     const { urls } = req.body;
@@ -822,6 +1015,7 @@ app.post('/api/scrape', scrapeRateLimiter, async (req, res) => {
     console.log(`  From cache: ${fromCache}`);
     console.log(`  Failed: ${products.length - successful}`);
     
+    // Log margin distribution
     const marginSummary = products.reduce((acc, p) => {
       const rate = Math.round((p.marginRate || 0.25) * 100);
       acc[rate] = (acc[rate] || 0) + 1;
@@ -847,7 +1041,7 @@ app.post('/api/scrape', scrapeRateLimiter, async (req, res) => {
   }
 });
 
-// Create checkout/draft order
+// Create checkout/draft order with IMPORT visibility and TIERED MARGINS
 app.post('/api/prepare-shopify-checkout', orderRateLimiter, async (req, res) => {
   try {
     const checkoutData = req.body;
@@ -857,10 +1051,11 @@ app.post('/api/prepare-shopify-checkout', orderRateLimiter, async (req, res) => 
     const vendorCount = new Set(checkoutData.products.map(p => p.retailer)).size;
     const documentationFee = vendorCount * DOCUMENTATION_FEE_PER_VENDOR;
     
-    // Recalculate totals
+    // Recalculate with proper margins for final order
     let totalWithMargins = 0;
     let totalCardFees = 0;
     
+    // Calculate totals with card fees
     checkoutData.products.forEach(product => {
       if (product.price && product.price > 0) {
         const duty = product.price * BERMUDA_DUTY_RATE;
@@ -869,24 +1064,36 @@ app.post('/api/prepare-shopify-checkout', orderRateLimiter, async (req, res) => 
       }
     });
     
+    // Add delivery fees
+    Object.values(checkoutData.deliveryFees || {}).forEach(fee => {
+      totalWithMargins += fee;
+    });
+    
     // Add documentation fee
     totalWithMargins += documentationFee;
     
+    // Add card processing fee
     totalCardFees = totalWithMargins * CARD_FEE_RATE;
     const finalGrandTotal = roundToNinetyFive(totalWithMargins + totalCardFees);
     
+    // Update totals
     checkoutData.totals.documentationFee = documentationFee;
     checkoutData.totals.cardFees = totalCardFees;
     checkoutData.totals.grandTotal = finalGrandTotal;
     
+    // Store order in database
     const order = storeOrder({
       ...checkoutData,
       orderId
     });
     
+    // Export to Google Sheets
     await exportToGoogleSheets(order);
+    
+    // Send email notification
     await sendOrderEmail(order);
     
+    // If no Shopify token, return contact message
     if (!SHOPIFY_ACCESS_TOKEN) {
       return res.json({
         orderId: orderId,
@@ -896,8 +1103,10 @@ app.post('/api/prepare-shopify-checkout', orderRateLimiter, async (req, res) => 
       });
     }
     
+    // Create Shopify draft order
     const lineItems = [];
     
+    // Add products with margin info
     checkoutData.products.forEach(product => {
       if (product.price && product.price > 0) {
         lineItems.push({
@@ -915,6 +1124,7 @@ app.post('/api/prepare-shopify-checkout', orderRateLimiter, async (req, res) => 
       }
     });
     
+    // Add duty
     if (checkoutData.totals.dutyAmount > 0) {
       lineItems.push({
         title: 'Bermuda Import Duty (26.5%)',
@@ -924,6 +1134,7 @@ app.post('/api/prepare-shopify-checkout', orderRateLimiter, async (req, res) => 
       });
     }
     
+    // Add delivery fees
     Object.entries(checkoutData.deliveryFees || {}).forEach(([vendor, fee]) => {
       if (fee > 0) {
         lineItems.push({
@@ -935,6 +1146,7 @@ app.post('/api/prepare-shopify-checkout', orderRateLimiter, async (req, res) => 
       }
     });
     
+    // Add shipping & handling (includes margin)
     if (checkoutData.totals.totalShippingAndHandling > 0) {
       lineItems.push({
         title: 'Ocean Freight & Handling to Bermuda',
@@ -944,6 +1156,7 @@ app.post('/api/prepare-shopify-checkout', orderRateLimiter, async (req, res) => 
       });
     }
     
+    // Add documentation fee
     if (documentationFee > 0) {
       lineItems.push({
         title: `Documentation & Processing Fee (${vendorCount} vendor${vendorCount > 1 ? 's' : ''})`,
@@ -953,6 +1166,7 @@ app.post('/api/prepare-shopify-checkout', orderRateLimiter, async (req, res) => 
       });
     }
     
+    // Add card processing fee
     if (totalCardFees > 0) {
       lineItems.push({
         title: 'Card Processing Fee (3.25%)',
@@ -967,24 +1181,40 @@ app.post('/api/prepare-shopify-checkout', orderRateLimiter, async (req, res) => 
         line_items: lineItems,
         note: `🚨 IMPORT ORDER - ACTION REQUIRED 🚨
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚠️ MANUALLY ORDER THESE ITEMS FROM VENDORS ⚠️
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 Order ID: ${orderId}
 Created: ${new Date().toISOString()}
 Margin Structure: TIERED
-Vendors: ${vendorCount}
+Documentation Fee: $${documentationFee.toFixed(2)}
 
 PRODUCTS TO ORDER:
 ${checkoutData.products.map(p => `• ${p.name}
   URL: ${p.url}
   Price: $${p.price}
   Volume: ${(p.cubicFeet || 0).toFixed(1)} ft³
-  Margin: ${((p.marginRate || 0.25) * 100).toFixed(0)}%`).join('\n\n')}`,
+  Margin: ${((p.marginRate || 0.25) * 100).toFixed(0)}%`).join('\n\n')}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+After ordering from vendors, update stage to "Ordered from Vendor"`,
         
-        tags: '🚨IMPORT-ACTION-REQUIRED, import-calculator, stage-1-payment-received',
+        tags: '🚨IMPORT-ACTION-REQUIRED, import-calculator, stage-1-payment-received, needs-vendor-order, tiered-margin',
         tax_exempt: true,
-        send_receipt: true
+        send_receipt: true,
+        send_fulfillment_receipt: true,
+        note_attributes: [
+          { name: '⚠️ ORDER TYPE', value: '🚨 IMPORT - MANUAL ACTION REQUIRED' },
+          { name: '📦 STATUS', value: 'NEEDS VENDOR ORDERING' },
+          { name: 'import_order', value: 'true' },
+          { name: 'order_id', value: orderId },
+          { name: 'current_stage', value: '1' },
+          { name: 'margin_structure', value: 'tiered' }
+        ]
       }
     };
     
+    // Add customer if provided
     if (checkoutData.customer?.email) {
       draftOrderData.draft_order.customer = {
         email: checkoutData.customer.email,
@@ -1006,12 +1236,14 @@ ${checkoutData.products.map(p => `• ${p.name}
     
     const draftOrder = shopifyResponse.data.draft_order;
     
+    // Update order with Shopify ID
     order.shopifyDraftOrderId = draftOrder.id;
     order.shopifyInvoiceUrl = draftOrder.invoice_url;
     saveOrdersDB();
     
-    console.log(`✅ Import draft order ${draftOrder.name} created with TIERED margins + $${documentationFee} doc fee`);
+    console.log(`✅ Import draft order ${draftOrder.name} created with TIERED margins + doc fee`);
     
+    // Return the invoice URL for direct checkout
     res.json({
       orderId: orderId,
       shopifyOrderId: draftOrder.id,
@@ -1022,6 +1254,7 @@ ${checkoutData.products.map(p => `• ${p.name}
   } catch (error) {
     console.error('Checkout error:', error.response?.data || error);
     
+    // Still save the order even if Shopify fails
     const orderId = generateOrderId();
     storeOrder({
       ...req.body,
@@ -1052,101 +1285,205 @@ app.get('/api/admin/orders', (req, res) => {
   });
 });
 
-// Store order function
-function storeOrder(orderData) {
-  const order = {
-    ...orderData,
-    id: orderData.orderId || generateOrderId(),
-    createdAt: new Date().toISOString(),
-    status: 'pending',
-    currentStage: 1
+app.get('/api/admin/order/:orderId', (req, res) => {
+  const { password } = req.query;
+  const { orderId } = req.params;
+  
+  if (password !== ADMIN_PASSWORD) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  const order = ORDERS_DB.orders.find(o => o.id === orderId || o.orderId === orderId);
+  
+  if (!order) {
+    return res.status(404).json({ error: 'Order not found' });
+  }
+  
+  res.json(order);
+});
+
+app.post('/api/admin/order/:orderId/status', (req, res) => {
+  const { password, status } = req.body;
+  const { orderId } = req.params;
+  
+  if (password !== ADMIN_PASSWORD) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  const order = ORDERS_DB.orders.find(o => o.id === orderId || o.orderId === orderId);
+  
+  if (!order) {
+    return res.status(404).json({ error: 'Order not found' });
+  }
+  
+  order.status = status;
+  order.updatedAt = new Date().toISOString();
+  saveOrdersDB();
+  
+  res.json({ success: true, order });
+});
+
+// Update order stage endpoint
+app.post('/api/admin/order/:orderId/stage', async (req, res) => {
+  const { password, stage } = req.body;
+  const { orderId } = req.params;
+  
+  if (password !== ADMIN_PASSWORD) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  const success = await updateOrderStage(orderId, stage);
+  
+  const stageNames = {
+    1: 'Payment Received',
+    2: 'Ordered from Vendor',
+    3: 'At NJ Warehouse',
+    4: 'Ready for Delivery/Collection',
+    5: 'Delivered'
   };
   
-  ORDERS_DB.orders.push(order);
-  ORDERS_DB.stats.total_orders++;
-  ORDERS_DB.stats.total_revenue += orderData.totals?.grandTotal || 0;
-  ORDERS_DB.stats.average_order_value = ORDERS_DB.stats.total_revenue / ORDERS_DB.stats.total_orders;
+  // Update local database
+  const order = ORDERS_DB.orders.find(o => 
+    o.shopifyOrderId === orderId || 
+    o.shopifyDraftOrderId === orderId || 
+    o.id === orderId || 
+    o.orderId === orderId
+  );
   
-  saveOrdersDB();
-  return order;
-}
+  if (order) {
+    order.currentStage = stage;
+    order.stageUpdatedAt = new Date().toISOString();
+    saveOrdersDB();
+  }
+  
+  res.json({ 
+    success,
+    stage,
+    stageName: stageNames[stage],
+    message: success ? `Order updated to: ${stageNames[stage]}` : 'Failed to update order'
+  });
+});
 
-// Email function
-async function sendOrderEmail(orderData) {
-  if (!sendgrid) return;
+// Learning insights with margin analysis
+app.get('/api/learning-insights', (req, res) => {
+  const insights = {
+    total_products_learned: Object.keys(LEARNING_DB.products).length,
+    categories_tracked: Object.keys(LEARNING_DB.patterns),
+    retailer_success_rates: {},
+    recent_products: [],
+    margin_structure: 'tiered'
+  };
   
-  try {
-    const msg = {
-      to: EMAIL_TO_ADMIN,
-      from: EMAIL_FROM,
-      subject: `🚨 New Import Order: ${orderData.orderId}`,
-      html: `
-        <h2>🚨 New Import Order - ACTION REQUIRED</h2>
-        <p><strong>Order ID:</strong> ${orderData.orderId}</p>
-        <p><strong>Total:</strong> $${orderData.totals.grandTotal.toFixed(2)}</p>
-        <p><strong>Products:</strong> ${orderData.products.length} items</p>
-        <p><strong>Documentation Fee:</strong> $${(orderData.totals.documentationFee || 0).toFixed(2)}</p>
-        <hr>
-        <h3>Products to Order from Vendors:</h3>
-        ${orderData.products.map(p => `
-          <p>• ${p.name}<br>
-          URL: ${p.url}<br>
-          Price: $${p.price}<br>
-          Margin: ${(p.marginRate * 100).toFixed(0)}%</p>
-        `).join('')}
-      `
+  Object.entries(LEARNING_DB.retailer_stats).forEach(([retailer, stats]) => {
+    insights.retailer_success_rates[retailer] = {
+      success_rate: ((stats.successes / stats.attempts) * 100).toFixed(1) + '%',
+      total_attempts: stats.attempts
+    };
+  });
+  
+  const products = Object.values(LEARNING_DB.products)
+    .sort((a, b) => new Date(b.last_updated) - new Date(a.last_updated))
+    .slice(0, 5);
+  
+  insights.recent_products = products.map(p => ({
+    name: p.name,
+    price: p.price,
+    retailer: p.retailer,
+    times_seen: p.times_seen,
+    margin_rate: p.marginRate || 0.25
+  }));
+  
+  res.json(insights);
+});
+
+// Webhook endpoints
+app.post('/webhooks/shopify/order-created', async (req, res) => {
+  const hmac = req.get('X-Shopify-Hmac-Sha256');
+  const body = req.rawBody;
+  
+  // Verify webhook if secret is configured
+  if (SHOPIFY_WEBHOOK_SECRET && hmac) {
+    const hash = crypto
+      .createHmac('sha256', SHOPIFY_WEBHOOK_SECRET)
+      .update(body, 'utf8')
+      .digest('base64');
+    
+    if (hash !== hmac) {
+      return res.status(401).send('Unauthorized');
+    }
+  }
+  
+  const order = req.body;
+  console.log(`📦 Shopify order created: ${order.name}`);
+  
+  // Update our order record
+  const ourOrderId = order.note_attributes?.find(attr => attr.name === 'order_id')?.value;
+  if (ourOrderId) {
+    const ourOrder = ORDERS_DB.orders.find(o => o.id === ourOrderId || o.orderId === ourOrderId);
+    if (ourOrder) {
+      ourOrder.shopifyOrderId = order.id;
+      ourOrder.shopifyOrderNumber = order.name;
+      ourOrder.status = 'confirmed';
+      ourOrder.confirmedAt = new Date().toISOString();
+      saveOrdersDB();
+    }
+  }
+  
+  res.status(200).send('OK');
+});
+
+app.post('/webhooks/shopify/order-updated', async (req, res) => {
+  console.log(`📦 Shopify order updated: ${req.body.name}`);
+  res.status(200).send('OK');
+});
+
+// Test endpoints (only in test mode)
+if (TEST_MODE) {
+  app.get('/api/test/create-sample-order', async (req, res) => {
+    const testOrder = {
+      products: [
+        {
+          name: 'Test Product 1',
+          price: 99.99,
+          url: 'https://example.com/product1',
+          retailer: 'Test Store',
+          cubicFeet: 5,
+          marginRate: 0.20
+        }
+      ],
+      totals: {
+        totalItemCost: 99.99,
+        dutyAmount: 26.50,
+        totalShippingAndHandling: 50,
+        grandTotal: 176.49
+      },
+      customer: {
+        email: 'test@example.com',
+        name: 'Test Customer'
+      }
     };
     
-    await sendgrid.send(msg);
-    console.log('✉️ Import order email sent');
-  } catch (error) {
-    console.error('Email error:', error);
-  }
-}
-
-// Google Sheets export
-async function exportToGoogleSheets(orderData) {
-  if (!google || !GOOGLE_SERVICE_ACCOUNT_KEY || !GOOGLE_SHEET_ID) {
-    return;
-  }
+    const order = storeOrder(testOrder);
+    res.json({ success: true, order });
+  });
   
-  try {
-    const auth = new google.auth.GoogleAuth({
-      credentials: GOOGLE_SERVICE_ACCOUNT_KEY,
-      scopes: ['https://www.googleapis.com/auth/spreadsheets']
-    });
-    
-    const sheets = google.sheets({ version: 'v4', auth });
-    
-    const row = [
-      new Date().toISOString(),
-      orderData.orderId || '',
-      orderData.customer?.email || 'Guest',
-      orderData.customer?.name || '',
-      orderData.products ? orderData.products.map(p => p.name).join('; ') : '',
-      orderData.products ? orderData.products.map(p => p.url).join('\n') : '',
-      orderData.totals?.totalItemCost || 0,
-      orderData.totals?.dutyAmount || 0,
-      orderData.totals?.totalShippingAndHandling || 0,
-      orderData.totals?.documentationFee || 0,
-      orderData.totals?.grandTotal || 0,
-      'stage-1-payment-received'
-    ];
-    
-    await sheets.spreadsheets.values.append({
-      spreadsheetId: GOOGLE_SHEET_ID,
-      range: 'Orders!A:L',
-      valueInputOption: 'USER_ENTERED',
-      requestBody: { values: [row] }
-    });
-    
-    console.log('✅ Order exported to Google Sheets');
-  } catch (error) {
-    console.error('Google Sheets error:', error);
-  }
+  app.get('/api/test/clear-data', (req, res) => {
+    ORDERS_DB = {
+      orders: [],
+      draft_orders: [],
+      abandoned_carts: [],
+      stats: {
+        total_orders: 0,
+        total_revenue: 0,
+        average_order_value: 0
+      }
+    };
+    saveOrdersDB();
+    res.json({ success: true, message: 'Test data cleared' });
+  });
 }
 
-// Error handling
+// Error handling middleware
 app.use((err, req, res, next) => {
   console.error('Error:', err);
   res.status(500).json({ 
@@ -1155,6 +1492,7 @@ app.use((err, req, res, next) => {
   });
 });
 
+// 404 handler
 app.use((req, res) => {
   res.status(404).json({ error: 'Endpoint not found' });
 });
@@ -1167,8 +1505,10 @@ app.listen(PORT, () => {
   console.log(`📊 Admin Orders: http://localhost:${PORT}/api/admin/orders?password=${ADMIN_PASSWORD}`);
   console.log(`💰 Margin Structure: TIERED (20%/25%/22%/18%/15% by volume)`);
   console.log(`📄 Documentation Fee: $${DOCUMENTATION_FEE_PER_VENDOR} per vendor`);
-  if (ENABLE_APIFY && APIFY_API_KEY) {
-    console.log(`🎯 Apify: ENABLED for Wayfair scraping`);
+  if (TEST_MODE) {
+    console.log(`🧪 Test Mode: ENABLED`);
+    console.log(`   - Create test order: /api/test/create-sample-order`);
+    console.log(`   - Clear test data: /api/test/clear-data`);
   }
   console.log('\n');
 });
