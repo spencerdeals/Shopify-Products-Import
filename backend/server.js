@@ -609,8 +609,72 @@ async function scrapeWithScrapingBee(url) {
   
   console.log(`   🔍 Debug: Wayfair check - ENABLE_APIFY: ${ENABLE_APIFY}, Has API Key: ${!!APIFY_API_KEY}, Retailer: ${retailer}`);
   
-  // Skip Apify for Wayfair - mscraper actor is broken
-  if (retailer === 'Wayfair' && false) {
+  // Try Apify first for Wayfair
+  if (retailer === 'Wayfair' && ENABLE_APIFY && APIFY_API_KEY) {
+    try {
+      console.log('   🔄 Using 123webdata Wayfair Scraper...');
+      
+      const { ApifyClient } = require('apify-client');
+      const client = new ApifyClient({ token: APIFY_API_KEY });
+      
+      // Using 123webdata/wayfair-scraper - the one you have!
+      const run = await client.actor('123webdata/wayfair-scraper').call({
+        startUrls: [url],
+        maxProducts: 1,
+        proxy: {
+          useApifyProxy: true,
+          apifyProxyCountry: 'US'
+        }
+      });
+      
+      console.log('   ⏳ Waiting for Wayfair scraper to complete...');
+      
+      // Wait for completion (max 30 seconds)
+      const result = await client.run(run.id).waitForFinish({ waitSecs: 30 });
+      
+      // Get results
+      const { items } = await client.dataset(run.defaultDatasetId).listItems();
+      
+      if (items && items.length > 0) {
+        const item = items[0];
+        console.log('   ✅ Wayfair scraping success!');
+        console.log('   🔍 Raw data structure:', JSON.stringify(item).substring(0, 500));
+        
+        // Extract price - try multiple fields
+        let price = null;
+        if (item.price) {
+          price = typeof item.price === 'string' ? 
+            parseFloat(item.price.replace(/[^0-9.]/g, '')) : 
+            item.price;
+        } else if (item.salePrice) {
+          price = parseFloat(item.salePrice);
+        } else if (item.currentPrice) {
+          price = parseFloat(item.currentPrice);
+        }
+        
+        // Extract title
+        const title = item.title || item.name || item.productName || 'Wayfair Product';
+        
+        // Extract image
+        const image = item.image || item.mainImage || item.images?.[0] || null;
+        
+        console.log('   💰 Price found:', price);
+        console.log('   📝 Title found:', title);
+        
+        return {
+          price: price,
+          title: title,
+          image: image
+        };
+      }
+      
+      console.log('   ⚠️ No data from Wayfair scraper');
+      
+    } catch (apifyError) {
+      console.log('   ⚠️ Wayfair scraping failed:', apifyError.message);
+      // Fall back to ScrapingBee
+    }
+  }
     try {
       console.log('   🔄 Using Apify Web Scraper for Wayfair...');
       
