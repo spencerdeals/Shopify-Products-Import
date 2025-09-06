@@ -621,7 +621,7 @@ async function scrapeWithScrapingBee(url) {
       const run = await client.actor('mscraper/wayfair-scraper').call({
         startUrls: [{ url: url, method: 'GET' }],
         includeDetails: false,
-        resultsLimit: 1,
+        resultsLimit: 50,  // mscraper requires minimum 50
         proxy: {
           useApifyProxy: true,
           apifyProxyCountry: 'US'
