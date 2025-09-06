@@ -320,6 +320,7 @@ console.log(`ScrapingBee: ${SCRAPINGBEE_API_KEY ? 'ENABLED' : 'DISABLED'}`);
 console.log('Margin Structure: TIERED (20%/25%/22%/18%/15% by volume)');
 console.log(`Documentation Fee: $${DOCUMENTATION_FEE_PER_VENDOR} per vendor`);
 console.log('Flat-Pack Intelligence: ENABLED');
+console.log('Variant & Thumbnail Support: ENHANCED');
 console.log('====================================\n');
 
 // Middleware
@@ -518,9 +519,11 @@ function learnFromProduct(url, productData) {
   }
   if (productData.variant) {
     LEARNING_DB.retailer_stats[retailer].variants_found++;
+    console.log(`   🎨 Variant captured: ${productData.variant}`);
   }
-  if (productData.thumbnail) {
+  if (productData.thumbnail && productData.thumbnail !== productData.image) {
     LEARNING_DB.retailer_stats[retailer].thumbnails_found++;
+    console.log(`   🖼️ Separate thumbnail captured`);
   }
   if (productData.isFlatPack) {
     LEARNING_DB.retailer_stats[retailer].flat_packed++;
@@ -728,7 +731,7 @@ async function updateOrderStage(orderId, stage) {
   }
 }
 
-// ENHANCED SCRAPING WITH VARIANTS AND THUMBNAILS
+// ENHANCED SCRAPING WITH IMPROVED WAYFAIR VARIANTS AND THUMBNAILS
 async function scrapeWithScrapingBee(url) {
   if (TEST_MODE) {
     return {
@@ -736,24 +739,39 @@ async function scrapeWithScrapingBee(url) {
       title: 'Test Product',
       image: 'https://placehold.co/400x400/7CB342/FFFFFF/png?text=Test',
       thumbnail: 'https://placehold.co/100x100/7CB342/FFFFFF/png?text=Test',
-      variant: 'Test Variant'
+      variant: 'Test Variant',
+      sku: 'TEST-SKU-123'
     };
   }
   
   const retailer = detectRetailer(url);
   
-  // Try Apify first for Wayfair
+  // ENHANCED WAYFAIR APIFY SCRAPER
   if (retailer === 'Wayfair' && ENABLE_APIFY && apifyClient) {
     try {
       console.log('   🔄 Using 123webdata Wayfair Scraper...');
       
+      // Parse variant from URL if present
+      let urlVariant = null;
+      if (url.includes('piid=')) {
+        const piidMatch = url.match(/piid=(\d+)/);
+        if (piidMatch) {
+          urlVariant = `Variant ID: ${piidMatch[1]}`;
+          console.log(`   📎 URL contains variant: ${urlVariant}`);
+        }
+      }
+      
       const run = await apifyClient.actor('123webdata/wayfair-scraper').call({
         productUrls: [url],
         usePagination: false,
+        includeOptionDetails: true,  // Request variant details
+        includeAllImages: true,      // Request all images
         proxy: {
           useApifyProxy: true,
           apifyProxyCountry: 'US'
-        }
+        },
+        maxRequestRetries: 3,
+        requestHandlerTimeoutSecs: 60
       });
       
       console.log('   ⏳ Waiting for Wayfair scraper to complete...');
@@ -772,51 +790,143 @@ async function scrapeWithScrapingBee(url) {
             item.price;
         } else if (item.salePrice) {
           price = parseFloat(item.salePrice);
-        }
-        
-        // Extract variant
-        let variant = null;
-        if (item.selectedOptions || item.options || item.variant) {
-          variant = item.selectedOptions || item.variant || 'Default';
-          if (typeof variant === 'object') {
-            variant = Object.entries(variant).map(([k, v]) => `${k}: ${v}`).join(', ');
+        } else if (item.priceRange) {
+          // Sometimes Wayfair returns a price range
+          const priceMatch = item.priceRange.match(/[\d,]+\.?\d*/);
+          if (priceMatch) {
+            price = parseFloat(priceMatch[0].replace(',', ''));
           }
-        } else if (item.color || item.size) {
-          const parts = [];
-          if (item.color) parts.push(`Color: ${item.color}`);
-          if (item.size) parts.push(`Size: ${item.size}`);
-          variant = parts.join(', ') || null;
         }
         
-        // Extract images
-        let mainImage = item.image || item.mainImage || null;
-        let thumbnail = item.thumbnail || mainImage;
-        if (item.images && Array.isArray(item.images)) {
-          mainImage = item.images[0];
-          thumbnail = item.images.find(img => img.includes('thumb')) || item.images[0];
+        // COMPREHENSIVE VARIANT EXTRACTION
+        let variant = null;
+        let variantDetails = [];
+        
+        // Method 1: Check selectedOptions
+        if (item.selectedOptions && typeof item.selectedOptions === 'object') {
+          Object.entries(item.selectedOptions).forEach(([key, value]) => {
+            if (value && value !== 'Default' && value !== 'None') {
+              // Clean up the key name
+              const cleanKey = key.charAt(0).toUpperCase() + key.slice(1).replace(/([A-Z])/g, ' $1').trim();
+              variantDetails.push(`${cleanKey}: ${value}`);
+            }
+          });
         }
         
-        console.log('   💰 Price:', price);
-        console.log('   🎨 Variant:', variant);
-        console.log('   🖼️ Thumbnail:', !!thumbnail);
+        // Method 2: Check options array
+        if (!variantDetails.length && item.options) {
+          if (Array.isArray(item.options)) {
+            item.options.forEach(option => {
+              if (option.selected) {
+                variantDetails.push(`${option.name}: ${option.value}`);
+              }
+            });
+          } else if (typeof item.options === 'object') {
+            Object.entries(item.options).forEach(([key, value]) => {
+              if (value && value !== 'Default') {
+                variantDetails.push(`${key}: ${value}`);
+              }
+            });
+          }
+        }
+        
+        // Method 3: Check individual variant fields
+        const variantFields = [
+          { field: 'color', label: 'Color' },
+          { field: 'selectedColor', label: 'Color' },
+          { field: 'size', label: 'Size' },
+          { field: 'selectedSize', label: 'Size' },
+          { field: 'configuration', label: 'Configuration' },
+          { field: 'material', label: 'Material' },
+          { field: 'style', label: 'Style' },
+          { field: 'finish', label: 'Finish' }
+        ];
+        
+        variantFields.forEach(({ field, label }) => {
+          if (item[field] && !variantDetails.some(v => v.includes(label))) {
+            variantDetails.push(`${label}: ${item[field]}`);
+          }
+        });
+        
+        // Method 4: Parse from title if contains parentheses
+        if (!variantDetails.length && item.title) {
+          const titleMatch = item.title.match(/\(([^)]+)\)/);
+          if (titleMatch) {
+            variantDetails.push(titleMatch[1]);
+          }
+        }
+        
+        // Method 5: Use URL variant as fallback
+        if (!variantDetails.length && urlVariant) {
+          variantDetails.push(urlVariant);
+        }
+        
+        variant = variantDetails.length > 0 ? variantDetails.join(', ') : null;
+        
+        // ENHANCED IMAGE AND THUMBNAIL EXTRACTION
+        let mainImage = null;
+        let thumbnail = null;
+        
+        if (item.images && Array.isArray(item.images) && item.images.length > 0) {
+          // Get the best quality main image
+          mainImage = item.images.find(img => img.includes('main') || img.includes('primary')) || item.images[0];
+          
+          // Try to find or create a thumbnail
+          thumbnail = item.images.find(img => 
+            img.includes('thumb') || 
+            img.includes('small') || 
+            img.includes('100x100') ||
+            img.includes('150x150')
+          );
+          
+          if (!thumbnail && mainImage) {
+            // Create thumbnail URL by modifying Wayfair image URL parameters
+            if (mainImage.includes('wayfair.com')) {
+              thumbnail = mainImage
+                .replace(/w=\d+/, 'w=100')
+                .replace(/h=\d+/, 'h=100')
+                .replace(/resize=\d+/, 'resize=100');
+            } else if (mainImage.includes('wfcdn.com')) {
+              // Wayfair CDN pattern
+              thumbnail = mainImage.replace(/\/\d+x\d+\//, '/100x100/');
+            } else {
+              thumbnail = mainImage;
+            }
+          }
+        } else {
+          // Fallback to single image fields
+          mainImage = item.image || item.mainImage || item.primaryImage || null;
+          thumbnail = item.thumbnail || item.smallImage || mainImage;
+        }
+        
+        // Extract SKU
+        const sku = item.sku || item.productId || item.itemNumber || null;
+        
+        console.log('   💰 Price:', price || 'Not found');
+        console.log('   🎨 Variant:', variant || 'None detected');
+        console.log('   🖼️ Images: Main:', !!mainImage, 'Thumb:', !!thumbnail);
+        console.log('   📋 SKU:', sku || 'Not found');
         
         return {
           price: price,
           title: item.title || item.name || 'Wayfair Product',
           image: mainImage,
-          thumbnail: thumbnail,
-          variant: variant
+          thumbnail: thumbnail || mainImage,
+          variant: variant,
+          sku: sku,
+          brand: item.brand || item.manufacturer || null
         };
       }
       
     } catch (apifyError) {
-      console.log('   ⚠️ Wayfair scraping failed:', apifyError.message);
+      console.log('   ⚠️ Wayfair Apify scraping failed:', apifyError.message);
+      // Continue to ScrapingBee fallback
     }
   }
   
-  // ScrapingBee with enhanced AI extraction
+  // ENHANCED SCRAPINGBEE WITH BETTER AI EXTRACTION
   try {
-    console.log('   🐝 ScrapingBee requesting...');
+    console.log('   🐝 ScrapingBee requesting with enhanced AI rules...');
     
     let scrapingParams = {
       api_key: SCRAPINGBEE_API_KEY,
@@ -828,21 +938,42 @@ async function scrapeWithScrapingBee(url) {
       timeout: 30000
     };
     
-    // Enhanced AI rules for ALL retailers
+    // Enhanced AI rules for better variant and thumbnail extraction
     scrapingParams.ai_extract_rules = JSON.stringify({
       price: "Product Price, Sale Price, or Current Price in USD",
       original_price: "Original Price or Regular Price if on sale",
       title: "Product Title, Product Name, or Item Name",
-      variant: "Selected variant, color, size, or configuration",
-      color: "Product Color or Color Option",
-      size: "Product Size or Size Option",
-      image: "Main Product Image URL",
-      thumbnail: "Product Thumbnail or Small Product Image"
+      variant: "Selected variant, selected options, or configuration (color, size, style)",
+      selectedOptions: "All selected product options as key-value pairs",
+      color: "Selected Product Color or Color Option",
+      size: "Selected Product Size, Dimensions, or Size Option",
+      configuration: "Product Configuration (Left Facing, Right Facing for furniture)",
+      material: "Product Material or Fabric Type",
+      style: "Product Style or Design Option",
+      finish: "Product Finish (for furniture)",
+      image: "Main Product Image URL or Primary Image",
+      thumbnail: "Product Thumbnail, Small Image, or First Gallery Thumbnail",
+      allImages: "Array of all product images or gallery images",
+      sku: "SKU, Product ID, Item Number, or Model Number",
+      brand: "Brand Name or Manufacturer"
     });
     
+    // Special handling for Wayfair
     if (retailer === 'Wayfair') {
-      scrapingParams.wait = '5000';
+      scrapingParams.wait = '5000';  // Wait longer for Wayfair
       scrapingParams.stealth_proxy = 'true';
+      scrapingParams.javascript_snippet = `
+        // Try to extract selected options from Wayfair
+        const selectedOptions = {};
+        document.querySelectorAll('[data-enzyme-id*="option-selected"]').forEach(el => {
+          const label = el.closest('[data-enzyme-id*="option"]')?.querySelector('label')?.textContent;
+          const value = el.textContent;
+          if (label && value) {
+            selectedOptions[label] = value;
+          }
+        });
+        window._extractedOptions = selectedOptions;
+      `;
     }
     
     const response = await axios({
@@ -866,18 +997,45 @@ async function scrapeWithScrapingBee(url) {
       }
     }
     
-    // Extract variant
+    // Build comprehensive variant string
     let variant = data.variant || null;
-    if (!variant && (data.color || data.size)) {
-      const parts = [];
-      if (data.color) parts.push(`Color: ${data.color}`);
-      if (data.size) parts.push(`Size: ${data.size}`);
-      variant = parts.join(', ');
+    let variantParts = [];
+    
+    // Add selected options
+    if (data.selectedOptions && typeof data.selectedOptions === 'object') {
+      Object.entries(data.selectedOptions).forEach(([key, value]) => {
+        if (value && value !== 'Default') {
+          variantParts.push(`${key}: ${value}`);
+        }
+      });
     }
     
-    // Extract images
+    // Add individual variant fields
+    const fields = ['color', 'size', 'configuration', 'material', 'style', 'finish'];
+    fields.forEach(field => {
+      if (data[field] && !variantParts.some(p => p.toLowerCase().includes(field))) {
+        const label = field.charAt(0).toUpperCase() + field.slice(1);
+        variantParts.push(`${label}: ${data[field]}`);
+      }
+    });
+    
+    if (variantParts.length > 0 && !variant) {
+      variant = variantParts.join(', ');
+    }
+    
+    // Extract images with thumbnail
     let image = data.image || null;
-    let thumbnail = data.thumbnail || image;
+    let thumbnail = data.thumbnail || null;
+    
+    // Try to extract from allImages array
+    if (!thumbnail && data.allImages && Array.isArray(data.allImages)) {
+      image = data.allImages[0];
+      thumbnail = data.allImages.find(img => 
+        img.includes('thumb') || img.includes('small')
+      ) || data.allImages[0];
+    }
+    
+    // Fix relative URLs
     if (image && !image.startsWith('http')) {
       image = 'https:' + image;
     }
@@ -885,17 +1043,43 @@ async function scrapeWithScrapingBee(url) {
       thumbnail = 'https:' + thumbnail;
     }
     
-    console.log(`   ${retailer}: Price ${price ? '✓' : '✗'}, Variant ${variant ? '✓' : '✗'}, Thumb ${thumbnail ? '✓' : '✗'}`);
+    // Create thumbnail from main image if needed
+    if (image && !thumbnail && retailer === 'Wayfair') {
+      thumbnail = image.replace(/w=\d+/, 'w=100').replace(/h=\d+/, 'h=100');
+    } else if (!thumbnail) {
+      thumbnail = image;
+    }
     
-    return { price, title: data.title, image, thumbnail, variant };
+    const sku = data.sku || null;
+    const brand = data.brand || null;
+    
+    console.log(`   ${retailer}: Price ${price ? '✓' : '✗'}, Variant ${variant ? '✓' : '✗'}, Thumb ${thumbnail && thumbnail !== image ? '✓' : '✗'}, SKU ${sku ? '✓' : '✗'}`);
+    
+    return { 
+      price, 
+      title: data.title, 
+      image, 
+      thumbnail, 
+      variant,
+      sku,
+      brand
+    };
     
   } catch (error) {
     console.log(`   ❌ ScrapingBee error:`, error.message);
-    return { price: null, title: null, image: null, thumbnail: null, variant: null };
+    return { 
+      price: null, 
+      title: null, 
+      image: null, 
+      thumbnail: null, 
+      variant: null,
+      sku: null,
+      brand: null
+    };
   }
 }
 
-// PROCESS PRODUCT WITH FLAT-PACK INTELLIGENCE
+// PROCESS PRODUCT WITH ENHANCED VARIANT SUPPORT
 async function processProduct(url, index, total) {
   console.log(`\n[${index}/${total}] Processing: ${url.substring(0, 80)}...`);
   
@@ -916,8 +1100,20 @@ async function processProduct(url, index, total) {
   
   const scraped = await scrapeWithScrapingBee(url);
   
+  // Process variant and title
   const baseTitle = scraped.title || `${retailer} Product ${index}`;
   const productName = scraped.variant ? `${baseTitle} - ${scraped.variant}` : baseTitle;
+  
+  // Ensure we have a thumbnail
+  let thumbnail = scraped.thumbnail;
+  if (!thumbnail && scraped.image) {
+    // Create thumbnail URL based on retailer
+    if (retailer === 'Wayfair' && scraped.image.includes('wayfair')) {
+      thumbnail = scraped.image.replace(/w=\d+/, 'w=100').replace(/h=\d+/, 'h=100');
+    } else {
+      thumbnail = scraped.image;
+    }
+  }
   
   const category = categorizeProduct(productName, url);
   let dimensions = estimateDimensionsFromBOL(category, productName, retailer);
@@ -960,9 +1156,11 @@ async function processProduct(url, index, total) {
     name: productName,
     baseTitle: baseTitle,
     variant: scraped.variant || null,
+    sku: scraped.sku || null,
+    brand: scraped.brand || null,
     price: scraped.price,
-    image: scraped.image || scraped.thumbnail || `https://placehold.co/400x400/7CB342/FFFFFF/png?text=${encodeURIComponent(retailer)}`,
-    thumbnail: scraped.thumbnail || scraped.image || `https://placehold.co/100x100/7CB342/FFFFFF/png?text=${encodeURIComponent(retailer)}`,
+    image: scraped.image || `https://placehold.co/400x400/7CB342/FFFFFF/png?text=${encodeURIComponent(retailer)}`,
+    thumbnail: thumbnail || scraped.image || `https://placehold.co/100x100/7CB342/FFFFFF/png?text=${encodeURIComponent(retailer)}`,
     category: category,
     retailer: retailer,
     dimensions: dimensions,
@@ -979,8 +1177,9 @@ async function processProduct(url, index, total) {
       hasName: !!scraped.title,
       hasPrice: !!scraped.price,
       hasImage: !!scraped.image,
-      hasThumbnail: !!scraped.thumbnail,
+      hasThumbnail: !!thumbnail && thumbnail !== scraped.image,
       hasVariant: !!scraped.variant,
+      hasSku: !!scraped.sku,
       hasDimensions: true,
       hasWeight: true
     }
@@ -990,6 +1189,8 @@ async function processProduct(url, index, total) {
   
   console.log(`   Price: ${scraped.price ? '$' + scraped.price : 'Not found'}`);
   console.log(`   Variant: ${scraped.variant || 'Not specified'}`);
+  console.log(`   SKU: ${scraped.sku || 'Not found'}`);
+  console.log(`   Thumbnail: ${thumbnail && thumbnail !== scraped.image ? 'Separate' : 'Same as main'}`);
   console.log(`   Packaging: ${packagingType.toUpperCase()}`);
   console.log(`   Volume: ${cubicFeet.toFixed(1)} ft³ ${isFlatPack ? '(flat-packed)' : '(assembled)'}`);
   console.log(`   Weight: ${weight} lbs`);
@@ -998,6 +1199,9 @@ async function processProduct(url, index, total) {
   
   return product;
 }
+
+// Continue with remaining functions (Email, Google Sheets, Store Order, etc.) - UNCHANGED
+// [Rest of the server.js code remains the same from line 900 onwards...]
 
 // Email functions
 async function sendOrderEmail(orderData) {
@@ -1020,12 +1224,14 @@ async function sendOrderEmail(orderData) {
           <p>• ${p.name}<br>
           URL: ${p.url}<br>
           Price: $${p.price}<br>
-          ${p.variant ? `Variant: ${p.variant}<br>` : ''}
+          ${p.variant ? `<strong>Variant: ${p.variant}</strong><br>` : ''}
+          ${p.sku ? `SKU: ${p.sku}<br>` : ''}
           ${p.isFlatPack ? `Packaging: FLAT-PACK<br>` : ''}
           Margin: ${(p.marginRate * 100).toFixed(0)}%</p>
         `).join('')}
         <hr>
         <p><strong>⚠️ ACTION REQUIRED: Order these items from the vendors!</strong></p>
+        <p><strong>⚠️ VERIFY ALL VARIANTS ARE CORRECT!</strong></p>
       `
     };
     
@@ -1056,6 +1262,7 @@ async function exportToGoogleSheets(orderData) {
       orderData.customer?.email || 'Guest',
       orderData.customer?.name || '',
       orderData.products ? orderData.products.map(p => p.name).join('; ') : '',
+      orderData.products ? orderData.products.map(p => p.variant || 'None').join('; ') : '',
       orderData.products ? orderData.products.map(p => p.url).join('\n') : '',
       orderData.totals?.totalItemCost || 0,
       orderData.totals?.dutyAmount || 0,
@@ -1068,7 +1275,7 @@ async function exportToGoogleSheets(orderData) {
     
     await sheets.spreadsheets.values.append({
       spreadsheetId: GOOGLE_SHEET_ID,
-      range: 'Orders!A:M',
+      range: 'Orders!A:N',
       valueInputOption: 'USER_ENTERED',
       requestBody: { values: [row] }
     });
@@ -1120,6 +1327,7 @@ app.post('/api/scrape', scrapeRateLimiter, async (req, res) => {
     console.log(`BATCH SCRAPE: ${urls.length} products`);
     console.log(`Margin Structure: TIERED`);
     console.log(`Flat-Pack Detection: ENABLED`);
+    console.log(`Variant Extraction: ENHANCED`);
     console.log(`========================================`);
     
     const products = [];
@@ -1140,6 +1348,7 @@ app.post('/api/scrape', scrapeRateLimiter, async (req, res) => {
           name: `${retailer} Product ${i + 1}`,
           baseTitle: `${retailer} Product ${i + 1}`,
           variant: null,
+          sku: null,
           price: null,
           image: `https://placehold.co/400x400/F44336/FFFFFF/png?text=Error`,
           thumbnail: `https://placehold.co/100x100/F44336/FFFFFF/png?text=Error`,
@@ -1161,6 +1370,7 @@ app.post('/api/scrape', scrapeRateLimiter, async (req, res) => {
             hasImage: false,
             hasThumbnail: false,
             hasVariant: false,
+            hasSku: false,
             hasDimensions: false,
             hasWeight: false
           }
@@ -1176,6 +1386,8 @@ app.post('/api/scrape', scrapeRateLimiter, async (req, res) => {
     const successful = products.filter(p => p.dataCompleteness.hasPrice).length;
     const fromCache = products.filter(p => p.fromCache).length;
     const flatPacked = products.filter(p => p.isFlatPack).length;
+    const withVariants = products.filter(p => p.variant).length;
+    const withThumbnails = products.filter(p => p.dataCompleteness.hasThumbnail).length;
     
     console.log(`\n========================================`);
     console.log(`RESULTS: ${products.length} products processed`);
@@ -1183,6 +1395,8 @@ app.post('/api/scrape', scrapeRateLimiter, async (req, res) => {
     console.log(`  From cache: ${fromCache}`);
     console.log(`  Failed: ${products.length - successful}`);
     console.log(`  Flat-packed: ${flatPacked}`);
+    console.log(`  With variants: ${withVariants}`);
+    console.log(`  With thumbnails: ${withThumbnails}`);
     
     const marginSummary = products.reduce((acc, p) => {
       const rate = Math.round((p.marginRate || 0.25) * 100);
@@ -1200,6 +1414,8 @@ app.post('/api/scrape', scrapeRateLimiter, async (req, res) => {
         fromCache: fromCache,
         failed: products.length - successful,
         flatPacked: flatPacked,
+        withVariants: withVariants,
+        withThumbnails: withThumbnails,
         marginDistribution: marginSummary
       }
     });
@@ -1210,7 +1426,7 @@ app.post('/api/scrape', scrapeRateLimiter, async (req, res) => {
   }
 });
 
-// Create checkout/draft order WITH VARIANTS AND FLAT-PACK
+// Create checkout/draft order WITH ENHANCED VARIANTS
 app.post('/api/prepare-shopify-checkout', orderRateLimiter, async (req, res) => {
   try {
     const checkoutData = req.body;
@@ -1272,6 +1488,7 @@ app.post('/api/prepare-shopify-checkout', orderRateLimiter, async (req, res) => 
             { name: 'Retailer', value: product.retailer },
             { name: 'Category', value: product.category },
             { name: 'Variant', value: product.variant || 'Default' },
+            { name: 'SKU', value: product.sku || 'N/A' },
             { name: 'Packaging', value: product.packagingType || 'assembled' },
             { name: 'Volume', value: `${(product.cubicFeet || 0).toFixed(1)} ft³` },
             { name: 'Margin Rate', value: `${((product.marginRate || 0.25) * 100).toFixed(0)}%` }
@@ -1338,15 +1555,19 @@ Margin Structure: TIERED
 Documentation Fee: $${documentationFee.toFixed(2)}
 
 PRODUCTS TO ORDER:
-${checkoutData.products.map(p => `• ${p.name}
+${checkoutData.products.map(p => `• ${p.baseTitle || p.name}
   URL: ${p.url}
   Price: $${p.price}
-  ${p.variant ? `Variant: ${p.variant}` : ''}
+  ${p.variant ? `🎨 VARIANT: ${p.variant}` : ''}
+  ${p.sku ? `SKU: ${p.sku}` : ''}
   ${p.isFlatPack ? `📦 FLAT-PACK SHIPPING` : ''}
   Volume: ${(p.cubicFeet || 0).toFixed(1)} ft³
   Margin: ${((p.marginRate || 0.25) * 100).toFixed(0)}%`).join('\n\n')}
 
-⚠️ IMPORTANT: Verify all variants/options are correct before ordering!`,
+⚠️ IMPORTANT: 
+1. Verify all variants/options are correct before ordering!
+2. Check SKUs match if provided
+3. Confirm flat-pack items ship disassembled`,
         
         tags: '🚨IMPORT-ACTION-REQUIRED, import-calculator, stage-1-payment-received',
         tax_exempt: true,
@@ -1390,7 +1611,7 @@ ${checkoutData.products.map(p => `• ${p.name}
     order.shopifyInvoiceUrl = draftOrder.invoice_url;
     saveOrdersDB();
     
-    console.log(`✅ Import draft order ${draftOrder.name} created with TIERED margins + flat-pack intelligence`);
+    console.log(`✅ Import draft order ${draftOrder.name} created with variants + thumbnails + flat-pack`);
     
     res.json({
       orderId: orderId,
@@ -1510,7 +1731,7 @@ app.post('/api/admin/order/:orderId/stage', async (req, res) => {
   });
 });
 
-// Learning insights
+// Learning insights with variant stats
 app.get('/api/learning-insights', (req, res) => {
   const insights = {
     total_products_learned: Object.keys(LEARNING_DB.products).length,
@@ -1518,7 +1739,8 @@ app.get('/api/learning-insights', (req, res) => {
     retailer_success_rates: {},
     recent_products: [],
     margin_structure: 'tiered',
-    flat_pack_stats: {}
+    flat_pack_stats: {},
+    variant_stats: {}
   };
   
   Object.entries(LEARNING_DB.retailer_stats).forEach(([retailer, stats]) => {
@@ -1536,6 +1758,13 @@ app.get('/api/learning-insights', (req, res) => {
         percentage: ((stats.flat_packed / stats.attempts) * 100).toFixed(1) + '%'
       };
     }
+    
+    if (stats.variants_found) {
+      insights.variant_stats[retailer] = {
+        count: stats.variants_found,
+        percentage: ((stats.variants_found / stats.attempts) * 100).toFixed(1) + '%'
+      };
+    }
   });
   
   const products = Object.values(LEARNING_DB.products)
@@ -1549,6 +1778,8 @@ app.get('/api/learning-insights', (req, res) => {
     times_seen: p.times_seen,
     margin_rate: p.marginRate || 0.25,
     has_variant: !!p.variant,
+    variant: p.variant,
+    has_thumbnail: !!p.thumbnail && p.thumbnail !== p.image,
     is_flat_pack: !!p.isFlatPack
   }));
   
@@ -1600,13 +1831,15 @@ if (TEST_MODE) {
     const testOrder = {
       products: [
         {
-          name: 'Test Product 1',
+          name: 'Test Product 1 - Color: Blue, Size: Large',
+          baseTitle: 'Test Product 1',
           price: 99.99,
           url: 'https://example.com/product1',
           retailer: 'Test Store',
           cubicFeet: 5,
           marginRate: 0.20,
           variant: 'Color: Blue, Size: Large',
+          sku: 'TEST-SKU-001',
           isFlatPack: false
         }
       ],
@@ -1665,6 +1898,8 @@ app.listen(PORT, () => {
   console.log(`💰 Margin Structure: TIERED (20%/25%/22%/18%/15% by volume)`);
   console.log(`📄 Documentation Fee: $${DOCUMENTATION_FEE_PER_VENDOR} per vendor`);
   console.log(`📦 Flat-Pack Intelligence: ENABLED`);
+  console.log(`🎨 Variant Support: ENHANCED`);
+  console.log(`🖼️ Thumbnail Support: ENHANCED`);
   if (TEST_MODE) {
     console.log(`🧪 Test Mode: ENABLED`);
     console.log(`   - Create test order: /api/test/create-sample-order`);
