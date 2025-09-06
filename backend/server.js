@@ -1438,6 +1438,43 @@ app.post('/api/scrape', scrapeRateLimiter, async (req, res) => {
     res.status(500).json({ error: 'Failed to scrape products: ' + error.message });
   }
 });
+    
+    console.log(`\n========================================`);
+    console.log(`RESULTS: ${products.length} products processed`);
+    console.log(`  Scraped: ${successful - fromCache}`);
+    console.log(`  From cache: ${fromCache}`);
+    console.log(`  Failed: ${products.length - successful}`);
+    console.log(`  Flat-packed: ${flatPacked}`);
+    console.log(`  With variants: ${withVariants}`);
+    console.log(`  With thumbnails: ${withThumbnails}`);
+    
+    const marginSummary = products.reduce((acc, p) => {
+      const rate = Math.round((p.marginRate || 0.25) * 100);
+      acc[rate] = (acc[rate] || 0) + 1;
+      return acc;
+    }, {});
+    console.log(`  Margin distribution:`, marginSummary);
+    console.log(`========================================\n`);
+    
+    res.json({ 
+      products: products,
+      summary: {
+        total: products.length,
+        scraped: successful,
+        fromCache: fromCache,
+        failed: products.length - successful,
+        flatPacked: flatPacked,
+        withVariants: withVariants,
+        withThumbnails: withThumbnails,
+        marginDistribution: marginSummary
+      }
+    });
+    
+  } catch (error) {
+    console.error('Fatal scraping error:', error);
+    res.status(500).json({ error: 'Failed to scrape products: ' + error.message });
+  }
+});
 
 // Create checkout/draft order WITH ENHANCED VARIANTS
 app.post('/api/prepare-shopify-checkout', orderRateLimiter, async (req, res) => {
