@@ -1210,6 +1210,852 @@ async function processProduct(url, index, total) {
   
   learnFromProduct(url, product);
   
+  console.log(`   Price: ${scraped.price ? '
+}
+
+// Continue with remaining functions (Email, Google Sheets, Store Order, etc.) - UNCHANGED
+// [Rest of the server.js code remains the same from line 900 onwards...]
+
+// Email functions
+async function sendOrderEmail(orderData) {
+  if (!sendgrid) return;
+  
+  try {
+    const msg = {
+      to: EMAIL_TO_ADMIN,
+      from: EMAIL_FROM,
+      subject: `🚨 New Import Order: ${orderData.orderId}`,
+      html: `
+        <h2>🚨 New Import Order - ACTION REQUIRED</h2>
+        <p><strong>Order ID:</strong> ${orderData.orderId}</p>
+        <p><strong>Total:</strong> $${orderData.totals.grandTotal.toFixed(2)}</p>
+        <p><strong>Products:</strong> ${orderData.products.length} items</p>
+        <p><strong>Documentation Fee:</strong> $${(orderData.totals.documentationFee || 0).toFixed(2)}</p>
+        <hr>
+        <h3>Products to Order from Vendors:</h3>
+        ${orderData.products.map(p => `
+          <p>• ${p.name}<br>
+          URL: ${p.url}<br>
+          Price: $${p.price}<br>
+          ${p.variant ? `<strong>Variant: ${p.variant}</strong><br>` : ''}
+          ${p.sku ? `SKU: ${p.sku}<br>` : ''}
+          ${p.isFlatPack ? `Packaging: FLAT-PACK<br>` : ''}
+          Margin: ${(p.marginRate * 100).toFixed(0)}%</p>
+        `).join('')}
+        <hr>
+        <p><strong>⚠️ ACTION REQUIRED: Order these items from the vendors!</strong></p>
+        <p><strong>⚠️ VERIFY ALL VARIANTS ARE CORRECT!</strong></p>
+      `
+    };
+    
+    await sendgrid.send(msg);
+    console.log('✉️ Import order email sent');
+  } catch (error) {
+    console.error('Email error:', error);
+  }
+}
+
+// Google Sheets export
+async function exportToGoogleSheets(orderData) {
+  if (!google || !GOOGLE_SERVICE_ACCOUNT_KEY || !GOOGLE_SHEET_ID) {
+    return;
+  }
+  
+  try {
+    const auth = new google.auth.GoogleAuth({
+      credentials: GOOGLE_SERVICE_ACCOUNT_KEY,
+      scopes: ['https://www.googleapis.com/auth/spreadsheets']
+    });
+    
+    const sheets = google.sheets({ version: 'v4', auth });
+    
+    const row = [
+      new Date().toISOString(),
+      orderData.orderId || '',
+      orderData.customer?.email || 'Guest',
+      orderData.customer?.name || '',
+      orderData.products ? orderData.products.map(p => p.name).join('; ') : '',
+      orderData.products ? orderData.products.map(p => p.variant || 'None').join('; ') : '',
+      orderData.products ? orderData.products.map(p => p.url).join('\n') : '',
+      orderData.totals?.totalItemCost || 0,
+      orderData.totals?.dutyAmount || 0,
+      orderData.totals?.totalShippingAndHandling || 0,
+      orderData.totals?.documentationFee || 0,
+      orderData.totals?.grandTotal || 0,
+      'stage-1-payment-received',
+      orderData.products ? orderData.products.filter(p => p.isFlatPack).length : 0
+    ];
+    
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: GOOGLE_SHEET_ID,
+      range: 'Orders!A:N',
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: [row] }
+    });
+    
+    console.log('✅ Order exported to Google Sheets');
+  } catch (error) {
+    console.error('Google Sheets error:', error);
+  }
+}
+
+// Store order in database
+function storeOrder(orderData) {
+  const order = {
+    ...orderData,
+    id: orderData.orderId || generateOrderId(),
+    createdAt: new Date().toISOString(),
+    status: 'pending',
+    currentStage: 1
+  };
+  
+  ORDERS_DB.orders.push(order);
+  ORDERS_DB.stats.total_orders++;
+  ORDERS_DB.stats.total_revenue += orderData.totals?.grandTotal || 0;
+  ORDERS_DB.stats.average_order_value = ORDERS_DB.stats.total_revenue / ORDERS_DB.stats.total_orders;
+  
+  saveOrdersDB();
+  return order;
+}
+
+// API ENDPOINTS
+
+// Scrape products
+app.post('/api/scrape', scrapeRateLimiter, async (req, res) => {
+  try {
+    const { urls } = req.body;
+    
+    if (!urls || !Array.isArray(urls) || urls.length === 0) {
+      return res.status(400).json({ error: 'No URLs provided' });
+    }
+    
+    const sdlUrls = urls.filter(url => isSDLDomain(url));
+    if (sdlUrls.length > 0) {
+      return res.status(400).json({ 
+        error: 'SDL domain detected. This calculator is for importing products from other retailers.' 
+      });
+    }
+    
+    console.log(`\n========================================`);
+    console.log(`BATCH SCRAPE: ${urls.length} products`);
+    console.log(`Margin Structure: TIERED`);
+    console.log(`Flat-Pack Detection: ENABLED`);
+    console.log(`Variant Extraction: ENHANCED`);
+    console.log(`========================================`);
+    
+    const products = [];
+    
+    for (let i = 0; i < urls.length; i++) {
+      const url = urls[i];
+      
+      try {
+        const product = await processProduct(url, i + 1, urls.length);
+        products.push(product);
+      } catch (error) {
+        console.error(`Error processing URL ${i + 1}:`, error.message);
+        
+        const retailer = detectRetailer(url);
+        const fallbackProduct = {
+          id: generateOrderId(),
+          url: url,
+          name: `${retailer} Product ${i + 1}`,
+          baseTitle: `${retailer} Product ${i + 1}`,
+          variant: null,
+          sku: null,
+          price: null,
+          image: `https://placehold.co/400x400/F44336/FFFFFF/png?text=Error`,
+          thumbnail: `https://placehold.co/100x100/F44336/FFFFFF/png?text=Error`,
+          category: 'general',
+          retailer: retailer,
+          dimensions: BOL_PATTERNS.general.dimensions.default,
+          weight: 50,
+          cubicFeet: 25,
+          packagingType: 'assembled',
+          isFlatPack: false,
+          shippingCost: 100,
+          marginRate: 0.25,
+          marginAmount: 25,
+          scrapingMethod: 'error',
+          error: true,
+          dataCompleteness: {
+            hasName: false,
+            hasPrice: false,
+            hasImage: false,
+            hasThumbnail: false,
+            hasVariant: false,
+            hasSku: false,
+            hasDimensions: false,
+            hasWeight: false
+          }
+        };
+        products.push(fallbackProduct);
+      }
+      
+      if (i < urls.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1500));
+      }
+    }
+    
+    const successful = products.filter(p => p.dataCompleteness.hasPrice).length;
+    const fromCache = products.filter(p => p.fromCache).length;
+    const flatPacked = products.filter(p => p.isFlatPack).length;
+    const withVariants = products.filter(p => p.variant).length;
+    const withThumbnails = products.filter(p => p.dataCompleteness.hasThumbnail).length;
+    
+    console.log(`\n========================================`);
+    console.log(`RESULTS: ${products.length} products processed`);
+    console.log(`  Scraped: ${successful - fromCache}`);
+    console.log(`  From cache: ${fromCache}`);
+    console.log(`  Failed: ${products.length - successful}`);
+    console.log(`  Flat-packed: ${flatPacked}`);
+    console.log(`  With variants: ${withVariants}`);
+    console.log(`  With thumbnails: ${withThumbnails}`);
+    
+    const marginSummary = products.reduce((acc, p) => {
+      const rate = Math.round((p.marginRate || 0.25) * 100);
+      acc[rate] = (acc[rate] || 0) + 1;
+      return acc;
+    }, {});
+    console.log(`  Margin distribution:`, marginSummary);
+    console.log(`========================================\n`);
+    
+    res.json({ 
+      products: products,
+      summary: {
+        total: products.length,
+        scraped: successful,
+        fromCache: fromCache,
+        failed: products.length - successful,
+        flatPacked: flatPacked,
+        withVariants: withVariants,
+        withThumbnails: withThumbnails,
+        marginDistribution: marginSummary
+      }
+    });
+    
+  } catch (error) {
+    console.error('Fatal scraping error:', error);
+    res.status(500).json({ error: 'Failed to scrape products: ' + error.message });
+  }
+});
+
+// Create checkout/draft order WITH ENHANCED VARIANTS
+app.post('/api/prepare-shopify-checkout', orderRateLimiter, async (req, res) => {
+  try {
+    const checkoutData = req.body;
+    const orderId = generateOrderId();
+    
+    const vendorCount = new Set(checkoutData.products.map(p => p.retailer)).size;
+    const documentationFee = vendorCount * DOCUMENTATION_FEE_PER_VENDOR;
+    
+    let totalWithMargins = 0;
+    let totalCardFees = 0;
+    
+    checkoutData.products.forEach(product => {
+      if (product.price && product.price > 0) {
+        const duty = product.price * BERMUDA_DUTY_RATE;
+        const baseTotal = product.price + duty + (product.shippingCost || 0);
+        totalWithMargins += baseTotal;
+      }
+    });
+    
+    Object.values(checkoutData.deliveryFees || {}).forEach(fee => {
+      totalWithMargins += fee;
+    });
+    
+    totalWithMargins += documentationFee;
+    totalCardFees = totalWithMargins * CARD_FEE_RATE;
+    const finalGrandTotal = roundToNinetyFive(totalWithMargins + totalCardFees);
+    
+    checkoutData.totals.documentationFee = documentationFee;
+    checkoutData.totals.cardFees = totalCardFees;
+    checkoutData.totals.grandTotal = finalGrandTotal;
+    
+    const order = storeOrder({
+      ...checkoutData,
+      orderId
+    });
+    
+    await exportToGoogleSheets(order);
+    await sendOrderEmail(order);
+    
+    if (!SHOPIFY_ACCESS_TOKEN) {
+      return res.json({
+        orderId: orderId,
+        redirectUrl: '/pages/contact',
+        success: true,
+        message: 'Order received! We will contact you shortly to complete payment.'
+      });
+    }
+    
+    const lineItems = [];
+    
+    checkoutData.products.forEach(product => {
+      if (product.price && product.price > 0) {
+        lineItems.push({
+          title: product.name,
+          price: product.price.toFixed(2),
+          quantity: 1,
+          properties: [
+            { name: 'Source URL', value: product.url },
+            { name: 'Retailer', value: product.retailer },
+            { name: 'Category', value: product.category },
+            { name: 'Variant', value: product.variant || 'Default' },
+            { name: 'SKU', value: product.sku || 'N/A' },
+            { name: 'Packaging', value: product.packagingType || 'assembled' },
+            { name: 'Volume', value: `${(product.cubicFeet || 0).toFixed(1)} ft³` },
+            { name: 'Margin Rate', value: `${((product.marginRate || 0.25) * 100).toFixed(0)}%` }
+          ]
+        });
+      }
+    });
+    
+    if (checkoutData.totals.dutyAmount > 0) {
+      lineItems.push({
+        title: 'Bermuda Import Duty (26.5%)',
+        price: checkoutData.totals.dutyAmount.toFixed(2),
+        quantity: 1,
+        taxable: false
+      });
+    }
+    
+    Object.entries(checkoutData.deliveryFees || {}).forEach(([vendor, fee]) => {
+      if (fee > 0) {
+        lineItems.push({
+          title: `${vendor} US Delivery Fee`,
+          price: fee.toFixed(2),
+          quantity: 1,
+          taxable: false
+        });
+      }
+    });
+    
+    if (checkoutData.totals.totalShippingAndHandling > 0) {
+      lineItems.push({
+        title: 'Ocean Freight & Handling to Bermuda',
+        price: checkoutData.totals.totalShippingAndHandling.toFixed(2),
+        quantity: 1,
+        taxable: false
+      });
+    }
+    
+    if (documentationFee > 0) {
+      lineItems.push({
+        title: `Documentation & Processing Fee (${vendorCount} vendor${vendorCount > 1 ? 's' : ''})`,
+        price: documentationFee.toFixed(2),
+        quantity: 1,
+        taxable: false
+      });
+    }
+    
+    if (totalCardFees > 0) {
+      lineItems.push({
+        title: 'Card Processing Fee (3.25%)',
+        price: totalCardFees.toFixed(2),
+        quantity: 1,
+        taxable: false
+      });
+    }
+    
+    const draftOrderData = {
+      draft_order: {
+        line_items: lineItems,
+        note: `🚨 IMPORT ORDER - ACTION REQUIRED 🚨
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Order ID: ${orderId}
+Created: ${new Date().toISOString()}
+Margin Structure: TIERED
+Documentation Fee: $${documentationFee.toFixed(2)}
+
+PRODUCTS TO ORDER:
+${checkoutData.products.map(p => `• ${p.baseTitle || p.name}
+  URL: ${p.url}
+  Price: $${p.price}
+  ${p.variant ? `🎨 VARIANT: ${p.variant}` : ''}
+  ${p.sku ? `SKU: ${p.sku}` : ''}
+  ${p.isFlatPack ? `📦 FLAT-PACK SHIPPING` : ''}
+  Volume: ${(p.cubicFeet || 0).toFixed(1)} ft³
+  Margin: ${((p.marginRate || 0.25) * 100).toFixed(0)}%`).join('\n\n')}
+
+⚠️ IMPORTANT: 
+1. Verify all variants/options are correct before ordering!
+2. Check SKUs match if provided
+3. Confirm flat-pack items ship disassembled`,
+        
+        tags: '🚨IMPORT-ACTION-REQUIRED, import-calculator, stage-1-payment-received',
+        tax_exempt: true,
+        send_receipt: true,
+        send_fulfillment_receipt: true,
+        note_attributes: [
+          { name: '⚠️ ORDER TYPE', value: '🚨 IMPORT - MANUAL ACTION REQUIRED' },
+          { name: '📦 STATUS', value: 'NEEDS VENDOR ORDERING' },
+          { name: 'import_order', value: 'true' },
+          { name: 'order_id', value: orderId },
+          { name: 'current_stage', value: '1' },
+          { name: 'margin_structure', value: 'tiered' },
+          { name: 'has_variants', value: checkoutData.products.some(p => p.variant) ? 'yes' : 'no' },
+          { name: 'flat_packed_items', value: checkoutData.products.filter(p => p.isFlatPack).length.toString() }
+        ]
+      }
+    };
+    
+    if (checkoutData.customer?.email) {
+      draftOrderData.draft_order.customer = {
+        email: checkoutData.customer.email,
+        first_name: checkoutData.customer.name?.split(' ')[0] || '',
+        last_name: checkoutData.customer.name?.split(' ').slice(1).join(' ') || ''
+      };
+    }
+    
+    const shopifyResponse = await axios.post(
+      `https://${SHOPIFY_DOMAIN}/admin/api/2023-10/draft_orders.json`,
+      draftOrderData,
+      {
+        headers: {
+          'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+    
+    const draftOrder = shopifyResponse.data.draft_order;
+    
+    order.shopifyDraftOrderId = draftOrder.id;
+    order.shopifyInvoiceUrl = draftOrder.invoice_url;
+    saveOrdersDB();
+    
+    console.log(`✅ Import draft order ${draftOrder.name} created with variants + thumbnails + flat-pack`);
+    
+    res.json({
+      orderId: orderId,
+      shopifyOrderId: draftOrder.id,
+      redirectUrl: draftOrder.invoice_url,
+      success: true
+    });
+    
+  } catch (error) {
+    console.error('Checkout error:', error.response?.data || error);
+    
+    const orderId = generateOrderId();
+    storeOrder({
+      ...req.body,
+      orderId,
+      error: error.message
+    });
+    
+    res.json({
+      orderId: orderId,
+      redirectUrl: '/pages/contact',
+      success: false,
+      message: 'Order saved. Our team will contact you to complete the order.'
+    });
+  }
+});
+
+// Admin endpoints
+app.get('/api/admin/orders', (req, res) => {
+  const { password } = req.query;
+  
+  if (password !== ADMIN_PASSWORD) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  res.json({
+    orders: ORDERS_DB.orders,
+    stats: ORDERS_DB.stats
+  });
+});
+
+app.get('/api/admin/order/:orderId', (req, res) => {
+  const { password } = req.query;
+  const { orderId } = req.params;
+  
+  if (password !== ADMIN_PASSWORD) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  const order = ORDERS_DB.orders.find(o => o.id === orderId || o.orderId === orderId);
+  
+  if (!order) {
+    return res.status(404).json({ error: 'Order not found' });
+  }
+  
+  res.json(order);
+});
+
+app.post('/api/admin/order/:orderId/status', (req, res) => {
+  const { password, status } = req.body;
+  const { orderId } = req.params;
+  
+  if (password !== ADMIN_PASSWORD) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  const order = ORDERS_DB.orders.find(o => o.id === orderId || o.orderId === orderId);
+  
+  if (!order) {
+    return res.status(404).json({ error: 'Order not found' });
+  }
+  
+  order.status = status;
+  order.updatedAt = new Date().toISOString();
+  saveOrdersDB();
+  
+  res.json({ success: true, order });
+});
+
+// Update order stage endpoint
+app.post('/api/admin/order/:orderId/stage', async (req, res) => {
+  const { password, stage } = req.body;
+  const { orderId } = req.params;
+  
+  if (password !== ADMIN_PASSWORD) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  const success = await updateOrderStage(orderId, stage);
+  
+  const stageNames = {
+    1: 'Payment Received',
+    2: 'Ordered from Vendor',
+    3: 'At NJ Warehouse',
+    4: 'Ready for Delivery/Collection',
+    5: 'Delivered'
+  };
+  
+  const order = ORDERS_DB.orders.find(o => 
+    o.shopifyOrderId === orderId || 
+    o.shopifyDraftOrderId === orderId || 
+    o.id === orderId || 
+    o.orderId === orderId
+  );
+  
+  if (order) {
+    order.currentStage = stage;
+    order.stageUpdatedAt = new Date().toISOString();
+    saveOrdersDB();
+  }
+  
+  res.json({ 
+    success,
+    stage,
+    stageName: stageNames[stage],
+    message: success ? `Order updated to: ${stageNames[stage]}` : 'Failed to update order'
+  });
+});
+
+// Learning insights with variant stats
+app.get('/api/learning-insights', (req, res) => {
+  const insights = {
+    total_products_learned: Object.keys(LEARNING_DB.products).length,
+    categories_tracked: Object.keys(LEARNING_DB.patterns),
+    retailer_success_rates: {},
+    recent_products: [],
+    margin_structure: 'tiered',
+    flat_pack_stats: {},
+    variant_stats: {}
+  };
+  
+  Object.entries(LEARNING_DB.retailer_stats).forEach(([retailer, stats]) => {
+    insights.retailer_success_rates[retailer] = {
+      success_rate: ((stats.successes / stats.attempts) * 100).toFixed(1) + '%',
+      total_attempts: stats.attempts,
+      variants_found: stats.variants_found || 0,
+      thumbnails_found: stats.thumbnails_found || 0,
+      flat_packed: stats.flat_packed || 0
+    };
+    
+    if (stats.flat_packed) {
+      insights.flat_pack_stats[retailer] = {
+        count: stats.flat_packed,
+        percentage: ((stats.flat_packed / stats.attempts) * 100).toFixed(1) + '%'
+      };
+    }
+    
+    if (stats.variants_found) {
+      insights.variant_stats[retailer] = {
+        count: stats.variants_found,
+        percentage: ((stats.variants_found / stats.attempts) * 100).toFixed(1) + '%'
+      };
+    }
+  });
+  
+  const products = Object.values(LEARNING_DB.products)
+    .sort((a, b) => new Date(b.last_updated) - new Date(a.last_updated))
+    .slice(0, 5);
+  
+  insights.recent_products = products.map(p => ({
+    name: p.name,
+    price: p.price,
+    retailer: p.retailer,
+    times_seen: p.times_seen,
+    margin_rate: p.marginRate || 0.25,
+    has_variant: !!p.variant,
+    variant: p.variant,
+    has_thumbnail: !!p.thumbnail && p.thumbnail !== p.image,
+    is_flat_pack: !!p.isFlatPack
+  }));
+  
+  res.json(insights);
+});
+
+// Webhook endpoints
+app.post('/webhooks/shopify/order-created', async (req, res) => {
+  const hmac = req.get('X-Shopify-Hmac-Sha256');
+  const body = req.rawBody;
+  
+  if (SHOPIFY_WEBHOOK_SECRET && hmac) {
+    const hash = crypto
+      .createHmac('sha256', SHOPIFY_WEBHOOK_SECRET)
+      .update(body, 'utf8')
+      .digest('base64');
+    
+    if (hash !== hmac) {
+      return res.status(401).send('Unauthorized');
+    }
+  }
+  
+  const order = req.body;
+  console.log(`📦 Shopify order created: ${order.name}`);
+  
+  const ourOrderId = order.note_attributes?.find(attr => attr.name === 'order_id')?.value;
+  if (ourOrderId) {
+    const ourOrder = ORDERS_DB.orders.find(o => o.id === ourOrderId || o.orderId === ourOrderId);
+    if (ourOrder) {
+      ourOrder.shopifyOrderId = order.id;
+      ourOrder.shopifyOrderNumber = order.name;
+      ourOrder.status = 'confirmed';
+      ourOrder.confirmedAt = new Date().toISOString();
+      saveOrdersDB();
+    }
+  }
+  
+  res.status(200).send('OK');
+});
+
+app.post('/webhooks/shopify/order-updated', async (req, res) => {
+  console.log(`📦 Shopify order updated: ${req.body.name}`);
+  res.status(200).send('OK');
+});
+
+// Test endpoints
+if (TEST_MODE) {
+  app.get('/api/test/create-sample-order', async (req, res) => {
+    const testOrder = {
+      products: [
+        {
+          name: 'Test Product 1 - Color: Blue, Size: Large',
+          baseTitle: 'Test Product 1',
+          price: 99.99,
+          url: 'https://example.com/product1',
+          retailer: 'Test Store',
+          cubicFeet: 5,
+          marginRate: 0.20,
+          variant: 'Color: Blue, Size: Large',
+          sku: 'TEST-SKU-001',
+          isFlatPack: false
+        }
+      ],
+      totals: {
+        totalItemCost: 99.99,
+        dutyAmount: 26.50,
+        totalShippingAndHandling: 50,
+        grandTotal: 176.49
+      },
+      customer: {
+        email: 'test@example.com',
+        name: 'Test Customer'
+      }
+    };
+    
+    const order = storeOrder(testOrder);
+    res.json({ success: true, order });
+  });
+  
+  app.get('/api/test/clear-data', (req, res) => {
+    ORDERS_DB = {
+      orders: [],
+      draft_orders: [],
+      abandoned_carts: [],
+      stats: {
+        total_orders: 0,
+        total_revenue: 0,
+        average_order_value: 0
+      }
+    };
+    saveOrdersDB();
+    res.json({ success: true, message: 'Test data cleared' });
+  });
+}
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error('Error:', err);
+  res.status(500).json({ 
+    error: 'Internal server error',
+    message: TEST_MODE ? err.message : 'Something went wrong'
+  });
+});
+
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({ error: 'Endpoint not found' });
+});
+
+// Start server
+app.listen(PORT, () => {
+  console.log(`\n🚀 Server running on port ${PORT}`);
+  console.log(`📍 Frontend: http://localhost:${PORT}`);
+  console.log(`💚 Health: http://localhost:${PORT}/health`);
+  console.log(`📊 Admin Orders: http://localhost:${PORT}/api/admin/orders?password=${ADMIN_PASSWORD}`);
+  console.log(`💰 Margin Structure: TIERED (20%/25%/22%/18%/15% by volume)`);
+  console.log(`📄 Documentation Fee: $${DOCUMENTATION_FEE_PER_VENDOR} per vendor`);
+  console.log(`📦 Flat-Pack Intelligence: ENABLED`);
+  console.log(`🎨 Variant Support: ENHANCED`);
+  console.log(`🖼️ Thumbnail Support: ENHANCED`);
+  if (TEST_MODE) {
+    console.log(`🧪 Test Mode: ENABLED`);
+    console.log(`   - Create test order: /api/test/create-sample-order`);
+    console.log(`   - Clear test data: /api/test/clear-data`);
+  }
+  console.log('\n');
+}); + price : '❌ Not found'}`);
+    console.log(`      🎨 Variant: ${variant ? variant : '❌ None detected'}`);
+    console.log(`      🖼️ Thumbnail: ${thumbnail && thumbnail !== image ? '✅ Separate' : '⚠️ Same as main'}`);
+    console.log(`      📋 SKU: ${sku ? sku : '❌ Not found'}`);
+    
+    return { 
+      price, 
+      title: data.title, 
+      image, 
+      thumbnail, 
+      variant,
+      sku,
+      brand
+    };
+    
+  } catch (error) {
+    console.log(`   ❌ ScrapingBee error:`, error.message);
+    return { 
+      price: null, 
+      title: null, 
+      image: null, 
+      thumbnail: null, 
+      variant: null,
+      sku: null,
+      brand: null
+    };
+  }
+}
+
+// PROCESS PRODUCT WITH ENHANCED VARIANT SUPPORT
+async function processProduct(url, index, total) {
+  console.log(`\n[${index}/${total}] Processing: ${url.substring(0, 80)}...`);
+  
+  const productId = generateOrderId();
+  const retailer = detectRetailer(url);
+  console.log(`   Retailer: ${retailer}`);
+  
+  const learned = retailer !== 'Wayfair' ? getLearnedData(url) : null;
+  if (learned && learned.price) {
+    console.log('   ✅ Using cached data from learning system');
+    return {
+      ...learned,
+      id: productId,
+      url: url,
+      fromCache: true
+    };
+  }
+  
+  const scraped = await scrapeWithScrapingBee(url);
+  
+  // Process variant and title
+  const baseTitle = scraped.title || `${retailer} Product ${index}`;
+  const productName = scraped.variant ? `${baseTitle} - ${scraped.variant}` : baseTitle;
+  
+  // Ensure we have a thumbnail
+  let thumbnail = scraped.thumbnail;
+  if (!thumbnail && scraped.image) {
+    // Create thumbnail URL based on retailer
+    if (retailer === 'Wayfair' && scraped.image.includes('wayfair')) {
+      thumbnail = scraped.image.replace(/w=\d+/, 'w=100').replace(/h=\d+/, 'h=100');
+    } else {
+      thumbnail = scraped.image;
+    }
+  }
+  
+  const category = categorizeProduct(productName, url);
+  let dimensions = estimateDimensionsFromBOL(category, productName, retailer);
+  let weight = estimateWeightFromBOL(dimensions, category);
+  
+  // FLAT-PACK INTELLIGENCE
+  const isFlatPack = isFlatPackable(category, productName, retailer);
+  let packagingType = 'assembled';
+  
+  if (isFlatPack) {
+    console.log(`   📦 FLAT-PACK DETECTED: This item will ship disassembled`);
+    packagingType = 'flat-pack';
+    
+    const originalDimensions = { ...dimensions };
+    dimensions = calculateFlatPackDimensions(dimensions, productName);
+    weight = adjustFlatPackWeight(weight, category);
+    
+    console.log(`   🔄 Original assembled size: ${originalDimensions.length}x${originalDimensions.width}x${originalDimensions.height}"`);
+    console.log(`   📦 Flat-pack shipping size: ${dimensions.length}x${dimensions.width}x${dimensions.height}"`);
+  } else {
+    console.log(`   📦 Ships fully assembled (${category})`);
+  }
+  
+  const cubicInches = dimensions.length * dimensions.width * dimensions.height;
+  const cubicFeet = cubicInches / 1728;
+  
+  const baseShippingCost = calculateShippingCost(dimensions, weight, scraped.price || 100);
+  
+  const itemPrice = scraped.price || 100;
+  const duty = itemPrice * BERMUDA_DUTY_RATE;
+  const landedCostPreMargin = itemPrice + duty + baseShippingCost;
+  
+  const marginRate = calculateSDLMargin(cubicFeet, landedCostPreMargin);
+  const marginAmount = landedCostPreMargin * marginRate;
+  const totalShippingWithMargin = baseShippingCost + marginAmount;
+  
+  const product = {
+    id: productId,
+    url: url,
+    name: productName,
+    baseTitle: baseTitle,
+    variant: scraped.variant || null,
+    sku: scraped.sku || null,
+    brand: scraped.brand || null,
+    price: scraped.price,
+    image: scraped.image || `https://placehold.co/400x400/7CB342/FFFFFF/png?text=${encodeURIComponent(retailer)}`,
+    thumbnail: thumbnail || scraped.image || `https://placehold.co/100x100/7CB342/FFFFFF/png?text=${encodeURIComponent(retailer)}`,
+    category: category,
+    retailer: retailer,
+    dimensions: dimensions,
+    weight: weight,
+    cubicFeet: cubicFeet,
+    packagingType: packagingType,
+    isFlatPack: isFlatPack,
+    baseShippingCost: baseShippingCost,
+    shippingCost: totalShippingWithMargin,
+    marginRate: marginRate,
+    marginAmount: marginAmount,
+    scrapingMethod: scraped.price ? 'scrapingbee' : 'estimated',
+    dataCompleteness: {
+      hasName: !!scraped.title,
+      hasPrice: !!scraped.price,
+      hasImage: !!scraped.image,
+      hasThumbnail: !!thumbnail && thumbnail !== scraped.image,
+      hasVariant: !!scraped.variant,
+      hasSku: !!scraped.sku,
+      hasDimensions: true,
+      hasWeight: true
+    }
+  };
+  
+  learnFromProduct(url, product);
+  
   console.log(`   Price: ${scraped.price ? '$' + scraped.price : 'Not found'}`);
   console.log(`   Variant: ${scraped.variant || 'Not specified'}`);
   console.log(`   SKU: ${scraped.sku || 'Not found'}`);
@@ -1219,6 +2065,725 @@ async function processProduct(url, index, total) {
   console.log(`   Weight: ${weight} lbs`);
   console.log(`   Margin: ${(marginRate * 100).toFixed(0)}% ($${marginAmount.toFixed(2)})`);
   console.log(`   Total Shipping: $${totalShippingWithMargin.toFixed(2)}`);
+  
+  return product;
+}
+
+// Continue with remaining functions (Email, Google Sheets, Store Order, etc.) - UNCHANGED
+// [Rest of the server.js code remains the same from line 900 onwards...]
+
+// Email functions
+async function sendOrderEmail(orderData) {
+  if (!sendgrid) return;
+  
+  try {
+    const msg = {
+      to: EMAIL_TO_ADMIN,
+      from: EMAIL_FROM,
+      subject: `🚨 New Import Order: ${orderData.orderId}`,
+      html: `
+        <h2>🚨 New Import Order - ACTION REQUIRED</h2>
+        <p><strong>Order ID:</strong> ${orderData.orderId}</p>
+        <p><strong>Total:</strong> $${orderData.totals.grandTotal.toFixed(2)}</p>
+        <p><strong>Products:</strong> ${orderData.products.length} items</p>
+        <p><strong>Documentation Fee:</strong> $${(orderData.totals.documentationFee || 0).toFixed(2)}</p>
+        <hr>
+        <h3>Products to Order from Vendors:</h3>
+        ${orderData.products.map(p => `
+          <p>• ${p.name}<br>
+          URL: ${p.url}<br>
+          Price: $${p.price}<br>
+          ${p.variant ? `<strong>Variant: ${p.variant}</strong><br>` : ''}
+          ${p.sku ? `SKU: ${p.sku}<br>` : ''}
+          ${p.isFlatPack ? `Packaging: FLAT-PACK<br>` : ''}
+          Margin: ${(p.marginRate * 100).toFixed(0)}%</p>
+        `).join('')}
+        <hr>
+        <p><strong>⚠️ ACTION REQUIRED: Order these items from the vendors!</strong></p>
+        <p><strong>⚠️ VERIFY ALL VARIANTS ARE CORRECT!</strong></p>
+      `
+    };
+    
+    await sendgrid.send(msg);
+    console.log('✉️ Import order email sent');
+  } catch (error) {
+    console.error('Email error:', error);
+  }
+}
+
+// Google Sheets export
+async function exportToGoogleSheets(orderData) {
+  if (!google || !GOOGLE_SERVICE_ACCOUNT_KEY || !GOOGLE_SHEET_ID) {
+    return;
+  }
+  
+  try {
+    const auth = new google.auth.GoogleAuth({
+      credentials: GOOGLE_SERVICE_ACCOUNT_KEY,
+      scopes: ['https://www.googleapis.com/auth/spreadsheets']
+    });
+    
+    const sheets = google.sheets({ version: 'v4', auth });
+    
+    const row = [
+      new Date().toISOString(),
+      orderData.orderId || '',
+      orderData.customer?.email || 'Guest',
+      orderData.customer?.name || '',
+      orderData.products ? orderData.products.map(p => p.name).join('; ') : '',
+      orderData.products ? orderData.products.map(p => p.variant || 'None').join('; ') : '',
+      orderData.products ? orderData.products.map(p => p.url).join('\n') : '',
+      orderData.totals?.totalItemCost || 0,
+      orderData.totals?.dutyAmount || 0,
+      orderData.totals?.totalShippingAndHandling || 0,
+      orderData.totals?.documentationFee || 0,
+      orderData.totals?.grandTotal || 0,
+      'stage-1-payment-received',
+      orderData.products ? orderData.products.filter(p => p.isFlatPack).length : 0
+    ];
+    
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: GOOGLE_SHEET_ID,
+      range: 'Orders!A:N',
+      valueInputOption: 'USER_ENTERED',
+      requestBody: { values: [row] }
+    });
+    
+    console.log('✅ Order exported to Google Sheets');
+  } catch (error) {
+    console.error('Google Sheets error:', error);
+  }
+}
+
+// Store order in database
+function storeOrder(orderData) {
+  const order = {
+    ...orderData,
+    id: orderData.orderId || generateOrderId(),
+    createdAt: new Date().toISOString(),
+    status: 'pending',
+    currentStage: 1
+  };
+  
+  ORDERS_DB.orders.push(order);
+  ORDERS_DB.stats.total_orders++;
+  ORDERS_DB.stats.total_revenue += orderData.totals?.grandTotal || 0;
+  ORDERS_DB.stats.average_order_value = ORDERS_DB.stats.total_revenue / ORDERS_DB.stats.total_orders;
+  
+  saveOrdersDB();
+  return order;
+}
+
+// API ENDPOINTS
+
+// Scrape products
+app.post('/api/scrape', scrapeRateLimiter, async (req, res) => {
+  try {
+    const { urls } = req.body;
+    
+    if (!urls || !Array.isArray(urls) || urls.length === 0) {
+      return res.status(400).json({ error: 'No URLs provided' });
+    }
+    
+    const sdlUrls = urls.filter(url => isSDLDomain(url));
+    if (sdlUrls.length > 0) {
+      return res.status(400).json({ 
+        error: 'SDL domain detected. This calculator is for importing products from other retailers.' 
+      });
+    }
+    
+    console.log(`\n========================================`);
+    console.log(`BATCH SCRAPE: ${urls.length} products`);
+    console.log(`Margin Structure: TIERED`);
+    console.log(`Flat-Pack Detection: ENABLED`);
+    console.log(`Variant Extraction: ENHANCED`);
+    console.log(`========================================`);
+    
+    const products = [];
+    
+    for (let i = 0; i < urls.length; i++) {
+      const url = urls[i];
+      
+      try {
+        const product = await processProduct(url, i + 1, urls.length);
+        products.push(product);
+      } catch (error) {
+        console.error(`Error processing URL ${i + 1}:`, error.message);
+        
+        const retailer = detectRetailer(url);
+        const fallbackProduct = {
+          id: generateOrderId(),
+          url: url,
+          name: `${retailer} Product ${i + 1}`,
+          baseTitle: `${retailer} Product ${i + 1}`,
+          variant: null,
+          sku: null,
+          price: null,
+          image: `https://placehold.co/400x400/F44336/FFFFFF/png?text=Error`,
+          thumbnail: `https://placehold.co/100x100/F44336/FFFFFF/png?text=Error`,
+          category: 'general',
+          retailer: retailer,
+          dimensions: BOL_PATTERNS.general.dimensions.default,
+          weight: 50,
+          cubicFeet: 25,
+          packagingType: 'assembled',
+          isFlatPack: false,
+          shippingCost: 100,
+          marginRate: 0.25,
+          marginAmount: 25,
+          scrapingMethod: 'error',
+          error: true,
+          dataCompleteness: {
+            hasName: false,
+            hasPrice: false,
+            hasImage: false,
+            hasThumbnail: false,
+            hasVariant: false,
+            hasSku: false,
+            hasDimensions: false,
+            hasWeight: false
+          }
+        };
+        products.push(fallbackProduct);
+      }
+      
+      if (i < urls.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1500));
+      }
+    }
+    
+    const successful = products.filter(p => p.dataCompleteness.hasPrice).length;
+    const fromCache = products.filter(p => p.fromCache).length;
+    const flatPacked = products.filter(p => p.isFlatPack).length;
+    const withVariants = products.filter(p => p.variant).length;
+    const withThumbnails = products.filter(p => p.dataCompleteness.hasThumbnail).length;
+    
+    console.log(`\n========================================`);
+    console.log(`RESULTS: ${products.length} products processed`);
+    console.log(`  Scraped: ${successful - fromCache}`);
+    console.log(`  From cache: ${fromCache}`);
+    console.log(`  Failed: ${products.length - successful}`);
+    console.log(`  Flat-packed: ${flatPacked}`);
+    console.log(`  With variants: ${withVariants}`);
+    console.log(`  With thumbnails: ${withThumbnails}`);
+    
+    const marginSummary = products.reduce((acc, p) => {
+      const rate = Math.round((p.marginRate || 0.25) * 100);
+      acc[rate] = (acc[rate] || 0) + 1;
+      return acc;
+    }, {});
+    console.log(`  Margin distribution:`, marginSummary);
+    console.log(`========================================\n`);
+    
+    res.json({ 
+      products: products,
+      summary: {
+        total: products.length,
+        scraped: successful,
+        fromCache: fromCache,
+        failed: products.length - successful,
+        flatPacked: flatPacked,
+        withVariants: withVariants,
+        withThumbnails: withThumbnails,
+        marginDistribution: marginSummary
+      }
+    });
+    
+  } catch (error) {
+    console.error('Fatal scraping error:', error);
+    res.status(500).json({ error: 'Failed to scrape products: ' + error.message });
+  }
+});
+
+// Create checkout/draft order WITH ENHANCED VARIANTS
+app.post('/api/prepare-shopify-checkout', orderRateLimiter, async (req, res) => {
+  try {
+    const checkoutData = req.body;
+    const orderId = generateOrderId();
+    
+    const vendorCount = new Set(checkoutData.products.map(p => p.retailer)).size;
+    const documentationFee = vendorCount * DOCUMENTATION_FEE_PER_VENDOR;
+    
+    let totalWithMargins = 0;
+    let totalCardFees = 0;
+    
+    checkoutData.products.forEach(product => {
+      if (product.price && product.price > 0) {
+        const duty = product.price * BERMUDA_DUTY_RATE;
+        const baseTotal = product.price + duty + (product.shippingCost || 0);
+        totalWithMargins += baseTotal;
+      }
+    });
+    
+    Object.values(checkoutData.deliveryFees || {}).forEach(fee => {
+      totalWithMargins += fee;
+    });
+    
+    totalWithMargins += documentationFee;
+    totalCardFees = totalWithMargins * CARD_FEE_RATE;
+    const finalGrandTotal = roundToNinetyFive(totalWithMargins + totalCardFees);
+    
+    checkoutData.totals.documentationFee = documentationFee;
+    checkoutData.totals.cardFees = totalCardFees;
+    checkoutData.totals.grandTotal = finalGrandTotal;
+    
+    const order = storeOrder({
+      ...checkoutData,
+      orderId
+    });
+    
+    await exportToGoogleSheets(order);
+    await sendOrderEmail(order);
+    
+    if (!SHOPIFY_ACCESS_TOKEN) {
+      return res.json({
+        orderId: orderId,
+        redirectUrl: '/pages/contact',
+        success: true,
+        message: 'Order received! We will contact you shortly to complete payment.'
+      });
+    }
+    
+    const lineItems = [];
+    
+    checkoutData.products.forEach(product => {
+      if (product.price && product.price > 0) {
+        lineItems.push({
+          title: product.name,
+          price: product.price.toFixed(2),
+          quantity: 1,
+          properties: [
+            { name: 'Source URL', value: product.url },
+            { name: 'Retailer', value: product.retailer },
+            { name: 'Category', value: product.category },
+            { name: 'Variant', value: product.variant || 'Default' },
+            { name: 'SKU', value: product.sku || 'N/A' },
+            { name: 'Packaging', value: product.packagingType || 'assembled' },
+            { name: 'Volume', value: `${(product.cubicFeet || 0).toFixed(1)} ft³` },
+            { name: 'Margin Rate', value: `${((product.marginRate || 0.25) * 100).toFixed(0)}%` }
+          ]
+        });
+      }
+    });
+    
+    if (checkoutData.totals.dutyAmount > 0) {
+      lineItems.push({
+        title: 'Bermuda Import Duty (26.5%)',
+        price: checkoutData.totals.dutyAmount.toFixed(2),
+        quantity: 1,
+        taxable: false
+      });
+    }
+    
+    Object.entries(checkoutData.deliveryFees || {}).forEach(([vendor, fee]) => {
+      if (fee > 0) {
+        lineItems.push({
+          title: `${vendor} US Delivery Fee`,
+          price: fee.toFixed(2),
+          quantity: 1,
+          taxable: false
+        });
+      }
+    });
+    
+    if (checkoutData.totals.totalShippingAndHandling > 0) {
+      lineItems.push({
+        title: 'Ocean Freight & Handling to Bermuda',
+        price: checkoutData.totals.totalShippingAndHandling.toFixed(2),
+        quantity: 1,
+        taxable: false
+      });
+    }
+    
+    if (documentationFee > 0) {
+      lineItems.push({
+        title: `Documentation & Processing Fee (${vendorCount} vendor${vendorCount > 1 ? 's' : ''})`,
+        price: documentationFee.toFixed(2),
+        quantity: 1,
+        taxable: false
+      });
+    }
+    
+    if (totalCardFees > 0) {
+      lineItems.push({
+        title: 'Card Processing Fee (3.25%)',
+        price: totalCardFees.toFixed(2),
+        quantity: 1,
+        taxable: false
+      });
+    }
+    
+    const draftOrderData = {
+      draft_order: {
+        line_items: lineItems,
+        note: `🚨 IMPORT ORDER - ACTION REQUIRED 🚨
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Order ID: ${orderId}
+Created: ${new Date().toISOString()}
+Margin Structure: TIERED
+Documentation Fee: $${documentationFee.toFixed(2)}
+
+PRODUCTS TO ORDER:
+${checkoutData.products.map(p => `• ${p.baseTitle || p.name}
+  URL: ${p.url}
+  Price: $${p.price}
+  ${p.variant ? `🎨 VARIANT: ${p.variant}` : ''}
+  ${p.sku ? `SKU: ${p.sku}` : ''}
+  ${p.isFlatPack ? `📦 FLAT-PACK SHIPPING` : ''}
+  Volume: ${(p.cubicFeet || 0).toFixed(1)} ft³
+  Margin: ${((p.marginRate || 0.25) * 100).toFixed(0)}%`).join('\n\n')}
+
+⚠️ IMPORTANT: 
+1. Verify all variants/options are correct before ordering!
+2. Check SKUs match if provided
+3. Confirm flat-pack items ship disassembled`,
+        
+        tags: '🚨IMPORT-ACTION-REQUIRED, import-calculator, stage-1-payment-received',
+        tax_exempt: true,
+        send_receipt: true,
+        send_fulfillment_receipt: true,
+        note_attributes: [
+          { name: '⚠️ ORDER TYPE', value: '🚨 IMPORT - MANUAL ACTION REQUIRED' },
+          { name: '📦 STATUS', value: 'NEEDS VENDOR ORDERING' },
+          { name: 'import_order', value: 'true' },
+          { name: 'order_id', value: orderId },
+          { name: 'current_stage', value: '1' },
+          { name: 'margin_structure', value: 'tiered' },
+          { name: 'has_variants', value: checkoutData.products.some(p => p.variant) ? 'yes' : 'no' },
+          { name: 'flat_packed_items', value: checkoutData.products.filter(p => p.isFlatPack).length.toString() }
+        ]
+      }
+    };
+    
+    if (checkoutData.customer?.email) {
+      draftOrderData.draft_order.customer = {
+        email: checkoutData.customer.email,
+        first_name: checkoutData.customer.name?.split(' ')[0] || '',
+        last_name: checkoutData.customer.name?.split(' ').slice(1).join(' ') || ''
+      };
+    }
+    
+    const shopifyResponse = await axios.post(
+      `https://${SHOPIFY_DOMAIN}/admin/api/2023-10/draft_orders.json`,
+      draftOrderData,
+      {
+        headers: {
+          'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+    
+    const draftOrder = shopifyResponse.data.draft_order;
+    
+    order.shopifyDraftOrderId = draftOrder.id;
+    order.shopifyInvoiceUrl = draftOrder.invoice_url;
+    saveOrdersDB();
+    
+    console.log(`✅ Import draft order ${draftOrder.name} created with variants + thumbnails + flat-pack`);
+    
+    res.json({
+      orderId: orderId,
+      shopifyOrderId: draftOrder.id,
+      redirectUrl: draftOrder.invoice_url,
+      success: true
+    });
+    
+  } catch (error) {
+    console.error('Checkout error:', error.response?.data || error);
+    
+    const orderId = generateOrderId();
+    storeOrder({
+      ...req.body,
+      orderId,
+      error: error.message
+    });
+    
+    res.json({
+      orderId: orderId,
+      redirectUrl: '/pages/contact',
+      success: false,
+      message: 'Order saved. Our team will contact you to complete the order.'
+    });
+  }
+});
+
+// Admin endpoints
+app.get('/api/admin/orders', (req, res) => {
+  const { password } = req.query;
+  
+  if (password !== ADMIN_PASSWORD) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  res.json({
+    orders: ORDERS_DB.orders,
+    stats: ORDERS_DB.stats
+  });
+});
+
+app.get('/api/admin/order/:orderId', (req, res) => {
+  const { password } = req.query;
+  const { orderId } = req.params;
+  
+  if (password !== ADMIN_PASSWORD) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  const order = ORDERS_DB.orders.find(o => o.id === orderId || o.orderId === orderId);
+  
+  if (!order) {
+    return res.status(404).json({ error: 'Order not found' });
+  }
+  
+  res.json(order);
+});
+
+app.post('/api/admin/order/:orderId/status', (req, res) => {
+  const { password, status } = req.body;
+  const { orderId } = req.params;
+  
+  if (password !== ADMIN_PASSWORD) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  const order = ORDERS_DB.orders.find(o => o.id === orderId || o.orderId === orderId);
+  
+  if (!order) {
+    return res.status(404).json({ error: 'Order not found' });
+  }
+  
+  order.status = status;
+  order.updatedAt = new Date().toISOString();
+  saveOrdersDB();
+  
+  res.json({ success: true, order });
+});
+
+// Update order stage endpoint
+app.post('/api/admin/order/:orderId/stage', async (req, res) => {
+  const { password, stage } = req.body;
+  const { orderId } = req.params;
+  
+  if (password !== ADMIN_PASSWORD) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  const success = await updateOrderStage(orderId, stage);
+  
+  const stageNames = {
+    1: 'Payment Received',
+    2: 'Ordered from Vendor',
+    3: 'At NJ Warehouse',
+    4: 'Ready for Delivery/Collection',
+    5: 'Delivered'
+  };
+  
+  const order = ORDERS_DB.orders.find(o => 
+    o.shopifyOrderId === orderId || 
+    o.shopifyDraftOrderId === orderId || 
+    o.id === orderId || 
+    o.orderId === orderId
+  );
+  
+  if (order) {
+    order.currentStage = stage;
+    order.stageUpdatedAt = new Date().toISOString();
+    saveOrdersDB();
+  }
+  
+  res.json({ 
+    success,
+    stage,
+    stageName: stageNames[stage],
+    message: success ? `Order updated to: ${stageNames[stage]}` : 'Failed to update order'
+  });
+});
+
+// Learning insights with variant stats
+app.get('/api/learning-insights', (req, res) => {
+  const insights = {
+    total_products_learned: Object.keys(LEARNING_DB.products).length,
+    categories_tracked: Object.keys(LEARNING_DB.patterns),
+    retailer_success_rates: {},
+    recent_products: [],
+    margin_structure: 'tiered',
+    flat_pack_stats: {},
+    variant_stats: {}
+  };
+  
+  Object.entries(LEARNING_DB.retailer_stats).forEach(([retailer, stats]) => {
+    insights.retailer_success_rates[retailer] = {
+      success_rate: ((stats.successes / stats.attempts) * 100).toFixed(1) + '%',
+      total_attempts: stats.attempts,
+      variants_found: stats.variants_found || 0,
+      thumbnails_found: stats.thumbnails_found || 0,
+      flat_packed: stats.flat_packed || 0
+    };
+    
+    if (stats.flat_packed) {
+      insights.flat_pack_stats[retailer] = {
+        count: stats.flat_packed,
+        percentage: ((stats.flat_packed / stats.attempts) * 100).toFixed(1) + '%'
+      };
+    }
+    
+    if (stats.variants_found) {
+      insights.variant_stats[retailer] = {
+        count: stats.variants_found,
+        percentage: ((stats.variants_found / stats.attempts) * 100).toFixed(1) + '%'
+      };
+    }
+  });
+  
+  const products = Object.values(LEARNING_DB.products)
+    .sort((a, b) => new Date(b.last_updated) - new Date(a.last_updated))
+    .slice(0, 5);
+  
+  insights.recent_products = products.map(p => ({
+    name: p.name,
+    price: p.price,
+    retailer: p.retailer,
+    times_seen: p.times_seen,
+    margin_rate: p.marginRate || 0.25,
+    has_variant: !!p.variant,
+    variant: p.variant,
+    has_thumbnail: !!p.thumbnail && p.thumbnail !== p.image,
+    is_flat_pack: !!p.isFlatPack
+  }));
+  
+  res.json(insights);
+});
+
+// Webhook endpoints
+app.post('/webhooks/shopify/order-created', async (req, res) => {
+  const hmac = req.get('X-Shopify-Hmac-Sha256');
+  const body = req.rawBody;
+  
+  if (SHOPIFY_WEBHOOK_SECRET && hmac) {
+    const hash = crypto
+      .createHmac('sha256', SHOPIFY_WEBHOOK_SECRET)
+      .update(body, 'utf8')
+      .digest('base64');
+    
+    if (hash !== hmac) {
+      return res.status(401).send('Unauthorized');
+    }
+  }
+  
+  const order = req.body;
+  console.log(`📦 Shopify order created: ${order.name}`);
+  
+  const ourOrderId = order.note_attributes?.find(attr => attr.name === 'order_id')?.value;
+  if (ourOrderId) {
+    const ourOrder = ORDERS_DB.orders.find(o => o.id === ourOrderId || o.orderId === ourOrderId);
+    if (ourOrder) {
+      ourOrder.shopifyOrderId = order.id;
+      ourOrder.shopifyOrderNumber = order.name;
+      ourOrder.status = 'confirmed';
+      ourOrder.confirmedAt = new Date().toISOString();
+      saveOrdersDB();
+    }
+  }
+  
+  res.status(200).send('OK');
+});
+
+app.post('/webhooks/shopify/order-updated', async (req, res) => {
+  console.log(`📦 Shopify order updated: ${req.body.name}`);
+  res.status(200).send('OK');
+});
+
+// Test endpoints
+if (TEST_MODE) {
+  app.get('/api/test/create-sample-order', async (req, res) => {
+    const testOrder = {
+      products: [
+        {
+          name: 'Test Product 1 - Color: Blue, Size: Large',
+          baseTitle: 'Test Product 1',
+          price: 99.99,
+          url: 'https://example.com/product1',
+          retailer: 'Test Store',
+          cubicFeet: 5,
+          marginRate: 0.20,
+          variant: 'Color: Blue, Size: Large',
+          sku: 'TEST-SKU-001',
+          isFlatPack: false
+        }
+      ],
+      totals: {
+        totalItemCost: 99.99,
+        dutyAmount: 26.50,
+        totalShippingAndHandling: 50,
+        grandTotal: 176.49
+      },
+      customer: {
+        email: 'test@example.com',
+        name: 'Test Customer'
+      }
+    };
+    
+    const order = storeOrder(testOrder);
+    res.json({ success: true, order });
+  });
+  
+  app.get('/api/test/clear-data', (req, res) => {
+    ORDERS_DB = {
+      orders: [],
+      draft_orders: [],
+      abandoned_carts: [],
+      stats: {
+        total_orders: 0,
+        total_revenue: 0,
+        average_order_value: 0
+      }
+    };
+    saveOrdersDB();
+    res.json({ success: true, message: 'Test data cleared' });
+  });
+}
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error('Error:', err);
+  res.status(500).json({ 
+    error: 'Internal server error',
+    message: TEST_MODE ? err.message : 'Something went wrong'
+  });
+});
+
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({ error: 'Endpoint not found' });
+});
+
+// Start server
+app.listen(PORT, () => {
+  console.log(`\n🚀 Server running on port ${PORT}`);
+  console.log(`📍 Frontend: http://localhost:${PORT}`);
+  console.log(`💚 Health: http://localhost:${PORT}/health`);
+  console.log(`📊 Admin Orders: http://localhost:${PORT}/api/admin/orders?password=${ADMIN_PASSWORD}`);
+  console.log(`💰 Margin Structure: TIERED (20%/25%/22%/18%/15% by volume)`);
+  console.log(`📄 Documentation Fee: $${DOCUMENTATION_FEE_PER_VENDOR} per vendor`);
+  console.log(`📦 Flat-Pack Intelligence: ENABLED`);
+  console.log(`🎨 Variant Support: ENHANCED`);
+  console.log(`🖼️ Thumbnail Support: ENHANCED`);
+  if (TEST_MODE) {
+    console.log(`🧪 Test Mode: ENABLED`);
+    console.log(`   - Create test order: /api/test/create-sample-order`);
+    console.log(`   - Clear test data: /api/test/clear-data`);
+  }
+  console.log('\n');
+}); + scraped.price : 'Not found'}`);
+  console.log(`   Variant: ${scraped.variant || 'Not specified'}`);
+  console.log(`   SKU: ${scraped.sku || 'Not found'}`);
+  console.log(`   Thumbnail: ${thumbnail && thumbnail !== scraped.image ? 'Separate' : 'Same as main'}`);
+  console.log(`   Packaging: ${packagingType.toUpperCase()}`);
+  console.log(`   Volume: ${cubicFeet.toFixed(1)} ft³ ${isFlatPack ? '(flat-packed)' : '(assembled)'}`);
+  console.log(`   Weight: ${weight} lbs`);
+  console.log(`   Margin: ${(marginRate * 100).toFixed(0)}% (${marginAmount.toFixed(2)})`);
+  console.log(`   Total Shipping: ${totalShippingWithMargin}`);
   
   return product;
 }
