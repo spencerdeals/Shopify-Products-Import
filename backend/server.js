@@ -342,7 +342,7 @@ function categorizeProduct(name, url) {
   return 'general';
 }
 
-// Learning functions
+// UPDATED Learning functions with variant tracking
 function learnFromProduct(url, productData) {
   LEARNING_DB.products[url] = {
     ...productData,
@@ -355,7 +355,8 @@ function learnFromProduct(url, productData) {
       LEARNING_DB.patterns[productData.category] = {
         prices: [],
         weights: [],
-        dimensions: []
+        dimensions: [],
+        variants: []  // Track common variants
       };
     }
     
@@ -363,19 +364,32 @@ function learnFromProduct(url, productData) {
     if (productData.price) pattern.prices.push(productData.price);
     if (productData.weight) pattern.weights.push(productData.weight);
     if (productData.dimensions) pattern.dimensions.push(productData.dimensions);
+    if (productData.variant) pattern.variants.push(productData.variant);
     
     if (pattern.prices.length > 100) pattern.prices.shift();
     if (pattern.weights.length > 100) pattern.weights.shift();
     if (pattern.dimensions.length > 100) pattern.dimensions.shift();
+    if (pattern.variants && pattern.variants.length > 100) pattern.variants.shift();
   }
   
   const retailer = productData.retailer;
   if (!LEARNING_DB.retailer_stats[retailer]) {
-    LEARNING_DB.retailer_stats[retailer] = { attempts: 0, successes: 0 };
+    LEARNING_DB.retailer_stats[retailer] = { 
+      attempts: 0, 
+      successes: 0,
+      variants_found: 0,
+      thumbnails_found: 0
+    };
   }
   LEARNING_DB.retailer_stats[retailer].attempts++;
   if (productData.price) {
     LEARNING_DB.retailer_stats[retailer].successes++;
+  }
+  if (productData.variant) {
+    LEARNING_DB.retailer_stats[retailer].variants_found++;
+  }
+  if (productData.thumbnail) {
+    LEARNING_DB.retailer_stats[retailer].thumbnails_found++;
   }
   
   saveLearningDB();
@@ -575,28 +589,27 @@ async function updateOrderStage(orderId, stage) {
   }
 }
 
-// ENHANCED SCRAPING FUNCTION WITH WAYFAIR SUPPORT
+// ENHANCED SCRAPING WITH VARIANTS AND THUMBNAILS
 async function scrapeWithScrapingBee(url) {
   if (TEST_MODE) {
     return {
       price: 99.99,
       title: 'Test Product',
-      image: 'https://placehold.co/400x400/7CB342/FFFFFF/png?text=Test'
+      image: 'https://placehold.co/400x400/7CB342/FFFFFF/png?text=Test',
+      thumbnail: 'https://placehold.co/100x100/7CB342/FFFFFF/png?text=Test',
+      variant: 'Test Variant'
     };
   }
   
   const retailer = detectRetailer(url);
-  
-  console.log(`   🔍 Debug: Wayfair check - ENABLE_APIFY: ${ENABLE_APIFY}, Has API Key: ${!!APIFY_API_KEY}, Has Client: ${!!apifyClient}, Retailer: ${retailer}`);
   
   // Try Apify first for Wayfair
   if (retailer === 'Wayfair' && ENABLE_APIFY && apifyClient) {
     try {
       console.log('   🔄 Using 123webdata Wayfair Scraper...');
       
-      // Using 123webdata/wayfair-scraper with correct parameters
       const run = await apifyClient.actor('123webdata/wayfair-scraper').call({
-        productUrls: [url],  // productUrls NOT startUrls
+        productUrls: [url],
         usePagination: false,
         proxy: {
           useApifyProxy: true,
@@ -605,19 +618,14 @@ async function scrapeWithScrapingBee(url) {
       });
       
       console.log('   ⏳ Waiting for Wayfair scraper to complete...');
-      
-      // Wait for completion
       const result = await apifyClient.run(run.id).waitForFinish({ waitSecs: 30 });
-      
-      // Get results
       const { items } = await apifyClient.dataset(run.defaultDatasetId).listItems();
       
       if (items && items.length > 0) {
         const item = items[0];
         console.log('   ✅ Wayfair scraping success!');
-        console.log('   🔍 Raw data:', JSON.stringify(item).substring(0, 500));
         
-        // Extract price - 123webdata format
+        // Extract price
         let price = null;
         if (item.price) {
           price = typeof item.price === 'string' ? 
@@ -625,29 +633,49 @@ async function scrapeWithScrapingBee(url) {
             item.price;
         } else if (item.salePrice) {
           price = parseFloat(item.salePrice);
-        } else if (item.currentPrice) {
-          price = parseFloat(item.currentPrice);
         }
         
-        console.log('   💰 Price found:', price);
-        console.log('   📝 Title found:', item.title || item.name);
+        // Extract variant (color, size, configuration)
+        let variant = null;
+        if (item.selectedOptions || item.options || item.variant) {
+          variant = item.selectedOptions || item.variant || 'Default';
+          if (typeof variant === 'object') {
+            variant = Object.entries(variant).map(([k, v]) => `${k}: ${v}`).join(', ');
+          }
+        } else if (item.color || item.size) {
+          const parts = [];
+          if (item.color) parts.push(`Color: ${item.color}`);
+          if (item.size) parts.push(`Size: ${item.size}`);
+          variant = parts.join(', ') || null;
+        }
+        
+        // Extract images
+        let mainImage = item.image || item.mainImage || null;
+        let thumbnail = item.thumbnail || mainImage;
+        if (item.images && Array.isArray(item.images)) {
+          mainImage = item.images[0];
+          thumbnail = item.images.find(img => img.includes('thumb')) || item.images[0];
+        }
+        
+        console.log('   💰 Price:', price);
+        console.log('   🎨 Variant:', variant);
+        console.log('   🖼️ Thumbnail:', !!thumbnail);
         
         return {
           price: price,
           title: item.title || item.name || 'Wayfair Product',
-          image: item.image || item.mainImage || null
+          image: mainImage,
+          thumbnail: thumbnail,
+          variant: variant
         };
       }
       
-      console.log('   ⚠️ No data from Wayfair scraper');
-      
     } catch (apifyError) {
       console.log('   ⚠️ Wayfair scraping failed:', apifyError.message);
-      // Fall back to ScrapingBee
     }
   }
   
-  // ScrapingBee as fallback
+  // ScrapingBee with enhanced AI extraction
   try {
     console.log('   🐝 ScrapingBee requesting...');
     
@@ -661,30 +689,21 @@ async function scrapeWithScrapingBee(url) {
       timeout: 30000
     };
     
+    // Enhanced AI rules for ALL retailers
+    scrapingParams.ai_extract_rules = JSON.stringify({
+      price: "Product Price, Sale Price, or Current Price in USD",
+      original_price: "Original Price or Regular Price if on sale",
+      title: "Product Title, Product Name, or Item Name",
+      variant: "Selected variant, color, size, or configuration",
+      color: "Product Color or Color Option",
+      size: "Product Size or Size Option",
+      image: "Main Product Image URL",
+      thumbnail: "Product Thumbnail or Small Product Image"
+    });
+    
     if (retailer === 'Wayfair') {
-      console.log('   🏠 ScrapingBee fallback for Wayfair...');
-      
       scrapingParams.wait = '5000';
       scrapingParams.stealth_proxy = 'true';
-      scrapingParams.js_scenario = JSON.stringify({
-        instructions: [
-          { wait: 1000 },
-          { wait_for: '.pl-Heading' },
-          { evaluate: "document.querySelectorAll('[aria-label*=\"Close\"]').forEach(el => el.click())" }
-        ]
-      });
-      scrapingParams.ai_extract_rules = JSON.stringify({
-        price: "Product Price, Sale Price, or Current Price in USD",
-        original_price: "Original Price or Regular Price if on sale",
-        title: "Product Title, Product Name, or Item Name",
-        image: "Main Product Image URL, Primary Image, or First Gallery Image"
-      });
-    } else {
-      scrapingParams.ai_extract_rules = JSON.stringify({
-        price: "Product Price",
-        title: "Product Title",
-        image: "Product Image URL"
-      });
     }
     
     const response = await axios({
@@ -696,10 +715,8 @@ async function scrapeWithScrapingBee(url) {
     
     const data = response.data;
     
+    // Extract price
     let price = null;
-    let title = data.title || null;
-    let image = data.image || null;
-    
     const priceToCheck = data.price || data.original_price;
     if (priceToCheck) {
       const priceStr = priceToCheck.toString();
@@ -707,30 +724,39 @@ async function scrapeWithScrapingBee(url) {
       const priceMatch = cleanPrice.match(/([\d]+\.?\d*)/);
       if (priceMatch) {
         price = parseFloat(priceMatch[1]);
-        console.log('   💰 Price extracted: $' + price);
       }
     }
     
-    if (title) {
-      title = title.trim().replace(/\s+/g, ' ');
-      console.log('   📝 Title extracted:', title.substring(0, 50) + '...');
+    // Extract variant
+    let variant = data.variant || null;
+    if (!variant && (data.color || data.size)) {
+      const parts = [];
+      if (data.color) parts.push(`Color: ${data.color}`);
+      if (data.size) parts.push(`Size: ${data.size}`);
+      variant = parts.join(', ');
     }
     
+    // Extract images
+    let image = data.image || null;
+    let thumbnail = data.thumbnail || image;
     if (image && !image.startsWith('http')) {
       image = 'https:' + image;
     }
+    if (thumbnail && !thumbnail.startsWith('http')) {
+      thumbnail = 'https:' + thumbnail;
+    }
     
-    console.log(`   ${retailer} scrape result: ${price ? '✓ Price found' : '✗ No price'}, ${title ? '✓ Title found' : '✗ No title'}, ${image ? '✓ Image found' : '✗ No image'}`);
+    console.log(`   ${retailer}: Price ${price ? '✓' : '✗'}, Variant ${variant ? '✓' : '✗'}, Thumb ${thumbnail ? '✓' : '✗'}`);
     
-    return { price, title, image };
+    return { price, title: data.title, image, thumbnail, variant };
     
   } catch (error) {
-    console.log(`   ❌ ScrapingBee error for ${retailer}:`, error.message);
-    return { price: null, title: null, image: null };
+    console.log(`   ❌ ScrapingBee error:`, error.message);
+    return { price: null, title: null, image: null, thumbnail: null, variant: null };
   }
 }
 
-// Process product with TIERED MARGIN calculation
+// PROCESS PRODUCT WITH VARIANTS
 async function processProduct(url, index, total) {
   console.log(`\n[${index}/${total}] Processing: ${url.substring(0, 80)}...`);
   
@@ -738,7 +764,6 @@ async function processProduct(url, index, total) {
   const retailer = detectRetailer(url);
   console.log(`   Retailer: ${retailer}`);
   
-  // Skip cache for Wayfair to test new scraper
   const learned = retailer !== 'Wayfair' ? getLearnedData(url) : null;
   if (learned && learned.price) {
     console.log('   ✅ Using cached data from learning system');
@@ -752,7 +777,10 @@ async function processProduct(url, index, total) {
   
   const scraped = await scrapeWithScrapingBee(url);
   
-  const productName = scraped.title || `${retailer} Product ${index}`;
+  // Build product name with variant
+  const baseTitle = scraped.title || `${retailer} Product ${index}`;
+  const productName = scraped.variant ? `${baseTitle} - ${scraped.variant}` : baseTitle;
+  
   const category = categorizeProduct(productName, url);
   const dimensions = estimateDimensionsFromBOL(category, productName, retailer);
   const weight = estimateWeightFromBOL(dimensions, category);
@@ -774,8 +802,11 @@ async function processProduct(url, index, total) {
     id: productId,
     url: url,
     name: productName,
+    baseTitle: baseTitle,  // Store base title separately
+    variant: scraped.variant || null,  // Store variant info
     price: scraped.price,
-    image: scraped.image || `https://placehold.co/400x400/7CB342/FFFFFF/png?text=${encodeURIComponent(retailer)}`,
+    image: scraped.image || scraped.thumbnail || `https://placehold.co/400x400/7CB342/FFFFFF/png?text=${encodeURIComponent(retailer)}`,
+    thumbnail: scraped.thumbnail || scraped.image || `https://placehold.co/100x100/7CB342/FFFFFF/png?text=${encodeURIComponent(retailer)}`,
     category: category,
     retailer: retailer,
     dimensions: dimensions,
@@ -790,6 +821,8 @@ async function processProduct(url, index, total) {
       hasName: !!scraped.title,
       hasPrice: !!scraped.price,
       hasImage: !!scraped.image,
+      hasThumbnail: !!scraped.thumbnail,
+      hasVariant: !!scraped.variant,
       hasDimensions: true,
       hasWeight: true
     }
@@ -798,6 +831,8 @@ async function processProduct(url, index, total) {
   learnFromProduct(url, product);
   
   console.log(`   Price: ${scraped.price ? '$' + scraped.price : 'Not found'}`);
+  console.log(`   Variant: ${scraped.variant || 'Not specified'}`);
+  console.log(`   Thumbnail: ${scraped.thumbnail ? 'Found' : 'Using main image'}`);
   console.log(`   Volume: ${cubicFeet.toFixed(1)} ft³`);
   console.log(`   Margin: ${(marginRate * 100).toFixed(0)}% ($${marginAmount.toFixed(2)})`);
   console.log(`   Total Shipping: $${totalShippingWithMargin.toFixed(2)}`);
@@ -826,6 +861,7 @@ async function sendOrderEmail(orderData) {
           <p>• ${p.name}<br>
           URL: ${p.url}<br>
           Price: $${p.price}<br>
+          ${p.variant ? `Variant: ${p.variant}<br>` : ''}
           Margin: ${(p.marginRate * 100).toFixed(0)}%</p>
         `).join('')}
         <hr>
@@ -940,8 +976,11 @@ app.post('/api/scrape', scrapeRateLimiter, async (req, res) => {
           id: generateOrderId(),
           url: url,
           name: `${retailer} Product ${i + 1}`,
+          baseTitle: `${retailer} Product ${i + 1}`,
+          variant: null,
           price: null,
           image: `https://placehold.co/400x400/F44336/FFFFFF/png?text=Error`,
+          thumbnail: `https://placehold.co/100x100/F44336/FFFFFF/png?text=Error`,
           category: 'general',
           retailer: retailer,
           dimensions: BOL_PATTERNS.general.dimensions.default,
@@ -956,6 +995,8 @@ app.post('/api/scrape', scrapeRateLimiter, async (req, res) => {
             hasName: false,
             hasPrice: false,
             hasImage: false,
+            hasThumbnail: false,
+            hasVariant: false,
             hasDimensions: false,
             hasWeight: false
           }
@@ -1002,7 +1043,7 @@ app.post('/api/scrape', scrapeRateLimiter, async (req, res) => {
   }
 });
 
-// Create checkout/draft order
+// Create checkout/draft order WITH VARIANTS
 app.post('/api/prepare-shopify-checkout', orderRateLimiter, async (req, res) => {
   try {
     const checkoutData = req.body;
@@ -1056,13 +1097,14 @@ app.post('/api/prepare-shopify-checkout', orderRateLimiter, async (req, res) => 
     checkoutData.products.forEach(product => {
       if (product.price && product.price > 0) {
         lineItems.push({
-          title: product.name,
+          title: product.name,  // This already includes variant if present
           price: product.price.toFixed(2),
           quantity: 1,
           properties: [
             { name: 'Source URL', value: product.url },
             { name: 'Retailer', value: product.retailer },
             { name: 'Category', value: product.category },
+            { name: 'Variant', value: product.variant || 'Default' },
             { name: 'Volume', value: `${(product.cubicFeet || 0).toFixed(1)} ft³` },
             { name: 'Margin Rate', value: `${((product.marginRate || 0.25) * 100).toFixed(0)}%` }
           ]
@@ -1131,8 +1173,11 @@ PRODUCTS TO ORDER:
 ${checkoutData.products.map(p => `• ${p.name}
   URL: ${p.url}
   Price: $${p.price}
+  ${p.variant ? `Variant: ${p.variant}` : ''}
   Volume: ${(p.cubicFeet || 0).toFixed(1)} ft³
-  Margin: ${((p.marginRate || 0.25) * 100).toFixed(0)}%`).join('\n\n')}`,
+  Margin: ${((p.marginRate || 0.25) * 100).toFixed(0)}%`).join('\n\n')}
+
+⚠️ IMPORTANT: Verify all variants/options are correct before ordering!`,
         
         tags: '🚨IMPORT-ACTION-REQUIRED, import-calculator, stage-1-payment-received',
         tax_exempt: true,
@@ -1144,7 +1189,8 @@ ${checkoutData.products.map(p => `• ${p.name}
           { name: 'import_order', value: 'true' },
           { name: 'order_id', value: orderId },
           { name: 'current_stage', value: '1' },
-          { name: 'margin_structure', value: 'tiered' }
+          { name: 'margin_structure', value: 'tiered' },
+          { name: 'has_variants', value: checkoutData.products.some(p => p.variant) ? 'yes' : 'no' }
         ]
       }
     };
@@ -1174,7 +1220,7 @@ ${checkoutData.products.map(p => `• ${p.name}
     order.shopifyInvoiceUrl = draftOrder.invoice_url;
     saveOrdersDB();
     
-    console.log(`✅ Import draft order ${draftOrder.name} created with TIERED margins + doc fee`);
+    console.log(`✅ Import draft order ${draftOrder.name} created with TIERED margins + doc fee + variants`);
     
     res.json({
       orderId: orderId,
@@ -1307,7 +1353,9 @@ app.get('/api/learning-insights', (req, res) => {
   Object.entries(LEARNING_DB.retailer_stats).forEach(([retailer, stats]) => {
     insights.retailer_success_rates[retailer] = {
       success_rate: ((stats.successes / stats.attempts) * 100).toFixed(1) + '%',
-      total_attempts: stats.attempts
+      total_attempts: stats.attempts,
+      variants_found: stats.variants_found || 0,
+      thumbnails_found: stats.thumbnails_found || 0
     };
   });
   
@@ -1320,7 +1368,8 @@ app.get('/api/learning-insights', (req, res) => {
     price: p.price,
     retailer: p.retailer,
     times_seen: p.times_seen,
-    margin_rate: p.marginRate || 0.25
+    margin_rate: p.marginRate || 0.25,
+    has_variant: !!p.variant
   }));
   
   res.json(insights);
@@ -1376,7 +1425,8 @@ if (TEST_MODE) {
           url: 'https://example.com/product1',
           retailer: 'Test Store',
           cubicFeet: 5,
-          marginRate: 0.20
+          marginRate: 0.20,
+          variant: 'Color: Blue, Size: Large'
         }
       ],
       totals: {
