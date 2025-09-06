@@ -612,74 +612,106 @@ async function scrapeWithScrapingBee(url) {
   // Try Apify first for Wayfair
   if (retailer === 'Wayfair' && ENABLE_APIFY && APIFY_API_KEY) {
     try {
-      console.log('   🔄 Using Apify Wayfair Actor...');
+      console.log('   🔄 Using Apify Web Scraper for Wayfair...');
       
       const { ApifyClient } = require('apify-client');
       const client = new ApifyClient({ token: APIFY_API_KEY });
       
-      // Using mscraper/wayfair-scraper actor - the one you have!
-      const run = await client.actor('mscraper/wayfair-scraper').call({
-        startUrls: [{ url: url, method: 'GET' }],
-        includeDetails: false,
-        resultsLimit: 50,  // mscraper requires minimum 50
-        proxy: {
+      // Use the universal web scraper instead of broken mscraper
+      const run = await client.actor('apify/web-scraper').call({
+        startUrls: [{ url: url }],
+        pseudoUrls: [],
+        keepUrlFragments: false,
+        pageFunction: `
+          async function pageFunction(context) {
+            const { $, request } = context;
+            
+            // Wait for price to load
+            await context.page.waitForSelector('[data-test*="price"], .SFPrice, .pl-Price, [class*="Price"]', { timeout: 5000 }).catch(() => {});
+            
+            // Extract price from multiple possible selectors
+            let price = null;
+            const priceSelectors = [
+              '[data-test*="price"]',
+              '.SFPrice',
+              '.pl-Price-V2',
+              '.pl-Price',
+              '[class*="PriceV2"]',
+              '[class*="Price-sc"]',
+              'div[class*="StyledPriceV2"] span'
+            ];
+            
+            for (const selector of priceSelectors) {
+              const priceText = $(selector).first().text();
+              if (priceText) {
+                const match = priceText.match(/[\\d,]+\\.?\\d*/);
+                if (match) {
+                  price = parseFloat(match[0].replace(/,/g, ''));
+                  break;
+                }
+              }
+            }
+            
+            // Extract title
+            const title = $('h1').first().text().trim() || 
+                         $('[data-test="product-title"]').text().trim() ||
+                         $('.pl-Heading').text().trim();
+            
+            // Extract image
+            const image = $('.ProductDetailImageThumbnail img').attr('src') ||
+                         $('.ImageComponent img').first().attr('src') ||
+                         $('img[data-test*="image"]').first().attr('src');
+            
+            console.log('Extracted:', { price, title: title.substring(0, 50) });
+            
+            return {
+              url: request.url,
+              price: price,
+              title: title,
+              image: image
+            };
+          }
+        `,
+        waitUntil: ['networkidle2'],
+        preNavigationHooks: `[
+          async (crawlingContext, gotoOptions) => {
+            gotoOptions.waitUntil = ['networkidle2'];
+          }
+        ]`,
+        proxyConfiguration: {
           useApifyProxy: true,
-          apifyProxyCountry: 'US'
-        }
+          apifyProxyGroups: ['RESIDENTIAL']
+        },
+        maxRequestRetries: 2,
+        maxRequestsPerCrawl: 10,
+        maxConcurrency: 1
       });
       
-      console.log('   ⏳ Waiting for Wayfair actor to complete...');
+      console.log('   ⏳ Waiting for Web Scraper to complete...');
       
-      // Wait for the actor to finish (max 30 seconds)
+      // Wait for completion
       const result = await client.run(run.id).waitForFinish({ waitSecs: 30 });
       
-      // Get the results
+      // Get results
       const { items } = await client.dataset(run.defaultDatasetId).listItems();
       
       if (items && items.length > 0) {
         const item = items[0];
-        console.log('   ✅ Wayfair Actor success!');
-        
-        // Debug: Log the actual structure we get from mscraper
-        console.log('   🔍 Raw mscraper data:', JSON.stringify(item).substring(0, 500));
-        
-        // Extract price - mscraper format
-        let price = null;
-        if (item.prices) {
-          // mscraper returns prices object with currentPrice
-          price = item.prices.currentPrice || item.prices.salePrice || item.prices.price;
-        } else if (item.currentPrice) {
-          price = item.currentPrice;
-        } else if (item.price) {
-          if (typeof item.price === 'string') {
-            price = parseFloat(item.price.replace(/[^0-9.]/g, ''));
-          } else {
-            price = item.price;
-          }
-        }
-        
-        // Clean up price if it's a string
-        if (price && typeof price === 'string') {
-          price = parseFloat(price.replace(/[^0-9.]/g, ''));
-        }
-        
-        // Extract title - mscraper format
-        const title = item.productName || item.name || item.title || 'Wayfair Product';
-        
-        // Extract image - mscraper format
-        const image = item.image || item.mainImage || item.images?.[0] || null;
-        
-        console.log('   💰 Wayfair price extracted:', price);
-        console.log('   📝 Wayfair title extracted:', title);
+        console.log('   ✅ Wayfair scraping success!');
+        console.log('   💰 Price found:', item.price);
+        console.log('   📝 Title found:', item.title?.substring(0, 50));
         
         return {
-          price: price,
-          title: title,
-          image: image
+          price: item.price,
+          title: item.title || 'Wayfair Product',
+          image: item.image
         };
       }
+      
+      console.log('   ⚠️ No data extracted from Wayfair');
+      
     } catch (apifyError) {
-      console.log('   ⚠️ Wayfair Actor failed:', apifyError.message);
+      console.log('   ⚠️ Apify scraping failed:', apifyError.message);
       // Fall back to ScrapingBee
     }
   }
