@@ -878,7 +878,8 @@ async function processProduct(url, index, total) {
   const retailer = detectRetailer(url);
   console.log(`   Retailer: ${retailer}`);
   
-  const learned = getLearnedData(url);
+  // Skip cache for Wayfair since we're testing new scraper
+  const learned = retailer !== 'Wayfair' ? getLearnedData(url) : null;
   if (learned && learned.price) {
     console.log('   ✅ Using cached data from learning system');
     return {
