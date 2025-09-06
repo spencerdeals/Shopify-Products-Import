@@ -640,30 +640,42 @@ async function scrapeWithScrapingBee(url) {
         const item = items[0];
         console.log('   ✅ Wayfair Actor success!');
         
-        // Extract price (handle sale prices)
+        // Debug: Log the actual structure we get from mscraper
+        console.log('   🔍 Raw mscraper data:', JSON.stringify(item).substring(0, 500));
+        
+        // Extract price - mscraper format
         let price = null;
-        if (item.price) {
-          // Price might be in various formats
-          if (typeof item.price === 'object') {
-            price = item.price.value || item.price.amount || item.price.min || null;
-          } else if (typeof item.price === 'string') {
+        if (item.prices) {
+          // mscraper returns prices object with currentPrice
+          price = item.prices.currentPrice || item.prices.salePrice || item.prices.price;
+        } else if (item.currentPrice) {
+          price = item.currentPrice;
+        } else if (item.price) {
+          if (typeof item.price === 'string') {
             price = parseFloat(item.price.replace(/[^0-9.]/g, ''));
           } else {
-            price = parseFloat(item.price);
+            price = item.price;
           }
-        } else if (item.salePrice) {
-          price = parseFloat(item.salePrice);
-        } else if (item.pricing?.price) {
-          price = parseFloat(item.pricing.price);
         }
         
-        console.log('   💰 Wayfair price:', price);
-        console.log('   📝 Wayfair title:', item.name || item.title);
+        // Clean up price if it's a string
+        if (price && typeof price === 'string') {
+          price = parseFloat(price.replace(/[^0-9.]/g, ''));
+        }
+        
+        // Extract title - mscraper format
+        const title = item.productName || item.name || item.title || 'Wayfair Product';
+        
+        // Extract image - mscraper format
+        const image = item.image || item.mainImage || item.images?.[0] || null;
+        
+        console.log('   💰 Wayfair price extracted:', price);
+        console.log('   📝 Wayfair title extracted:', title);
         
         return {
           price: price,
-          title: item.name || item.title || item.productName,
-          image: item.mainImage || item.images?.[0] || item.image
+          title: title,
+          image: image
         };
       }
     } catch (apifyError) {
