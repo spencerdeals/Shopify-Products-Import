@@ -185,6 +185,130 @@ const BOL_PATTERNS = {
   }
 };
 
+// FLAT-PACK INTELLIGENCE SYSTEM
+function isFlatPackable(category, productName, retailer) {
+  const name = productName.toLowerCase();
+  
+  // Items that are NEVER flat-packed
+  const nonFlatPackable = [
+    'refrigerator', 'fridge', 'washer', 'dryer', 'dishwasher', 
+    'oven', 'stove', 'range', 'microwave',
+    'mattress', 'box spring',
+    'tv', 'television', 'monitor', 'computer',
+    'sofa', 'couch', 'loveseat', 'recliner', 'sectional',
+    'upholstered', 'ottoman'
+  ];
+  
+  if (nonFlatPackable.some(item => name.includes(item))) {
+    return false;
+  }
+  
+  const flatPackRetailers = [
+    'Wayfair', 'IKEA', 'Amazon', 'Target', 'Walmart', 
+    'Overstock', 'Home Depot', 'Lowes', 'CB2', 
+    'West Elm', 'Article', 'Ashley Furniture'
+  ];
+  
+  const flatPackableItems = [
+    'table', 'desk', 'console', 'buffet', 'sideboard',
+    'bookshelf', 'shelf', 'shelving', 'cabinet', 'dresser',
+    'nightstand', 'end table', 'coffee table', 'dining',
+    'chair', 'stool', 'bench', 'bed frame', 'headboard',
+    'wardrobe', 'armoire', 'vanity', 'cart', 'stand',
+    'entertainment center', 'tv stand', 'media console',
+    'patio', 'outdoor', 'garden', 'deck', 'gazebo',
+    'filing', 'office', 'workstation',
+    'storage', 'organizer', 'rack', 'tower'
+  ];
+  
+  if (category === 'furniture') {
+    if (flatPackRetailers.includes(retailer)) {
+      if (flatPackableItems.some(item => name.includes(item))) {
+        return true;
+      }
+    }
+  }
+  
+  const flatPackKeywords = [
+    'assembly required', 'requires assembly', 'easy assembly',
+    'flat pack', 'flat-pack', 'flatpack', 'knockdown',
+    'ready to assemble', 'rta', 'diy'
+  ];
+  
+  if (flatPackKeywords.some(keyword => name.includes(keyword))) {
+    return true;
+  }
+  
+  if (category === 'furniture' && flatPackRetailers.includes(retailer)) {
+    return true;
+  }
+  
+  return false;
+}
+
+function calculateFlatPackDimensions(originalDimensions, productName) {
+  const name = productName.toLowerCase();
+  
+  let reductionProfile = {
+    length: 1.0,
+    width: 1.0,
+    height: 0.15
+  };
+  
+  if (name.includes('table') || name.includes('desk') || name.includes('console') || name.includes('buffet')) {
+    reductionProfile = {
+      length: Math.min(originalDimensions.length, 72),
+      width: originalDimensions.width * 1.0,
+      height: Math.max(6, originalDimensions.height * 0.12)
+    };
+  } else if (name.includes('chair') || name.includes('stool')) {
+    reductionProfile = {
+      length: originalDimensions.length * 0.8,
+      width: originalDimensions.width * 0.8,
+      height: Math.max(8, originalDimensions.height * 0.25)
+    };
+  } else if (name.includes('shelf') || name.includes('bookcase') || name.includes('bookshelf')) {
+    reductionProfile = {
+      length: originalDimensions.length * 1.0,
+      width: Math.max(12, originalDimensions.width * 0.3),
+      height: Math.max(4, originalDimensions.height * 0.1)
+    };
+  } else if (name.includes('dresser') || name.includes('cabinet') || name.includes('wardrobe')) {
+    reductionProfile = {
+      length: originalDimensions.length * 0.9,
+      width: originalDimensions.width * 1.0,
+      height: Math.max(8, originalDimensions.height * 0.15)
+    };
+  } else if (name.includes('bed')) {
+    reductionProfile = {
+      length: Math.min(originalDimensions.length * 0.9, 84),
+      width: originalDimensions.width * 0.5,
+      height: Math.max(6, originalDimensions.height * 0.2)
+    };
+  }
+  
+  const flatPackDims = {
+    length: Math.round(reductionProfile.length),
+    width: Math.round(reductionProfile.width),
+    height: Math.round(reductionProfile.height)
+  };
+  
+  flatPackDims.length = Math.max(3, flatPackDims.length);
+  flatPackDims.width = Math.max(3, flatPackDims.width);
+  flatPackDims.height = Math.max(3, flatPackDims.height);
+  
+  console.log(`   📦 Flat-pack reduction: ${originalDimensions.length}x${originalDimensions.width}x${originalDimensions.height} → ${flatPackDims.length}x${flatPackDims.width}x${flatPackDims.height}`);
+  
+  return flatPackDims;
+}
+
+function adjustFlatPackWeight(originalWeight, category) {
+  if (category === 'furniture') {
+    return Math.round(originalWeight * 0.85);
+  }
+  return originalWeight;
+}
+
 console.log('=== SDL IMPORT CALCULATOR SERVER ===');
 console.log(`Environment: ${TEST_MODE ? 'TEST' : 'PRODUCTION'}`);
 console.log(`Port: ${PORT}`);
@@ -195,6 +319,7 @@ console.log(`Apify: ${ENABLE_APIFY && apifyClient ? '✅ ENABLED (Wayfair priori
 console.log(`ScrapingBee: ${SCRAPINGBEE_API_KEY ? 'ENABLED' : 'DISABLED'}`);
 console.log('Margin Structure: TIERED (20%/25%/22%/18%/15% by volume)');
 console.log(`Documentation Fee: $${DOCUMENTATION_FEE_PER_VENDOR} per vendor`);
+console.log('Flat-Pack Intelligence: ENABLED');
 console.log('====================================\n');
 
 // Middleware
@@ -231,6 +356,11 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     environment: TEST_MODE ? 'test' : 'production',
     marginStructure: 'tiered',
+    features: {
+      flatPackIntelligence: true,
+      variantSupport: true,
+      thumbnailSupport: true
+    },
     services: {
       shopify: !!SHOPIFY_ACCESS_TOKEN,
       email: !!sendgrid,
@@ -334,7 +464,7 @@ function isSDLDomain(url) {
 function categorizeProduct(name, url) {
   const text = (name + ' ' + url).toLowerCase();
   
-  if (/\b(sofa|couch|chair|recliner|ottoman|table|desk|dresser|bed|mattress|furniture|dining|patio)\b/.test(text)) return 'furniture';
+  if (/\b(sofa|couch|chair|recliner|ottoman|table|desk|dresser|bed|mattress|furniture|dining|patio|console|buffet|cabinet|shelf|bookcase)\b/.test(text)) return 'furniture';
   if (/\b(tv|television|monitor|laptop|computer|tablet|phone|camera|speaker|headphone|electronic)\b/.test(text)) return 'electronics';
   if (/\b(refrigerator|fridge|washer|dryer|dishwasher|microwave|oven|stove|appliance)\b/.test(text)) return 'appliances';
   if (/\b(toy|game|puzzle|doll|lego|playset|bounce|slide|tikes)\b/.test(text)) return 'toys';
@@ -342,7 +472,7 @@ function categorizeProduct(name, url) {
   return 'general';
 }
 
-// UPDATED Learning functions with variant tracking
+// Learning functions with variant tracking
 function learnFromProduct(url, productData) {
   LEARNING_DB.products[url] = {
     ...productData,
@@ -356,7 +486,7 @@ function learnFromProduct(url, productData) {
         prices: [],
         weights: [],
         dimensions: [],
-        variants: []  // Track common variants
+        variants: []
       };
     }
     
@@ -378,7 +508,8 @@ function learnFromProduct(url, productData) {
       attempts: 0, 
       successes: 0,
       variants_found: 0,
-      thumbnails_found: 0
+      thumbnails_found: 0,
+      flat_packed: 0
     };
   }
   LEARNING_DB.retailer_stats[retailer].attempts++;
@@ -390,6 +521,9 @@ function learnFromProduct(url, productData) {
   }
   if (productData.thumbnail) {
     LEARNING_DB.retailer_stats[retailer].thumbnails_found++;
+  }
+  if (productData.isFlatPack) {
+    LEARNING_DB.retailer_stats[retailer].flat_packed++;
   }
   
   saveLearningDB();
@@ -427,8 +561,12 @@ function estimateDimensionsFromBOL(category, name = '', retailer = '') {
         baseDims = patterns.dimensions.sofa;
       } else if (text.includes('chair')) {
         baseDims = patterns.dimensions.chair;
-      } else if (text.includes('table')) {
+      } else if (text.includes('table') || text.includes('console') || text.includes('buffet')) {
         baseDims = patterns.dimensions.table;
+      } else if (text.includes('dresser')) {
+        baseDims = patterns.dimensions.dresser;
+      } else if (text.includes('cabinet')) {
+        baseDims = patterns.dimensions.cabinet;
       } else {
         baseDims = patterns.dimensions.default;
       }
@@ -445,6 +583,7 @@ function estimateDimensionsFromBOL(category, name = '', retailer = '') {
     if (text.includes('table')) return patterns.dimensions.table;
     if (text.includes('dresser')) return patterns.dimensions.dresser;
     if (text.includes('mattress')) return patterns.dimensions.mattress;
+    if (text.includes('cabinet')) return patterns.dimensions.cabinet;
   }
   
   const dims = patterns.dimensions.default;
@@ -635,7 +774,7 @@ async function scrapeWithScrapingBee(url) {
           price = parseFloat(item.salePrice);
         }
         
-        // Extract variant (color, size, configuration)
+        // Extract variant
         let variant = null;
         if (item.selectedOptions || item.options || item.variant) {
           variant = item.selectedOptions || item.variant || 'Default';
@@ -756,7 +895,7 @@ async function scrapeWithScrapingBee(url) {
   }
 }
 
-// PROCESS PRODUCT WITH VARIANTS
+// PROCESS PRODUCT WITH FLAT-PACK INTELLIGENCE
 async function processProduct(url, index, total) {
   console.log(`\n[${index}/${total}] Processing: ${url.substring(0, 80)}...`);
   
@@ -777,13 +916,30 @@ async function processProduct(url, index, total) {
   
   const scraped = await scrapeWithScrapingBee(url);
   
-  // Build product name with variant
   const baseTitle = scraped.title || `${retailer} Product ${index}`;
   const productName = scraped.variant ? `${baseTitle} - ${scraped.variant}` : baseTitle;
   
   const category = categorizeProduct(productName, url);
-  const dimensions = estimateDimensionsFromBOL(category, productName, retailer);
-  const weight = estimateWeightFromBOL(dimensions, category);
+  let dimensions = estimateDimensionsFromBOL(category, productName, retailer);
+  let weight = estimateWeightFromBOL(dimensions, category);
+  
+  // FLAT-PACK INTELLIGENCE
+  const isFlatPack = isFlatPackable(category, productName, retailer);
+  let packagingType = 'assembled';
+  
+  if (isFlatPack) {
+    console.log(`   📦 FLAT-PACK DETECTED: This item will ship disassembled`);
+    packagingType = 'flat-pack';
+    
+    const originalDimensions = { ...dimensions };
+    dimensions = calculateFlatPackDimensions(dimensions, productName);
+    weight = adjustFlatPackWeight(weight, category);
+    
+    console.log(`   🔄 Original assembled size: ${originalDimensions.length}x${originalDimensions.width}x${originalDimensions.height}"`);
+    console.log(`   📦 Flat-pack shipping size: ${dimensions.length}x${dimensions.width}x${dimensions.height}"`);
+  } else {
+    console.log(`   📦 Ships fully assembled (${category})`);
+  }
   
   const cubicInches = dimensions.length * dimensions.width * dimensions.height;
   const cubicFeet = cubicInches / 1728;
@@ -802,8 +958,8 @@ async function processProduct(url, index, total) {
     id: productId,
     url: url,
     name: productName,
-    baseTitle: baseTitle,  // Store base title separately
-    variant: scraped.variant || null,  // Store variant info
+    baseTitle: baseTitle,
+    variant: scraped.variant || null,
     price: scraped.price,
     image: scraped.image || scraped.thumbnail || `https://placehold.co/400x400/7CB342/FFFFFF/png?text=${encodeURIComponent(retailer)}`,
     thumbnail: scraped.thumbnail || scraped.image || `https://placehold.co/100x100/7CB342/FFFFFF/png?text=${encodeURIComponent(retailer)}`,
@@ -812,6 +968,8 @@ async function processProduct(url, index, total) {
     dimensions: dimensions,
     weight: weight,
     cubicFeet: cubicFeet,
+    packagingType: packagingType,
+    isFlatPack: isFlatPack,
     baseShippingCost: baseShippingCost,
     shippingCost: totalShippingWithMargin,
     marginRate: marginRate,
@@ -832,8 +990,9 @@ async function processProduct(url, index, total) {
   
   console.log(`   Price: ${scraped.price ? '$' + scraped.price : 'Not found'}`);
   console.log(`   Variant: ${scraped.variant || 'Not specified'}`);
-  console.log(`   Thumbnail: ${scraped.thumbnail ? 'Found' : 'Using main image'}`);
-  console.log(`   Volume: ${cubicFeet.toFixed(1)} ft³`);
+  console.log(`   Packaging: ${packagingType.toUpperCase()}`);
+  console.log(`   Volume: ${cubicFeet.toFixed(1)} ft³ ${isFlatPack ? '(flat-packed)' : '(assembled)'}`);
+  console.log(`   Weight: ${weight} lbs`);
   console.log(`   Margin: ${(marginRate * 100).toFixed(0)}% ($${marginAmount.toFixed(2)})`);
   console.log(`   Total Shipping: $${totalShippingWithMargin.toFixed(2)}`);
   
@@ -862,6 +1021,7 @@ async function sendOrderEmail(orderData) {
           URL: ${p.url}<br>
           Price: $${p.price}<br>
           ${p.variant ? `Variant: ${p.variant}<br>` : ''}
+          ${p.isFlatPack ? `Packaging: FLAT-PACK<br>` : ''}
           Margin: ${(p.marginRate * 100).toFixed(0)}%</p>
         `).join('')}
         <hr>
@@ -902,12 +1062,13 @@ async function exportToGoogleSheets(orderData) {
       orderData.totals?.totalShippingAndHandling || 0,
       orderData.totals?.documentationFee || 0,
       orderData.totals?.grandTotal || 0,
-      'stage-1-payment-received'
+      'stage-1-payment-received',
+      orderData.products ? orderData.products.filter(p => p.isFlatPack).length : 0
     ];
     
     await sheets.spreadsheets.values.append({
       spreadsheetId: GOOGLE_SHEET_ID,
-      range: 'Orders!A:L',
+      range: 'Orders!A:M',
       valueInputOption: 'USER_ENTERED',
       requestBody: { values: [row] }
     });
@@ -958,6 +1119,7 @@ app.post('/api/scrape', scrapeRateLimiter, async (req, res) => {
     console.log(`\n========================================`);
     console.log(`BATCH SCRAPE: ${urls.length} products`);
     console.log(`Margin Structure: TIERED`);
+    console.log(`Flat-Pack Detection: ENABLED`);
     console.log(`========================================`);
     
     const products = [];
@@ -986,6 +1148,8 @@ app.post('/api/scrape', scrapeRateLimiter, async (req, res) => {
           dimensions: BOL_PATTERNS.general.dimensions.default,
           weight: 50,
           cubicFeet: 25,
+          packagingType: 'assembled',
+          isFlatPack: false,
           shippingCost: 100,
           marginRate: 0.25,
           marginAmount: 25,
@@ -1011,12 +1175,14 @@ app.post('/api/scrape', scrapeRateLimiter, async (req, res) => {
     
     const successful = products.filter(p => p.dataCompleteness.hasPrice).length;
     const fromCache = products.filter(p => p.fromCache).length;
+    const flatPacked = products.filter(p => p.isFlatPack).length;
     
     console.log(`\n========================================`);
     console.log(`RESULTS: ${products.length} products processed`);
     console.log(`  Scraped: ${successful - fromCache}`);
     console.log(`  From cache: ${fromCache}`);
     console.log(`  Failed: ${products.length - successful}`);
+    console.log(`  Flat-packed: ${flatPacked}`);
     
     const marginSummary = products.reduce((acc, p) => {
       const rate = Math.round((p.marginRate || 0.25) * 100);
@@ -1033,6 +1199,7 @@ app.post('/api/scrape', scrapeRateLimiter, async (req, res) => {
         scraped: successful,
         fromCache: fromCache,
         failed: products.length - successful,
+        flatPacked: flatPacked,
         marginDistribution: marginSummary
       }
     });
@@ -1043,7 +1210,7 @@ app.post('/api/scrape', scrapeRateLimiter, async (req, res) => {
   }
 });
 
-// Create checkout/draft order WITH VARIANTS
+// Create checkout/draft order WITH VARIANTS AND FLAT-PACK
 app.post('/api/prepare-shopify-checkout', orderRateLimiter, async (req, res) => {
   try {
     const checkoutData = req.body;
@@ -1097,7 +1264,7 @@ app.post('/api/prepare-shopify-checkout', orderRateLimiter, async (req, res) => 
     checkoutData.products.forEach(product => {
       if (product.price && product.price > 0) {
         lineItems.push({
-          title: product.name,  // This already includes variant if present
+          title: product.name,
           price: product.price.toFixed(2),
           quantity: 1,
           properties: [
@@ -1105,6 +1272,7 @@ app.post('/api/prepare-shopify-checkout', orderRateLimiter, async (req, res) => 
             { name: 'Retailer', value: product.retailer },
             { name: 'Category', value: product.category },
             { name: 'Variant', value: product.variant || 'Default' },
+            { name: 'Packaging', value: product.packagingType || 'assembled' },
             { name: 'Volume', value: `${(product.cubicFeet || 0).toFixed(1)} ft³` },
             { name: 'Margin Rate', value: `${((product.marginRate || 0.25) * 100).toFixed(0)}%` }
           ]
@@ -1174,6 +1342,7 @@ ${checkoutData.products.map(p => `• ${p.name}
   URL: ${p.url}
   Price: $${p.price}
   ${p.variant ? `Variant: ${p.variant}` : ''}
+  ${p.isFlatPack ? `📦 FLAT-PACK SHIPPING` : ''}
   Volume: ${(p.cubicFeet || 0).toFixed(1)} ft³
   Margin: ${((p.marginRate || 0.25) * 100).toFixed(0)}%`).join('\n\n')}
 
@@ -1190,7 +1359,8 @@ ${checkoutData.products.map(p => `• ${p.name}
           { name: 'order_id', value: orderId },
           { name: 'current_stage', value: '1' },
           { name: 'margin_structure', value: 'tiered' },
-          { name: 'has_variants', value: checkoutData.products.some(p => p.variant) ? 'yes' : 'no' }
+          { name: 'has_variants', value: checkoutData.products.some(p => p.variant) ? 'yes' : 'no' },
+          { name: 'flat_packed_items', value: checkoutData.products.filter(p => p.isFlatPack).length.toString() }
         ]
       }
     };
@@ -1220,7 +1390,7 @@ ${checkoutData.products.map(p => `• ${p.name}
     order.shopifyInvoiceUrl = draftOrder.invoice_url;
     saveOrdersDB();
     
-    console.log(`✅ Import draft order ${draftOrder.name} created with TIERED margins + doc fee + variants`);
+    console.log(`✅ Import draft order ${draftOrder.name} created with TIERED margins + flat-pack intelligence`);
     
     res.json({
       orderId: orderId,
@@ -1347,7 +1517,8 @@ app.get('/api/learning-insights', (req, res) => {
     categories_tracked: Object.keys(LEARNING_DB.patterns),
     retailer_success_rates: {},
     recent_products: [],
-    margin_structure: 'tiered'
+    margin_structure: 'tiered',
+    flat_pack_stats: {}
   };
   
   Object.entries(LEARNING_DB.retailer_stats).forEach(([retailer, stats]) => {
@@ -1355,8 +1526,16 @@ app.get('/api/learning-insights', (req, res) => {
       success_rate: ((stats.successes / stats.attempts) * 100).toFixed(1) + '%',
       total_attempts: stats.attempts,
       variants_found: stats.variants_found || 0,
-      thumbnails_found: stats.thumbnails_found || 0
+      thumbnails_found: stats.thumbnails_found || 0,
+      flat_packed: stats.flat_packed || 0
     };
+    
+    if (stats.flat_packed) {
+      insights.flat_pack_stats[retailer] = {
+        count: stats.flat_packed,
+        percentage: ((stats.flat_packed / stats.attempts) * 100).toFixed(1) + '%'
+      };
+    }
   });
   
   const products = Object.values(LEARNING_DB.products)
@@ -1369,7 +1548,8 @@ app.get('/api/learning-insights', (req, res) => {
     retailer: p.retailer,
     times_seen: p.times_seen,
     margin_rate: p.marginRate || 0.25,
-    has_variant: !!p.variant
+    has_variant: !!p.variant,
+    is_flat_pack: !!p.isFlatPack
   }));
   
   res.json(insights);
@@ -1426,7 +1606,8 @@ if (TEST_MODE) {
           retailer: 'Test Store',
           cubicFeet: 5,
           marginRate: 0.20,
-          variant: 'Color: Blue, Size: Large'
+          variant: 'Color: Blue, Size: Large',
+          isFlatPack: false
         }
       ],
       totals: {
@@ -1483,6 +1664,7 @@ app.listen(PORT, () => {
   console.log(`📊 Admin Orders: http://localhost:${PORT}/api/admin/orders?password=${ADMIN_PASSWORD}`);
   console.log(`💰 Margin Structure: TIERED (20%/25%/22%/18%/15% by volume)`);
   console.log(`📄 Documentation Fee: $${DOCUMENTATION_FEE_PER_VENDOR} per vendor`);
+  console.log(`📦 Flat-Pack Intelligence: ENABLED`);
   if (TEST_MODE) {
     console.log(`🧪 Test Mode: ENABLED`);
     console.log(`   - Create test order: /api/test/create-sample-order`);
