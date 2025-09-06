@@ -617,13 +617,14 @@ async function scrapeWithScrapingBee(url) {
       const { ApifyClient } = require('apify-client');
       const client = new ApifyClient({ token: APIFY_API_KEY });
       
-      // Using epctex/wayfair-scraper actor (most reliable)
-      const run = await client.actor('epctex/wayfair-scraper').call({
-        startUrls: [{ url: url }],
-        maxItems: 1,
+      // Using mscraper/wayfair-scraper actor - the one you have!
+      const run = await client.actor('mscraper/wayfair-scraper').call({
+        startUrls: [{ url: url, method: 'GET' }],
+        includeDetails: false,
+        resultsLimit: 1,
         proxy: {
           useApifyProxy: true,
-          apifyProxyGroups: ['RESIDENTIAL']  // Residential IPs work better
+          apifyProxyCountry: 'US'
         }
       });
       
