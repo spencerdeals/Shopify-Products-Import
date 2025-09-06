@@ -609,8 +609,8 @@ async function scrapeWithScrapingBee(url) {
   
   console.log(`   🔍 Debug: Wayfair check - ENABLE_APIFY: ${ENABLE_APIFY}, Has API Key: ${!!APIFY_API_KEY}, Retailer: ${retailer}`);
   
-  // Try Apify first for Wayfair
-  if (retailer === 'Wayfair' && ENABLE_APIFY && APIFY_API_KEY) {
+  // Skip Apify for Wayfair - mscraper actor is broken
+  if (retailer === 'Wayfair' && false) {
     try {
       console.log('   🔄 Using Apify Web Scraper for Wayfair...');
       
