@@ -27,6 +27,123 @@
             min-height: 600px;
         }
 
+        /* INTRO PAGE STYLES */
+        .intro-page {
+            display: block;
+            text-align: center;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+
+        .intro-page.hidden {
+            display: none;
+        }
+
+        .intro-hero {
+            background: linear-gradient(135deg, #7cb342 0%, #2e7d32 100%);
+            color: white;
+            padding: 50px 40px;
+            border-radius: 20px;
+            margin-bottom: 40px;
+            box-shadow: 0 10px 30px rgba(124, 179, 66, 0.3);
+        }
+
+        .intro-hero h1 {
+            font-size: 36px;
+            font-weight: 700;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 15px;
+        }
+
+        .ship-icon {
+            font-size: 40px;
+        }
+
+        .intro-subtitle {
+            font-size: 18px;
+            opacity: 0.95;
+            line-height: 1.4;
+            margin-bottom: 0;
+        }
+
+        .steps-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 20px;
+            margin: 40px 0;
+        }
+
+        .step-card {
+            background: linear-gradient(135deg, rgba(124, 179, 66, 0.1) 0%, rgba(46, 125, 50, 0.1) 100%);
+            border: 2px solid rgba(124, 179, 66, 0.2);
+            border-radius: 15px;
+            padding: 30px 20px;
+            transition: all 0.3s ease;
+        }
+
+        .step-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px rgba(124, 179, 66, 0.2);
+            border-color: #7cb342;
+        }
+
+        .step-icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+            display: block;
+        }
+
+        .step-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #2e7d32;
+            margin-bottom: 0;
+        }
+
+        .start-button {
+            background: linear-gradient(135deg, #7cb342 0%, #2e7d32 100%);
+            color: white;
+            padding: 20px 50px;
+            border: none;
+            border-radius: 15px;
+            font-size: 20px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 5px 20px rgba(124, 179, 66, 0.3);
+            margin-top: 30px;
+        }
+
+        .start-button:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 25px rgba(124, 179, 66, 0.4);
+        }
+
+        /* CALCULATOR STYLES */
+        .calculator-page {
+            display: none;
+            animation: fadeIn 0.5s ease;
+        }
+
+        .calculator-page.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
         h1 {
             color: #333;
             margin-bottom: 10px;
@@ -245,17 +362,6 @@
             animation: fadeIn 0.5s;
         }
 
-        @keyframes fadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(10px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
         .input-group {
             margin-bottom: 25px;
         }
@@ -323,6 +429,13 @@
 
         .secondary-btn {
             background: linear-gradient(135deg, #90a4ae 0%, #607d8b 100%);
+        }
+
+        .back-to-intro-btn {
+            background: linear-gradient(135deg, #ff9800 0%, #e65100 100%);
+            padding: 10px 20px;
+            font-size: 14px;
+            margin: 0 0 20px 0;
         }
 
         .vendor-group {
@@ -869,6 +982,30 @@
                 padding: 20px 15px;
             }
             
+            .intro-page {
+                padding: 20px 10px;
+            }
+            
+            .intro-hero {
+                padding: 30px 20px;
+            }
+            
+            .intro-hero h1 {
+                font-size: 28px;
+                flex-direction: column;
+                gap: 10px;
+            }
+            
+            .steps-container {
+                grid-template-columns: 1fr;
+                gap: 15px;
+            }
+            
+            .start-button {
+                padding: 15px 30px;
+                font-size: 18px;
+            }
+            
             h1 {
                 font-size: 24px;
             }
@@ -899,43 +1036,77 @@
 </head>
 <body>
     <div class="container">
-        <h1>Instant Imports <span class="new-badge">NEW</span></h1>
-        <p class="subtitle">Ocean Freight Calculator - Get accurate shipping costs for your Bermuda imports</p>
-        
-        <div class="progress-bar">
-            <div class="progress-step">
-                <div class="progress-circle active" id="step1">1</div>
-                <span>Add Products</span>
+        <!-- INTRO PAGE -->
+        <div class="intro-page" id="introPage">
+            <div class="intro-hero">
+                <h1>
+                    <span class="ship-icon">🚢</span>
+                    SDL Instant Import Calculator
+                </h1>
+                <p class="intro-subtitle">Get exact shipping costs for your Bermuda imports in minutes</p>
             </div>
-            <div class="progress-line" id="line1"></div>
-            <div class="progress-step">
-                <div class="progress-circle" id="step2">2</div>
-                <span>Review & Fees</span>
+            
+            <div class="steps-container">
+                <div class="step-card">
+                    <span class="step-icon">📋</span>
+                    <h3 class="step-title">Add Product URLs</h3>
+                </div>
+                <div class="step-card">
+                    <span class="step-icon">💰</span>
+                    <h3 class="step-title">Get Instant Quote</h3>
+                </div>
+                <div class="step-card">
+                    <span class="step-icon">🚚</span>
+                    <h3 class="step-title">Place Your Order</h3>
+                </div>
             </div>
-            <div class="progress-line" id="line2"></div>
-            <div class="progress-step">
-                <div class="progress-circle" id="step3">3</div>
-                <span>Confirm Order</span>
-            </div>
+            
+            <button class="start-button" onclick="startCalculator()">
+                Start Now
+            </button>
         </div>
 
-        <!-- PAGE 1: Add Products -->
-        <div class="page active" id="page1">
-            <div class="warning-box">
-                <div class="warning-header">Important: Select Correct Variants</div>
-                <div class="warning-text">
-                    Before pasting your links, make sure you've selected the correct size, color, or variant on each product page. 
-                    We cannot be responsible for mix-ups if the wrong variant gets ordered!
+        <!-- CALCULATOR PAGE -->
+        <div class="calculator-page" id="calculatorPage">
+            <button class="back-to-intro-btn" onclick="backToIntro()">← Back to Overview</button>
+            
+            <h1>Instant Imports <span class="new-badge">NEW</span></h1>
+            <p class="subtitle">Ocean Freight Calculator - Get accurate shipping costs for your Bermuda imports</p>
+            
+            <div class="progress-bar">
+                <div class="progress-step">
+                    <div class="progress-circle active" id="step1">1</div>
+                    <span>Add Products</span>
+                </div>
+                <div class="progress-line" id="line1"></div>
+                <div class="progress-step">
+                    <div class="progress-circle" id="step2">2</div>
+                    <span>Review & Fees</span>
+                </div>
+                <div class="progress-line" id="line2"></div>
+                <div class="progress-step">
+                    <div class="progress-circle" id="step3">3</div>
+                    <span>Confirm Order</span>
                 </div>
             </div>
 
-            <form id="urlForm">
-                <div class="input-group">
-                    <label for="productUrls">Product URLs (One per line)</label>
-                    <textarea 
-                        id="productUrls" 
-                        name="productUrls" 
-                        placeholder="Paste your product URLs here, one per line:
+            <!-- PAGE 1: Add Products -->
+            <div class="page active" id="page1">
+                <div class="warning-box">
+                    <div class="warning-header">Important: Select Correct Variants</div>
+                    <div class="warning-text">
+                        Before pasting your links, make sure you've selected the correct size, color, or variant on each product page. 
+                        We cannot be responsible for mix-ups if the wrong variant gets ordered!
+                    </div>
+                </div>
+
+                <form id="urlForm">
+                    <div class="input-group">
+                        <label for="productUrls">Product URLs (One per line)</label>
+                        <textarea 
+                            id="productUrls" 
+                            name="productUrls" 
+                            placeholder="Paste your product URLs here, one per line:
 
 https://www.amazon.com/product1
 https://www.wayfair.com/product2
@@ -943,105 +1114,106 @@ https://www.walmart.com/product3
 https://www.target.com/product4
 
 We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
-                        required
-                    ></textarea>
+                            required
+                        ></textarea>
+                    </div>
+
+                    <div class="button-group">
+                        <div></div>
+                        <button type="submit">Continue to Review →</button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- PAGE 2: Review Products -->
+            <div class="page" id="page2">
+                <h2>Review Your Products</h2>
+                
+                <div class="critical-warning">
+                    <div class="warning-header">⚠️ CRITICAL: Verify All Prices</div>
+                    <div class="warning-text">
+                        Incorrect prices could delay your estimated import window! Please:<br><br>
+                        • Click "Check Price" to open each product page<br>
+                        • Enter the exact price shown on the retailer's website (if different from what is shown)<br>
+                        • Click "Confirm" to lock in each price<br><br>
+                        Accurate pricing ensures your order arrives within the expected timeframe.
+                    </div>
+                </div>
+
+                <div class="forwarder-address">
+                    <div class="forwarder-header">USA Freight Forwarder Address</div>
+                    <div class="forwarder-name">Ocean Freight Forwarder</div>
+                    <div class="forwarder-details">
+                        614 Progress Street<br>
+                        Elizabeth, NJ 07201<br>
+                        New Jersey, USA
+                    </div>
+                    <div class="forwarder-note">
+                        💡 Pro Tip: Use this address when calculating shipping costs from US retailers to get accurate delivery totals.
+                    </div>
+                </div>
+
+                <div id="vendorGroups"></div>
+
+                <div class="loading" id="loading">
+                    <div class="spinner"></div>
+                    <div class="loading-text">
+                        🔍 Searching for product information...<br>
+                        This may take 1-2 minutes as we check multiple sources for the best data.<br>
+                        Please don't refresh the page.
+                    </div>
+                </div>
+
+                <div class="error" id="error"></div>
+
+                <div class="button-group">
+                    <button type="button" class="secondary-btn" onclick="handleBackToProducts()">← Back to Products</button>
+                    <button type="button" id="continueToFinal" onclick="calculateAndProceed()" disabled>Calculate Total →</button>
+                </div>
+            </div>
+
+            <!-- PAGE 3: Final Breakdown -->
+            <div class="page" id="page3">
+                <h2>Final Cost Breakdown</h2>
+                
+                <div class="cost-breakdown" id="costBreakdown"></div>
+
+                <div class="warning-box" style="margin-bottom: 25px;">
+                    <div class="warning-header">📅 Estimated Delivery Timeframe</div>
+                    <div class="warning-text">
+                        <strong>Expected delivery to Bermuda: 3-5 weeks</strong><br>
+                        This includes processing time, ocean transit, and customs clearance.<br>
+                        Express shipping options may be available for urgent orders - contact us for details.
+                    </div>
+                </div>
+
+                <div class="confirmation-checkbox">
+                    <div class="checkbox-container">
+                        <input type="checkbox" id="confirmVariants">
+                        <label for="confirmVariants" class="checkbox-label">
+                            <strong>I understand and confirm:</strong>
+                            • I have double-checked that all product links have the correct sizes, colors, and variants selected<br>
+                            • I have verified and confirmed all product prices<br>
+                            • These shipping costs are estimates based on intelligent analysis - actual costs may vary slightly<br>
+                            • SDL may contact me with an updated quote if significant differences are found<br>
+                            • If I don't hear from SDL, my items are confirmed and I can expect delivery within 3-5 weeks<br>
+                            • SDL will not be responsible for customer errors if wrong items are ordered<br><br>
+                            ✅ I agree to these terms and wish to proceed with my import request.
+                        </label>
+                    </div>
                 </div>
 
                 <div class="button-group">
-                    <div></div>
-                    <button type="submit">Continue to Review →</button>
+                    <button type="button" class="secondary-btn" onclick="handleBackToReview()">← Back to Review</button>
+                    <button type="button" id="createOrderBtn" onclick="createDraftOrder()" disabled>Confirm & Create Order</button>
                 </div>
-            </form>
+            </div>
+
+            <p class="info-text" id="infoText">
+                This calculator uses intelligent estimation powered by 177 historical BOL shipments to determine accurate shipping costs. 
+                We analyze product categories, dimensions, and weight to provide the most accurate estimates possible.
+            </p>
         </div>
-
-        <!-- PAGE 2: Review Products -->
-        <div class="page" id="page2">
-            <h2>Review Your Products</h2>
-            
-            <div class="critical-warning">
-                <div class="warning-header">⚠️ CRITICAL: Verify All Prices</div>
-                <div class="warning-text">
-                    Incorrect prices could delay your estimated import window! Please:<br><br>
-                    • Click "Check Price" to open each product page<br>
-                    • Enter the exact price shown on the retailer's website (if different from what is shown)<br>
-                    • Click "Confirm" to lock in each price<br><br>
-                    Accurate pricing ensures your order arrives within the expected timeframe.
-                </div>
-            </div>
-
-            <div class="forwarder-address">
-                <div class="forwarder-header">USA Freight Forwarder Address</div>
-                <div class="forwarder-name">Ocean Freight Forwarder</div>
-                <div class="forwarder-details">
-                    614 Progress Street<br>
-                    Elizabeth, NJ 07201<br>
-                    New Jersey, USA
-                </div>
-                <div class="forwarder-note">
-                    💡 Pro Tip: Use this address when calculating shipping costs from US retailers to get accurate delivery totals.
-                </div>
-            </div>
-
-            <div id="vendorGroups"></div>
-
-            <div class="loading" id="loading">
-                <div class="spinner"></div>
-                <div class="loading-text">
-                    🔍 Searching for product information...<br>
-                    This may take 1-2 minutes as we check multiple sources for the best data.<br>
-                    Please don't refresh the page.
-                </div>
-            </div>
-
-            <div class="error" id="error"></div>
-
-            <div class="button-group">
-                <button type="button" class="secondary-btn" onclick="handleBackToProducts()">← Back to Products</button>
-                <button type="button" id="continueToFinal" onclick="calculateAndProceed()" disabled>Calculate Total →</button>
-            </div>
-        </div>
-
-        <!-- PAGE 3: Final Breakdown -->
-        <div class="page" id="page3">
-            <h2>Final Cost Breakdown</h2>
-            
-            <div class="cost-breakdown" id="costBreakdown"></div>
-
-            <div class="warning-box" style="margin-bottom: 25px;">
-                <div class="warning-header">📅 Estimated Delivery Timeframe</div>
-                <div class="warning-text">
-                    <strong>Expected delivery to Bermuda: 3-5 weeks</strong><br>
-                    This includes processing time, ocean transit, and customs clearance.<br>
-                    Express shipping options may be available for urgent orders - contact us for details.
-                </div>
-            </div>
-
-            <div class="confirmation-checkbox">
-                <div class="checkbox-container">
-                    <input type="checkbox" id="confirmVariants">
-                    <label for="confirmVariants" class="checkbox-label">
-                        <strong>I understand and confirm:</strong>
-                        • I have double-checked that all product links have the correct sizes, colors, and variants selected<br>
-                        • I have verified and confirmed all product prices<br>
-                        • These shipping costs are estimates based on intelligent analysis - actual costs may vary slightly<br>
-                        • SDL may contact me with an updated quote if significant differences are found<br>
-                        • If I don't hear from SDL, my items are confirmed and I can expect delivery within 3-5 weeks<br>
-                        • SDL will not be responsible for customer errors if wrong items are ordered<br><br>
-                        ✅ I agree to these terms and wish to proceed with my import request.
-                    </label>
-                </div>
-            </div>
-
-            <div class="button-group">
-                <button type="button" class="secondary-btn" onclick="handleBackToReview()">← Back to Review</button>
-                <button type="button" id="createOrderBtn" onclick="createDraftOrder()" disabled>Confirm & Create Order</button>
-            </div>
-        </div>
-
-        <p class="info-text" id="infoText">
-            This calculator uses intelligent estimation powered by 177 historical BOL shipments to determine accurate shipping costs. 
-            We analyze product categories, dimensions, and weight to provide the most accurate estimates possible.
-        </p>
     </div>
 
     <script type="text/javascript">
@@ -1052,6 +1224,19 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
         let finalCalculation = null;
         let confirmedPrices = new Set();
         let confirmedDeliveryFees = new Set();
+
+        // Page transition functions
+        function startCalculator() {
+            document.getElementById('introPage').classList.add('hidden');
+            document.getElementById('calculatorPage').classList.add('active');
+        }
+
+        function backToIntro() {
+            document.getElementById('calculatorPage').classList.remove('active');
+            document.getElementById('introPage').classList.remove('hidden');
+            // Reset calculator state
+            resetToFirstPage();
+        }
 
         // Check if URL is from SDL
         function isSDLDomain(url) {
@@ -1335,6 +1520,7 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
             document.getElementById('error').classList.remove('active');
             
             try {
+                // UPDATE THIS LINE WITH YOUR RAILWAY URL
                 const response = await fetch('/api/scrape', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -1742,7 +1928,7 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
             btn.textContent = 'Preparing checkout...';
             
             try {
-                // Store order data and get redirect URL
+                // UPDATE THIS LINE WITH YOUR RAILWAY URL
                 const response = await fetch('/api/prepare-shopify-checkout', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
