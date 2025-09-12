@@ -340,21 +340,20 @@ app.use(express.json({ limit: '5mb' }));
 app.use(express.raw({ type: 'application/json' }));
 app.set('trust proxy', true);
 
-// Security headers - FIXED FOR IFRAME EMBEDDING
+// FIXED SECURITY HEADERS FOR IFRAME EMBEDDING
 app.use((req, res, next) => {
-  // Remove X-Frame-Options to allow embedding
+  // CRITICAL: Allow iframe embedding from anywhere
   res.removeHeader('X-Frame-Options');
+  res.setHeader('Content-Security-Policy', "frame-ancestors *");
   
-  // Allow embedding from Shopify domains
-  res.setHeader('Content-Security-Policy', "frame-ancestors 'self' https://*.myshopify.com https://sdl.bm https://admin.shopify.com");
+  // CORS headers for iframe support
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, DELETE');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
   
-  // Keep other security headers
+  // Other security headers
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-XSS-Protection', '1; mode=block');
-  
-  // Add CORS headers for iframe
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   
   next();
 });
@@ -379,7 +378,8 @@ app.get('/health', (req, res) => {
     features: {
       flatPackIntelligence: true,
       variantSupport: true,
-      thumbnailSupport: true
+      thumbnailSupport: true,
+      iframeEmbedding: true
     },
     services: {
       shopify: !!SHOPIFY_ACCESS_TOKEN,
