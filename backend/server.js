@@ -324,18 +324,38 @@ console.log('====================================\n');
 
 // Middleware
 app.use(cors({
-  origin: ['https://sdl.bm', 'https://spencer-deals-ltd.myshopify.com', 'http://localhost:3000'],
-  credentials: true
+  origin: [
+    'https://sdl.bm', 
+    'https://spencer-deals-ltd.myshopify.com', 
+    'https://admin.shopify.com',
+    'https://*.myshopify.com',
+    'http://localhost:3000',
+    'http://localhost:8080'
+  ],
+  credentials: true,
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
 app.use(express.json({ limit: '5mb' }));
 app.use(express.raw({ type: 'application/json' }));
 app.set('trust proxy', true);
 
-// Security headers
+// Security headers - FIXED FOR IFRAME EMBEDDING
 app.use((req, res, next) => {
-  res.setHeader('X-Frame-Options', 'ALLOWALL');
+  // Remove X-Frame-Options to allow embedding
+  res.removeHeader('X-Frame-Options');
+  
+  // Allow embedding from Shopify domains
+  res.setHeader('Content-Security-Policy', "frame-ancestors 'self' https://*.myshopify.com https://sdl.bm https://admin.shopify.com");
+  
+  // Keep other security headers
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-XSS-Protection', '1; mode=block');
+  
+  // Add CORS headers for iframe
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  
   next();
 });
 
