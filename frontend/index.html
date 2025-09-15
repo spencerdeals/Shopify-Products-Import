@@ -13,18 +13,19 @@
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            background: #f5f5f5;
+            background: transparent;
             min-height: 100vh;
             padding: 0;
+            margin: 0;
         }
 
-        /* INTRO PAGE STYLES */
+        /* INTRO PAGE STYLES - COMPLETELY SEAMLESS */
         .intro-page {
             display: block;
             text-align: center;
-            background: white;
+            background: transparent;
             min-height: 100vh;
-            padding: 60px 20px;
+            padding: 40px 20px;
         }
 
         .intro-page.hidden {
@@ -35,7 +36,7 @@
             background: linear-gradient(135deg, #7cb342 0%, #2e7d32 100%);
             color: white;
             padding: 50px 40px;
-            border-radius: 20px;
+            border-radius: 12px;
             margin: 0 auto 40px;
             max-width: 800px;
             box-shadow: 0 10px 30px rgba(124, 179, 66, 0.3);
@@ -73,7 +74,7 @@
         .step-card {
             background: linear-gradient(135deg, rgba(124, 179, 66, 0.1) 0%, rgba(46, 125, 50, 0.1) 100%);
             border: 2px solid rgba(124, 179, 66, 0.2);
-            border-radius: 15px;
+            border-radius: 8px;
             padding: 30px 20px;
             transition: all 0.3s ease;
         }
@@ -102,7 +103,7 @@
             color: white;
             padding: 20px 50px;
             border: none;
-            border-radius: 15px;
+            border-radius: 8px;
             font-size: 20px;
             font-weight: 700;
             cursor: pointer;
@@ -116,12 +117,11 @@
             box-shadow: 0 8px 25px rgba(124, 179, 66, 0.4);
         }
 
-        /* CALCULATOR STYLES - NOW FULL WIDTH */
+        /* CALCULATOR STYLES - COMPLETELY SEAMLESS */
         .calculator-page {
             display: none;
-            background: white;
-            min-height: 100vh;
-            padding: 40px 20px;
+            background: transparent;
+            padding: 0;
             animation: fadeIn 0.5s ease;
         }
 
@@ -130,8 +130,10 @@
         }
 
         .calculator-content {
-            max-width: 900px;
-            margin: 0 auto;
+            width: 100%;
+            max-width: 100%;
+            margin: 0;
+            padding: 40px 20px;
         }
 
         @keyframes fadeIn {
@@ -159,7 +161,7 @@
             color: white;
             font-size: 14px;
             padding: 4px 10px;
-            border-radius: 20px;
+            border-radius: 12px;
             font-weight: 600;
             margin-left: 10px;
             animation: pulse-new 2s infinite;
@@ -202,8 +204,8 @@
             justify-content: center;
             margin-bottom: 30px;
             padding: 20px 0;
-            background: #f8f9fa;
-            border-radius: 10px;
+            background: transparent;
+            border: none;
         }
 
         .progress-step {
@@ -251,9 +253,9 @@
         }
 
         .warning-box {
-            background: linear-gradient(135deg, #fff8e1 0%, #ffecb3 100%);
-            border: 2px solid #ffa726;
-            border-radius: 12px;
+            background: linear-gradient(to right, #fff8e1 0%, transparent 100%);
+            border-left: 4px solid #ffa726;
+            border-radius: 0;
             padding: 15px;
             margin-bottom: 25px;
             position: relative;
@@ -281,18 +283,11 @@
         }
 
         .critical-warning {
-            background: linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%);
-            border: 2px solid #f44336;
-            border-radius: 12px;
+            background: linear-gradient(to right, #ffebee 0%, transparent 100%);
+            border-left: 4px solid #f44336;
+            border-radius: 0;
             padding: 20px;
             margin-bottom: 25px;
-            animation: pulse-border 2s infinite;
-        }
-
-        @keyframes pulse-border {
-            0% { border-color: #f44336; }
-            50% { border-color: #ff6659; }
-            100% { border-color: #f44336; }
         }
 
         .critical-warning .warning-header {
@@ -306,9 +301,9 @@
         }
 
         .forwarder-address {
-            background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%);
-            border: 2px solid #66bb6a;
-            border-radius: 12px;
+            background: linear-gradient(to right, #e8f5e9 0%, transparent 100%);
+            border-left: 4px solid #66bb6a;
+            border-radius: 0;
             padding: 20px;
             margin-bottom: 25px;
             position: relative;
@@ -348,10 +343,8 @@
             font-weight: 700;
             font-size: 15px;
             margin-top: 15px;
-            padding: 12px;
-            border-top: 2px solid #4caf50;
-            background: rgba(76, 175, 80, 0.1);
-            border-radius: 6px;
+            padding: 12px 0 0 0;
+            border-top: 1px solid rgba(76, 175, 80, 0.3);
         }
 
         .page {
@@ -378,11 +371,11 @@
         input, textarea {
             width: 100%;
             padding: 12px 15px;
-            border: 2px solid #e0e0e0;
-            border-radius: 10px;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
             font-size: 16px;
             transition: all 0.3s;
-            background-color: #f8f9fa;
+            background-color: white;
             font-family: inherit;
         }
 
@@ -395,7 +388,7 @@
             outline: none;
             border-color: #7cb342;
             background-color: white;
-            box-shadow: 0 0 0 3px rgba(124, 179, 66, 0.1);
+            box-shadow: 0 0 0 2px rgba(124, 179, 66, 0.1);
         }
 
         button {
@@ -403,7 +396,7 @@
             background: linear-gradient(135deg, #7cb342 0%, #2e7d32 100%);
             color: white;
             border: none;
-            border-radius: 10px;
+            border-radius: 4px;
             font-size: 16px;
             font-weight: 600;
             cursor: pointer;
@@ -433,41 +426,40 @@
         }
 
         .vendor-group {
-            border-radius: 12px;
+            border-left: 4px solid;
             padding: 20px;
             margin-bottom: 20px;
-            border: 2px solid;
             transition: all 0.3s ease;
         }
 
         .vendor-group:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            transform: translateX(5px);
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
         }
 
         .vendor-group.amazon {
-            background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%);
-            border-color: #ff9800;
+            background: linear-gradient(to right, rgba(255, 243, 224, 0.5) 0%, transparent 100%);
+            border-left-color: #ff9800;
         }
 
         .vendor-group.wayfair {
-            background: linear-gradient(135deg, #f3e5f5 0%, #e1bee7 100%);
-            border-color: #ba68c8;
+            background: linear-gradient(to right, rgba(243, 229, 245, 0.5) 0%, transparent 100%);
+            border-left-color: #ba68c8;
         }
 
         .vendor-group.walmart {
-            background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
-            border-color: #2196f3;
+            background: linear-gradient(to right, rgba(227, 242, 253, 0.5) 0%, transparent 100%);
+            border-left-color: #2196f3;
         }
 
         .vendor-group.target {
-            background: linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%);
-            border-color: #f44336;
+            background: linear-gradient(to right, rgba(255, 235, 238, 0.5) 0%, transparent 100%);
+            border-left-color: #f44336;
         }
 
         .vendor-group.default {
-            background: linear-gradient(135deg, #f5f5f5 0%, #eeeeee 100%);
-            border-color: #9e9e9e;
+            background: linear-gradient(to right, rgba(245, 245, 245, 0.5) 0%, transparent 100%);
+            border-left-color: #9e9e9e;
         }
 
         .vendor-header {
@@ -491,8 +483,8 @@
         }
 
         .product-item {
-            background: rgba(255, 255, 255, 0.9);
-            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.5);
+            border-radius: 4px;
             padding: 15px;
             margin-bottom: 15px;
             border-left: 4px solid;
@@ -504,7 +496,7 @@
         }
 
         .product-item:hover {
-            background: rgba(255, 255, 255, 1);
+            background: rgba(255, 255, 255, 0.8);
             box-shadow: 0 3px 10px rgba(0,0,0,0.1);
         }
 
@@ -515,8 +507,8 @@
         .product-item.default { border-left-color: #9e9e9e; }
 
         .product-item.confirmed {
-            background: linear-gradient(135deg, rgba(200, 255, 200, 0.4) 0%, rgba(150, 255, 150, 0.3) 100%);
-            border: 2px solid #4caf50;
+            background: linear-gradient(to right, rgba(200, 255, 200, 0.2) 0%, rgba(255, 255, 255, 0.5) 100%);
+            border-left-color: #4caf50;
         }
 
         .product-item.deleted {
@@ -528,12 +520,12 @@
 
         .product-cost-summary {
             background: linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(250, 250, 250, 0.95) 100%);
-            border: 2px solid #4caf50;
-            border-radius: 10px;
+            border-left: 3px solid #4caf50;
+            border-radius: 2px;
             padding: 15px;
             margin-top: 15px;
             display: none;
-            box-shadow: 0 3px 10px rgba(76, 175, 80, 0.2);
+            box-shadow: 0 1px 5px rgba(76, 175, 80, 0.1);
         }
 
         .product-cost-summary.visible {
@@ -575,6 +567,7 @@
             margin-top: 12px;
             font-size: 14px;
             width: 100%;
+            border-radius: 2px;
         }
 
         .delete-product-btn:hover {
@@ -586,8 +579,8 @@
             width: 100px;
             height: 100px;
             object-fit: cover;
-            border-radius: 8px;
-            border: 2px solid #e0e0e0;
+            border-radius: 4px;
+            border: 1px solid #e0e0e0;
             flex-shrink: 0;
             transition: all 0.3s ease;
         }
@@ -621,6 +614,19 @@
             border-bottom-color: #2196f3;
         }
 
+        /* VARIANT STYLING - MAKE IT STAND OUT */
+        .product-variant {
+            display: inline-block;
+            background: linear-gradient(135deg, #ff5722 0%, #d84315 100%);
+            color: white;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 13px;
+            font-weight: 600;
+            margin-left: 8px;
+            box-shadow: 0 2px 5px rgba(255, 87, 34, 0.3);
+        }
+
         .product-info {
             font-size: 13px;
             color: #666;
@@ -632,12 +638,71 @@
             margin-right: 15px;
         }
 
+        /* QUANTITY SELECTOR STYLES */
+        .quantity-selector {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+            padding: 10px;
+            background: rgba(124, 179, 66, 0.05);
+            border-radius: 4px;
+        }
+
+        .quantity-label {
+            font-size: 14px;
+            font-weight: 600;
+            color: #555;
+        }
+
+        .quantity-controls {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .qty-btn {
+            width: 30px;
+            height: 30px;
+            border: 1px solid #7cb342;
+            background: white;
+            color: #7cb342;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 18px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            padding: 0;
+            margin: 0;
+        }
+
+        .qty-btn:hover {
+            background: #7cb342;
+            color: white;
+            transform: scale(1.1);
+        }
+
+        .qty-display {
+            width: 50px;
+            text-align: center;
+            font-size: 16px;
+            font-weight: 700;
+            color: #333;
+            padding: 5px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background: white;
+        }
+
         .price-input-section {
             background: rgba(255, 255, 255, 0.95);
-            border-radius: 8px;
+            border-radius: 2px;
             padding: 12px;
             margin-top: 10px;
-            border: 1px solid #e0e0e0;
+            border-left: 2px solid #e0e0e0;
         }
 
         .price-input-label {
@@ -681,8 +746,8 @@
         .price-input input {
             width: 120px;
             padding: 10px;
-            border: 2px solid #ddd;
-            border-radius: 6px;
+            border: 1px solid #ddd;
+            border-radius: 2px;
             font-size: 18px;
             font-weight: 600;
             transition: all 0.3s ease;
@@ -713,7 +778,7 @@
         .price-btn {
             padding: 8px 16px;
             font-size: 13px;
-            border-radius: 6px;
+            border-radius: 2px;
             min-width: 80px;
             transition: all 0.3s ease;
         }
@@ -744,7 +809,7 @@
             margin-top: 8px;
             font-weight: 600;
             padding: 5px 8px;
-            border-radius: 4px;
+            border-radius: 2px;
             display: inline-block;
         }
 
@@ -765,17 +830,17 @@
 
         .delivery-fee-input {
             background: rgba(255, 255, 255, 0.95);
-            border: 2px solid;
-            border-radius: 10px;
+            border-left: 4px solid;
+            border-radius: 0;
             margin-top: 20px;
             padding: 18px;
         }
 
-        .delivery-fee-input.amazon { border-color: #ff9800; }
-        .delivery-fee-input.wayfair { border-color: #ba68c8; }
-        .delivery-fee-input.walmart { border-color: #2196f3; }
-        .delivery-fee-input.target { border-color: #f44336; }
-        .delivery-fee-input.default { border-color: #9e9e9e; }
+        .delivery-fee-input.amazon { border-left-color: #ff9800; }
+        .delivery-fee-input.wayfair { border-left-color: #ba68c8; }
+        .delivery-fee-input.walmart { border-left-color: #2196f3; }
+        .delivery-fee-input.target { border-left-color: #f44336; }
+        .delivery-fee-input.default { border-left-color: #9e9e9e; }
 
         .delivery-fee-input label {
             font-weight: 600;
@@ -794,11 +859,10 @@
         }
 
         .cost-breakdown {
-            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-            border-radius: 12px;
+            background: transparent;
+            border-left: 4px solid #7cb342;
             padding: 25px;
             margin-bottom: 25px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         }
 
         .cost-breakdown h3 {
@@ -810,10 +874,10 @@
         }
 
         .product-breakdown-item {
-            background: white;
+            background: #f9f9f9;
             padding: 12px;
             margin-bottom: 12px;
-            border-radius: 8px;
+            border-radius: 2px;
             border-left: 3px solid #7cb342;
         }
 
@@ -862,8 +926,8 @@
             margin-top: 20px;
             padding-top: 20px;
             border-top: 3px solid #7cb342;
-            background: linear-gradient(135deg, rgba(124, 179, 66, 0.1) 0%, rgba(46, 125, 50, 0.1) 100%);
-            border-radius: 10px;
+            background: linear-gradient(135deg, rgba(124, 179, 66, 0.05) 0%, rgba(46, 125, 50, 0.05) 100%);
+            border-radius: 0;
             padding: 20px;
         }
 
@@ -880,9 +944,9 @@
         }
 
         .confirmation-checkbox {
-            background: linear-gradient(135deg, #fff3e0 0%, #ffcc80 100%);
-            border: 2px solid #ff9800;
-            border-radius: 12px;
+            background: linear-gradient(to right, rgba(255, 243, 224, 0.5) 0%, transparent 100%);
+            border-left: 4px solid #ff9800;
+            border-radius: 0;
             padding: 20px;
             margin-bottom: 25px;
         }
@@ -948,11 +1012,11 @@
 
         .error {
             display: none;
-            background: linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%);
-            border: 2px solid #f44336;
+            background: linear-gradient(to right, #ffebee 0%, transparent 100%);
+            border-left: 4px solid #f44336;
             color: #c62828;
             padding: 15px;
-            border-radius: 10px;
+            border-radius: 0;
             margin: 20px 0;
         }
 
@@ -961,15 +1025,15 @@
         }
 
         .info-text {
-            color: #666;
-            font-size: 12px;
+            color: #999;
+            font-size: 11px;
             text-align: center;
             margin-top: 40px;
             line-height: 1.5;
-            padding: 15px;
-            background: rgba(0,0,0,0.03);
-            border-radius: 8px;
-            max-width: 700px;
+            padding: 0;
+            background: transparent;
+            border: none;
+            max-width: 100%;
             margin-left: auto;
             margin-right: auto;
         }
@@ -1062,7 +1126,7 @@
         </button>
     </div>
 
-    <!-- CALCULATOR PAGE - NOW FULL WIDTH -->
+    <!-- CALCULATOR PAGE - COMPLETELY SEAMLESS -->
     <div class="calculator-page" id="calculatorPage">
         <div class="calculator-content">
             <h1>Instant Imports <span class="new-badge">NEW</span></h1>
@@ -1219,6 +1283,7 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
         let finalCalculation = null;
         let confirmedPrices = new Set();
         let confirmedDeliveryFees = new Set();
+        let productQuantities = {};
 
         // Page transition functions
         function startCalculator() {
@@ -1302,6 +1367,7 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
             finalCalculation = null;
             confirmedPrices.clear();
             confirmedDeliveryFees.clear();
+            productQuantities = {};
             document.getElementById('continueToFinal').disabled = true;
             document.getElementById('createOrderBtn').disabled = true;
             document.getElementById('confirmVariants').checked = false;
@@ -1315,11 +1381,32 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
             window.open(url, '_blank');
         }
 
-        function confirmPrice(productId, vendor, productIndex) {
+        // QUANTITY FUNCTIONS
+        function updateQuantity(productId, change) {
+            const currentQty = productQuantities[productId] || 1;
+            const newQty = Math.max(1, Math.min(99, currentQty + change));
+            productQuantities[productId] = newQty;
+            
+            // Update display
+            const displayEl = document.getElementById(`qty-display-${productId}`);
+            if (displayEl) {
+                displayEl.textContent = newQty;
+            }
+            
+            // If price is confirmed, recalculate
+            if (confirmedPrices.has(productId)) {
+                const vendor = productId.split('-')[0];
+                const index = parseInt(productId.split('-')[1]);
+                confirmPrice(productId, vendor, index, false); // false = don't show alert
+            }
+        }
+
+        function confirmPrice(productId, vendor, productIndex, showAlert = true) {
             const priceInput = document.getElementById(`price-${productId}`);
             const price = parseFloat(priceInput.value);
+            const quantity = productQuantities[productId] || 1;
             
-            if (!price || price <= 0) {
+            if (showAlert && (!price || price <= 0)) {
                 alert('Please enter a valid price before confirming');
                 return;
             }
@@ -1327,20 +1414,22 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
             // Update the product data
             if (vendorGroups[vendor] && vendorGroups[vendor][productIndex]) {
                 vendorGroups[vendor][productIndex].price = price;
+                vendorGroups[vendor][productIndex].quantity = quantity;
                 vendorGroups[vendor][productIndex].priceConfirmed = true;
             }
             
-            // Calculate costs
+            // Calculate costs with quantity
             const product = vendorGroups[vendor][productIndex];
-            const duty = price * 0.265;
-            const shipping = product.shippingCost || 50;
-            const subtotal = price + duty + shipping;
+            const totalPrice = price * quantity;
+            const duty = totalPrice * 0.265;
+            const shipping = (product.shippingCost || 50) * quantity;
+            const subtotal = totalPrice + duty + shipping;
             const sdlMargin = subtotal * 0.15;
-            const shippingAndHandling = shipping + sdlMargin;  // Combined
-            const totalLanded = price + duty + shippingAndHandling;
+            const shippingAndHandling = shipping + sdlMargin;
+            const totalLanded = totalPrice + duty + shippingAndHandling;
             
             // Update cost summary display
-            document.getElementById(`item-cost-${productId}`).textContent = `$${price.toFixed(2)}`;
+            document.getElementById(`item-cost-${productId}`).textContent = `$${totalPrice.toFixed(2)} (${quantity}x $${price.toFixed(2)})`;
             document.getElementById(`duty-cost-${productId}`).textContent = `$${duty.toFixed(2)}`;
             document.getElementById(`shipping-cost-${productId}`).textContent = `$${shippingAndHandling.toFixed(2)}`;
             document.getElementById(`total-cost-${productId}`).textContent = `$${totalLanded.toFixed(2)}`;
@@ -1380,8 +1469,9 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
                 vendorGroups[vendor][productIndex].deleted = true;
             }
             
-            // Remove from confirmed prices
+            // Remove from confirmed prices and quantities
             confirmedPrices.delete(productId);
+            delete productQuantities[productId];
             
             // Animate deletion
             const productItem = document.getElementById(`product-item-${productId}`);
@@ -1570,10 +1660,19 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
                     const hasScrapedPrice = product.price && product.price > 0;
                     const displayPrice = hasScrapedPrice ? product.price.toFixed(2) : '';
                     
+                    // Initialize quantity
+                    productQuantities[productId] = 1;
+                    
                     // Determine data completeness
                     const dataStatus = product.dataCompleteness || {};
                     const completenessScore = Object.values(dataStatus).filter(v => v).length;
                     const totalMetrics = Object.keys(dataStatus).length || 5;
+                    
+                    // Format product name with variant
+                    let productNameHTML = product.name;
+                    if (product.variant) {
+                        productNameHTML = `${product.name} <span class="product-variant">${product.variant}</span>`;
+                    }
                     
                     vendorHTML += `
                         <div class="product-item ${vendorClass}" id="product-item-${productId}">
@@ -1584,7 +1683,7 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
                             <div class="product-details">
                                 <div class="product-name">
                                     <a href="${product.url}" target="_blank" title="View product page">
-                                        ${product.name}
+                                        ${productNameHTML}
                                     </a>
                                 </div>
                                 <div class="product-info">
@@ -1592,9 +1691,20 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
                                     <span>🚢 Est. shipping: $${product.shippingCost || 0}</span>
                                     <span>📊 Data: ${completenessScore}/${totalMetrics}</span>
                                 </div>
+                                
+                                <!-- QUANTITY SELECTOR -->
+                                <div class="quantity-selector">
+                                    <span class="quantity-label">Quantity:</span>
+                                    <div class="quantity-controls">
+                                        <button type="button" class="qty-btn" onclick="updateQuantity('${productId}', -1)">−</button>
+                                        <div class="qty-display" id="qty-display-${productId}">1</div>
+                                        <button type="button" class="qty-btn" onclick="updateQuantity('${productId}', 1)">+</button>
+                                    </div>
+                                </div>
+                                
                                 <div class="price-input-section">
                                     <label class="price-input-label" for="price-${productId}">
-                                        Item Price: 
+                                        Unit Price: 
                                         ${hasScrapedPrice ? 
                                             `<span class="price-found">✓ Found: $${displayPrice} (verify & update if different)</span>` : 
                                             `<span class="price-missing">⚠️ Not found - please check retailer website</span>`}
@@ -1790,22 +1900,24 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
             let totalDeliveryFees = 0;
             const activeProducts = [];
             
-            // Process all products
+            // Process all products with quantities
             scrapedProducts.forEach((product, index) => {
                 if (product.deleted) return;
                 
-                // Get the price from input
+                // Get the price and quantity from inputs
                 const vendor = product.retailer || 'Unknown';
                 const productId = `${vendor.replace(/\s+/g, '')}-${vendorGroups[vendor].indexOf(product)}`;
                 const priceInput = document.getElementById(`price-${productId}`);
+                const quantity = productQuantities[productId] || 1;
                 
                 if (priceInput) {
                     product.price = parseFloat(priceInput.value) || 0;
+                    product.quantity = quantity;
                 }
                 
                 if (product.price > 0) {
-                    totalItemCost += product.price;
-                    totalShippingCost += product.shippingCost || 0;
+                    totalItemCost += product.price * quantity;
+                    totalShippingCost += (product.shippingCost || 0) * quantity;
                     activeProducts.push(product);
                 }
             });
@@ -1819,7 +1931,7 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
             const dutyAmount = totalItemCost * 0.265;
             const subtotal = totalItemCost + dutyAmount + totalDeliveryFees + totalShippingCost;
             const sdlMargin = subtotal * 0.15;
-            const totalShippingAndHandling = totalShippingCost + sdlMargin;  // Combined
+            const totalShippingAndHandling = totalShippingCost + sdlMargin;
             const grandTotal = totalItemCost + dutyAmount + totalDeliveryFees + totalShippingAndHandling;
             
             return {
@@ -1830,7 +1942,7 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
                     totalItemCost,
                     dutyAmount,
                     totalDeliveryFees,
-                    totalShippingAndHandling,  // Combined shipping + SDL margin
+                    totalShippingAndHandling,
                     grandTotal
                 },
                 originalUrls: document.getElementById('productUrls').value
@@ -1842,24 +1954,32 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
             const { totals, products, deletedCount } = calculation;
             
             let html = '';
+            let totalItems = 0;
             
             // Product-by-product breakdown
             if (products.length > 0) {
                 html += '<h3>Product-by-Product Breakdown</h3>';
                 
                 products.forEach(product => {
-                    const duty = product.price * 0.265;
-                    const shipping = product.shippingCost || 50;
-                    const subtotal = product.price + duty + shipping;
+                    const quantity = product.quantity || 1;
+                    const totalPrice = product.price * quantity;
+                    const duty = totalPrice * 0.265;
+                    const shipping = (product.shippingCost || 50) * quantity;
+                    const subtotal = totalPrice + duty + shipping;
                     const sdlMargin = subtotal * 0.15;
-                    const shippingAndHandling = shipping + sdlMargin;  // Combined
-                    const totalLanded = product.price + duty + shippingAndHandling;
+                    const shippingAndHandling = shipping + sdlMargin;
+                    const totalLanded = totalPrice + duty + shippingAndHandling;
+                    
+                    totalItems += quantity;
                     
                     html += `
                         <div class="product-breakdown-item">
-                            <div class="product-breakdown-name">${product.name}</div>
+                            <div class="product-breakdown-name">
+                                ${product.name} ${product.variant ? `<span class="product-variant">${product.variant}</span>` : ''}
+                                ${quantity > 1 ? `<strong>(Qty: ${quantity})</strong>` : ''}
+                            </div>
                             <div class="product-breakdown-details">
-                                <span>Price: $${product.price.toFixed(2)}</span>
+                                <span>Price: $${totalPrice.toFixed(2)}</span>
                                 <span>Duty: $${duty.toFixed(2)}</span>
                                 <span>Shipping & Handling: $${shippingAndHandling.toFixed(2)}</span>
                                 <span class="product-breakdown-total">Total: $${totalLanded.toFixed(2)}</span>
@@ -1879,7 +1999,7 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
             html += `
                 <h3 style="margin-top: 30px;">Order Total Summary</h3>
                 <div class="cost-item">
-                    <span class="cost-label">Total Item Cost (${products.length} items):</span>
+                    <span class="cost-label">Total Item Cost (${totalItems} items):</span>
                     <span class="cost-value">$${totals.totalItemCost.toFixed(2)}</span>
                 </div>
                 <div class="cost-item">
