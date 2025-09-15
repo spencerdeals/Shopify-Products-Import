@@ -1040,44 +1040,251 @@
 
         @media (max-width: 768px) {
             .calculator-page {
+                padding: 0;
+            }
+            
+            .calculator-content {
                 padding: 20px 15px;
             }
             
             .intro-page {
-                padding: 30px 10px;
+                padding: 20px 15px;
             }
             
             .intro-hero {
                 padding: 30px 20px;
+                margin-bottom: 30px;
             }
             
             .intro-hero h1 {
-                font-size: 28px;
+                font-size: 24px;
                 flex-direction: column;
                 gap: 10px;
+            }
+            
+            .ship-icon {
+                font-size: 32px;
+            }
+            
+            .intro-subtitle {
+                font-size: 16px;
             }
             
             .steps-container {
                 grid-template-columns: 1fr;
                 gap: 15px;
+                margin: 30px auto;
+            }
+            
+            .step-card {
+                padding: 20px 15px;
+            }
+            
+            .step-icon {
+                font-size: 36px;
+                margin-bottom: 10px;
+            }
+            
+            .step-title {
+                font-size: 16px;
             }
             
             .start-button {
                 padding: 15px 30px;
                 font-size: 18px;
+                width: 100%;
+                max-width: 300px;
             }
             
             h1 {
-                font-size: 24px;
+                font-size: 22px;
+                margin-bottom: 8px;
             }
             
+            .new-badge {
+                font-size: 12px;
+                padding: 3px 8px;
+            }
+            
+            .subtitle {
+                font-size: 14px;
+                margin-bottom: 20px;
+                padding: 0 10px;
+            }
+            
+            /* Progress bar mobile layout */
+            .progress-bar {
+                padding: 15px 10px;
+                overflow-x: auto;
+                margin-bottom: 20px;
+            }
+            
+            .progress-step {
+                flex-direction: column;
+                align-items: center;
+                margin: 0 8px;
+                min-width: 60px;
+            }
+            
+            .progress-step span {
+                font-size: 11px;
+                text-align: center;
+                margin-top: 5px;
+            }
+            
+            .progress-circle {
+                width: 30px;
+                height: 30px;
+                font-size: 12px;
+                margin-right: 0;
+            }
+            
+            .progress-line {
+                display: none;
+            }
+            
+            /* Warning boxes mobile */
+            .warning-box, .critical-warning, .forwarder-address {
+                padding: 12px;
+                margin-bottom: 20px;
+                border-radius: 4px;
+                margin-left: -15px;
+                margin-right: -15px;
+                padding-left: 20px;
+                padding-right: 15px;
+            }
+            
+            .warning-header {
+                font-size: 14px;
+            }
+            
+            .warning-text {
+                font-size: 13px;
+            }
+            
+            .forwarder-name {
+                font-size: 18px;
+            }
+            
+            .forwarder-details {
+                font-size: 14px;
+            }
+            
+            .forwarder-note {
+                font-size: 13px;
+                padding: 10px 0 0 0;
+            }
+            
+            /* Form elements mobile */
+            label {
+                font-size: 13px;
+            }
+            
+            input, textarea {
+                font-size: 16px; /* Prevents zoom on iOS */
+                padding: 10px 12px;
+            }
+            
+            textarea {
+                min-height: 120px;
+            }
+            
+            /* Buttons mobile */
+            button {
+                padding: 12px 20px;
+                font-size: 15px;
+                margin: 8px 4px;
+            }
+            
+            .button-group {
+                flex-direction: column;
+                gap: 10px;
+                margin-top: 20px;
+            }
+            
+            .button-group button {
+                width: 100%;
+                margin: 0;
+            }
+            
+            /* Vendor groups mobile */
+            .vendor-group {
+                margin-left: -15px;
+                margin-right: -15px;
+                padding: 15px;
+                border-radius: 0;
+                margin-bottom: 15px;
+            }
+            
+            .vendor-header {
+                font-size: 18px;
+                margin-bottom: 12px;
+            }
+            
+            /* Product items mobile */
             .product-item {
                 flex-direction: column;
+                padding: 12px;
+                margin-bottom: 12px;
             }
             
             .product-image {
                 width: 100%;
                 height: 200px;
+                margin-bottom: 12px;
+            }
+            
+            .product-name {
+                font-size: 14px;
+                margin-bottom: 6px;
+            }
+            
+            .product-variant {
+                font-size: 12px;
+                padding: 2px 6px;
+                margin-left: 5px;
+            }
+            
+            .product-info {
+                font-size: 12px;
+                margin-bottom: 8px;
+            }
+            
+            .product-info span {
+                display: block;
+                margin-bottom: 4px;
+            }
+            
+            /* Quantity selector mobile */
+            .quantity-selector {
+                padding: 8px;
+                margin-bottom: 8px;
+            }
+            
+            .quantity-label {
+                font-size: 13px;
+            }
+            
+            .qty-btn {
+                width: 35px;
+                height: 35px;
+                font-size: 20px;
+            }
+            
+            .qty-display {
+                width: 60px;
+                font-size: 18px;
+            }
+            
+            /* Price input mobile */
+            .price-input-section {
+                padding: 10px;
+                margin-top: 8px;
+            }
+            
+            .price-input-label {
+                font-size: 12px;
+                margin-bottom: 6px;
             }
             
             .price-input-container {
@@ -1085,12 +1292,156 @@
                 gap: 10px;
             }
             
+            .price-input {
+                width: 100%;
+            }
+            
+            .price-input input {
+                width: 100%;
+                font-size: 16px; /* Prevents zoom */
+            }
+            
             .price-buttons {
                 width: 100%;
+                display: flex;
+                gap: 8px;
             }
             
             .price-btn {
                 flex: 1;
+                padding: 10px 12px;
+                font-size: 12px;
+            }
+            
+            .price-status {
+                font-size: 11px;
+                margin-top: 6px;
+            }
+            
+            /* Product cost summary mobile */
+            .product-cost-summary {
+                padding: 12px;
+                margin-top: 12px;
+            }
+            
+            .cost-summary-row {
+                font-size: 13px;
+                margin-bottom: 6px;
+            }
+            
+            .cost-summary-total {
+                font-size: 15px;
+            }
+            
+            .delete-product-btn {
+                padding: 10px 15px;
+                font-size: 13px;
+                margin-top: 10px;
+            }
+            
+            /* Delivery fee mobile */
+            .delivery-fee-input {
+                margin-top: 15px;
+                padding: 15px;
+                margin-left: -12px;
+                margin-right: -12px;
+            }
+            
+            .delivery-fee-input label {
+                font-size: 14px;
+            }
+            
+            .delivery-fee-input small {
+                font-size: 11px;
+            }
+            
+            /* Cost breakdown mobile */
+            .cost-breakdown {
+                padding: 15px;
+                margin-bottom: 20px;
+                margin-left: -15px;
+                margin-right: -15px;
+            }
+            
+            .cost-breakdown h3 {
+                font-size: 16px;
+                margin-bottom: 15px;
+            }
+            
+            .product-breakdown-item {
+                padding: 10px;
+                margin-bottom: 10px;
+                font-size: 13px;
+            }
+            
+            .product-breakdown-name {
+                font-size: 13px;
+                margin-bottom: 5px;
+            }
+            
+            .product-breakdown-details {
+                font-size: 12px;
+                gap: 8px;
+            }
+            
+            .cost-item {
+                padding: 10px 0;
+                font-size: 14px;
+            }
+            
+            .total-row {
+                padding: 15px;
+                margin-top: 15px;
+            }
+            
+            .total-row .cost-label {
+                font-size: 18px;
+            }
+            
+            .total-row .cost-value {
+                font-size: 20px;
+            }
+            
+            /* Confirmation checkbox mobile */
+            .confirmation-checkbox {
+                padding: 15px;
+                margin-bottom: 20px;
+                margin-left: -15px;
+                margin-right: -15px;
+            }
+            
+            .checkbox-container {
+                gap: 10px;
+            }
+            
+            .checkbox-label {
+                font-size: 13px;
+                line-height: 1.5;
+            }
+            
+            .checkbox-label strong {
+                font-size: 14px;
+                margin-bottom: 8px;
+            }
+            
+            /* Loading mobile */
+            .loading-text {
+                font-size: 14px;
+                padding: 0 20px;
+            }
+            
+            /* Error mobile */
+            .error {
+                padding: 12px;
+                margin: 15px -15px;
+                font-size: 14px;
+            }
+            
+            /* Info text mobile */
+            .info-text {
+                font-size: 10px;
+                margin-top: 30px;
+                padding: 0 10px;
             }
         }
     </style>
