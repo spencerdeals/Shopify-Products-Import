@@ -495,11 +495,11 @@ function getLearnedData(url) {
   return null;
 }
 
-// WAYFAIR-OPTIMIZED SCRAPING
+// WAYFAIR-OPTIMIZED SCRAPING WITH VARIANT SUPPORT
 async function scrapeWithApifyAndBee(url) {
   const retailer = detectRetailer(url);
   
-  // WAYFAIR WITH APIFY (YOUR PURCHASED ACTOR)
+  // WAYFAIR WITH APIFY (YOUR PURCHASED ACTOR) - ENHANCED VARIANT EXTRACTION
   if (retailer === 'Wayfair' && apifyClient) {
     try {
       console.log('   🔄 Using Apify Wayfair actor...');
@@ -520,61 +520,125 @@ async function scrapeWithApifyAndBee(url) {
       
       const { items } = await apifyClient.dataset(run.defaultDatasetId).listItems();
       
-      // DEBUG: Log what we got
       console.log('   📋 Items returned:', items?.length || 0);
       
       if (items && items.length > 0) {
         const item = items[0];
         
-        // DEBUG: Log available fields
-        console.log('   📋 Item keys:', Object.keys(item));
-        console.log('   📋 Raw item sample:', JSON.stringify(item).substring(0, 500));
+        // DEBUG: See structure
+        console.log('   📋 Item has these fields:', Object.keys(item).join(', '));
         
-        // Try multiple price fields
+        // Extract price - try multiple possible fields
         let price = null;
-        const priceFields = ['price', 'salePrice', 'currentPrice', 'finalPrice', 'priceInfo'];
-        for (const field of priceFields) {
-          if (item[field]) {
-            console.log(`   💰 Found price in field '${field}':`, item[field]);
-            if (typeof item[field] === 'object' && item[field].value) {
-              price = parseFloat(item[field].value);
-            } else if (typeof item[field] === 'string') {
-              price = parseFloat(item[field].replace(/[^0-9.]/g, ''));
-            } else if (typeof item[field] === 'number') {
-              price = item[field];
+        if (item.price) {
+          if (typeof item.price === 'object') {
+            // Could be {value: 123, currency: 'USD'}
+            price = item.price.value || item.price.amount || parseFloat(item.price.toString());
+          } else {
+            price = typeof item.price === 'string' ? 
+              parseFloat(item.price.replace(/[^0-9.]/g, '')) : 
+              item.price;
+          }
+        } else if (item.salePrice) {
+          price = parseFloat(item.salePrice.toString().replace(/[^0-9.]/g, ''));
+        } else if (item.currentPrice) {
+          price = parseFloat(item.currentPrice.toString().replace(/[^0-9.]/g, ''));
+        }
+        
+        // ENHANCED VARIANT EXTRACTION - MULTIPLE METHODS
+        let variant = null;
+        
+        // Method 1: selectedOptions object
+        if (item.selectedOptions && typeof item.selectedOptions === 'object') {
+          const options = [];
+          for (const [key, value] of Object.entries(item.selectedOptions)) {
+            if (value && value !== 'null' && value !== 'undefined') {
+              // Clean up the key name (remove underscores, capitalize)
+              const cleanKey = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+              options.push(`${cleanKey}: ${value}`);
             }
-            if (price) break;
+          }
+          if (options.length > 0) {
+            variant = options.join(', ');
           }
         }
         
-        // Extract variant
-        let variant = null;
-        if (item.selectedOptions && typeof item.selectedOptions === 'object') {
-          variant = Object.entries(item.selectedOptions)
-            .map(([key, value]) => `${key}: ${value}`)
-            .join(', ');
+        // Method 2: options array
+        if (!variant && item.options && Array.isArray(item.options)) {
+          const selectedOptions = item.options
+            .filter(opt => opt.selected || opt.isSelected)
+            .map(opt => `${opt.name}: ${opt.value}`);
+          if (selectedOptions.length > 0) {
+            variant = selectedOptions.join(', ');
+          }
         }
         
-        // Better image selection
-        let image = item.mainImage || item.primaryImage;
-        if (!image && item.images && Array.isArray(item.images)) {
-          // Try to find a main image, not a detail shot
-          image = item.images.find(img => 
-            !img.includes('detail') && 
-            !img.includes('zoom') && 
-            !img.includes('swatch')
-          ) || item.images[0];
+        // Method 3: direct variant fields
+        if (!variant) {
+          const variantParts = [];
+          if (item.color) variantParts.push(`Color: ${item.color}`);
+          if (item.size) variantParts.push(`Size: ${item.size}`);
+          if (item.material) variantParts.push(`Material: ${item.material}`);
+          if (item.style) variantParts.push(`Style: ${item.style}`);
+          if (item.pattern) variantParts.push(`Pattern: ${item.pattern}`);
+          if (item.finish) variantParts.push(`Finish: ${item.finish}`);
+          
+          if (variantParts.length > 0) {
+            variant = variantParts.join(', ');
+          }
         }
         
-        console.log('   ✅ Apify got:', item.title ? item.title.substring(0, 50) : 'No title');
-        console.log('   💰 Final price:', price || 'Not found');
+        // Method 4: selectedVariant or variant field
+        if (!variant && (item.selectedVariant || item.variant)) {
+          variant = item.selectedVariant || item.variant;
+        }
+        
+        // Method 5: Check for variant in the title (like "Grey, 5-Piece")
+        if (!variant && item.title) {
+          // Look for patterns like "Name, Color/Size" in title
+          const titleMatch = item.title.match(/,\s*([^,]+(?:,\s*[^,]+)?)$/);
+          if (titleMatch) {
+            variant = titleMatch[1].trim();
+          }
+        }
+        
+        console.log('   🎨 Variant found:', variant || 'None');
+        
+        // Better image selection - avoid detail shots
+        let image = null;
+        if (item.mainImage) {
+          image = item.mainImage;
+        } else if (item.primaryImage) {
+          image = item.primaryImage;
+        } else if (item.images && Array.isArray(item.images) && item.images.length > 0) {
+          // Find the first non-detail image
+          image = item.images.find(img => {
+            if (typeof img === 'string') {
+              const imgLower = img.toLowerCase();
+              return !imgLower.includes('detail') && 
+                     !imgLower.includes('zoom') && 
+                     !imgLower.includes('dimension') &&
+                     !imgLower.includes('lifestyle') &&
+                     !imgLower.includes('room');
+            }
+            return false;
+          }) || item.images[0];
+        } else if (item.image) {
+          image = item.image;
+        }
+        
+        // Get the actual title
+        const title = item.title || item.name || item.productName || 'Wayfair Product';
+        
+        console.log('   ✅ Apify got:', title.substring(0, 50));
+        console.log('   💰 Price:', price || 'Not found');
         
         return {
           price: price,
-          title: item.title || item.name || 'Wayfair Product',
-          image: image || item.image,
+          title: title,
+          image: image,
           variant: variant,
-          sku: item.sku || item.productId,
+          sku: item.sku || item.productId || item.itemNumber,
           success: true
         };
       } else {
@@ -795,9 +859,11 @@ app.post('/api/scrape', scrapeRateLimiter, async (req, res) => {
     
     const successful = products.filter(p => p.price).length;
     const fromCache = products.filter(p => p.fromCache).length;
+    const withVariants = products.filter(p => p.variant).length;
     
     console.log(`\n========================================`);
     console.log(`RESULTS: ${successful}/${products.length} successful`);
+    console.log(`With variants: ${withVariants}`);
     console.log(`========================================\n`);
     
     res.json({ 
@@ -806,7 +872,8 @@ app.post('/api/scrape', scrapeRateLimiter, async (req, res) => {
         total: products.length,
         successful: successful,
         fromCache: fromCache,
-        failed: products.length - successful
+        failed: products.length - successful,
+        withVariants: withVariants
       }
     });
     
