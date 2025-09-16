@@ -528,17 +528,36 @@ async function scrapeWithApifyAndBee(url) {
         // DEBUG: See structure
         console.log('   📋 Item has these fields:', Object.keys(item).join(', '));
         
-        // Extract price - try multiple possible fields
+        // Extract price - check both sale and regular price
         let price = null;
+        let salePrice = null;
+        let regularPrice = null;
+        
+        // Get sale price
         if (item.price) {
           if (typeof item.price === 'object') {
-            // Could be {value: 123, currency: 'USD'}
-            price = item.price.value || item.price.amount || parseFloat(item.price.toString());
+            salePrice = item.price.value || item.price.amount || parseFloat(item.price.toString());
           } else {
-            price = typeof item.price === 'string' ? 
+            salePrice = typeof item.price === 'string' ? 
               parseFloat(item.price.replace(/[^0-9.]/g, '')) : 
               item.price;
           }
+        }
+        
+        // Get regular price
+        if (item.regular_price) {
+          regularPrice = typeof item.regular_price === 'string' ? 
+            parseFloat(item.regular_price.replace(/[^0-9.]/g, '')) : 
+            item.regular_price;
+        }
+        
+        // Use the higher price (regular price if available, otherwise sale price)
+        if (regularPrice && regularPrice > 0) {
+          price = regularPrice;
+          console.log(`   💰 Using regular price: ${regularPrice} (sale price was ${salePrice})`);
+        } else if (salePrice && salePrice > 0) {
+          price = salePrice;
+          console.log(`   💰 Using sale price: ${salePrice}`);
         } else if (item.salePrice) {
           price = parseFloat(item.salePrice.toString().replace(/[^0-9.]/g, ''));
         } else if (item.currentPrice) {
