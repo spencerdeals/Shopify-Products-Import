@@ -119,12 +119,33 @@ app.use((req, res, next) => {
   next();
 });
 
-// Request logging
+// Request logging and debugging
 app.use((req, res, next) => {
   const timestamp = new Date().toISOString();
   console.log(`[${timestamp}] ${req.method} ${req.path} - ${req.ip}`);
   next();
 });
+
+// Debug: Check what files exist
+console.log('Current directory:', __dirname);
+console.log('Looking for frontend at:', path.join(__dirname, '../frontend'));
+try {
+  const frontendPath = path.join(__dirname, '../frontend');
+  if (fs.existsSync(frontendPath)) {
+    const files = fs.readdirSync(frontendPath);
+    console.log('Frontend files found:', files);
+  } else {
+    console.log('❌ Frontend directory not found at expected location');
+    // Try alternative location
+    const altPath = path.join(__dirname, 'frontend');
+    if (fs.existsSync(altPath)) {
+      const files = fs.readdirSync(altPath);
+      console.log('Frontend files found at alternate location:', files);
+    }
+  }
+} catch (err) {
+  console.error('Error checking frontend directory:', err);
+}
 
 // Serve frontend - with explicit root handler
 app.get('/', (req, res) => {
