@@ -499,20 +499,80 @@ async function scrapeWithApifyAndBee(url) {
   const retailer = detectRetailer(url);
   
   // WAYFAIR WITH APIFY (YOUR PURCHASED ACTOR)
-  if (retailer === 'Wayfair' && apifyClient) {
-    try {
-      console.log('   🔄 Using Apify Wayfair actor...');
+// WAYFAIR WITH APIFY (YOUR PURCHASED ACTOR)
+if (retailer === 'Wayfair' && apifyClient) {
+  try {
+    console.log('   🔄 Using Apify Wayfair actor...');
+    
+    const run = await apifyClient.actor('123webdata/wayfair-scraper').call({
+      productUrls: [url],
+      includeOptionDetails: true,
+      includeAllImages: true,
+      proxy: {
+        useApifyProxy: true,
+        apifyProxyCountry: 'US'
+      },
+      maxRequestRetries: 3
+    });
+    
+    console.log('   ⏳ Waiting for Wayfair data...');
+    await apifyClient.run(run.id).waitForFinish({ waitSecs: 60 });
+    
+    const { items } = await apifyClient.dataset(run.defaultDatasetId).listItems();
+    
+    // ADD DEBUGGING HERE
+    console.log('   📋 Items returned:', items?.length || 0);
+    if (items && items.length > 0) {
+      const item = items[0];
+      console.log('   📋 Item keys:', Object.keys(item));
       
-      const run = await apifyClient.actor('123webdata/wayfair-scraper').call({
-        productUrls: [url],
-        includeOptionDetails: true,
-        includeAllImages: true,
-        proxy: {
-          useApifyProxy: true,
-          apifyProxyCountry: 'US'
-        },
-        maxRequestRetries: 3
-      });
+      // Log first 500 chars to see structure
+      console.log('   📋 Raw item:', JSON.stringify(item).substring(0, 500));
+      
+      // Try different possible field names
+      const title = item.title || item.name || item.productName || item.product_name || null;
+      const price = item.price || item.salePrice || item.currentPrice || item.product_price || null;
+      
+      console.log('   ✅ Apify got:', title ? title.substring(0, 50) : 'No title');
+      console.log('   💰 Price field:', price);
+      
+      // Extract price with better parsing
+      let finalPrice = null;
+      if (price) {
+        if (typeof price === 'number') {
+          finalPrice = price;
+        } else if (typeof price === 'string') {
+          finalPrice = parseFloat(price.replace(/[^0-9.]/g, ''));
+        } else if (typeof price === 'object' && price.value) {
+          finalPrice = parseFloat(price.value);
+        }
+      }
+      
+      // Extract variant
+      let variant = null;
+      if (item.selectedOptions && typeof item.selectedOptions === 'object') {
+        variant = Object.entries(item.selectedOptions)
+          .map(([key, value]) => `${key}: ${value}`)
+          .join(', ');
+      } else if (item.options) {
+        variant = item.options;
+      }
+      
+      return {
+        price: finalPrice,
+        title: title || 'Wayfair Product',
+        image: item.images?.[0] || item.image || item.mainImage,
+        variant: variant,
+        sku: item.sku || item.productId || item.product_id,
+        success: !!title
+      };
+    } else {
+      console.log('   ⚠️ No items returned from Apify');
+    }
+  } catch (error) {
+    console.log('   ⚠️ Apify failed:', error.message);
+  }
+}
       
       console.log('   ⏳ Waiting for Wayfair data...');
       await apifyClient.run(run.id).waitForFinish({ waitSecs: 60 });
