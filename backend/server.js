@@ -119,7 +119,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// Request logging and debugging
+// Request logging
 app.use((req, res, next) => {
   const timestamp = new Date().toISOString();
   console.log(`[${timestamp}] ${req.method} ${req.path} - ${req.ip}`);
@@ -136,42 +136,25 @@ try {
     console.log('Frontend files found:', files);
   } else {
     console.log('❌ Frontend directory not found at expected location');
-    // Try alternative location
-    const altPath = path.join(__dirname, 'frontend');
-    if (fs.existsSync(altPath)) {
-      const files = fs.readdirSync(altPath);
-      console.log('Frontend files found at alternate location:', files);
-    }
   }
 } catch (err) {
   console.error('Error checking frontend directory:', err);
 }
 
-// Serve frontend - with explicit root handler
+// CRITICAL: ROOT ROUTE MUST BE FIRST - BEFORE ANY STATIC MIDDLEWARE
 app.get('/', (req, res) => {
+  console.log('Root route handler triggered');
   const indexPath = path.join(__dirname, '../frontend/index.html');
   
-  // Check if file exists
+  console.log('Attempting to serve:', indexPath);
+  console.log('File exists?', fs.existsSync(indexPath));
+  
   if (fs.existsSync(indexPath)) {
+    res.type('html');
     res.sendFile(indexPath);
   } else {
-    // Fallback if frontend folder structure is different
-    const altPath = path.join(__dirname, 'frontend/index.html');
-    if (fs.existsSync(altPath)) {
-      res.sendFile(altPath);
-    } else {
-      res.status(404).send('Frontend index.html not found. Check file structure.');
-    }
+    res.status(404).send('Frontend index.html not found at: ' + indexPath);
   }
-});
-
-// Then serve other static files
-app.use(express.static(path.join(__dirname, '../frontend')));
-app.use(express.static(path.join(__dirname, 'frontend')));
-
-// Explicitly serve index.html for root route
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, '../frontend', 'index.html'));
 });
 
 // Health check
@@ -191,13 +174,17 @@ app.get('/health', (req, res) => {
   });
 });
 
+// NOW serve static files for CSS, JS, images
+app.use(express.static(path.join(__dirname, '../frontend')));
+
 // Rate limiters
 const scrapeRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 50,
   message: 'Too many scraping requests',
   standardHeaders: true,
-  legacyHeaders: false
+  legacyHeaders: false,
+  keyGenerator: (req) => req.ip || 'default'
 });
 
 // Utilities
@@ -588,52 +575,53 @@ function estimateWeightFromPatterns(dimensions, category, name = '') {
   return Math.round(estimatedWeight);
 }
 
-// SHIPPING COST SANITY CHECK
+// SHIPPING COST SANITY CHECK - REALISTIC FOR BERMUDA
 function performShippingSanityCheck(shippingCost, productPrice, category, dimensions) {
   const issues = [];
   let adjustedCost = shippingCost;
   
-  // Check 1: Shipping should rarely exceed product price
-  if (shippingCost > productPrice && productPrice > 100) {
-    issues.push('Shipping exceeds product price');
-    adjustedCost = Math.min(shippingCost, productPrice * 0.5);
+  // Check 1: Shipping can exceed product price for Bermuda
+  // Only flag if shipping is MORE than double the price AND over $400
+  if (shippingCost > productPrice * 2 && shippingCost > 400) {
+    issues.push('Shipping seems excessive for this category');
   }
   
-  // Check 2: Absolute maximums by category
+  // Check 2: Absolute maximums by category (realistic for Bermuda ocean freight)
   const maxShippingByCategory = {
-    'furniture-outdoor': 250,  // Patio sets
-    'furniture-chair': 80,      // Single chairs
-    'furniture-sofa': 300,      // Sofas
-    'furniture-table': 150,     // Tables
-    'furniture-storage': 200,   // Dressers
-    'furniture-bed': 250,       // Beds
-    'electronics': 100,         // TVs, etc
-    'appliances': 350,          // Large appliances
-    'toys': 50,                 // Toys
-    'clothing': 25,             // Clothing
-    'general': 150              // General items
+    'furniture-outdoor': 350,  // Patio sets
+    'furniture-chair': 120,     // Single chairs
+    'furniture-sofa': 400,      // Sofas
+    'furniture-table': 250,     // Tables
+    'furniture-storage': 300,   // Dressers
+    'furniture-bed': 350,       // Beds
+    'electronics': 150,         // TVs, etc
+    'appliances': 450,          // Large appliances
+    'toys': 80,                 // Toys
+    'clothing': 40,             // Clothing
+    'general': 200              // General items
   };
   
-  const maxAllowed = maxShippingByCategory[category] || 150;
+  const maxAllowed = maxShippingByCategory[category] || 200;
   if (adjustedCost > maxAllowed) {
     issues.push(`Exceeds category maximum of $${maxAllowed}`);
     adjustedCost = maxAllowed;
   }
   
-  // Check 3: Minimum shipping
-  if (adjustedCost < 25) {
-    adjustedCost = 25;  // Minimum shipping cost
+  // Check 3: Minimum shipping for Bermuda
+  if (adjustedCost < 35) {
+    adjustedCost = 35;  // Minimum shipping cost for Bermuda
   }
   
-  // Check 4: Volume-based maximum (prevent 66 cu ft = $650 nonsense)
+  // Check 4: Volume-based maximum
   if (dimensions) {
     const cubicFeet = (dimensions.length * dimensions.width * dimensions.height) / 1728;
-    const maxPerCubicFoot = 8;  // $8 per cubic foot maximum
-    const volumeBasedMax = Math.max(25, cubicFeet * maxPerCubicFoot);
+    const maxPerCubicFoot = 10;  // $10 per cubic foot for Bermuda
+    const volumeBasedMax = Math.max(35, cubicFeet * maxPerCubicFoot);
     
-    if (adjustedCost > volumeBasedMax) {
+    if (adjustedCost > volumeBasedMax && cubicFeet < 50) {
+      // Only apply volume cap for items under 50 cubic feet
       issues.push(`Volume-based adjustment from ${cubicFeet.toFixed(1)} cu ft`);
-      adjustedCost = volumeBasedMax;
+      adjustedCost = Math.min(adjustedCost, volumeBasedMax);
     }
   }
   
@@ -648,7 +636,7 @@ function performShippingSanityCheck(shippingCost, productPrice, category, dimens
 // SIMPLIFIED SHIPPING CALCULATION WITH SANITY CHECKS
 function calculateShippingCost(dimensions, weight, price, category) {
   if (!dimensions) {
-    return Math.round(Math.max(25, price * 0.08));
+    return Math.round(Math.max(35, price * 0.08));
   }
   
   const cubicInches = dimensions.length * dimensions.width * dimensions.height;
@@ -657,7 +645,7 @@ function calculateShippingCost(dimensions, weight, price, category) {
   // Base ocean freight cost
   const baseCost = Math.max(15, cubicFeet * SHIPPING_RATE_PER_CUBIC_FOOT);
   
-  // Heavy weight fee only (removed oversize and value fees)
+  // Heavy weight fee
   const heavyWeightFee = weight > 150 ? weight * 0.25 : 0;
   
   // Handling fee
@@ -732,7 +720,7 @@ function getLearnedData(url) {
 async function scrapeWithApifyAndBee(url) {
   const retailer = detectRetailer(url);
   
-  // WAYFAIR WITH APIFY (YOUR PURCHASED ACTOR) - ENHANCED VARIANT EXTRACTION
+  // WAYFAIR WITH APIFY (YOUR PURCHASED ACTOR)
   if (retailer === 'Wayfair' && apifyClient) {
     try {
       console.log('   🔄 Using Apify Wayfair actor...');
@@ -758,15 +746,11 @@ async function scrapeWithApifyAndBee(url) {
       if (items && items.length > 0) {
         const item = items[0];
         
-        // DEBUG: See structure
-        console.log('   📋 Item has these fields:', Object.keys(item).join(', '));
-        
-        // Extract price - check both sale and regular price
+        // Extract price
         let price = null;
         let salePrice = null;
         let regularPrice = null;
         
-        // Get sale price
         if (item.price) {
           if (typeof item.price === 'object') {
             salePrice = item.price.value || item.price.amount || parseFloat(item.price.toString());
@@ -777,35 +761,28 @@ async function scrapeWithApifyAndBee(url) {
           }
         }
         
-        // Get regular price
         if (item.regular_price) {
           regularPrice = typeof item.regular_price === 'string' ? 
             parseFloat(item.regular_price.replace(/[^0-9.]/g, '')) : 
             item.regular_price;
         }
         
-        // Use the higher price (regular price if available, otherwise sale price)
+        // Use regular price if available, otherwise sale price
         if (regularPrice && regularPrice > 0) {
           price = regularPrice;
-          console.log(`   💰 Using regular price: ${regularPrice} (sale price was ${salePrice})`);
+          console.log(`   💰 Using regular price: ${regularPrice}`);
         } else if (salePrice && salePrice > 0) {
           price = salePrice;
           console.log(`   💰 Using sale price: ${salePrice}`);
-        } else if (item.salePrice) {
-          price = parseFloat(item.salePrice.toString().replace(/[^0-9.]/g, ''));
-        } else if (item.currentPrice) {
-          price = parseFloat(item.currentPrice.toString().replace(/[^0-9.]/g, ''));
         }
         
-        // ENHANCED VARIANT EXTRACTION - MULTIPLE METHODS
+        // Extract variant information
         let variant = null;
         
-        // Method 1: selectedOptions object
         if (item.selectedOptions && typeof item.selectedOptions === 'object') {
           const options = [];
           for (const [key, value] of Object.entries(item.selectedOptions)) {
             if (value && value !== 'null' && value !== 'undefined') {
-              // Clean up the key name (remove underscores, capitalize)
               const cleanKey = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
               options.push(`${cleanKey}: ${value}`);
             }
@@ -815,75 +792,17 @@ async function scrapeWithApifyAndBee(url) {
           }
         }
         
-        // Method 2: options array
-        if (!variant && item.options && Array.isArray(item.options)) {
-          const selectedOptions = item.options
-            .filter(opt => opt.selected || opt.isSelected)
-            .map(opt => `${opt.name}: ${opt.value}`);
-          if (selectedOptions.length > 0) {
-            variant = selectedOptions.join(', ');
-          }
+        // Extract image
+        let image = item.mainImage || item.primaryImage || item.image;
+        if (!image && item.images && Array.isArray(item.images) && item.images.length > 0) {
+          image = item.images[0];
         }
         
-        // Method 3: direct variant fields
-        if (!variant) {
-          const variantParts = [];
-          if (item.color) variantParts.push(`Color: ${item.color}`);
-          if (item.size) variantParts.push(`Size: ${item.size}`);
-          if (item.material) variantParts.push(`Material: ${item.material}`);
-          if (item.style) variantParts.push(`Style: ${item.style}`);
-          if (item.pattern) variantParts.push(`Pattern: ${item.pattern}`);
-          if (item.finish) variantParts.push(`Finish: ${item.finish}`);
-          
-          if (variantParts.length > 0) {
-            variant = variantParts.join(', ');
-          }
-        }
-        
-        // Method 4: selectedVariant or variant field
-        if (!variant && (item.selectedVariant || item.variant)) {
-          variant = item.selectedVariant || item.variant;
-        }
-        
-        // Method 5: Check for variant in the title (like "Grey, 5-Piece")
-        if (!variant && item.title) {
-          // Look for patterns like "Name, Color/Size" in title
-          const titleMatch = item.title.match(/,\s*([^,]+(?:,\s*[^,]+)?)$/);
-          if (titleMatch) {
-            variant = titleMatch[1].trim();
-          }
-        }
-        
-        console.log('   🎨 Variant found:', variant || 'None');
-        
-        // Better image selection - avoid detail shots
-        let image = null;
-        if (item.mainImage) {
-          image = item.mainImage;
-        } else if (item.primaryImage) {
-          image = item.primaryImage;
-        } else if (item.images && Array.isArray(item.images) && item.images.length > 0) {
-          // Find the first non-detail image
-          image = item.images.find(img => {
-            if (typeof img === 'string') {
-              const imgLower = img.toLowerCase();
-              return !imgLower.includes('detail') && 
-                     !imgLower.includes('zoom') && 
-                     !imgLower.includes('dimension') &&
-                     !imgLower.includes('lifestyle') &&
-                     !imgLower.includes('room');
-            }
-            return false;
-          }) || item.images[0];
-        } else if (item.image) {
-          image = item.image;
-        }
-        
-        // Get the actual title
         const title = item.title || item.name || item.productName || 'Wayfair Product';
         
         console.log('   ✅ Apify got:', title.substring(0, 50));
         console.log('   💰 Price:', price || 'Not found');
+        console.log('   🎨 Variant:', variant || 'None');
         
         return {
           price: price,
@@ -893,8 +812,6 @@ async function scrapeWithApifyAndBee(url) {
           sku: item.sku || item.productId || item.itemNumber,
           success: true
         };
-      } else {
-        console.log('   ⚠️ No items returned from Apify');
       }
     } catch (error) {
       console.log('   ⚠️ Apify failed:', error.message);
@@ -1068,7 +985,7 @@ async function processProduct(url, index, urls) {
   console.log(`   Packaging: ${packaging}`);
   console.log(`   Dimensions: ${dimensions.length}×${dimensions.width}×${dimensions.height}" (${cubicFeet.toFixed(1)} ft³)`);
   console.log(`   Weight: ${weight} lbs`);
-  console.log(`   Shipping: $${shippingCost} ${shippingCost !== calculateShippingCost(dimensions, weight, scraped.price || 100, 'general') ? '(adjusted)' : ''}`);
+  console.log(`   Shipping: $${shippingCost}`);
   
   // Learn from this product
   learnFromProduct(url, product);
