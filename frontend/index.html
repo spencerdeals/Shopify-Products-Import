@@ -444,6 +444,21 @@
             margin-left: 8px;
         }
 
+        .product-variant.variant-missing {
+            background: #ff9800;
+            animation: pulse 1.5s infinite;
+        }
+
+        .product-variant.variant-saved {
+            background: #4caf50 !important;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.6; }
+            100% { opacity: 1; }
+        }
+
         .product-info {
             font-size: 13px;
             color: #666;
@@ -453,6 +468,37 @@
         .product-info span {
             display: inline-block;
             margin-right: 15px;
+        }
+
+        .variant-input-section {
+            background: #fff3cd;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+
+        .variant-input-section label {
+            font-size: 13px;
+            color: #856404;
+            font-weight: 600;
+        }
+
+        .variant-input-section .variant-input-container {
+            display: flex;
+            gap: 10px;
+            margin-top: 8px;
+        }
+
+        .variant-input-section input {
+            flex: 1;
+            padding: 6px;
+            font-size: 14px;
+        }
+
+        .variant-input-section button {
+            padding: 6px 12px;
+            font-size: 13px;
+            background: #ff5722;
         }
 
         .quantity-selector {
@@ -1040,7 +1086,8 @@ We support Amazon, Wayfair, Walmart, Target, Home Depot, and more!"
                 });
                 
                 if (!response.ok) {
-                    throw new Error('Failed to scrape products');
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'Failed to scrape products');
                 }
                 
                 const data = await response.json();
@@ -1082,6 +1129,7 @@ We support Amazon, Wayfair, Walmart, Target, Home Depot, and more!"
                 products.forEach((product, index) => {
                     const productId = `${vendor.replace(/\s+/g, '')}-${index}`;
                     const hasPrice = product.price && product.price > 0;
+                    const hasVariant = product.variant && product.variant !== 'Not specified';
                     productQuantities[productId] = 1;
                     
                     vendorHTML += `
@@ -1090,12 +1138,30 @@ We support Amazon, Wayfair, Walmart, Target, Home Depot, and more!"
                             <div class="product-details">
                                 <div class="product-name">
                                     <a href="${product.url}" target="_blank">${product.name}</a>
-                                    ${product.variant ? `<span class="product-variant">${product.variant}</span>` : ''}
+                                    ${hasVariant ? 
+                                        `<span class="product-variant">${product.variant}</span>` : 
+                                        `<span class="product-variant variant-missing">⚠️ No variant detected</span>`
+                                    }
                                 </div>
                                 <div class="product-info">
                                     <span>📦 ${product.category}</span>
                                     <span>🚢 Est. shipping: $${product.shippingCost}</span>
+                                    <span>📐 ${product.dimensions ? `${product.dimensions.length}×${product.dimensions.width}×${product.dimensions.height}"` : 'Est. dimensions'}</span>
                                 </div>
+                                
+                                ${!hasVariant ? `
+                                <div class="variant-input-section">
+                                    <label>⚠️ Please specify the variant you selected:</label>
+                                    <div class="variant-input-container">
+                                        <input type="text" 
+                                               id="variant-${productId}" 
+                                               placeholder="e.g., Gray + Blue, 5-Piece Set, Queen Size">
+                                        <button type="button" onclick="saveVariant('${productId}')">
+                                            Save Variant
+                                        </button>
+                                    </div>
+                                </div>
+                                ` : ''}
                                 
                                 <div class="quantity-selector">
                                     <span class="quantity-label">Quantity:</span>
@@ -1171,6 +1237,44 @@ We support Amazon, Wayfair, Walmart, Target, Home Depot, and more!"
             checkAllPricesConfirmed();
         }
 
+        function saveVariant(productId) {
+            const input = document.getElementById(`variant-${productId}`);
+            const variant = input.value.trim();
+            
+            if (!variant) {
+                alert('Please enter the variant details');
+                return;
+            }
+            
+            // Update the product variant
+            const vendorKey = productId.split('-')[0];
+            // Find the vendor key that matches
+            const actualVendor = Object.keys(vendorGroups).find(v => 
+                v.replace(/\s+/g, '') === vendorKey
+            );
+            const index = parseInt(productId.split('-')[1]);
+            
+            if (actualVendor && vendorGroups[actualVendor] && vendorGroups[actualVendor][index]) {
+                vendorGroups[actualVendor][index].variant = variant;
+            }
+            
+            // Update display
+            const variantSpan = document.querySelector(`#product-item-${productId} .product-variant`);
+            if (variantSpan) {
+                variantSpan.textContent = variant;
+                variantSpan.classList.remove('variant-missing');
+                variantSpan.classList.add('variant-saved');
+            }
+            
+            // Hide the input section
+            const section = input.closest('.variant-input-section');
+            if (section) {
+                section.style.display = 'none';
+            }
+            
+            console.log(`✅ Variant saved for ${productId}: ${variant}`);
+        }
+
         function updateQuantity(productId, change) {
             const currentQty = productQuantities[productId] || 1;
             const newQty = Math.max(1, Math.min(99, currentQty + change));
@@ -1179,9 +1283,12 @@ We support Amazon, Wayfair, Walmart, Target, Home Depot, and more!"
             document.getElementById(`qty-display-${productId}`).textContent = newQty;
             
             if (confirmedPrices.has(productId)) {
-                const vendor = productId.split('-')[0];
+                const vendorKey = productId.split('-')[0];
+                const actualVendor = Object.keys(vendorGroups).find(v => 
+                    v.replace(/\s+/g, '') === vendorKey
+                );
                 const index = parseInt(productId.split('-')[1]);
-                confirmPrice(productId, vendor, index, false);
+                confirmPrice(productId, actualVendor, index, false);
             }
         }
 
@@ -1262,7 +1369,8 @@ We support Amazon, Wayfair, Walmart, Target, Home Depot, and more!"
                 if (product.deleted) return;
                 
                 const vendor = product.retailer || 'Unknown';
-                const productId = `${vendor.replace(/\s+/g, '')}-${vendorGroups[vendor].indexOf(product)}`;
+                const vendorKey = vendor.replace(/\s+/g, '');
+                const productId = `${vendorKey}-${vendorGroups[vendor].indexOf(product)}`;
                 const priceInput = document.getElementById(`price-${productId}`);
                 const quantity = productQuantities[productId] || 1;
                 
@@ -1307,7 +1415,7 @@ We support Amazon, Wayfair, Walmart, Target, Home Depot, and more!"
                     <span class="cost-value">$${totals.dutyAmount.toFixed(2)}</span>
                 </div>
                 <div class="cost-item">
-                    <span class="cost-label">Shipping & Handling:</span>
+                    <span class="cost-label">Ocean Freight & Handling:</span>
                     <span class="cost-value">$${totals.totalShippingCost.toFixed(2)}</span>
                 </div>
                 <div class="cost-item total-row">
@@ -1321,8 +1429,69 @@ We support Amazon, Wayfair, Walmart, Target, Home Depot, and more!"
             document.getElementById('createOrderBtn').disabled = !this.checked;
         });
 
+        // CREATE SHOPIFY DRAFT ORDER
         async function createDraftOrder() {
-            alert('Order functionality will be connected to your Shopify store');
+            if (!document.getElementById('confirmVariants').checked) {
+                alert('Please confirm all details first');
+                return;
+            }
+            
+            // Show loading state
+            document.getElementById('createOrderBtn').disabled = true;
+            document.getElementById('createOrderBtn').textContent = 'Creating Order...';
+            
+            try {
+                // Get original URLs that were entered
+                const originalUrls = document.getElementById('productUrls').value;
+                
+                // Prepare order data
+                const orderData = {
+                    products: finalCalculation.products,
+                    totals: finalCalculation.totals,
+                    deliveryFees: {},  // Add if you collect delivery fees
+                    originalUrls: originalUrls,
+                    customer: {
+                        email: prompt('Please enter your email address:'),
+                        name: prompt('Please enter your full name:')
+                    }
+                };
+                
+                if (!orderData.customer.email || !orderData.customer.name) {
+                    throw new Error('Customer information is required');
+                }
+                
+                console.log('Creating Shopify draft order...');
+                
+                // Call the Shopify endpoint directly
+                const response = await fetch('/apps/instant-import/create-draft-order', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(orderData)
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Failed to create order');
+                }
+                
+                const result = await response.json();
+                
+                console.log('Draft order created:', result);
+                
+                // Success! Redirect to Shopify checkout
+                alert(`Order ${result.draftOrderNumber} created successfully!\n\nYou will now be redirected to checkout.`);
+                
+                // Redirect to the Shopify invoice/checkout URL
+                window.location.href = result.checkoutUrl || result.invoiceUrl;
+                
+            } catch (error) {
+                console.error('Order creation failed:', error);
+                alert(`Error: ${error.message}\n\nPlease try again or contact support.`);
+                
+                // Re-enable button
+                document.getElementById('createOrderBtn').disabled = false;
+                document.getElementById('createOrderBtn').textContent = 'Confirm Order';
+            }
         }
     </script>
 </body>
