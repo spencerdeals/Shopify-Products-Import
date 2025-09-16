@@ -18,7 +18,7 @@ const SHOPIFY_WEBHOOK_SECRET = process.env.SHOPIFY_WEBHOOK_SECRET || '';
 const SCRAPINGBEE_API_KEY = process.env.SCRAPINGBEE_API_KEY || '';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'sdl2024admin';
 const BERMUDA_DUTY_RATE = 0.265;
-const SHIPPING_RATE_PER_CUBIC_FOOT = 6;
+const SHIPPING_RATE_PER_CUBIC_FOOT = 8;  // $8 per cubic foot for ocean freight
 const SDL_MARGIN_RATE = 0.15; // Fixed 15%
 const CARD_FEE_RATE = 0.035; // 3.5% credit card fee (hidden in shipping)
 const TEST_MODE = process.env.TEST_MODE === 'true';
@@ -69,7 +69,8 @@ const LEARNING_DB_PATH = path.join(__dirname, 'learning_data.json');
 let LEARNING_DB = {
   products: {},
   patterns: {},
-  retailer_stats: {}
+  retailer_stats: {},
+  dimension_patterns: {}
 };
 
 try {
@@ -97,7 +98,8 @@ console.log(`Email: ${sendgrid ? 'ENABLED' : 'DISABLED'}`);
 console.log(`UPCitemdb: ${USE_UPCITEMDB ? '✅ ENABLED' : '❌ DISABLED'}`);
 console.log(`Apify: ${ENABLE_APIFY && apifyClient ? '✅ ENABLED' : '❌ DISABLED'}`);
 console.log(`ScrapingBee: ${SCRAPINGBEE_API_KEY ? '✅ ENABLED' : '❌ DISABLED'}`);
-console.log('Margin: FIXED 15% + 3.5% card fee (hidden)');
+console.log(`Ocean Freight Rate: $${SHIPPING_RATE_PER_CUBIC_FOOT} per cubic foot`);
+console.log('Margin: FIXED 15% + 3.5% card fee (hidden in shipping)');
 console.log('====================================\n');
 
 // Middleware
@@ -165,11 +167,23 @@ app.get('/health', (req, res) => {
     environment: TEST_MODE ? 'test' : 'production',
     marginStructure: 'fixed-15%',
     cardFee: '3.5% (hidden)',
+    shippingRate: `$${SHIPPING_RATE_PER_CUBIC_FOOT}/cubic foot`,
     services: {
       shopify: !!SHOPIFY_ACCESS_TOKEN,
       upcitemdb: USE_UPCITEMDB,
       apify: !!apifyClient,
       scrapingBee: !!SCRAPINGBEE_API_KEY
+    }
+  });
+});
+
+// Serve complete-order page
+app.get('/complete-order.html', (req, res) => {
+  const completePath = path.join(__dirname, '../frontend', 'complete-order.html');
+  res.sendFile(completePath, (err) => {
+    if (err) {
+      console.error('Error serving complete-order page:', err);
+      res.redirect('/');
     }
   });
 });
@@ -186,6 +200,9 @@ const scrapeRateLimiter = rateLimit({
   legacyHeaders: false,
   keyGenerator: (req) => req.ip || 'default'
 });
+
+// Store pending orders temporarily (in memory for now, could use Redis later)
+const pendingOrders = new Map();
 
 // Utilities
 function generateOrderId() {
@@ -229,6 +246,71 @@ function isSDLDomain(url) {
   }
 }
 
+// COMPREHENSIVE DIMENSION EXTRACTION SYSTEM
+function extractDimensionsFromText(text) {
+  if (!text) return null;
+  
+  // Multiple regex patterns to catch different dimension formats
+  const patterns = [
+    // Standard format: 30" x 24" x 36"
+    /(\d+(?:\.\d+)?)\s*(?:"|''|inches?|in)?\s*[xX×]\s*(\d+(?:\.\d+)?)\s*(?:"|''|inches?|in)?\s*[xX×]\s*(\d+(?:\.\d+)?)\s*(?:"|''|inches?|in)?/,
+    // L x W x H format
+    /(?:L|Length):\s*(\d+(?:\.\d+)?).+?(?:W|Width):\s*(\d+(?:\.\d+)?).+?(?:H|Height):\s*(\d+(?:\.\d+)?)/i,
+    // Dimensions: format
+    /Dimensions?:\s*(\d+(?:\.\d+)?)\s*[xX×]\s*(\d+(?:\.\d+)?)\s*[xX×]\s*(\d+(?:\.\d+)?)/i,
+    // Package dimensions
+    /Package\s+Dimensions?:\s*(\d+(?:\.\d+)?)\s*[xX×]\s*(\d+(?:\.\d+)?)\s*[xX×]\s*(\d+(?:\.\d+)?)/i,
+    // Overall dimensions
+    /Overall:\s*(\d+(?:\.\d+)?)\s*[xX×]\s*(\d+(?:\.\d+)?)\s*[xX×]\s*(\d+(?:\.\d+)?)/i,
+    // Product size
+    /Size:\s*(\d+(?:\.\d+)?)\s*[xX×]\s*(\d+(?:\.\d+)?)\s*[xX×]\s*(\d+(?:\.\d+)?)/i
+  ];
+  
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match) {
+      const dims = {
+        length: parseFloat(match[1]),
+        width: parseFloat(match[2]),
+        height: parseFloat(match[3])
+      };
+      
+      // Validate dimensions are reasonable
+      if (dims.length > 0 && dims.length < 200 && 
+          dims.width > 0 && dims.width < 200 && 
+          dims.height > 0 && dims.height < 200) {
+        return dims;
+      }
+    }
+  }
+  
+  return null;
+}
+
+// Extract weight from text
+function extractWeightFromText(text) {
+  if (!text) return null;
+  
+  const patterns = [
+    { regex: /(\d+(?:\.\d+)?)\s*(?:pounds?|lbs?|lb\.?)/i, multiplier: 1 },
+    { regex: /(\d+(?:\.\d+)?)\s*(?:kilograms?|kgs?|kg\.?)/i, multiplier: 2.205 },
+    { regex: /(\d+(?:\.\d+)?)\s*(?:ounces?|oz\.?)/i, multiplier: 0.0625 },
+    { regex: /Weight:\s*(\d+(?:\.\d+)?)/i, multiplier: 1 }
+  ];
+  
+  for (const { regex, multiplier } of patterns) {
+    const match = text.match(regex);
+    if (match) {
+      const weight = parseFloat(match[1]) * multiplier;
+      if (weight > 0 && weight < 2000) {
+        return Math.round(weight * 10) / 10;
+      }
+    }
+  }
+  
+  return null;
+}
+
 // INTELLIGENT PRODUCT ANALYSIS SYSTEM
 function analyzeProductIntelligently(name, category, retailer) {
   const analysis = {
@@ -242,70 +324,120 @@ function analyzeProductIntelligently(name, category, retailer) {
   
   const nameLower = name.toLowerCase();
   
-  // EXTRACT DIMENSIONS FROM NAME (many products have dimensions in title)
-  const dimPattern = /(\d+(?:\.\d+)?)\s*(?:"|''|inches?|in)?\s*[xX×]\s*(\d+(?:\.\d+)?)\s*(?:"|''|inches?|in)?\s*[xX×]\s*(\d+(?:\.\d+)?)\s*(?:"|''|inches?|in)?/;
-  const dimMatch = name.match(dimPattern);
-  
-  if (dimMatch) {
-    analysis.estimatedDimensions = {
-      length: parseFloat(dimMatch[1]),
-      width: parseFloat(dimMatch[2]),
-      height: parseFloat(dimMatch[3])
-    };
+  // EXTRACT DIMENSIONS FROM NAME
+  const dims = extractDimensionsFromText(name);
+  if (dims) {
+    analysis.estimatedDimensions = dims;
     analysis.confidence = 0.9;
     analysis.reasoning.push('Dimensions found in product name');
   }
   
-  // SPECIFIC PRODUCT TYPE DETECTION
+  // SPECIFIC PRODUCT TYPE DETECTION WITH ACCURATE DIMENSIONS
   if (nameLower.includes('bar stool') || nameLower.includes('counter stool')) {
     analysis.productType = 'bar-stool';
     if (!analysis.estimatedDimensions) {
       analysis.estimatedDimensions = { length: 18, width: 18, height: 30 };
       analysis.estimatedWeight = 25;
     }
-  } else if (nameLower.includes('5 piece') && (nameLower.includes('patio') || nameLower.includes('rattan'))) {
-    analysis.productType = 'patio-set-5pc';
-    analysis.isFlatPackLikely = true;
-    if (!analysis.estimatedDimensions) {
-      // Flat-packed patio set
-      analysis.estimatedDimensions = { length: 48, width: 36, height: 12 };
-      analysis.estimatedWeight = 120;
+  } else if (nameLower.includes('5 piece') || nameLower.includes('5-piece')) {
+    if (nameLower.includes('patio') || nameLower.includes('rattan') || nameLower.includes('outdoor')) {
+      analysis.productType = 'patio-set-5pc';
+      analysis.isFlatPackLikely = true;
+      if (!analysis.estimatedDimensions) {
+        // 5-piece patio sets typically ship in 2-3 large boxes
+        analysis.estimatedDimensions = { length: 54, width: 42, height: 24 };
+        analysis.estimatedWeight = 150;
+      }
+    } else if (nameLower.includes('dining')) {
+      analysis.productType = 'dining-set-5pc';
+      analysis.isFlatPackLikely = true;
+      if (!analysis.estimatedDimensions) {
+        analysis.estimatedDimensions = { length: 60, width: 40, height: 20 };
+        analysis.estimatedWeight = 180;
+      }
     }
-  } else if (nameLower.includes('sofa') && nameLower.includes('seating group')) {
-    analysis.productType = 'outdoor-sofa-set';
-    analysis.isFlatPackLikely = true;
-    if (!analysis.estimatedDimensions) {
-      analysis.estimatedDimensions = { length: 50, width: 40, height: 14 };
-      analysis.estimatedWeight = 140;
+  } else if (nameLower.includes('sofa') || nameLower.includes('couch')) {
+    if (nameLower.includes('sectional')) {
+      analysis.productType = 'sectional-sofa';
+      if (!analysis.estimatedDimensions) {
+        analysis.estimatedDimensions = { length: 108, width: 42, height: 36 };
+        analysis.estimatedWeight = 250;
+      }
+    } else if (nameLower.includes('loveseat')) {
+      analysis.productType = 'loveseat';
+      if (!analysis.estimatedDimensions) {
+        analysis.estimatedDimensions = { length: 64, width: 38, height: 36 };
+        analysis.estimatedWeight = 120;
+      }
+    } else {
+      analysis.productType = 'sofa';
+      if (!analysis.estimatedDimensions) {
+        analysis.estimatedDimensions = { length: 84, width: 38, height: 36 };
+        analysis.estimatedWeight = 160;
+      }
     }
-  } else if (nameLower.includes('chair') && !nameLower.includes('stool')) {
-    analysis.productType = 'chair';
-    if (!analysis.estimatedDimensions) {
-      analysis.estimatedDimensions = { length: 28, width: 28, height: 35 };
-      analysis.estimatedWeight = 35;
+  } else if (nameLower.includes('mattress')) {
+    if (nameLower.includes('king')) {
+      analysis.productType = 'mattress-king';
+      if (!analysis.estimatedDimensions) {
+        analysis.estimatedDimensions = { length: 80, width: 76, height: 12 };
+        analysis.estimatedWeight = 140;
+      }
+    } else if (nameLower.includes('queen')) {
+      analysis.productType = 'mattress-queen';
+      if (!analysis.estimatedDimensions) {
+        analysis.estimatedDimensions = { length: 80, width: 60, height: 12 };
+        analysis.estimatedWeight = 120;
+      }
     }
   } else if (nameLower.includes('table')) {
-    analysis.productType = 'table';
-    if (!analysis.estimatedDimensions) {
-      analysis.estimatedDimensions = { length: 48, width: 30, height: 30 };
-      analysis.estimatedWeight = 60;
-    }
-  }
-  
-  // NUMBER OF PIECES DETECTION (affects dimensions)
-  const piecesMatch = nameLower.match(/(\d+)\s*(?:-)?piece/);
-  if (piecesMatch) {
-    const pieces = parseInt(piecesMatch[1]);
-    if (pieces >= 4 && category.includes('outdoor')) {
+    if (nameLower.includes('coffee')) {
+      analysis.productType = 'coffee-table';
       analysis.isFlatPackLikely = true;
-      analysis.reasoning.push(`${pieces}-piece set likely ships flat-packed`);
+      if (!analysis.estimatedDimensions) {
+        analysis.estimatedDimensions = { length: 48, width: 24, height: 18 };
+        analysis.estimatedWeight = 50;
+      }
+    } else if (nameLower.includes('dining')) {
+      analysis.productType = 'dining-table';
+      analysis.isFlatPackLikely = true;
+      if (!analysis.estimatedDimensions) {
+        analysis.estimatedDimensions = { length: 72, width: 42, height: 30 };
+        analysis.estimatedWeight = 120;
+      }
+    }
+  } else if (nameLower.includes('chair')) {
+    if (nameLower.includes('office')) {
+      analysis.productType = 'office-chair';
+      if (!analysis.estimatedDimensions) {
+        analysis.estimatedDimensions = { length: 28, width: 28, height: 42 };
+        analysis.estimatedWeight = 40;
+      }
+    } else if (nameLower.includes('dining')) {
+      analysis.productType = 'dining-chair';
+      analysis.isFlatPackLikely = true;
+      if (!analysis.estimatedDimensions) {
+        analysis.estimatedDimensions = { length: 22, width: 20, height: 38 };
+        analysis.estimatedWeight = 25;
+      }
+    } else {
+      analysis.productType = 'chair';
+      if (!analysis.estimatedDimensions) {
+        analysis.estimatedDimensions = { length: 30, width: 30, height: 36 };
+        analysis.estimatedWeight = 35;
+      }
     }
   }
   
-  // RETAILER-SPECIFIC LOGIC
-  if (retailer === 'Wayfair' && category.includes('furniture')) {
+  // Detect flat-pack from keywords
+  if (nameLower.includes('assembly required') || 
+      nameLower.includes('easy assembly') || 
+      nameLower.includes('flat pack') ||
+      nameLower.includes('rta') ||
+      retailer === 'IKEA' ||
+      (retailer === 'Wayfair' && category.includes('furniture'))) {
     analysis.isFlatPackLikely = true;
-    analysis.reasoning.push('Wayfair furniture typically ships flat-packed');
+    analysis.reasoning.push('Flat-pack detected from keywords/retailer');
   }
   
   return analysis;
@@ -331,345 +463,102 @@ function categorizeProduct(name, url) {
   return 'general';
 }
 
-// FLAT-PACK INTELLIGENCE SYSTEM
-function isFlatPackable(category, productName, retailer) {
-  const name = productName.toLowerCase();
+// CONVERT PRODUCT DIMENSIONS TO SHIPPING BOX DIMENSIONS
+function calculateBoxDimensions(productDims, category, isFlatPack = false) {
+  if (!productDims) return null;
   
-  // Items that are NEVER flat-packed
-  const nonFlatPackable = [
-    'refrigerator', 'fridge', 'washer', 'dryer', 'dishwasher', 
-    'oven', 'stove', 'range', 'microwave',
-    'mattress', 'box spring',
-    'tv', 'television', 'monitor', 'computer',
-    'upholstered sofa', 'upholstered couch', 'recliner', 'sectional'
-  ];
+  let boxDims = { ...productDims };
   
-  if (nonFlatPackable.some(item => name.includes(item))) {
-    return false;
-  }
-  
-  // OUTDOOR/PATIO FURNITURE - Usually flat-packed
-  if (category === 'furniture-outdoor' || name.includes('patio') || name.includes('outdoor')) {
-    // Rattan, wicker, and aluminum outdoor furniture is almost always flat-packed
-    if (name.includes('rattan') || name.includes('wicker') || name.includes('aluminum')) {
-      return true;
-    }
-    // Multi-piece sets are flat-packed
-    if (name.match(/\d+\s*(?:pc|piece)/)) {
-      return true;
-    }
-    // Outdoor tables and chairs usually flat-pack
-    if (name.includes('table') || name.includes('chair') || name.includes('set')) {
-      return true;
-    }
-  }
-  
-  // Retailers known for flat-pack
-  const flatPackRetailers = [
-    'Wayfair', 'IKEA', 'Amazon', 'Target', 'Walmart', 
-    'Overstock', 'Home Depot', 'Lowes', 'CB2', 
-    'West Elm', 'Article', 'Ashley Furniture'
-  ];
-  
-  // Specific items that are usually flat-packed
-  const flatPackableItems = [
-    'table', 'desk', 'console', 'buffet', 'sideboard',
-    'bookshelf', 'shelf', 'shelving', 'cabinet', 'dresser',
-    'nightstand', 'end table', 'coffee table', 'dining',
-    'bar stool', 'counter stool', 'bench', 'bed frame', 'headboard',
-    'wardrobe', 'armoire', 'vanity', 'cart', 'stand',
-    'entertainment center', 'tv stand', 'media console',
-    'gazebo', 'pergola', 'shed',
-    'filing', 'office', 'workstation',
-    'storage', 'organizer', 'rack', 'tower'
-  ];
-  
-  if (category.startsWith('furniture')) {
-    if (flatPackRetailers.includes(retailer)) {
-      if (flatPackableItems.some(item => name.includes(item))) {
-        return true;
-      }
-    }
-  }
-  
-  return false;
-}
-
-function calculateFlatPackDimensions(originalDimensions, productName) {
-  const name = productName.toLowerCase();
-  
-  let reductionProfile = {
-    length: originalDimensions.length,
-    width: originalDimensions.width,
-    height: originalDimensions.height * 0.15
-  };
-  
-  // PATIO/OUTDOOR SETS - Much smaller when flat-packed
-  if (name.includes('patio') || name.includes('outdoor') || name.includes('rattan')) {
-    if (name.includes('5 piece') || name.includes('5-piece')) {
-      // 5-piece patio set in boxes
-      reductionProfile = {
-        length: Math.min(originalDimensions.length * 0.6, 48),
-        width: Math.min(originalDimensions.width * 0.6, 36),
-        height: Math.max(10, originalDimensions.height * 0.25)
-      };
-    } else {
-      reductionProfile = {
-        length: originalDimensions.length * 0.7,
-        width: originalDimensions.width * 0.7,
-        height: Math.max(8, originalDimensions.height * 0.2)
-      };
-    }
-  } else if (name.includes('bar stool') || name.includes('counter stool')) {
-    // Stools pack very small
-    reductionProfile = {
-      length: originalDimensions.length * 0.9,
-      width: originalDimensions.width * 0.9,
-      height: Math.max(6, originalDimensions.height * 0.3)
+  // If flat-packed, reduce height significantly
+  if (isFlatPack) {
+    boxDims = {
+      length: Math.round(productDims.length * 1.1),
+      width: Math.round(productDims.width * 1.1),
+      height: Math.round(Math.max(6, productDims.height * 0.3))
     };
-  } else if (name.includes('table')) {
-    // Tables pack flat
-    reductionProfile = {
-      length: Math.min(originalDimensions.length, 60),
-      width: originalDimensions.width,
-      height: Math.max(5, originalDimensions.height * 0.1)
+    console.log(`   📦 Flat-pack adjustment applied`);
+  } else {
+    // Add packaging material based on category
+    const paddingFactors = {
+      'electronics': 1.4,      // Lots of protective packaging
+      'appliances': 1.2,
+      'furniture-outdoor': 1.15,
+      'furniture-sofa': 1.1,
+      'furniture-chair': 1.2,
+      'furniture-table': 1.15,
+      'furniture-storage': 1.15,
+      'furniture-bed': 1.1,
+      'toys': 1.3,
+      'clothing': 1.5,         // Bags/boxes much bigger than items
+      'general': 1.25
     };
-  } else if (name.includes('chair')) {
-    reductionProfile = {
-      length: originalDimensions.length * 0.8,
-      width: originalDimensions.width * 0.8,
-      height: Math.max(8, originalDimensions.height * 0.25)
+    
+    const factor = paddingFactors[category] || 1.25;
+    
+    boxDims = {
+      length: Math.round(productDims.length * factor),
+      width: Math.round(productDims.width * factor),
+      height: Math.round(productDims.height * factor)
     };
   }
   
-  const flatPackDims = {
-    length: Math.round(reductionProfile.length),
-    width: Math.round(reductionProfile.width),
-    height: Math.round(reductionProfile.height)
-  };
-  
-  console.log(`   📦 Flat-pack: ${originalDimensions.length}×${originalDimensions.width}×${originalDimensions.height}" → ${flatPackDims.length}×${flatPackDims.width}×${flatPackDims.height}"`);
-  
-  return flatPackDims;
+  return boxDims;
 }
 
-function adjustFlatPackWeight(originalWeight, category) {
-  // Flat-pack items typically weigh 10-15% less due to hardware separation
-  if (category.startsWith('furniture')) {
-    return Math.round(originalWeight * 0.85);
-  }
-  return originalWeight;
-}
-
-function estimateDimensionsFromPatterns(category, name, retailer) {
-  const text = name.toLowerCase();
-  
-  // First, try intelligent analysis
-  const analysis = analyzeProductIntelligently(name, category, retailer);
-  if (analysis.estimatedDimensions && analysis.confidence > 0.5) {
-    console.log(`   🤖 Smart dimensions: ${JSON.stringify(analysis.estimatedDimensions)} (${analysis.reasoning.join(', ')})`);
-    return analysis.estimatedDimensions;
-  }
-  
-  // Check learning database
-  if (LEARNING_DB.patterns[category]) {
-    const pattern = LEARNING_DB.patterns[category];
-    if (pattern.dimensions && pattern.dimensions.length > 0) {
-      const avgDims = pattern.dimensions[pattern.dimensions.length - 1];
-      return avgDims;
-    }
-  }
-  
-  // Specific dimensions by category with more granular sizes
-  const specificDimensions = {
-    'furniture-outdoor': {
-      'set': { length: 48, width: 36, height: 12 },  // Flat-packed
-      'chair': { length: 28, width: 28, height: 35 },
-      'table': { length: 48, width: 30, height: 6 },   // Flat-packed
-      'default': { length: 40, width: 30, height: 15 }
-    },
-    'furniture-chair': {
-      'stool': { length: 18, width: 18, height: 30 },
-      'dining': { length: 24, width: 22, height: 36 },
-      'office': { length: 28, width: 28, height: 40 },
-      'default': { length: 28, width: 28, height: 35 }
-    },
-    'furniture-sofa': {
-      'sectional': { length: 108, width: 36, height: 36 },
-      'loveseat': { length: 60, width: 36, height: 36 },
-      'default': { length: 84, width: 36, height: 36 }
-    },
-    'furniture-table': {
-      'coffee': { length: 48, width: 24, height: 18 },
-      'dining': { length: 60, width: 36, height: 30 },
-      'desk': { length: 48, width: 24, height: 30 },
-      'default': { length: 48, width: 30, height: 30 }
-    }
-  };
-  
-  // Get category-specific dimensions
-  if (specificDimensions[category]) {
-    const catDims = specificDimensions[category];
-    
-    // Try to match specific type
-    for (const [type, dims] of Object.entries(catDims)) {
-      if (type !== 'default' && text.includes(type)) {
-        return dims;
-      }
-    }
-    
-    return catDims.default;
-  }
-  
-  // Fallback to general estimates
-  const generalEstimates = {
-    'electronics': { length: 24, width: 18, height: 20 },
-    'appliances': { length: 32, width: 32, height: 48 },
-    'toys': { length: 20, width: 16, height: 14 },
-    'clothing': { length: 14, width: 12, height: 4 },
-    'general': { length: 24, width: 20, height: 18 }
-  };
-  
-  const baseCat = category.split('-')[0];
-  return generalEstimates[baseCat] || generalEstimates.general;
-}
-
-function estimateWeightFromPatterns(dimensions, category, name = '') {
-  const text = name ? name.toLowerCase() : '';
-  
-  // Specific weight estimates
-  if (text.includes('bar stool') || text.includes('counter stool')) return 25;
-  if (text.includes('5 piece') && text.includes('patio')) return 120;
-  if (text.includes('seating group')) return 140;
-  if (text.includes('chair') && !text.includes('stool')) return 35;
-  
-  // Check learning database
-  if (LEARNING_DB.patterns[category] && LEARNING_DB.patterns[category].weights) {
-    const weights = LEARNING_DB.patterns[category].weights;
-    if (weights.length > 0) {
-      const avgWeight = weights.reduce((a, b) => a + b, 0) / weights.length;
-      return Math.round(avgWeight);
-    }
-  }
-  
-  // Calculate based on volume and material density
-  const cubicInches = dimensions.length * dimensions.width * dimensions.height;
-  const cubicFeet = cubicInches / 1728;
-  
-  const densities = {
-    'furniture-outdoor': 2.5,  // Light (aluminum, wicker)
-    'furniture-chair': 3,      // Medium light
-    'furniture-sofa': 4,       // Medium
-    'furniture-table': 5,       // Medium heavy
-    'furniture-storage': 6,     // Heavy (wood)
-    'electronics': 8,           // Dense
-    'appliances': 10,           // Very dense
-    'clothing': 1,              // Very light
-    'toys': 2,                  // Light
-    'general': 4                // Medium
-  };
-  
-  const density = densities[category] || densities.general;
-  const estimatedWeight = Math.max(10, cubicFeet * density);
-  
-  return Math.round(estimatedWeight);
-}
-
-// SHIPPING COST SANITY CHECK - REALISTIC FOR BERMUDA
-function performShippingSanityCheck(shippingCost, productPrice, category, dimensions) {
-  const issues = [];
-  let adjustedCost = shippingCost;
-  
-  // Check 1: Shipping can exceed product price for Bermuda
-  // Only flag if shipping is MORE than double the price AND over $400
-  if (shippingCost > productPrice * 2 && shippingCost > 400) {
-    issues.push('Shipping seems excessive for this category');
-  }
-  
-  // Check 2: Absolute maximums by category (realistic for Bermuda ocean freight)
-  const maxShippingByCategory = {
-    'furniture-outdoor': 350,  // Patio sets
-    'furniture-chair': 120,     // Single chairs
-    'furniture-sofa': 400,      // Sofas
-    'furniture-table': 250,     // Tables
-    'furniture-storage': 300,   // Dressers
-    'furniture-bed': 350,       // Beds
-    'electronics': 150,         // TVs, etc
-    'appliances': 450,          // Large appliances
-    'toys': 80,                 // Toys
-    'clothing': 40,             // Clothing
-    'general': 200              // General items
-  };
-  
-  const maxAllowed = maxShippingByCategory[category] || 200;
-  if (adjustedCost > maxAllowed) {
-    issues.push(`Exceeds category maximum of $${maxAllowed}`);
-    adjustedCost = maxAllowed;
-  }
-  
-  // Check 3: Minimum shipping for Bermuda
-  if (adjustedCost < 35) {
-    adjustedCost = 35;  // Minimum shipping cost for Bermuda
-  }
-  
-  // Check 4: Volume-based maximum
-  if (dimensions) {
-    const cubicFeet = (dimensions.length * dimensions.width * dimensions.height) / 1728;
-    const maxPerCubicFoot = 10;  // $10 per cubic foot for Bermuda
-    const volumeBasedMax = Math.max(35, cubicFeet * maxPerCubicFoot);
-    
-    if (adjustedCost > volumeBasedMax && cubicFeet < 50) {
-      // Only apply volume cap for items under 50 cubic feet
-      issues.push(`Volume-based adjustment from ${cubicFeet.toFixed(1)} cu ft`);
-      adjustedCost = Math.min(adjustedCost, volumeBasedMax);
-    }
-  }
-  
-  if (issues.length > 0) {
-    console.log(`   ⚠️ Shipping sanity check: ${issues.join(', ')}`);
-    console.log(`   ✅ Adjusted shipping: $${shippingCost} → $${Math.round(adjustedCost)}`);
-  }
-  
-  return Math.round(adjustedCost);
-}
-
-// SIMPLIFIED SHIPPING CALCULATION WITH SANITY CHECKS
+// PROPER SHIPPING COST CALCULATION
 function calculateShippingCost(dimensions, weight, price, category) {
   if (!dimensions) {
-    return Math.round(Math.max(35, price * 0.08));
+    // No dimensions - use weight-based estimate
+    if (weight) {
+      const estimatedCubicFeet = weight / 10; // Rough estimate
+      return Math.round(Math.max(50, estimatedCubicFeet * SHIPPING_RATE_PER_CUBIC_FOOT * 1.4));
+    }
+    // Fallback to price-based
+    return Math.round(Math.max(50, price * 0.12));
   }
   
+  // Calculate volume in cubic feet
   const cubicInches = dimensions.length * dimensions.width * dimensions.height;
   const cubicFeet = cubicInches / 1728;
   
+  console.log(`   📐 Box dimensions: ${dimensions.length}×${dimensions.width}×${dimensions.height}" = ${cubicFeet.toFixed(2)} ft³`);
+  
   // Base ocean freight cost
-  const baseCost = Math.max(15, cubicFeet * SHIPPING_RATE_PER_CUBIC_FOOT);
+  let baseCost = cubicFeet * SHIPPING_RATE_PER_CUBIC_FOOT;
   
-  // Heavy weight fee
-  const heavyWeightFee = weight > 150 ? weight * 0.25 : 0;
+  // Minimum shipping cost
+  baseCost = Math.max(35, baseCost);
   
-  // Handling fee
-  const handlingFee = 15;
+  // Add handling fee based on weight
+  let handlingFee = 15;
+  if (weight > 100) handlingFee = 25;
+  if (weight > 200) handlingFee = 40;
   
-  // Calculate base shipping
-  const baseShipping = baseCost + heavyWeightFee + handlingFee;
+  // Oversized fee for large dimensions
+  const longestSide = Math.max(dimensions.length, dimensions.width, dimensions.height);
+  let oversizeFee = 0;
+  if (longestSide > 60) oversizeFee = 30;
+  if (longestSide > 84) oversizeFee = 60;
+  if (longestSide > 108) oversizeFee = 100;
+  
+  // Calculate subtotal
+  const shippingSubtotal = baseCost + handlingFee + oversizeFee;
   
   // Add SDL margin (15%)
-  const marginAmount = baseShipping * SDL_MARGIN_RATE;
+  const marginAmount = shippingSubtotal * SDL_MARGIN_RATE;
   
-  // Calculate total order value for card fee
-  const estimatedTotal = price + (price * BERMUDA_DUTY_RATE) + baseShipping + marginAmount;
+  // Calculate estimated total for card fee calculation
+  const estimatedTotal = price + (price * BERMUDA_DUTY_RATE) + shippingSubtotal + marginAmount;
   
   // Add hidden credit card fee (3.5% of estimated total)
   const cardFee = estimatedTotal * CARD_FEE_RATE;
   
-  // Total shipping includes margin and hidden card fee
-  const totalShipping = baseShipping + marginAmount + cardFee;
+  // Total shipping includes everything
+  const totalShipping = Math.round(shippingSubtotal + marginAmount + cardFee);
   
-  // APPLY SANITY CHECK
-  const finalShipping = performShippingSanityCheck(totalShipping, price, category, dimensions);
+  console.log(`   💰 Shipping breakdown: Base $${baseCost.toFixed(2)} + Handling $${handlingFee} + Oversize $${oversizeFee} + Margin/Fees = $${totalShipping}`);
   
-  return finalShipping;
+  return totalShipping;
 }
 
 // Learning functions
@@ -680,24 +569,17 @@ function learnFromProduct(url, productData) {
     times_seen: (LEARNING_DB.products[url]?.times_seen || 0) + 1
   };
   
-  if (productData.category && productData.price) {
-    if (!LEARNING_DB.patterns[productData.category]) {
-      LEARNING_DB.patterns[productData.category] = {
-        prices: [],
-        weights: [],
-        dimensions: []
-      };
+  // Store dimension patterns by product name patterns
+  if (productData.name && productData.dimensions) {
+    const nameKey = productData.name.toLowerCase().substring(0, 30);
+    if (!LEARNING_DB.dimension_patterns[nameKey]) {
+      LEARNING_DB.dimension_patterns[nameKey] = [];
     }
-    
-    const pattern = LEARNING_DB.patterns[productData.category];
-    if (productData.price) pattern.prices.push(productData.price);
-    if (productData.weight) pattern.weights.push(productData.weight);
-    if (productData.dimensions) pattern.dimensions.push(productData.dimensions);
-    
-    // Keep only last 100 entries
-    if (pattern.prices.length > 100) pattern.prices.shift();
-    if (pattern.weights.length > 100) pattern.weights.shift();
-    if (pattern.dimensions.length > 100) pattern.dimensions.shift();
+    LEARNING_DB.dimension_patterns[nameKey].push({
+      dimensions: productData.dimensions,
+      weight: productData.weight,
+      timestamp: new Date().toISOString()
+    });
   }
   
   saveLearningDB();
@@ -716,11 +598,11 @@ function getLearnedData(url) {
   return null;
 }
 
-// WAYFAIR-OPTIMIZED SCRAPING WITH VARIANT SUPPORT
+// ENHANCED WAYFAIR SCRAPING WITH VARIANT SUPPORT
 async function scrapeWithApifyAndBee(url) {
   const retailer = detectRetailer(url);
   
-  // WAYFAIR WITH APIFY (YOUR PURCHASED ACTOR)
+  // WAYFAIR WITH APIFY
   if (retailer === 'Wayfair' && apifyClient) {
     try {
       console.log('   🔄 Using Apify Wayfair actor...');
@@ -741,75 +623,83 @@ async function scrapeWithApifyAndBee(url) {
       
       const { items } = await apifyClient.dataset(run.defaultDatasetId).listItems();
       
-      console.log('   📋 Items returned:', items?.length || 0);
-      
       if (items && items.length > 0) {
         const item = items[0];
         
         // Extract price
         let price = null;
-        let salePrice = null;
-        let regularPrice = null;
-        
         if (item.price) {
           if (typeof item.price === 'object') {
-            salePrice = item.price.value || item.price.amount || parseFloat(item.price.toString());
+            price = item.price.value || item.price.amount || parseFloat(item.price.toString());
           } else {
-            salePrice = typeof item.price === 'string' ? 
+            price = typeof item.price === 'string' ? 
               parseFloat(item.price.replace(/[^0-9.]/g, '')) : 
               item.price;
           }
         }
         
-        if (item.regular_price) {
-          regularPrice = typeof item.regular_price === 'string' ? 
+        // Try to get regular price
+        if (!price && item.regular_price) {
+          price = typeof item.regular_price === 'string' ? 
             parseFloat(item.regular_price.replace(/[^0-9.]/g, '')) : 
             item.regular_price;
         }
         
-        // Use regular price if available, otherwise sale price
-        if (regularPrice && regularPrice > 0) {
-          price = regularPrice;
-          console.log(`   💰 Using regular price: ${regularPrice}`);
-        } else if (salePrice && salePrice > 0) {
-          price = salePrice;
-          console.log(`   💰 Using sale price: ${salePrice}`);
-        }
-        
-        // Extract variant information
+        // Extract variant from URL parameters
         let variant = null;
-        
-        if (item.selectedOptions && typeof item.selectedOptions === 'object') {
-          const options = [];
-          for (const [key, value] of Object.entries(item.selectedOptions)) {
-            if (value && value !== 'null' && value !== 'undefined') {
-              const cleanKey = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-              options.push(`${cleanKey}: ${value}`);
+        try {
+          const urlObj = new URL(url);
+          const piid = urlObj.searchParams.get('piid');
+          if (piid) {
+            variant = `Variant ID: ${piid}`;
+            
+            // Try to get more details from the item data
+            if (item.selectedOptions) {
+              const options = [];
+              for (const [key, value] of Object.entries(item.selectedOptions)) {
+                if (value && value !== 'null') {
+                  options.push(`${key}: ${value}`);
+                }
+              }
+              if (options.length > 0) {
+                variant = options.join(', ');
+              }
             }
           }
-          if (options.length > 0) {
-            variant = options.join(', ');
-          }
+        } catch (e) {
+          // URL parsing failed
         }
         
-        // Extract image
-        let image = item.mainImage || item.primaryImage || item.image;
-        if (!image && item.images && Array.isArray(item.images) && item.images.length > 0) {
-          image = item.images[0];
-        }
+        // Extract dimensions from description or specifications
+        let dimensions = null;
+        let weight = null;
         
-        const title = item.title || item.name || item.productName || 'Wayfair Product';
+        const textToSearch = [
+          item.description,
+          item.specifications,
+          item.details,
+          JSON.stringify(item)
+        ].join(' ');
         
-        console.log('   ✅ Apify got:', title.substring(0, 50));
+        dimensions = extractDimensionsFromText(textToSearch);
+        weight = extractWeightFromText(textToSearch);
+        
+        const title = item.title || item.name || 'Wayfair Product';
+        
+        console.log('   ✅ Apify scraped:', title.substring(0, 50));
         console.log('   💰 Price:', price || 'Not found');
-        console.log('   🎨 Variant:', variant || 'None');
+        console.log('   🎨 Variant:', variant || 'Not detected');
+        if (dimensions) console.log('   📏 Dimensions found in data');
+        if (weight) console.log('   ⚖️ Weight found in data');
         
         return {
           price: price,
           title: title,
-          image: image,
+          image: item.mainImage || item.image,
           variant: variant,
-          sku: item.sku || item.productId || item.itemNumber,
+          sku: item.sku,
+          dimensions: dimensions,
+          weight: weight,
           success: true
         };
       }
@@ -818,10 +708,10 @@ async function scrapeWithApifyAndBee(url) {
     }
   }
   
-  // FALLBACK TO SCRAPINGBEE FOR ALL RETAILERS
+  // FALLBACK TO SCRAPINGBEE WITH AI EXTRACTION
   if (SCRAPINGBEE_API_KEY) {
     try {
-      console.log('   🐝 Using ScrapingBee...');
+      console.log('   🐝 Using ScrapingBee AI extraction...');
       
       const response = await axios({
         method: 'GET',
@@ -836,9 +726,11 @@ async function scrapeWithApifyAndBee(url) {
           ai_extract_rules: JSON.stringify({
             price: "Product Price in USD",
             title: "Product Title or Name",
-            variant: "Selected options, color, size",
+            variant: "Selected options, color, size, configuration",
             image: "Main Product Image URL",
-            sku: "SKU or Product ID"
+            dimensions: "Product dimensions, package dimensions, overall dimensions",
+            weight: "Product weight, item weight, shipping weight",
+            specifications: "All product specifications and details"
           })
         },
         timeout: 20000
@@ -846,12 +738,31 @@ async function scrapeWithApifyAndBee(url) {
       
       const data = response.data;
       
+      // Extract dimensions and weight from AI response
+      let dimensions = null;
+      let weight = null;
+      
+      if (data.dimensions) {
+        dimensions = extractDimensionsFromText(data.dimensions);
+      }
+      if (!dimensions && data.specifications) {
+        dimensions = extractDimensionsFromText(data.specifications);
+      }
+      
+      if (data.weight) {
+        weight = extractWeightFromText(data.weight);
+      }
+      if (!weight && data.specifications) {
+        weight = extractWeightFromText(data.specifications);
+      }
+      
       return {
         price: data.price ? parseFloat(data.price.toString().replace(/[^0-9.]/g, '')) : null,
         title: data.title || 'Product',
         image: data.image,
         variant: data.variant,
-        sku: data.sku,
+        dimensions: dimensions,
+        weight: weight,
         success: !!data.title
       };
       
@@ -865,12 +776,13 @@ async function scrapeWithApifyAndBee(url) {
     title: `Product from ${retailer}`,
     image: null,
     variant: null,
-    sku: null,
+    dimensions: null,
+    weight: null,
     success: false
   };
 }
 
-// MAIN PRODUCT PROCESSING
+// MAIN PRODUCT PROCESSING WITH COMPREHENSIVE DIMENSION EXTRACTION
 async function processProduct(url, index, urls) {
   console.log(`[${index + 1}/${urls.length}] Processing: ${url.substring(0, 80)}...`);
   
@@ -881,38 +793,36 @@ async function processProduct(url, index, urls) {
   const learned = getLearnedData(url);
   if (learned && learned.price) {
     const category = learned.category || categorizeProduct(learned.name || '', url);
-    return { ...learned, shippingCost: calculateShippingCost(learned.dimensions, learned.weight, learned.price, category) };
+    const boxDims = calculateBoxDimensions(learned.dimensions, category, learned.isFlatPack);
+    const shipping = calculateShippingCost(boxDims, learned.weight, learned.price, category);
+    return { ...learned, dimensions: boxDims, shippingCost: shipping };
   }
   
-  // Scrape product
+  // STEP 1: Scrape with Apify/ScrapingBee
   const scraped = await scrapeWithApifyAndBee(url);
   const productName = scraped.title || `${retailer} Product`;
   const category = categorizeProduct(productName, url);
   
-  // INTELLIGENT PRODUCT ANALYSIS
+  // STEP 2: Intelligent product analysis
   const analysis = analyzeProductIntelligently(productName, category, retailer);
   console.log(`   📊 Product type: ${analysis.productType || category}`);
   
-  // Get dimensions and weight
-  let dimensions = null;
-  let weight = null;
+  // STEP 3: Get best dimensions (prioritize scraped data)
+  let productDimensions = scraped.dimensions || analysis.estimatedDimensions;
+  let weight = scraped.weight || analysis.estimatedWeight;
   
-  // Try UPCitemdb if available
-  if (USE_UPCITEMDB && productName && scraped.success) {
+  // STEP 4: Try UPCitemdb if we still need dimensions
+  if (USE_UPCITEMDB && productName && (!productDimensions || !weight)) {
     try {
       console.log('   🔍 Checking UPCitemdb...');
       const upcData = await upcItemDB.searchByName(productName);
       
       if (upcData) {
-        if (upcData.dimensions) {
-          dimensions = {
-            length: Math.round(upcData.dimensions.length * 1.25),
-            width: Math.round(upcData.dimensions.width * 1.25),
-            height: Math.round(upcData.dimensions.height * 1.25)
-          };
+        if (!productDimensions && upcData.dimensions) {
+          productDimensions = upcData.dimensions;
           console.log('   ✅ UPCitemdb provided dimensions');
         }
-        if (upcData.weight) {
+        if (!weight && upcData.weight) {
           weight = upcData.weight;
           console.log('   ✅ UPCitemdb provided weight');
         }
@@ -922,35 +832,53 @@ async function processProduct(url, index, urls) {
     }
   }
   
-  // Use intelligent analysis dimensions if available
-  if (!dimensions && analysis.estimatedDimensions) {
-    dimensions = analysis.estimatedDimensions;
-    console.log('   🤖 Using AI-analyzed dimensions');
-  }
-  
-  // Estimate missing data
-  if (!dimensions) {
-    dimensions = estimateDimensionsFromPatterns(category, productName, retailer);
-    console.log('   📐 Estimated dimensions');
+  // STEP 5: Final fallback estimations
+  if (!productDimensions) {
+    // Use category-based estimation
+    const categoryEstimates = {
+      'furniture-outdoor': { length: 48, width: 36, height: 30 },
+      'furniture-sofa': { length: 84, width: 38, height: 36 },
+      'furniture-chair': { length: 30, width: 30, height: 36 },
+      'furniture-table': { length: 60, width: 36, height: 30 },
+      'furniture-storage': { length: 40, width: 20, height: 60 },
+      'furniture-bed': { length: 80, width: 60, height: 40 },
+      'electronics': { length: 24, width: 20, height: 18 },
+      'appliances': { length: 36, width: 36, height: 48 },
+      'toys': { length: 20, width: 16, height: 14 },
+      'clothing': { length: 14, width: 12, height: 4 },
+      'general': { length: 24, width: 20, height: 18 }
+    };
+    
+    productDimensions = categoryEstimates[category] || categoryEstimates.general;
+    console.log('   📐 Using category-based dimensions');
   }
   
   if (!weight) {
-    weight = analysis.estimatedWeight || estimateWeightFromPatterns(dimensions, category, productName);
-    console.log('   ⚖️ Estimated weight');
+    // Estimate weight from dimensions
+    const cubicFeet = (productDimensions.length * productDimensions.width * productDimensions.height) / 1728;
+    const densities = {
+      'furniture-outdoor': 3,
+      'furniture-sofa': 5,
+      'furniture-chair': 4,
+      'furniture-table': 6,
+      'furniture-storage': 7,
+      'furniture-bed': 4,
+      'electronics': 10,
+      'appliances': 12,
+      'toys': 2,
+      'clothing': 1,
+      'general': 5
+    };
+    weight = Math.round(cubicFeet * (densities[category] || 5));
+    console.log('   ⚖️ Estimated weight from dimensions');
   }
   
-  // Apply flat-pack reduction if detected by intelligent analysis
-  let packaging = 'ASSEMBLED';
-  const isFlatPack = analysis.isFlatPackLikely || isFlatPackable(category, productName, retailer);
-  if (isFlatPack) {
-    console.log(`   📦 FLAT-PACK DETECTED`);
-    dimensions = calculateFlatPackDimensions(dimensions, productName);
-    weight = adjustFlatPackWeight(weight, category);
-    packaging = 'FLAT-PACK';
-  }
+  // STEP 6: Convert to shipping box dimensions
+  const isFlatPack = analysis.isFlatPackLikely;
+  const boxDimensions = calculateBoxDimensions(productDimensions, category, isFlatPack);
   
-  // Calculate shipping with category awareness
-  const shippingCost = calculateShippingCost(dimensions, weight, scraped.price || 100, category);
+  // STEP 7: Calculate accurate shipping cost
+  const shippingCost = calculateShippingCost(boxDimensions, weight, scraped.price || 100, category);
   
   const product = {
     id: Date.now() + Math.random().toString(36).substr(2, 9),
@@ -963,10 +891,11 @@ async function processProduct(url, index, urls) {
     image: scraped.image || 'https://placehold.co/400x400/7CB342/FFFFFF/png?text=No+Image',
     category: category,
     retailer: retailer,
-    dimensions: dimensions,
+    productDimensions: productDimensions,
+    dimensions: boxDimensions,
     weight: weight,
     isFlatPack: isFlatPack,
-    packaging: packaging,
+    packaging: isFlatPack ? 'FLAT-PACK' : 'ASSEMBLED',
     shippingCost: shippingCost,
     intelligentAnalysis: analysis,
     dataCompleteness: {
@@ -974,18 +903,20 @@ async function processProduct(url, index, urls) {
       hasPrice: !!scraped.price,
       hasImage: !!scraped.image,
       hasVariant: !!scraped.variant,
-      hasSku: !!scraped.sku
+      hasDimensions: !!scraped.dimensions,
+      hasWeight: !!scraped.weight
     },
     fromCache: false
   };
   
-  const cubicFeet = (dimensions.length * dimensions.width * dimensions.height) / 1728;
-  console.log(`   Price: ${scraped.price ? '$' + scraped.price : 'Not found'}`);
-  console.log(`   Variant: ${scraped.variant || 'Not specified'}`);
-  console.log(`   Packaging: ${packaging}`);
-  console.log(`   Dimensions: ${dimensions.length}×${dimensions.width}×${dimensions.height}" (${cubicFeet.toFixed(1)} ft³)`);
-  console.log(`   Weight: ${weight} lbs`);
-  console.log(`   Shipping: $${shippingCost}`);
+  const cubicFeet = (boxDimensions.length * boxDimensions.width * boxDimensions.height) / 1728;
+  console.log(`   💵 Price: ${scraped.price ? '$' + scraped.price : 'Not found'}`);
+  console.log(`   🎨 Variant: ${scraped.variant || 'Not specified'}`);
+  console.log(`   📦 Packaging: ${product.packaging}`);
+  console.log(`   📏 Product: ${productDimensions.length}×${productDimensions.width}×${productDimensions.height}"`);
+  console.log(`   📦 Shipping box: ${boxDimensions.length}×${boxDimensions.width}×${boxDimensions.height}" (${cubicFeet.toFixed(1)} ft³)`);
+  console.log(`   ⚖️ Weight: ${weight} lbs`);
+  console.log(`   🚢 Ocean freight: $${shippingCost}`);
   
   // Learn from this product
   learnFromProduct(url, product);
@@ -1011,6 +942,7 @@ app.post('/api/scrape', scrapeRateLimiter, async (req, res) => {
     
     console.log(`\n========================================`);
     console.log(`SCRAPING ${urls.length} PRODUCTS`);
+    console.log(`Ocean Freight Rate: $${SHIPPING_RATE_PER_CUBIC_FOOT}/cubic foot`);
     console.log(`========================================\n`);
     
     const products = [];
@@ -1031,21 +963,22 @@ app.post('/api/scrape', scrapeRateLimiter, async (req, res) => {
           image: 'https://placehold.co/400x400/7CB342/FFFFFF/png?text=Not+Found',
           category: 'general',
           retailer: retailer,
-          dimensions: estimateDimensionsFromPatterns('general', '', retailer),
+          dimensions: { length: 24, width: 20, height: 18 },
           weight: 50,
-          shippingCost: 60,
+          shippingCost: 100,
           error: true
         });
       }
     }
     
     const successful = products.filter(p => p.price).length;
-    const fromCache = products.filter(p => p.fromCache).length;
     const withVariants = products.filter(p => p.variant).length;
+    const withDimensions = products.filter(p => p.dataCompleteness?.hasDimensions).length;
     
     console.log(`\n========================================`);
-    console.log(`RESULTS: ${successful}/${products.length} successful`);
+    console.log(`RESULTS: ${successful}/${products.length} with prices`);
     console.log(`With variants: ${withVariants}`);
+    console.log(`With exact dimensions: ${withDimensions}`);
     console.log(`========================================\n`);
     
     res.json({ 
@@ -1053,9 +986,8 @@ app.post('/api/scrape', scrapeRateLimiter, async (req, res) => {
       summary: {
         total: products.length,
         successful: successful,
-        fromCache: fromCache,
-        failed: products.length - successful,
-        withVariants: withVariants
+        withVariants: withVariants,
+        withDimensions: withDimensions
       }
     });
     
@@ -1065,20 +997,189 @@ app.post('/api/scrape', scrapeRateLimiter, async (req, res) => {
   }
 });
 
-// Prepare Shopify checkout
-app.post('/api/prepare-shopify-checkout', async (req, res) => {
+// STORE PENDING ORDER FOR SHOPIFY CHECKOUT
+app.post('/api/store-pending-order', (req, res) => {
+  const orderId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
+  pendingOrders.set(orderId, {
+    data: req.body,
+    timestamp: Date.now()
+  });
+  
+  // Clean up old orders after 1 hour
+  setTimeout(() => pendingOrders.delete(orderId), 3600000);
+  
+  console.log(`📦 Stored pending order ${orderId}`);
+  res.json({ orderId, success: true });
+});
+
+// RETRIEVE PENDING ORDER
+app.get('/api/get-pending-order/:orderId', (req, res) => {
+  const order = pendingOrders.get(req.params.orderId);
+  if (order) {
+    console.log(`✅ Retrieved pending order ${req.params.orderId}`);
+    res.json(order.data);
+    pendingOrders.delete(req.params.orderId); // Delete after retrieval
+  } else {
+    console.log(`❌ Order ${req.params.orderId} not found`);
+    res.status(404).json({ error: 'Order not found or expired' });
+  }
+});
+
+// CREATE SHOPIFY DRAFT ORDER WITH CUSTOM LINE ITEMS
+app.post('/apps/instant-import/create-draft-order', async (req, res) => {
   try {
-    const checkoutId = generateOrderId();
-    const redirectUrl = `https://${SHOPIFY_DOMAIN}/pages/import-checkout?checkout=${checkoutId}`;
+    const { products, deliveryFees, totals, customer, originalUrls } = req.body;
     
+    if (!SHOPIFY_ACCESS_TOKEN) {
+      return res.status(500).json({ error: 'Shopify not configured. Please check API credentials.' });
+    }
+    
+    if (!customer || !customer.email || !customer.name) {
+      return res.status(400).json({ error: 'Customer information required' });
+    }
+    
+    console.log(`\n📝 Creating Shopify Draft Order`);
+    console.log(`   Customer: ${customer.email}`);
+    console.log(`   Products: ${products.length}`);
+    console.log(`   Total: $${totals.grandTotal.toFixed(2)}`);
+    
+    // Create line items for the draft order
+    const lineItems = [];
+    
+    // Add each product as a custom line item
+    products.forEach(product => {
+      if (product.price && product.price > 0) {
+        const quantity = product.quantity || 1;
+        
+        // Add product with variant info if available
+        const productTitle = product.variant ? 
+          `${product.name} - ${product.variant}` : 
+          product.name;
+        
+        lineItems.push({
+          title: productTitle,
+          price: product.price.toFixed(2),
+          quantity: quantity,
+          properties: [
+            { name: 'Source URL', value: product.url },
+            { name: 'Retailer', value: product.retailer },
+            { name: 'Category', value: product.category },
+            { name: 'SKU', value: product.sku || 'N/A' },
+            { name: 'Dimensions', value: `${product.dimensions?.length}×${product.dimensions?.width}×${product.dimensions?.height}"` },
+            { name: 'Weight', value: `${product.weight} lbs` }
+          ],
+          taxable: false  // We handle duty separately
+        });
+        
+        console.log(`   ✓ Added: ${productTitle.substring(0, 50)}...`);
+      }
+    });
+    
+    // Add import duty as a line item
+    if (totals.dutyAmount > 0) {
+      lineItems.push({
+        title: 'Bermuda Import Duty (26.5%)',
+        price: totals.dutyAmount.toFixed(2),
+        quantity: 1,
+        taxable: false,
+        properties: [
+          { name: 'Calculation', value: `26.5% of $${totals.totalItemCost.toFixed(2)}` }
+        ]
+      });
+      console.log(`   ✓ Added: Import Duty $${totals.dutyAmount.toFixed(2)}`);
+    }
+    
+    // Add delivery fees if any
+    if (deliveryFees) {
+      Object.entries(deliveryFees).forEach(([vendor, fee]) => {
+        if (fee > 0) {
+          lineItems.push({
+            title: `${vendor} US Delivery Fee`,
+            price: fee.toFixed(2),
+            quantity: 1,
+            taxable: false
+          });
+          console.log(`   ✓ Added: ${vendor} Delivery Fee $${fee.toFixed(2)}`);
+        }
+      });
+    }
+    
+    // Add ocean freight & handling as a line item
+    if (totals.totalShippingCost > 0) {
+      lineItems.push({
+        title: 'Ocean Freight & Handling to Bermuda',
+        price: totals.totalShippingCost.toFixed(2),
+        quantity: 1,
+        taxable: false,
+        properties: [
+          { name: 'Service', value: 'Container shipping via Elizabeth, NJ' },
+          { name: 'Rate', value: `$${SHIPPING_RATE_PER_CUBIC_FOOT}/cubic foot` }
+        ]
+      });
+      console.log(`   ✓ Added: Ocean Freight $${totals.totalShippingCost.toFixed(2)}`);
+    }
+    
+    // Create the draft order data
+    const draftOrderData = {
+      draft_order: {
+        line_items: lineItems,
+        customer: {
+          email: customer.email,
+          first_name: customer.name.split(' ')[0],
+          last_name: customer.name.split(' ').slice(1).join(' ') || ''
+        },
+        email: customer.email,
+        note: `Import Calculator Order\n\nOriginal Product URLs:\n${originalUrls || products.map(p => p.url).join('\n')}`,
+        tags: 'import-calculator, ocean-freight, bermuda-import',
+        tax_exempt: true,  // We handle duty manually
+        send_receipt: false,
+        send_fulfillment_receipt: false,
+        billing_address: {
+          first_name: customer.name.split(' ')[0],
+          last_name: customer.name.split(' ').slice(1).join(' ') || '',
+          address1: customer.address || '614 Progress Street',
+          city: customer.city || 'Elizabeth',
+          province: customer.province || 'NJ',
+          country: 'US',
+          zip: customer.zip || '07201'
+        }
+      }
+    };
+    
+    console.log(`\n📤 Sending to Shopify...`);
+    
+    // Make request to Shopify
+    const shopifyResponse = await axios.post(
+      `https://${SHOPIFY_DOMAIN}/admin/api/2024-01/draft_orders.json`,
+      draftOrderData,
+      {
+        headers: {
+          'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+    
+    const draftOrder = shopifyResponse.data.draft_order;
+    console.log(`✅ Draft order ${draftOrder.name} created successfully`);
+    console.log(`   Invoice URL: ${draftOrder.invoice_url}`);
+    
+    // Return the checkout URL for redirect
     res.json({
-      checkoutId: checkoutId,
-      redirectUrl: redirectUrl
+      success: true,
+      draftOrderId: draftOrder.id,
+      draftOrderNumber: draftOrder.name,
+      invoiceUrl: draftOrder.invoice_url,
+      checkoutUrl: draftOrder.invoice_url,  // Customer can complete checkout here
+      totalAmount: totals.grandTotal
     });
     
   } catch (error) {
-    console.error('Error preparing checkout:', error);
-    res.status(500).json({ error: 'Failed to prepare checkout' });
+    console.error('❌ Draft order creation error:', error.response?.data || error);
+    res.status(500).json({ 
+      error: 'Failed to create draft order. Please try again or contact support.',
+      details: error.response?.data?.errors || error.message
+    });
   }
 });
 
