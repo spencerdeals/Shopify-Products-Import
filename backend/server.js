@@ -206,7 +206,8 @@ const scrapeRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 50,
   message: 'Too many scraping requests',
-  trustProxy: true
+  standardHeaders: true,
+  legacyHeaders: false
 });
 
 // Utilities
@@ -499,98 +500,51 @@ async function scrapeWithApifyAndBee(url) {
   const retailer = detectRetailer(url);
   
   // WAYFAIR WITH APIFY (YOUR PURCHASED ACTOR)
-// WAYFAIR WITH APIFY (YOUR PURCHASED ACTOR)
-if (retailer === 'Wayfair' && apifyClient) {
-  try {
-    console.log('   🔄 Using Apify Wayfair actor...');
-    
-    const run = await apifyClient.actor('123webdata/wayfair-scraper').call({
-      productUrls: [url],
-      includeOptionDetails: true,
-      includeAllImages: true,
-      proxy: {
-        useApifyProxy: true,
-        apifyProxyCountry: 'US'
-      },
-      maxRequestRetries: 3
-    });
-    
-    console.log('   ⏳ Waiting for Wayfair data...');
-    await apifyClient.run(run.id).waitForFinish({ waitSecs: 60 });
-    
-    const { items } = await apifyClient.dataset(run.defaultDatasetId).listItems();
-    
-    // ADD DEBUGGING HERE
-    console.log('   📋 Items returned:', items?.length || 0);
-    if (items && items.length > 0) {
-      const item = items[0];
-      console.log('   📋 Item keys:', Object.keys(item));
+  if (retailer === 'Wayfair' && apifyClient) {
+    try {
+      console.log('   🔄 Using Apify Wayfair actor...');
       
-      // Log first 500 chars to see structure
-      console.log('   📋 Raw item:', JSON.stringify(item).substring(0, 500));
-      
-      // Try different possible field names
-      const title = item.title || item.name || item.productName || item.product_name || null;
-      const price = item.price || item.salePrice || item.currentPrice || item.product_price || null;
-      
-      console.log('   ✅ Apify got:', title ? title.substring(0, 50) : 'No title');
-      console.log('   💰 Price field:', price);
-      
-      // Extract price with better parsing
-      let finalPrice = null;
-      if (price) {
-        if (typeof price === 'number') {
-          finalPrice = price;
-        } else if (typeof price === 'string') {
-          finalPrice = parseFloat(price.replace(/[^0-9.]/g, ''));
-        } else if (typeof price === 'object' && price.value) {
-          finalPrice = parseFloat(price.value);
-        }
-      }
-      
-      // Extract variant
-      let variant = null;
-      if (item.selectedOptions && typeof item.selectedOptions === 'object') {
-        variant = Object.entries(item.selectedOptions)
-          .map(([key, value]) => `${key}: ${value}`)
-          .join(', ');
-      } else if (item.options) {
-        variant = item.options;
-      }
-      
-      return {
-        price: finalPrice,
-        title: title || 'Wayfair Product',
-        image: item.images?.[0] || item.image || item.mainImage,
-        variant: variant,
-        sku: item.sku || item.productId || item.product_id,
-        success: !!title
-      };
-    } else {
-      console.log('   ⚠️ No items returned from Apify');
-    }
-  } catch (error) {
-    console.log('   ⚠️ Apify failed:', error.message);
-  }
-}
+      const run = await apifyClient.actor('123webdata/wayfair-scraper').call({
+        productUrls: [url],
+        includeOptionDetails: true,
+        includeAllImages: true,
+        proxy: {
+          useApifyProxy: true,
+          apifyProxyCountry: 'US'
+        },
+        maxRequestRetries: 3
+      });
       
       console.log('   ⏳ Waiting for Wayfair data...');
       await apifyClient.run(run.id).waitForFinish({ waitSecs: 60 });
       
       const { items } = await apifyClient.dataset(run.defaultDatasetId).listItems();
       
+      // DEBUG: Log what we got
+      console.log('   📋 Items returned:', items?.length || 0);
+      
       if (items && items.length > 0) {
         const item = items[0];
-        console.log('   ✅ Apify got:', item.title ? item.title.substring(0, 50) : 'No title');
         
-        // Extract price
+        // DEBUG: Log available fields
+        console.log('   📋 Item keys:', Object.keys(item));
+        console.log('   📋 Raw item sample:', JSON.stringify(item).substring(0, 500));
+        
+        // Try multiple price fields
         let price = null;
-        if (item.price) {
-          price = typeof item.price === 'string' ? 
-            parseFloat(item.price.replace(/[^0-9.]/g, '')) : 
-            parseFloat(item.price);
-        } else if (item.salePrice) {
-          price = parseFloat(item.salePrice);
+        const priceFields = ['price', 'salePrice', 'currentPrice', 'finalPrice', 'priceInfo'];
+        for (const field of priceFields) {
+          if (item[field]) {
+            console.log(`   💰 Found price in field '${field}':`, item[field]);
+            if (typeof item[field] === 'object' && item[field].value) {
+              price = parseFloat(item[field].value);
+            } else if (typeof item[field] === 'string') {
+              price = parseFloat(item[field].replace(/[^0-9.]/g, ''));
+            } else if (typeof item[field] === 'number') {
+              price = item[field];
+            }
+            if (price) break;
+          }
         }
         
         // Extract variant
@@ -601,14 +555,30 @@ if (retailer === 'Wayfair' && apifyClient) {
             .join(', ');
         }
         
+        // Better image selection
+        let image = item.mainImage || item.primaryImage;
+        if (!image && item.images && Array.isArray(item.images)) {
+          // Try to find a main image, not a detail shot
+          image = item.images.find(img => 
+            !img.includes('detail') && 
+            !img.includes('zoom') && 
+            !img.includes('swatch')
+          ) || item.images[0];
+        }
+        
+        console.log('   ✅ Apify got:', item.title ? item.title.substring(0, 50) : 'No title');
+        console.log('   💰 Final price:', price || 'Not found');
+        
         return {
           price: price,
           title: item.title || item.name || 'Wayfair Product',
-          image: item.images?.[0] || item.image,
+          image: image || item.image,
           variant: variant,
           sku: item.sku || item.productId,
           success: true
         };
+      } else {
+        console.log('   ⚠️ No items returned from Apify');
       }
     } catch (error) {
       console.log('   ⚠️ Apify failed:', error.message);
