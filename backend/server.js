@@ -6,7 +6,6 @@ const path = require('path');
 const fs = require('fs');
 const { URL } = require('url');
 const crypto = require('crypto');
-const { createClient } = require('@libsql/client');
 require('dotenv').config();
 
 const app = express();
@@ -65,292 +64,30 @@ if (SENDGRID_API_KEY) {
   }
 }
 
-// Initialize Turso Database
-class TursoLearningDB {
-    constructor() {
-        if (!process.env.TURSO_DATABASE_URL || !process.env.TURSO_AUTH_TOKEN) {
-            console.log('⚠️ Turso not configured - falling back to memory storage');
-            this.enabled = false;
-            return;
-        }
-        
-        this.enabled = true;
-        this.client = createClient({
-            url: process.env.TURSO_DATABASE_URL,
-            authToken: process.env.TURSO_AUTH_TOKEN
-        });
-        
-        this.initializeDatabase();
-    }
-    
-    async initializeDatabase() {
-        if (!this.enabled) return;
-        
-        try {
-            await this.client.execute(`
-                CREATE TABLE IF NOT EXISTS products (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    url TEXT UNIQUE NOT NULL,
-                    name TEXT,
-                    retailer TEXT,
-                    category TEXT,
-                    price REAL,
-                    weight REAL,
-                    length REAL,
-                    width REAL,
-                    height REAL,
-                    variant TEXT,
-                    sku TEXT,
-                    last_scraped DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    times_seen INTEGER DEFAULT 1,
-                    confidence REAL DEFAULT 0.5
-                )
-            `);
-            
-            await this.client.execute(`
-                CREATE TABLE IF NOT EXISTS category_patterns (
-                    category TEXT PRIMARY KEY,
-                    avg_weight REAL,
-                    avg_length REAL,
-                    avg_width REAL,
-                    avg_height REAL,
-                    sample_count INTEGER DEFAULT 0,
-                    last_updated DATETIME DEFAULT CURRENT_TIMESTAMP
-                )
-            `);
-            
-            await this.client.execute(`
-                CREATE TABLE IF NOT EXISTS retailer_stats (
-                    retailer TEXT PRIMARY KEY,
-                    total_attempts INTEGER DEFAULT 0,
-                    successful_scrapes INTEGER DEFAULT 0,
-                    avg_data_completeness REAL,
-                    best_method TEXT,
-                    last_updated DATETIME DEFAULT CURRENT_TIMESTAMP
-                )
-            `);
-            
-            console.log('✅ Turso learning database initialized');
-        } catch (error) {
-            console.error('❌ Turso initialization error:', error);
-            this.enabled = false;
-        }
-    }
-    
-    async getKnownProduct(url) {
-        if (!this.enabled) return null;
-        
-        try {
-            const result = await this.client.execute({
-                sql: `SELECT * FROM products 
-                      WHERE url = ? 
-                      AND datetime(last_scraped) > datetime('now', '-24 hours')
-                      AND confidence > 0.7`,
-                args: [url]
-            });
-            
-            if (result.rows.length > 0) {
-                const product = result.rows[0];
-                
-                await this.client.execute({
-                    sql: 'UPDATE products SET times_seen = times_seen + 1 WHERE url = ?',
-                    args: [url]
-                });
-                
-                console.log('   📚 Using learned data from Turso');
-                
-                return {
-                    name: product.name,
-                    price: product.price,
-                    weight: product.weight,
-                    dimensions: product.length ? {
-                        length: product.length,
-                        width: product.width,
-                        height: product.height
-                    } : null,
-                    variant: product.variant,
-                    sku: product.sku,
-                    retailer: product.retailer,
-                    category: product.category,
-                    fromCache: true
-                };
-            }
-            
-            return null;
-        } catch (error) {
-            console.error('Error getting known product:', error);
-            return null;
-        }
-    }
-    
-    async saveProduct(product) {
-        if (!this.enabled) return;
-        
-        try {
-            let confidence = 0.3;
-            if (product.name && product.name !== 'Unknown Product') confidence += 0.2;
-            if (product.price) confidence += 0.2;
-            if (product.dimensions) confidence += 0.2;
-            if (product.weight) confidence += 0.1;
-            
-            await this.client.execute({
-                sql: `INSERT INTO products 
-                      (url, name, retailer, category, price, weight, length, width, height, variant, sku, confidence)
-                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                      ON CONFLICT(url) DO UPDATE SET
-                      name = excluded.name,
-                      price = excluded.price,
-                      weight = excluded.weight,
-                      length = excluded.length,
-                      width = excluded.width,
-                      height = excluded.height,
-                      variant = excluded.variant,
-                      sku = excluded.sku,
-                      times_seen = times_seen + 1,
-                      confidence = excluded.confidence,
-                      last_scraped = CURRENT_TIMESTAMP`,
-                args: [
-                    product.url,
-                    product.name,
-                    product.retailer,
-                    product.category,
-                    product.price,
-                    product.weight,
-                    product.dimensions?.length || null,
-                    product.dimensions?.width || null,
-                    product.dimensions?.height || null,
-                    product.variant,
-                    product.sku,
-                    confidence
-                ]
-            });
-            
-            if (product.category && product.dimensions) {
-                await this.updateCategoryPattern(product);
-            }
-            
-            await this.updateRetailerStats(product.retailer, true);
-            
-        } catch (error) {
-            console.error('Error saving product:', error);
-        }
-    }
-    
-    async updateCategoryPattern(product) {
-        if (!this.enabled || !product.category || !product.dimensions) return;
-        
-        try {
-            const existing = await this.client.execute({
-                sql: 'SELECT * FROM category_patterns WHERE category = ?',
-                args: [product.category]
-            });
-            
-            if (existing.rows.length === 0) {
-                await this.client.execute({
-                    sql: `INSERT INTO category_patterns 
-                          (category, avg_weight, avg_length, avg_width, avg_height, sample_count)
-                          VALUES (?, ?, ?, ?, ?, 1)`,
-                    args: [
-                        product.category,
-                        product.weight || 0,
-                        product.dimensions.length || 0,
-                        product.dimensions.width || 0,
-                        product.dimensions.height || 0
-                    ]
-                });
-            } else {
-                const pattern = existing.rows[0];
-                const newCount = pattern.sample_count + 1;
-                
-                await this.client.execute({
-                    sql: `UPDATE category_patterns SET
-                          avg_weight = ((avg_weight * sample_count) + ?) / ?,
-                          avg_length = ((avg_length * sample_count) + ?) / ?,
-                          avg_width = ((avg_width * sample_count) + ?) / ?,
-                          avg_height = ((avg_height * sample_count) + ?) / ?,
-                          sample_count = ?,
-                          last_updated = CURRENT_TIMESTAMP
-                          WHERE category = ?`,
-                    args: [
-                        product.weight || pattern.avg_weight, newCount,
-                        product.dimensions.length || pattern.avg_length, newCount,
-                        product.dimensions.width || pattern.avg_width, newCount,
-                        product.dimensions.height || pattern.avg_height, newCount,
-                        newCount,
-                        product.category
-                    ]
-                });
-            }
-        } catch (error) {
-            console.error('Error updating category pattern:', error);
-        }
-    }
-    
-    async updateRetailerStats(retailer, success) {
-        if (!this.enabled) return;
-        
-        try {
-            const existing = await this.client.execute({
-                sql: 'SELECT * FROM retailer_stats WHERE retailer = ?',
-                args: [retailer]
-            });
-            
-            if (existing.rows.length === 0) {
-                await this.client.execute({
-                    sql: `INSERT INTO retailer_stats 
-                          (retailer, total_attempts, successful_scrapes)
-                          VALUES (?, 1, ?)`,
-                    args: [retailer, success ? 1 : 0]
-                });
-            } else {
-                await this.client.execute({
-                    sql: `UPDATE retailer_stats SET
-                          total_attempts = total_attempts + 1,
-                          successful_scrapes = successful_scrapes + ?,
-                          last_updated = CURRENT_TIMESTAMP
-                          WHERE retailer = ?`,
-                    args: [success ? 1 : 0, retailer]
-                });
-            }
-        } catch (error) {
-            console.error('Error updating retailer stats:', error);
-        }
-    }
-    
-    async getSmartEstimation(category, retailer) {
-        if (!this.enabled) return null;
-        
-        try {
-            const result = await this.client.execute({
-                sql: 'SELECT * FROM category_patterns WHERE category = ? AND sample_count > 5',
-                args: [category]
-            });
-            
-            if (result.rows.length > 0) {
-                const pattern = result.rows[0];
-                console.log(`   🤖 Using AI patterns from ${pattern.sample_count} ${category} products`);
-                
-                return {
-                    dimensions: {
-                        length: Math.round(pattern.avg_length),
-                        width: Math.round(pattern.avg_width),
-                        height: Math.round(pattern.avg_height)
-                    },
-                    weight: Math.round(pattern.avg_weight),
-                    confidence: Math.min(0.9, 0.3 + (pattern.sample_count * 0.02)),
-                    source: 'turso_patterns'
-                };
-            }
-            
-            return null;
-        } catch (error) {
-            console.error('Error getting smart estimation:', error);
-            return null;
-        }
-    }
+// Simple learning database (JSON file fallback)
+const LEARNING_DB_PATH = path.join(__dirname, 'learning_data.json');
+let LEARNING_DB = {
+  products: {},
+  patterns: {},
+  retailer_stats: {}
+};
+
+try {
+  if (fs.existsSync(LEARNING_DB_PATH)) {
+    LEARNING_DB = JSON.parse(fs.readFileSync(LEARNING_DB_PATH, 'utf8'));
+    console.log('✅ Loaded learning database with', Object.keys(LEARNING_DB.products).length, 'products');
+  }
+} catch (error) {
+  console.log('📝 Starting with fresh learning database');
 }
 
-const learningDB = new TursoLearningDB();
+function saveLearningDB() {
+  try {
+    fs.writeFileSync(LEARNING_DB_PATH, JSON.stringify(LEARNING_DB, null, 2));
+  } catch (error) {
+    console.error('Error saving learning database:', error);
+  }
+}
 
 // BOL-BASED SHIPPING PATTERNS
 const BOL_PATTERNS = {
@@ -412,12 +149,10 @@ console.log(`Environment: ${TEST_MODE ? 'TEST' : 'PRODUCTION'}`);
 console.log(`Port: ${PORT}`);
 console.log(`Shopify: ${SHOPIFY_ACCESS_TOKEN ? 'CONNECTED' : 'NOT CONFIGURED'}`);
 console.log(`Email: ${sendgrid ? 'ENABLED' : 'DISABLED'}`);
-console.log(`Turso Learning DB: ${learningDB.enabled ? '✅ ENABLED' : '❌ DISABLED'}`);
 console.log(`UPCitemdb: ${USE_UPCITEMDB ? '✅ ENABLED' : '❌ DISABLED'}`);
 console.log(`Apify: ${ENABLE_APIFY && apifyClient ? '✅ ENABLED' : '❌ DISABLED'}`);
 console.log(`ScrapingBee: ${SCRAPINGBEE_API_KEY ? '✅ ENABLED' : '❌ DISABLED'}`);
 console.log('Margin: FIXED 15% + 3.5% card fee (hidden)');
-console.log('Flat-Pack Intelligence: ENABLED');
 console.log('====================================\n');
 
 // Middleware
@@ -459,7 +194,6 @@ app.get('/health', (req, res) => {
     cardFee: '3.5% (hidden)',
     services: {
       shopify: !!SHOPIFY_ACCESS_TOKEN,
-      tursoLearning: learningDB.enabled,
       upcitemdb: USE_UPCITEMDB,
       apify: !!apifyClient,
       scrapingBee: !!SCRAPINGBEE_API_KEY
@@ -563,26 +297,19 @@ function isFlatPackable(category, productName, retailer) {
     'storage', 'organizer', 'rack', 'tower'
   ];
   
+  // Special handling for patio sets
+  if (name.includes('patio') || name.includes('outdoor') || name.includes('rattan')) {
+    if (!name.includes('cushion') && !name.includes('umbrella')) {
+      return true; // Most patio furniture is flat-packable
+    }
+  }
+  
   if (category === 'furniture') {
     if (flatPackRetailers.includes(retailer)) {
       if (flatPackableItems.some(item => name.includes(item))) {
         return true;
       }
     }
-  }
-  
-  const flatPackKeywords = [
-    'assembly required', 'requires assembly', 'easy assembly',
-    'flat pack', 'flat-pack', 'flatpack', 'knockdown',
-    'ready to assemble', 'rta', 'diy'
-  ];
-  
-  if (flatPackKeywords.some(keyword => name.includes(keyword))) {
-    return true;
-  }
-  
-  if (category === 'furniture' && flatPackRetailers.includes(retailer)) {
-    return true;
   }
   
   return false;
@@ -597,7 +324,14 @@ function calculateFlatPackDimensions(originalDimensions, productName) {
     height: 0.15
   };
   
-  if (name.includes('table') || name.includes('desk') || name.includes('console') || name.includes('buffet')) {
+  // Special handling for patio sets
+  if (name.includes('patio') || name.includes('outdoor') || name.includes('rattan')) {
+    reductionProfile = {
+      length: originalDimensions.length * 0.7,
+      width: originalDimensions.width * 0.7,
+      height: Math.max(12, originalDimensions.height * 0.2)
+    };
+  } else if (name.includes('table') || name.includes('desk')) {
     reductionProfile = {
       length: Math.min(originalDimensions.length, 72),
       width: originalDimensions.width * 1.0,
@@ -609,24 +343,6 @@ function calculateFlatPackDimensions(originalDimensions, productName) {
       width: originalDimensions.width * 0.8,
       height: Math.max(8, originalDimensions.height * 0.25)
     };
-  } else if (name.includes('shelf') || name.includes('bookcase') || name.includes('bookshelf')) {
-    reductionProfile = {
-      length: originalDimensions.length * 1.0,
-      width: Math.max(12, originalDimensions.width * 0.3),
-      height: Math.max(4, originalDimensions.height * 0.1)
-    };
-  } else if (name.includes('dresser') || name.includes('cabinet') || name.includes('wardrobe')) {
-    reductionProfile = {
-      length: originalDimensions.length * 0.9,
-      width: originalDimensions.width * 1.0,
-      height: Math.max(8, originalDimensions.height * 0.15)
-    };
-  } else if (name.includes('bed')) {
-    reductionProfile = {
-      length: Math.min(originalDimensions.length * 0.9, 84),
-      width: originalDimensions.width * 0.5,
-      height: Math.max(6, originalDimensions.height * 0.2)
-    };
   }
   
   const flatPackDims = {
@@ -634,10 +350,6 @@ function calculateFlatPackDimensions(originalDimensions, productName) {
     width: Math.round(reductionProfile.width),
     height: Math.round(reductionProfile.height)
   };
-  
-  flatPackDims.length = Math.max(3, flatPackDims.length);
-  flatPackDims.width = Math.max(3, flatPackDims.width);
-  flatPackDims.height = Math.max(3, flatPackDims.height);
   
   console.log(`   📦 Flat-pack: ${originalDimensions.length}x${originalDimensions.width}x${originalDimensions.height} → ${flatPackDims.length}x${flatPackDims.width}x${flatPackDims.height}`);
   
@@ -651,15 +363,18 @@ function adjustFlatPackWeight(originalWeight, category) {
   return originalWeight;
 }
 
-async function estimateDimensionsFromPatterns(category, name, retailer) {
-  // First try Turso learned patterns
-  const smartEstimate = await learningDB.getSmartEstimation(category, retailer);
-  if (smartEstimate) {
-    return smartEstimate.dimensions;
+function estimateDimensionsFromPatterns(category, name, retailer) {
+  const text = name.toLowerCase();
+  
+  // Check learning database first
+  if (LEARNING_DB.patterns[category]) {
+    const pattern = LEARNING_DB.patterns[category];
+    if (pattern.dimensions && pattern.dimensions.length > 0) {
+      const avgDims = pattern.dimensions[pattern.dimensions.length - 1];
+      return avgDims;
+    }
   }
   
-  // Fall back to BOL patterns
-  const text = name.toLowerCase();
   const patterns = BOL_PATTERNS[category] || BOL_PATTERNS.general;
   
   if (category === 'furniture') {
@@ -681,14 +396,16 @@ async function estimateDimensionsFromPatterns(category, name, retailer) {
   };
 }
 
-async function estimateWeightFromPatterns(dimensions, category, retailer) {
-  // First try Turso learned patterns
-  const smartEstimate = await learningDB.getSmartEstimation(category, retailer);
-  if (smartEstimate && smartEstimate.weight) {
-    return smartEstimate.weight;
+function estimateWeightFromPatterns(dimensions, category) {
+  // Check learning database first
+  if (LEARNING_DB.patterns[category] && LEARNING_DB.patterns[category].weights) {
+    const weights = LEARNING_DB.patterns[category].weights;
+    if (weights.length > 0) {
+      const avgWeight = weights.reduce((a, b) => a + b, 0) / weights.length;
+      return Math.round(avgWeight);
+    }
   }
   
-  // Fall back to BOL patterns
   const patterns = BOL_PATTERNS[category] || BOL_PATTERNS.general;
   const cubicInches = dimensions.length * dimensions.width * dimensions.height;
   const cubicFeet = cubicInches / 1728;
@@ -733,24 +450,58 @@ function calculateShippingCost(dimensions, weight, price) {
   return totalShipping;
 }
 
-// ENHANCED SCRAPING WITH ALL METHODS
-async function scrapeWithScrapingBee(url) {
-  if (TEST_MODE) {
-    return {
-      price: 99.99,
-      title: 'Test Product',
-      image: 'https://placehold.co/400x400/7CB342/FFFFFF/png?text=Test',
-      variant: 'Test Variant',
-      sku: 'TEST-SKU-123'
-    };
+// Learning functions
+function learnFromProduct(url, productData) {
+  LEARNING_DB.products[url] = {
+    ...productData,
+    last_updated: new Date().toISOString(),
+    times_seen: (LEARNING_DB.products[url]?.times_seen || 0) + 1
+  };
+  
+  if (productData.category && productData.price) {
+    if (!LEARNING_DB.patterns[productData.category]) {
+      LEARNING_DB.patterns[productData.category] = {
+        prices: [],
+        weights: [],
+        dimensions: []
+      };
+    }
+    
+    const pattern = LEARNING_DB.patterns[productData.category];
+    if (productData.price) pattern.prices.push(productData.price);
+    if (productData.weight) pattern.weights.push(productData.weight);
+    if (productData.dimensions) pattern.dimensions.push(productData.dimensions);
+    
+    // Keep only last 100 entries
+    if (pattern.prices.length > 100) pattern.prices.shift();
+    if (pattern.weights.length > 100) pattern.weights.shift();
+    if (pattern.dimensions.length > 100) pattern.dimensions.shift();
   }
   
+  saveLearningDB();
+}
+
+function getLearnedData(url) {
+  if (LEARNING_DB.products[url]) {
+    const learned = LEARNING_DB.products[url];
+    const hoursSinceUpdate = (Date.now() - new Date(learned.last_updated).getTime()) / (1000 * 60 * 60);
+    
+    if (hoursSinceUpdate < 24) {
+      console.log('   📚 Using learned data from previous scrape');
+      return learned;
+    }
+  }
+  return null;
+}
+
+// WAYFAIR-OPTIMIZED SCRAPING
+async function scrapeWithApifyAndBee(url) {
   const retailer = detectRetailer(url);
   
-  // Try Apify for Wayfair
-  if (retailer === 'Wayfair' && ENABLE_APIFY && apifyClient) {
+  // WAYFAIR WITH APIFY (YOUR PURCHASED ACTOR)
+  if (retailer === 'Wayfair' && apifyClient) {
     try {
-      console.log('   🔄 Using Apify for Wayfair...');
+      console.log('   🔄 Using Apify Wayfair actor...');
       
       const run = await apifyClient.actor('123webdata/wayfair-scraper').call({
         productUrls: [url],
@@ -759,22 +510,44 @@ async function scrapeWithScrapingBee(url) {
         proxy: {
           useApifyProxy: true,
           apifyProxyCountry: 'US'
-        }
+        },
+        maxRequestRetries: 3
       });
       
-      const result = await apifyClient.run(run.id).waitForFinish({ waitSecs: 30 });
+      console.log('   ⏳ Waiting for Wayfair data...');
+      await apifyClient.run(run.id).waitForFinish({ waitSecs: 60 });
+      
       const { items } = await apifyClient.dataset(run.defaultDatasetId).listItems();
       
       if (items && items.length > 0) {
         const item = items[0];
-        console.log('   ✅ Apify success');
+        console.log('   ✅ Apify got:', item.title ? item.title.substring(0, 50) : 'No title');
+        
+        // Extract price
+        let price = null;
+        if (item.price) {
+          price = typeof item.price === 'string' ? 
+            parseFloat(item.price.replace(/[^0-9.]/g, '')) : 
+            parseFloat(item.price);
+        } else if (item.salePrice) {
+          price = parseFloat(item.salePrice);
+        }
+        
+        // Extract variant
+        let variant = null;
+        if (item.selectedOptions && typeof item.selectedOptions === 'object') {
+          variant = Object.entries(item.selectedOptions)
+            .map(([key, value]) => `${key}: ${value}`)
+            .join(', ');
+        }
         
         return {
-          price: parseFloat((item.price || item.salePrice || '0').toString().replace(/[^0-9.]/g, '')),
-          title: item.title || 'Wayfair Product',
+          price: price,
+          title: item.title || item.name || 'Wayfair Product',
           image: item.images?.[0] || item.image,
-          variant: item.selectedOptions ? Object.values(item.selectedOptions).join(', ') : null,
-          sku: item.sku || item.productId
+          variant: variant,
+          sku: item.sku || item.productId,
+          success: true
         };
       }
     } catch (error) {
@@ -782,84 +555,88 @@ async function scrapeWithScrapingBee(url) {
     }
   }
   
-  // Fall back to ScrapingBee
-  try {
-    console.log('   🐝 Using ScrapingBee...');
-    
-    const response = await axios({
-      method: 'GET',
-      url: 'https://app.scrapingbee.com/api/v1',
-      params: {
-        api_key: SCRAPINGBEE_API_KEY,
-        url: url,
-        premium_proxy: 'true',
-        country_code: 'us',
-        render_js: 'true',
-        wait: '3000',
-        ai_extract_rules: JSON.stringify({
-          price: "Product Price or Sale Price in USD",
-          title: "Product Title or Name",
-          variant: "Selected options, color, size, or configuration",
-          image: "Main Product Image URL",
-          sku: "SKU, Product ID, or Item Number"
-        })
-      },
-      timeout: 20000
-    });
-    
-    const data = response.data;
-    
-    return {
-      price: data.price ? parseFloat(data.price.toString().replace(/[^0-9.]/g, '')) : null,
-      title: data.title || 'Product',
-      image: data.image,
-      variant: data.variant,
-      sku: data.sku
-    };
-    
-  } catch (error) {
-    console.log('   ❌ ScrapingBee failed:', error.message);
-    return {
-      price: null,
-      title: 'Product from ' + retailer,
-      image: null,
-      variant: null,
-      sku: null
-    };
+  // FALLBACK TO SCRAPINGBEE FOR ALL RETAILERS
+  if (SCRAPINGBEE_API_KEY) {
+    try {
+      console.log('   🐝 Using ScrapingBee...');
+      
+      const response = await axios({
+        method: 'GET',
+        url: 'https://app.scrapingbee.com/api/v1',
+        params: {
+          api_key: SCRAPINGBEE_API_KEY,
+          url: url,
+          premium_proxy: 'true',
+          country_code: 'us',
+          render_js: 'true',
+          wait: '3000',
+          ai_extract_rules: JSON.stringify({
+            price: "Product Price in USD",
+            title: "Product Title or Name",
+            variant: "Selected options, color, size",
+            image: "Main Product Image URL",
+            sku: "SKU or Product ID"
+          })
+        },
+        timeout: 20000
+      });
+      
+      const data = response.data;
+      
+      return {
+        price: data.price ? parseFloat(data.price.toString().replace(/[^0-9.]/g, '')) : null,
+        title: data.title || 'Product',
+        image: data.image,
+        variant: data.variant,
+        sku: data.sku,
+        success: !!data.title
+      };
+      
+    } catch (error) {
+      console.log('   ❌ ScrapingBee failed:', error.message);
+    }
   }
+  
+  return {
+    price: null,
+    title: `Product from ${retailer}`,
+    image: null,
+    variant: null,
+    sku: null,
+    success: false
+  };
 }
 
-// Main product processing with all integrations
+// MAIN PRODUCT PROCESSING
 async function processProduct(url, index, urls) {
   console.log(`[${index + 1}/${urls.length}] Processing: ${url.substring(0, 80)}...`);
   
   const retailer = detectRetailer(url);
   console.log(`   Retailer: ${retailer}`);
   
-  // Step 1: Check Turso for learned data
-  const learned = await learningDB.getKnownProduct(url);
+  // Check learned data
+  const learned = getLearnedData(url);
   if (learned && learned.price) {
-    console.log('   📚 Using cached data from Turso');
     return { ...learned, shippingCost: calculateShippingCost(learned.dimensions, learned.weight, learned.price) };
   }
   
-  // Step 2: Scrape with Apify/ScrapingBee
-  const scraped = await scrapeWithScrapingBee(url);
-  const productName = scraped.title || `${retailer} Product ${index + 1}`;
+  // Scrape product
+  const scraped = await scrapeWithApifyAndBee(url);
+  const productName = scraped.title || `${retailer} Product`;
   const category = categorizeProduct(productName, url);
   
-  // Step 3: Try UPCitemdb for missing dimensions/weight
+  // Get dimensions and weight
   let dimensions = null;
   let weight = null;
   
-  if (USE_UPCITEMDB && productName && (!scraped.dimensions || !scraped.weight)) {
+  // Try UPCitemdb if available
+  if (USE_UPCITEMDB && productName && scraped.success) {
     try {
       console.log('   🔍 Checking UPCitemdb...');
       const upcData = await upcItemDB.searchByName(productName);
       
       if (upcData) {
         if (upcData.dimensions) {
-          // Add packaging buffer
           dimensions = {
             length: Math.round(upcData.dimensions.length * 1.25),
             width: Math.round(upcData.dimensions.width * 1.25),
@@ -873,22 +650,22 @@ async function processProduct(url, index, urls) {
         }
       }
     } catch (error) {
-      console.log('   ⚠️ UPCitemdb lookup failed');
+      console.log('   ⚠️ UPCitemdb failed');
     }
   }
   
-  // Step 4: Use AI estimation for missing data
+  // Estimate missing data
   if (!dimensions) {
-    dimensions = await estimateDimensionsFromPatterns(category, productName, retailer);
-    console.log('   📐 Estimated dimensions from patterns');
+    dimensions = estimateDimensionsFromPatterns(category, productName, retailer);
+    console.log('   📐 Estimated dimensions');
   }
   
   if (!weight) {
-    weight = await estimateWeightFromPatterns(dimensions, category, retailer);
-    console.log('   ⚖️ Estimated weight from patterns');
+    weight = estimateWeightFromPatterns(dimensions, category);
+    console.log('   ⚖️ Estimated weight');
   }
   
-  // Step 5: Apply flat-pack reduction if applicable
+  // Apply flat-pack reduction if applicable
   let packaging = 'ASSEMBLED';
   const isFlatPack = isFlatPackable(category, productName, retailer);
   if (isFlatPack) {
@@ -898,16 +675,16 @@ async function processProduct(url, index, urls) {
     packaging = 'FLAT-PACK';
   }
   
-  // Step 6: Calculate shipping with hidden fees
+  // Calculate shipping
   const shippingCost = calculateShippingCost(dimensions, weight, scraped.price || 100);
   
   const product = {
     id: Date.now() + Math.random().toString(36).substr(2, 9),
     url: url,
     name: productName,
-    variant: scraped.variant || null,
-    thumbnail: scraped.thumbnail || scraped.image,
-    sku: scraped.sku || null,
+    variant: scraped.variant,
+    thumbnail: scraped.image,
+    sku: scraped.sku,
     price: scraped.price,
     image: scraped.image || 'https://placehold.co/400x400/7CB342/FFFFFF/png?text=No+Image',
     category: category,
@@ -921,8 +698,6 @@ async function processProduct(url, index, urls) {
       hasName: !!scraped.title,
       hasPrice: !!scraped.price,
       hasImage: !!scraped.image,
-      hasDimensions: !!scraped.dimensions,
-      hasWeight: !!scraped.weight,
       hasVariant: !!scraped.variant,
       hasSku: !!scraped.sku
     },
@@ -934,16 +709,15 @@ async function processProduct(url, index, urls) {
   console.log(`   Variant: ${scraped.variant || 'Not specified'}`);
   console.log(`   Packaging: ${packaging}`);
   console.log(`   Volume: ${cubicFeet.toFixed(1)} ft³`);
-  console.log(`   Weight: ${weight} lbs`);
-  console.log(`   Shipping: $${shippingCost} (includes 15% margin + 3.5% card fee)`);
+  console.log(`   Shipping: $${shippingCost}`);
   
-  // Step 7: Save to Turso for future learning
-  await learningDB.saveProduct(product);
+  // Learn from this product
+  learnFromProduct(url, product);
   
   return product;
 }
 
-// Scrape products endpoint
+// SCRAPING ENDPOINT
 app.post('/api/scrape', scrapeRateLimiter, async (req, res) => {
   try {
     const { urls } = req.body;
@@ -970,47 +744,30 @@ app.post('/api/scrape', scrapeRateLimiter, async (req, res) => {
         const product = await processProduct(urls[i], i, urls);
         products.push(product);
       } catch (error) {
-        console.error(`   ❌ Failed to process: ${error.message}`);
+        console.error(`   ❌ Failed: ${error.message}`);
         
         const retailer = detectRetailer(urls[i]);
         products.push({
           id: Date.now() + Math.random().toString(36).substr(2, 9),
           url: urls[i],
           name: 'Product from ' + retailer,
-          variant: null,
           price: null,
           image: 'https://placehold.co/400x400/7CB342/FFFFFF/png?text=Not+Found',
           category: 'general',
           retailer: retailer,
-          dimensions: await estimateDimensionsFromPatterns('general', '', retailer),
+          dimensions: estimateDimensionsFromPatterns('general', '', retailer),
           weight: 50,
           shippingCost: 60,
-          dataCompleteness: {
-            hasName: false,
-            hasPrice: false,
-            hasImage: false,
-            hasDimensions: false,
-            hasWeight: false,
-            hasVariant: false
-          },
-          error: true,
-          fromCache: false
+          error: true
         });
       }
     }
     
     const successful = products.filter(p => p.price).length;
     const fromCache = products.filter(p => p.fromCache).length;
-    const flatPacked = products.filter(p => p.isFlatPack).length;
-    const withVariants = products.filter(p => p.variant).length;
     
     console.log(`\n========================================`);
-    console.log(`RESULTS: ${products.length} products processed`);
-    console.log(`   Scraped: ${successful - fromCache}`);
-    console.log(`   From Turso cache: ${fromCache}`);
-    console.log(`   Failed: ${products.length - successful}`);
-    console.log(`   Flat-packed: ${flatPacked}`);
-    console.log(`   With variants: ${withVariants}`);
+    console.log(`RESULTS: ${successful}/${products.length} successful`);
     console.log(`========================================\n`);
     
     res.json({ 
@@ -1019,27 +776,20 @@ app.post('/api/scrape', scrapeRateLimiter, async (req, res) => {
         total: products.length,
         successful: successful,
         fromCache: fromCache,
-        failed: products.length - successful,
-        flatPacked: flatPacked,
-        withVariants: withVariants
+        failed: products.length - successful
       }
     });
     
   } catch (error) {
-    console.error('❌ Scraping endpoint error:', error);
-    res.status(500).json({ 
-      error: 'Failed to scrape products',
-      message: error.message 
-    });
+    console.error('❌ Scraping error:', error);
+    res.status(500).json({ error: 'Failed to scrape products' });
   }
 });
 
-// Prepare Shopify checkout endpoint
+// Prepare Shopify checkout
 app.post('/api/prepare-shopify-checkout', async (req, res) => {
   try {
     const checkoutId = generateOrderId();
-    
-    // Return checkout URL for redirect
     const redirectUrl = `https://${SHOPIFY_DOMAIN}/pages/import-checkout?checkout=${checkoutId}`;
     
     res.json({
