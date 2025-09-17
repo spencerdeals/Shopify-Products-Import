@@ -790,6 +790,27 @@ async function scrapeProduct(url) {
   console.log(`\n📦 Processing: ${url}`);
   console.log(`   Retailer: ${retailer}`);
   
+  // STEP 1: For Amazon URLs, try Amazon-Crawler first
+  if (retailer === 'Amazon' && amazonCrawler.isAvailable()) {
+    try {
+      console.log('   🛒 Attempting Amazon-Crawler (primary for Amazon)...');
+      productData = await amazonCrawler.scrapeProduct(url);
+      
+      if (productData) {
+        scrapingMethod = 'amazon-crawler';
+        console.log('   ✅ Amazon-Crawler returned data');
+        
+        // Check if data is complete
+        if (!isDataComplete(productData)) {
+          console.log('   ⚠️ Amazon-Crawler data incomplete, will try fallbacks');
+        }
+      }
+    } catch (error) {
+      console.log('   ❌ Amazon-Crawler failed:', error.message);
+      productData = null;
+    }
+  }
+  
   // STEP 1: For Amazon URLs, ALWAYS use specialized Amazon crawler as PRIMARY
   if (USE_AMAZON_CRAWLER && isAmazonUrl(url)) {
     try {
@@ -913,10 +934,11 @@ async function scrapeProduct(url) {
     }
   }
   
-  // STEP 3: Try Apify as fallback
+  // STEP 2: If Amazon-Crawler failed or not Amazon, try Apify
   if (USE_APIFY && (!productData || !isDataComplete(productData))) {
     try {
-      console.log('   🔄 Attempting Apify scrape...');
+      const apifyLabel = retailer === 'Amazon' ? 'Apify (Amazon fallback)' : 'Apify (primary)';
+      console.log(`   🔄 Attempting ${apifyLabel}...`);
       
       const apifyPromise = apifyScraper.scrapeProduct(url);
       const timeoutPromise = new Promise((_, reject) => 
@@ -1345,11 +1367,21 @@ app.post('/apps/instant-import/create-draft-order', async (req, res) => {
     
     const lineItems = [];
     
-    // Add products with quantity support
+      const apifyData = await apifyScraper.scrapeProduct(url);
     products.forEach(product => {
-      if (product.price && product.price > 0) {
-        const quantity = product.quantity || 1;
-        const unitPrice = product.price;
+      if (apifyData) {
+        if (!productData) {
+          // No previous data, use Apify
+          productData = apifyData;
+          scrapingMethod = 'apify';
+          console.log('   ✅ Apify returned data');
+        } else {
+          // Merge with existing data
+          const mergedData = mergeProductData(productData, apifyData);
+          productData = mergedData;
+          scrapingMethod = scrapingMethod + '+apify';
+          console.log('   ✅ Apify supplemented existing data');
+        }
         
         lineItems.push({
           title: `${product.name}${product.variant ? ` - ${product.variant}` : ''}`,
@@ -1426,7 +1458,7 @@ app.post('/apps/instant-import/create-draft-order', async (req, res) => {
       {
         headers: {
           'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN,
-          'Content-Type': 'application/json'
+          console.log('   ⚠️ Data still incomplete, will try more fallbacks');
         }
       }
     );
@@ -1457,21 +1489,43 @@ app.get('/test-upc', async (req, res) => {
   if (!USE_UPCITEMDB) {
     return res.json({ 
       success: false, 
-      message: 'UPCitemdb not configured' 
     });
   }
   
-  try {
+  // STEP 3: Try ProWebCrawler if still incomplete
+  if (proWebCrawler.isAvailable() && (!productData || !isDataComplete(productData))) {
+    try {
+      console.log('   🕸️ Attempting ProWebCrawler...');
+      const proData = await proWebCrawler.scrapeProduct(url);
+      
+          // All previous methods failed, use ScrapingBee data
+        if (!productData) {
+          scrapingMethod = 'scrapingbee-gpt';
+          console.log('   ✅ Using ScrapingBee GPT data');
+          console.log('   ✅ ProWebCrawler returned data');
+          // Merge data - keep existing data but fill in missing fields
+          const mergedData = mergeProductData(productData, proData);
+          productData = mergedData;
+          scrapingMethod = scrapingMethod + '+proweb';
+          console.log('   ✅ ProWebCrawler supplemented data');
+            console.log('   ✅ ScrapingBee GPT provided missing name');
+      }
+    } catch (error) {
+            console.log('   ✅ ScrapingBee GPT provided missing price');
+    }
+  }
+            console.log('   ✅ ScrapingBee GPT provided missing image');
+  // STEP 4: If still incomplete, try ScrapingBee with AI
     const testProduct = await upcItemDB.searchByName('Apple iPhone 15 Pro');
-    res.json({
-      success: true,
+            console.log('   ✅ ScrapingBee GPT provided missing dimensions');
+      console.log('   🐝 Attempting ScrapingBee GPT extraction...');
       testProduct: testProduct,
       message: testProduct ? 'UPCitemdb is working!' : 'UPCitemdb connected but no results'
-    });
+          scrapingMethod = scrapingMethod + '+scrapingbee-gpt';
   } catch (error) {
     res.json({
       success: false,
-      error: error.message
+      console.log('   ❌ ScrapingBee GPT extraction failed:', error.message);
     });
   }
 });
@@ -1504,7 +1558,7 @@ app.listen(PORT, () => {
   console.log(`📍 API Health: http://localhost:${PORT}/health`);
   console.log(`📍 Admin Panel: http://localhost:${PORT}/admin (admin:${ADMIN_PASSWORD})\n`);
   
-  // Cleanup on shutdown
+  // STEP 5: Try UPCitemdb if we have a product name but missing dimensions
   process.on('SIGTERM', () => {
     console.log('🛑 Server shutting down...');
     process.exit(0);
