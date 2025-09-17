@@ -98,30 +98,74 @@ class AmazonCrawler {
           '#landingImage',
           '.a-dynamic-image',
           'img[data-old-hires]',
-          '.imgTagWrapper img'
+          '.imgTagWrapper img',
+          'img[data-a-dynamic-image]',
+          '#imgBlkFront',
+          '.a-spacing-small img'
         ];
         
         for (const selector of imageSelectors) {
           const element = document.querySelector(selector);
-          if (element && element.src && element.src.startsWith('http')) {
-            data.image = element.src;
+          if (element) {
+            let imgSrc = element.src || element.getAttribute('data-old-hires') || element.getAttribute('data-a-dynamic-image');
+            if (imgSrc) {
+              // Handle relative URLs
+              if (imgSrc.startsWith('//')) {
+                imgSrc = 'https:' + imgSrc;
+              } else if (imgSrc.startsWith('/')) {
+                imgSrc = 'https://images-na.ssl-images-amazon.com' + imgSrc;
+              }
+              
+              if (imgSrc.startsWith('http')) {
+                data.image = imgSrc;
+                break;
+              }
+            }
+          }
+        }
+
+        // If still no image, try to get from JSON data
+        if (!data.image) {
+          const scriptTags = document.querySelectorAll('script');
+          for (const script of scriptTags) {
+            if (script.textContent.includes('ImageBlockATF')) {
+              try {
+                const match = script.textContent.match(/"hiRes":"([^"]+)"/);
+                if (match && match[1]) {
+                  data.image = match[1].replace(/\\u[\dA-F]{4}/gi, '');
+                  break;
+                }
+              } catch (e) {
+                // Continue searching
+              }
+            }
+          }
+        }
             break;
           }
         }
 
         // Extract variant (color, size, style)
         const variantSelectors = [
+          '.a-button-selected .a-button-text',
           '.a-dropdown-prompt',
-          '.selection .a-color-base',
-          '[data-csa-c-content-id] .a-color-base',
-          '.a-button-selected .a-button-text'
+          '#variation_color_name .selection',
+          '#variation_size_name .selection',
+          '#variation_style_name .selection',
+          '.swatches .a-button-selected span',
+          '.selection .a-color-base'
         ];
         
         for (const selector of variantSelectors) {
           const element = document.querySelector(selector);
           if (element && element.textContent.trim() && 
-              !element.textContent.trim().match(/^(select|choose|option|default)$/i)) {
-            data.variant = element.textContent.trim();
+              !element.textContent.trim().match(/^(select|choose|option|default|click|tap)$/i)) {
+            const variantText = element.textContent.trim();
+            // Only use if it's not just numbers or codes
+            if (!/^[\d\-_]+$/.test(variantText) && variantText.length >= 3 && variantText.length <= 50) {
+              data.variant = variantText;
+              break;
+            }
             break;
           }
         }
