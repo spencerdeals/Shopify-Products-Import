@@ -532,40 +532,6 @@ function calculateDetailedShippingCost(dimensions, weight, price, category, piec
     // No dimensions - use price-based estimate
     breakdown.customerPrice = Math.max(25, price * 0.15);
     breakdown.actualShippingCost = breakdown.customerPrice * 0.6; // 40% markup
-                console.log('✅ Found title with selector:', selector, 'Title:', title.substring(0, 50));
-}
-
-// Enhanced shipping calculation with detailed breakdown for admin
-function calculateDetailedShippingCost(dimensions, weight, price, category, pieceCount = 1, isFlatPacked = false) {
-  const breakdown = {
-    // Dimension details
-    boxDimensions: dimensions,
-    cubicInches: 0,
-    cubicFeet: 0,
-    boxCount: pieceCount,
-    
-    // Cost breakdown
-    baseCost: 0,
-    oversizeFee: 0,
-    valueFee: 0,
-    handlingFee: 15,
-    fuelSurcharge: 0,
-    insuranceFee: 0,
-    
-    // Business costs (hidden from customer)
-    actualShippingCost: 0,  // What we actually pay
-    profitMargin: 0,        // Our markup
-    cardProcessingFee: 0,   // 2.9% + $0.30
-    
-    // Totals
-    subtotal: 0,
-    customerPrice: 0
-  };
-  
-  if (!dimensions) {
-    // No dimensions - use price-based estimate
-    breakdown.customerPrice = Math.max(25, price * 0.15);
-    breakdown.actualShippingCost = breakdown.customerPrice * 0.6; // 40% markup
     return breakdown;
   }
   
@@ -775,36 +741,21 @@ async function scrapeWithBasicScraper(url) {
       /<title[^>]*>([^<]+)<\/title>/i,
       /<h1[^>]*>([^<]+)<\/h1>/i,
       /<meta[^>]*property="og:title"[^>]*content="([^"]+)"/i
-            // ENHANCED Wayfair price selectors - try everything possible
+    ];
     
-              // Current Wayfair structure (2025)
-              '[data-testid="product-price"]',
-              '[data-testid="ProductPrice"]',
     for (const pattern of titlePatterns) {
+      const match = html.match(pattern);
+      if (match) {
         title = match[1].trim().replace(/&[^;]+;/g, '').substring(0, 100);
-              // Primary price selectors
-              'span[data-enzyme-id="PriceDisplay"]',
-              '[data-testid="PriceDisplay"]',
-              '[class*="PriceDisplay"]',
-              '.ProductPrice [data-testid="PriceDisplay"]',
-              '.PriceBlock [data-testid="PriceDisplay"]',
-              
-              // Alternative price patterns
-              '[data-testid="product-price"]',
-              '[data-testid="ProductPrice"]',
-              '.ProductDetailInfoBlock [class*="Price"]:not([class*="Strike"]):not([class*="Was"])',
-              '.price-current',
-              '.current-price',
-              
-              // Fallback selectors
-              '.ProductPrice span:first-child',
-              '.PriceBlock span:not([class*="strike"])',
-              '.BasePriceBlock span:not([class*="strike"])',
-              '[data-testid="price"]',
-              
-              // Generic price patterns
-              'span:contains("$")',
-              '[class*="price"]:not([class*="strike"]):not([class*="was"])'
+        console.log('✅ Found title with selector:', selector, 'Title:', title.substring(0, 50));
+        break;
+      }
+    }
+    
+    // Extract price with enhanced patterns
+    let price = null;
+    const pricePatterns = [
+      /\$\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g,
       /price[^>]*>.*?\$\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/gi,
       /"price"[^}]*"(\d+\.?\d*)"/gi,
       /\$\s*(\d+\s*\.\s*\d{2})/g // Handle spaced decimals like "$ 123 . 45"
@@ -814,14 +765,12 @@ async function scrapeWithBasicScraper(url) {
       const matches = [...html.matchAll(pattern)];
       for (const match of matches) {
         const priceStr = match[1].replace(/[,\s]/g, '');
-                // Multiple price extraction patterns
+        const numPrice = parseFloat(priceStr);
         if (numPrice >= 1 && numPrice <= 50000) {
           price = numPrice;
           break;
         }
-                  /\$\s*(\d+\s*\.\s*\d{2})/,  // Handle spaced decimals
-                  /USD\s*\$?\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/i,
-                  /Price:\s*\$?\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/i
+      }
       if (price) break;
     }
     
@@ -845,92 +794,33 @@ async function scrapeWithBasicScraper(url) {
     
     console.log(`   ✅ Basic scraper completed in ${Date.now() - startTime}ms`);
     
-            // Enhanced fallback: search page text with better patterns
+    return {
       name: title || null,
       price: price,
       image: image || null,
-              
-              // Multiple fallback patterns
-              const fallbackPatterns = [
-                /\$\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g,
-                /(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*USD/gi,
-                /Price:\s*\$?\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/gi,
-                /Sale:\s*\$?\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/gi
-              ];
+      dimensions: null,
       weight: null,
-              for (const pattern of fallbackPatterns) {
-                const matches = [...pageText.matchAll(pattern)];
-                for (const match of matches) {
-                  const numericPrice = parseFloat(match[1].replace(/,/g, ''));
-                  if (numericPrice >= 10 && numericPrice <= 50000) {
-                    price = '$' + numericPrice.toFixed(2);
-                    console.log('Found price in page text:', price);
-                    break;
-                  }
-                }
-                if (price) break;
-              }
-            }
-            
-            // If still no price, try JSON-LD structured data
-            if (!price) {
-              console.log('Trying JSON-LD structured data...');
-              $('script[type="application/ld+json"]').each(function() {
-                try {
-                  const jsonData = JSON.parse($(this).text());
-                  if (jsonData.offers && jsonData.offers.price) {
-                    const structuredPrice = parseFloat(jsonData.offers.price);
-                    if (structuredPrice >= 10 && structuredPrice <= 50000) {
-                      price = '$' + structuredPrice.toFixed(2);
-                      console.log('Found price in JSON-LD:', price);
-                      return false; // Break out of each loop
-                    }
-                  }
-                } catch (e) {
-                  // Ignore JSON parse errors
+      brand: null,
+      category: null,
+      inStock: true
+    };
+    
+  } catch (error) {
     console.error('❌ Basic scraper failed:', error.message);
-              });
-            }
-            
-            // Final attempt: look for any dollar amounts in specific containers
-            if (!price) {
-              console.log('Final attempt: searching price containers...');
-              const priceContainers = [
-                '.ProductDetailInfoBlock',
-                '.ProductPrice',
-                '.PriceBlock',
-                '.price-container',
-                '.product-price-container',
-                '[class*="price"]'
-              ];
-              
-              for (const container of priceContainers) {
-                const containerText = $(container).text();
-                const match = containerText.match(/\$\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/);
-                if (match) {
-                  const numericPrice = parseFloat(match[1].replace(/,/g, ''));
-                  if (numericPrice >= 10 && numericPrice <= 50000) {
-                    price = '$' + numericPrice.toFixed(2);
-                    console.log('Found price in container:', container, price);
-                    break;
-                  }
-                }
     throw error;
   }
 }
-            // Enhanced image selectors
+
 // ScrapingBee scraping function - ENHANCED WITH AI EXTRACTION
 async function scrapeWithScrapingBee(url) {
-              '[data-enzyme-id="ProductImageCarousel"] img',
   if (!USE_SCRAPINGBEE) {
     throw new Error('ScrapingBee not configured');
   }
 
+  try {
     console.log('🐝 Starting ScrapingBee AI extraction for:', url);
     const startTime = Date.now();
-              '.ProductImageCarousel img',
-              '.hero-image img',
-              '.main-image img'
+    
     // Use AI extraction for universal compatibility
     const response = await axios({
       method: 'GET',
@@ -946,17 +836,14 @@ async function scrapeWithScrapingBee(url) {
           price: "Product Price in USD",
           title: "Product Title or Name",
           description: "Product Description",
-            // Comprehensive specifications search
+          dimensions: "Product Dimensions or Size",
           weight: "Product Weight or Shipping Weight",
           brand: "Brand Name or Manufacturer",
           availability: "Stock Status or Availability",
           image: "Main Product Image URL"
         })
       },
-              '[data-testid="ProductSpecifications"]',
-              '.product-dimensions',
-              '.shipping-info',
-              '.product-info-details'
+      timeout: 12000
     });
 
     console.log(`   ✅ ScrapingBee AI extraction completed in ${Date.now() - startTime}ms`);
@@ -968,16 +855,13 @@ async function scrapeWithScrapingBee(url) {
       name: null,
       price: null,
       image: null,
-            // Comprehensive brand detection
+      dimensions: null,
       weight: null,
       brand: null,
       category: null,
       inStock: true
     };
-              '.ProductDetailInfoBlock .brand',
-              '.manufacturer',
-              '.brand-info',
-              '[class*="brand"]'
+    
     // Extract product name
     if (extracted.title) {
       productData.name = extracted.title.trim();
@@ -1618,9 +1502,7 @@ app.post('/apps/instant-import/create-draft-order', async (req, res) => {
           first_name: customer.name.split(' ')[0],
           last_name: customer.name.split(' ').slice(1).join(' ') || ''
         },
-        maxRequestsPerCrawl: 5,
         note: `Import Calculator Order\n\nOriginal URLs:\n${originalUrls}`,
-        requestHandlerTimeoutSecs: 90
         tax_exempt: true,
         send_receipt: false,
         send_fulfillment_receipt: false
