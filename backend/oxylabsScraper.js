@@ -168,7 +168,7 @@ class OxylabsScraper {
 
     const retailer = this.detectRetailer(url);
     const source = this.getOxylabsSource(retailer, url);
-    console.log(`🌐 Oxylabs scraping ${retailer}: ${url.substring(0, 60)}...`);
+    console.log(`🌐 Oxylabs (UPGRADED) scraping ${retailer}: ${url.substring(0, 60)}...`);
 
     try {
       // Oxylabs API payload with optimized source and parsing
@@ -176,11 +176,13 @@ class OxylabsScraper {
         source: source,
         url: url,
         user_agent_type: 'desktop',
-        render: 'html'
+        render: 'html',
+        premium_proxy: 'true',  // Now available with upgraded plan
+        country_code: 'us'
         // Temporarily disable parsing to see raw HTML first
       };
 
-      console.log(`   📤 Oxylabs payload:`, JSON.stringify(payload, null, 2));
+      console.log(`   📤 Oxylabs UPGRADED payload: ${source} source, premium proxy enabled`);
 
       // Make request to Oxylabs
       const response = await axios.post(this.baseURL, payload, {
@@ -191,39 +193,30 @@ class OxylabsScraper {
         headers: {
           'Content-Type': 'application/json'
         },
-        timeout: 60000 // 60 seconds for Oxylabs
+        timeout: 45000 // Upgraded should be faster
       });
 
-      console.log(`   📥 Oxylabs response status:`, response.status);
+      console.log(`   📥 Oxylabs UPGRADED response: ${response.status} (${response.data?.results?.length || 0} results)`);
       
       // Only log response structure, not full content
-      if (response.data && response.data.results) {
-        console.log(`   📥 Oxylabs returned ${response.data.results.length} results`);
-      }
-
       if (response.data && response.data.results && response.data.results[0]) {
         const result = response.data.results[0];
         
         if (result.content && result.content.html) {
           // Fallback: parse HTML manually if structured parsing failed
-          console.log(`✅ Oxylabs returned HTML, parsing manually`);
+          console.log(`✅ Oxylabs UPGRADED: Got ${result.content.html.length} chars of HTML`);
           return this.parseHtmlContent(result.content.html, url);
         } else {
-          console.log(`❌ Oxylabs result structure:`, JSON.stringify(result, null, 2));
+          console.log(`❌ Oxylabs UPGRADED: No HTML content in result`);
         }
       }
       
-      throw new Error('No valid results from Oxylabs');
+      throw new Error('No valid results from Oxylabs UPGRADED');
       
     } catch (error) {
-      console.error(`❌ Oxylabs scraping failed: ${error.message}`);
+      console.error(`❌ Oxylabs UPGRADED failed: ${error.message}`);
       if (error.response) {
-        console.error(`   Status: ${error.response.status}`);
-        console.error(`   Response headers:`, error.response.headers);
-        console.error(`   Response data:`, JSON.stringify(error.response.data, null, 2));
-      }
-      if (error.code) {
-        console.error(`   Error code:`, error.code);
+        console.error(`   UPGRADED Status: ${error.response.status} - ${error.response.data?.message || 'Unknown error'}`);
       }
       throw error;
     }
