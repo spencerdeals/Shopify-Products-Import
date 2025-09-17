@@ -1,17 +1,11 @@
 // gptParser.js
-// GPT-backed parser with robust HTML fetch + guardrails + richer fields.
-// Order of fetch: 1) ScrapingBee (JS render) → 2) Apify snapshot → 3) Axios retries
-// Env needed: OPENAI_API_KEY
-// Optional env: SCRAPINGBEE_API_KEY, SCRAPINGBEE_COUNTRY (US|CA|GB), APIFY_API_KEY,
-//               GPT_PARSER_MODEL (default gpt-4o-mini), DEFAULT_CURRENCY (default USD),
-//               MAX_GPT_CALLS_PER_RUN (e.g., 50)
+// Trimmed token use + Bee country order (CA → US → GB) + guardrails
 
 const axios = require('axios');
 const cheerio = require('cheerio');
 const OpenAI = require('openai');
 const { ApifyClient } = require('apify-client');
 
-// ---- Config ----
 const MODEL = process.env.GPT_PARSER_MODEL || 'gpt-4o-mini';
 const TIMEOUT_MS = 30000;
 const MAX_AXIOS_RETRIES = 3;
@@ -19,10 +13,8 @@ const DEFAULT_CURRENCY = (process.env.DEFAULT_CURRENCY || 'USD').toUpperCase();
 const ALLOWED_CURRENCIES = ['USD','BMD','CAD','GBP','EUR'];
 const MAX_GPT_CALLS_PER_RUN = parseInt(process.env.MAX_GPT_CALLS_PER_RUN || '100', 10);
 
-// Budget guard (per process)
 let gptCallsUsed = 0;
 
-// ---- Utils ----
 function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
 function rnd(min,max){ return Math.floor(Math.random()*(max-min+1))+min; }
 function htmlToVisibleText(html){
@@ -57,10 +49,7 @@ async function fetchViaScrapingBee(url){
   const key = process.env.SCRAPINGBEE_API_KEY;
   if (!key) return null;
 
-  const countries = [
-    process.env.SCRAPINGBEE_COUNTRY || 'US',
-    'CA','GB'
-  ];
+  const countries = ['CA','US','GB']; // CA first (worked in your logs)
 
   for (const country of countries){
     try{
@@ -80,7 +69,6 @@ async function fetchViaScrapingBee(url){
         return typeof res.data === 'string' ? res.data : res.data.toString();
       }
       console.warn(`[ScrapingBee] Non-2xx ${res.status} via ${country}`);
-      // Try next country on 429/5xx
       if (res.status !== 429 && (res.status < 500 || res.status >= 600)) return null;
     }catch(e){
       console.warn('[ScrapingBee] Error:', e.message);
@@ -107,7 +95,7 @@ async function fetchViaApifySnapshot(url){
         }
       `,
     };
-    const run = await client.actor('apify/web-scraper').call(input, { timeout: 90000, memory: 1024 });
+    const run = await client.actor('apify/web-scraper').call(input, { timeout: 90000, memory: 1024, waitSecs: 60 });
     const { items } = await client.dataset(run.defaultDatasetId).listItems();
     if (items && items[0] && items[0].html){
       console.log('[Apify snapshot] OK');
@@ -175,13 +163,13 @@ async function smartFetchHtml(url){
 function vendorPromptHints(vendor){
   switch(vendor){
     case 'Wayfair':
-      return `For Wayfair: prefer "Sale Price" or the prominent current price. Ignore per-month financing and struck list prices.`;
+      return `For Wayfair: prefer "Sale Price" or the current price near the main buy button. Ignore per-month financing and struck list prices.`;
     case 'Amazon':
-      return `For Amazon: prefer the price near the "Add to Cart" button. Ignore "Was" and subscription per-month prices.`;
+      return `For Amazon: prefer the price near "Add to Cart". Ignore subscription/per-month prices and struck list prices.`;
     case 'Walmart':
-      return `For Walmart: prefer the main price block above "Add to cart". Ignore pickup/delivery fees and per-month financing.`;
+      return `For Walmart: prefer the main price above "Add to cart". Ignore fees and per-month financing.`;
     default:
-      return `Prefer the most prominent product price near the primary buy action; ignore per-month financing and struck-through prices.`;
+      return `Prefer the most prominent product price near the buy action; ignore per-month financing and struck-through prices.`;
   }
 }
 
@@ -191,9 +179,11 @@ async function parseWithGPT({ url, html, currencyFallback = DEFAULT_CURRENCY }){
   if (gptCallsUsed >= MAX_GPT_CALLS_PER_RUN) throw new Error('GPT budget limit reached for this run.');
 
   const client = new OpenAI({ apiKey });
-  const visibleText = htmlToVisibleText(html).slice(0, 100000);
-  const htmlSlice = html.slice(0, 100000);
   const vendor = detectRetailer(url);
+
+  // 🔻 Trim context HARD to cut token spend
+  const visibleText = htmlToVisibleText(html).slice(0, 20000); // 20k chars
+  const htmlSlice = html.slice(0, 20000);                      // 20k chars
 
   const system = `
 You are a precise e-commerce product extractor.
@@ -205,22 +195,18 @@ Return STRICT JSON with fields:
 - image (string URL)
 - brand (string, optional)
 - sku (string, optional)
-- availability (one of: in_stock, out_of_stock, preorder, unknown)
+- availability (in_stock | out_of_stock | preorder | unknown)
 - breadcrumbs (array of strings, optional)
 
 Rules:
 - ${vendorPromptHints(vendor)}
 - If currency is unclear, use "${currencyFallback}".
-- "price" must be a positive number > 0.
-- Prefer the current selling price, not list/was or per-month.
+- "price" must be > 0 and realistic.
+- Prefer current selling price, not list/was/per-month.
 - "image" should be a primary product image URL if visible.
 `.trim();
 
-  const user = `
-URL: ${url}
-Extract product data from the provided HTML and visible text.
-Return ONLY JSON, no explanations.
-`.trim();
+  const user = `URL: ${url}\nExtract product data from the provided HTML and visible text.\nReturn ONLY JSON, no explanations.`;
 
   gptCallsUsed += 1;
   const response = await client.chat.completions.create({
@@ -236,13 +222,9 @@ Return ONLY JSON, no explanations.
   });
 
   let data = {};
-  try{
-    data = JSON.parse(response.choices[0].message.content || '{}');
-  }catch(e){
-    throw new Error(`LLM returned invalid JSON: ${e.message}`);
-  }
+  try { data = JSON.parse(response.choices[0].message.content || '{}'); }
+  catch (e) { throw new Error(`LLM returned invalid JSON: ${e.message}`); }
 
-  // Normalize & validate
   let currency = (typeof data.currency === 'string' ? data.currency.toUpperCase().trim() : '') || currencyFallback;
   if (!ALLOWED_CURRENCIES.includes(currency)) currency = currencyFallback;
 
@@ -252,58 +234,45 @@ Return ONLY JSON, no explanations.
   const brand = typeof data.brand === 'string' && data.brand.trim() ? data.brand.trim() : null;
   const sku = typeof data.sku === 'string' && data.sku.trim() ? data.sku.trim() : null;
 
-  // Very light sanity bounds (ignore obvious garbage)
   if (!name || !price || price <= 0 || price > 200000) {
     throw new Error('GPT parse missing/invalid required fields (name/price).');
   }
 
   const availabilityRaw = (data.availability || '').toString().toLowerCase();
-  const availability = ['in_stock','out_of_stock','preorder','unknown'].includes(availabilityRaw)
-    ? availabilityRaw
-    : 'unknown';
+  const availability = ['in_stock','out_of_stock','preorder','unknown'].includes(availabilityRaw) ? availabilityRaw : 'unknown';
 
   const breadcrumbs = Array.isArray(data.breadcrumbs)
     ? data.breadcrumbs.map(s => (typeof s === 'string' ? s.trim() : '')).filter(Boolean).slice(0, 10)
     : [];
 
-  // Token usage log (if provided)
   if (response.usage) {
     console.log(`[GPT usage] prompt_tokens=${response.usage.prompt_tokens} completion_tokens=${response.usage.completion_tokens}`);
   }
 
   return {
-    url,
-    name,
-    price,
-    currency,
-    image,
-    brand,
-    sku,
-    availability,
-    breadcrumbs,
-    dimensions: null,
-    weight: null,
-    category: breadcrumbs[breadcrumbs.length - 1] || null,
+    url, name, price, currency, image, brand, sku, availability, breadcrumbs,
+    dimensions: null, weight: null, category: breadcrumbs[breadcrumbs.length - 1] || null,
     inStock: availability === 'in_stock',
-    _meta: {
-      vendor,
-      model: MODEL,
-      gptCallsUsed,
-    },
+    _meta: { vendor, model: MODEL, gptCallsUsed },
   };
 }
 
-// ---- Public API ----
 async function parseProduct(url, opts = {}){
   const { currencyFallback = DEFAULT_CURRENCY } = opts;
-
-  // tiny jitter to avoid bursts
   await sleep(rnd(200, 600));
-
   const html = await smartFetchHtml(url);
   if (!html) throw new Error('All HTML fetch methods failed (Bee/Apify/Axios).');
-
   return parseWithGPT({ url, html, currencyFallback });
+}
+
+// fetch chain
+async function smartFetchHtml(url){
+  let html = await fetchViaScrapingBee(url);
+  if (html) return html;
+  html = await fetchViaApifySnapshot(url);
+  if (html) return html;
+  html = await fetchViaAxios(url);
+  return html;
 }
 
 module.exports = { parseProduct };
