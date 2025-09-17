@@ -193,6 +193,62 @@ app.get('/complete-order.html', (req, res) => {
   });
 });
 
+// Admin authentication middleware
+function requireAuth(req, res, next) {
+  const auth = req.headers.authorization;
+  
+  if (!auth || !auth.startsWith('Basic ')) {
+    res.setHeader('WWW-Authenticate', 'Basic realm="SDL Admin"');
+    return res.status(401).send('Authentication required');
+  }
+  
+  const credentials = Buffer.from(auth.slice(6), 'base64').toString().split(':');
+  const username = credentials[0];
+  const password = credentials[1];
+  
+  const adminPassword = process.env.ADMIN_PASSWORD || 'sdl2024admin';
+  
+  if (username === 'admin' && password === adminPassword) {
+    console.log('✅ Admin authenticated successfully');
+    next();
+  } else {
+    console.log('❌ Admin authentication failed');
+    res.setHeader('WWW-Authenticate', 'Basic realm="SDL Admin"');
+    res.status(401).send('Invalid credentials');
+  }
+}
+
+// Admin routes - MUST be before rate limiter and static files
+app.get('/pages/imports/admin', requireAuth, (req, res) => {
+  const adminPath = path.join(__dirname, '../frontend', 'admin.html');
+  res.sendFile(adminPath, (err) => {
+    if (err) {
+      console.error('Error serving admin page:', err);
+      res.status(404).send('Admin page not found');
+    }
+  });
+});
+
+app.get('/admin', requireAuth, (req, res) => {
+  const adminPath = path.join(__dirname, '../frontend', 'admin.html');
+  res.sendFile(adminPath, (err) => {
+    if (err) {
+      console.error('Error serving admin page:', err);
+      res.status(404).send('Admin page not found');
+    }
+  });
+});
+
+app.get('/admin.html', requireAuth, (req, res) => {
+  const adminPath = path.join(__dirname, '../frontend', 'admin.html');
+  res.sendFile(adminPath, (err) => {
+    if (err) {
+      console.error('Error serving admin page:', err);
+      res.status(404).send('Admin page not found');
+    }
+  });
+});
+
 // Rate limiter (after health check)
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
