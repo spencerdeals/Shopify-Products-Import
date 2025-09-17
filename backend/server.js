@@ -976,7 +976,7 @@ async function scrapeProduct(url) {
       if (upcData) {
         if (!productData.dimensions && upcData.dimensions) {
           const category = productData.category || categorizeProduct(productData.name || '', url);
-          productData.dimensions = estimateBoxDimensions(upcData.dimensions, category);
+          productData.dimensions = convertProductToBoxDimensions(upcData.dimensions, category, productData.name);
           console.log('   ✅ UPCitemdb enhanced dimensions');
         }
         if (!productData.weight && upcData.weight) {
