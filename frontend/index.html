@@ -939,6 +939,18 @@
             box-shadow: 0 8px 25px rgba(255, 87, 34, 0.4);
         }
 
+        .nav-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        
+        .nav-btn:disabled:hover {
+            transform: none;
+            box-shadow: none;
+        }
+
         @media (max-width: 768px) {
             .calculator-content {
                 padding: 15px 10px;
