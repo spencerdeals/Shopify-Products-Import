@@ -31,6 +31,11 @@ console.log(`   UPCITEMDB_API_KEY preview: ${process.env.UPCITEMDB_API_KEY ? pro
 const upcItemDB = new UPCItemDB(UPCITEMDB_API_KEY);
 const USE_UPCITEMDB = !!UPCITEMDB_API_KEY;
 const APIFY_API_KEY = process.env.APIFY_API_KEY || '';
+
+// Initialize Retailer APIs
+const retailerAPIs = new RetailerAPIs();
+const availableRetailerAPIs = retailerAPIs.getAvailableAPIs();
+
 const SCRAPING_TIMEOUT = 15000;  // 15 seconds timeout
 const MAX_CONCURRENT_SCRAPES = 2;
 const BERMUDA_DUTY_RATE = 0.265;
