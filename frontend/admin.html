@@ -532,105 +532,18 @@ function calculateDetailedShippingCost(dimensions, weight, price, category, piec
     // No dimensions - use price-based estimate
     breakdown.customerPrice = Math.max(25, price * 0.15);
     breakdown.actualShippingCost = breakdown.customerPrice * 0.6; // 40% markup
-}
-
-// Enhanced shipping calculation with detailed breakdown for admin
-function calculateDetailedShippingCost(dimensions, weight, price, category, pieceCount = 1, isFlatPacked = false) {
-  const breakdown = {
-    // Dimension details
-    boxDimensions: dimensions,
-    cubicInches: 0,
-    cubicFeet: 0,
-    boxCount: pieceCount,
-    
-    // Cost breakdown
-    baseCost: 0,
-    oversizeFee: 0,
-    valueFee: 0,
-    handlingFee: 15,
-    fuelSurcharge: 0,
-    insuranceFee: 0,
-    
-    // Business costs (hidden from customer)
-    actualShippingCost: 0,  // What we actually pay
-    profitMargin: 0,        // Our markup
-    cardProcessingFee: 0,   // 2.9% + $0.30
-    
-    // Totals
-    subtotal: 0,
-    customerPrice: 0
-  };
+    return breakdown;
+  }
   
-  if (!dimensions) {
-    // No dimensions - use price-based estimate
-    breakdown.customerPrice = Math.max(25, price * 0.15);
-    breakdown.actualShippingCost = breakdown.customerPrice * 0.6; // 40% markup
-}
-
-// Enhanced shipping calculation with detailed breakdown for admin
-function calculateDetailedShippingCost(dimensions, weight, price, category, pieceCount = 1, isFlatPacked = false) {
-  const breakdown = {
-    // Dimension details
-    boxDimensions: dimensions,
-    cubicInches: 0,
-    cubicFeet: 0,
-    boxCount: pieceCount,
-    
-    // Cost breakdown
-    baseCost: 0,
-    oversizeFee: 0,
-    valueFee: 0,
-    handlingFee: 15,
-    fuelSurcharge: 0,
-    insuranceFee: 0,
-    
-    // Business costs (hidden from customer)
-    actualShippingCost: 0,  // What we actually pay
-    profitMargin: 0,        // Our markup
-    cardProcessingFee: 0,   // 2.9% + $0.30
-    
-    // Totals
-    subtotal: 0,
-    customerPrice: 0
-  };
+  // Calculate volume
+  breakdown.cubicInches = dimensions.length * dimensions.width * dimensions.height;
+  breakdown.cubicFeet = breakdown.cubicInches / 1728;
   
-  if (!dimensions) {
-    // No dimensions - use price-based estimate
-    breakdown.customerPrice = Math.max(25, price * 0.15);
-    breakdown.actualShippingCost = breakdown.customerPrice * 0.6; // 40% markup
-}
-
-// Enhanced shipping calculation with detailed breakdown for admin
-function calculateDetailedShippingCost(dimensions, weight, price, category, pieceCount = 1, isFlatPacked = false) {
-  const breakdown = {
-    // Dimension details
-    boxDimensions: dimensions,
-    cubicInches: 0,
-    cubicFeet: 0,
-    boxCount: pieceCount,
-    
-    // Cost breakdown
-    baseCost: 0,
-    oversizeFee: 0,
-    valueFee: 0,
-    handlingFee: 15,
-    fuelSurcharge: 0,
-    insuranceFee: 0,
-    
-    // Business costs (hidden from customer)
-    actualShippingCost: 0,  // What we actually pay
-    profitMargin: 0,        // Our markup
-    cardProcessingFee: 0,   // 2.9% + $0.30
-    
-    // Totals
-    subtotal: 0,
-    customerPrice: 0
-  };
+  // Base cost calculation ($8 per cubic foot)
+  breakdown.baseCost = Math.max(25, breakdown.cubicFeet * 8);
   
-  if (!dimensions) {
-    // No dimensions - use price-based estimate
-    breakdown.customerPrice = Math.max(25, price * 0.15);
-    breakdown.actualShippingCost = breakdown.customerPrice * 0.6; // 40% markup
+  // Oversize fee (any dimension > 48")
+  breakdown.oversizeFee = Math.max(dimensions.length, dimensions.width, dimensions.height) > 48 ? 75 : 0;
   
   // Value-based insurance fee
   breakdown.valueFee = price > 500 ? price * 0.02 : 0;
@@ -658,39 +571,6 @@ function calculateDetailedShippingCost(dimensions, weight, price, category, piec
   breakdown.customerPrice = Math.round(breakdown.subtotal);
   
   return breakdown;
-}
-
-// Enhanced shipping calculation with detailed breakdown for admin
-function calculateDetailedShippingCost(dimensions, weight, price, category, pieceCount = 1, isFlatPacked = false) {
-  const breakdown = {
-    // Dimension details
-    boxDimensions: dimensions,
-    cubicInches: 0,
-    cubicFeet: 0,
-    boxCount: pieceCount,
-    
-    // Cost breakdown
-    baseCost: 0,
-    oversizeFee: 0,
-    valueFee: 0,
-    handlingFee: 15,
-    fuelSurcharge: 0,
-    insuranceFee: 0,
-    
-    // Business costs (hidden from customer)
-    actualShippingCost: 0,  // What we actually pay
-    profitMargin: 0,        // Our markup
-    cardProcessingFee: 0,   // 2.9% + $0.30
-    
-    // Totals
-    subtotal: 0,
-    customerPrice: 0
-  };
-  
-  if (!dimensions) {
-    // No dimensions - use price-based estimate
-    breakdown.customerPrice = Math.max(25, price * 0.15);
-    breakdown.actualShippingCost = breakdown.customerPrice * 0.6; // 40% markup
 }
 
 // Calculate total order with hidden profit margin and card fees
@@ -1419,10 +1299,10 @@ app.post('/api/scrape-admin', async (req, res) => {
     // Log detailed admin summary
     console.log('\n🔧 ADMIN ANALYSIS COMPLETE:');
     products.forEach(product => {
-      const admin = product.adminDetails;
+      const breakdown = product.shippingBreakdown;
       console.log(`\n📦 ${product.name.substring(0, 50)}...`);
       console.log(`   📏 Final Box: ${product.dimensions.length}" × ${product.dimensions.width}" × ${product.dimensions.height}"`);
-      console.log(`   📊 Volume: ${admin.cubicFeet} ft³`);
+      console.log(`   📊 Volume: ${breakdown.cubicFeet} ft³`);
       console.log(`   💰 Shipping: $${product.shippingCost}`);
       console.log(`   🔍 Source: ${product.scrapingMethod}`);
     });
@@ -1464,7 +1344,7 @@ async function processBatchWithAdminDetails(urls, batchSize = MAX_CONCURRENT_SCR
           retailer: detectRetailer(url),
           shippingCost: 50,
           error: true,
-          adminDetails: { error: error.message }
+          shippingBreakdown: { error: error.message }
         };
       }))
     );
@@ -1477,45 +1357,21 @@ async function processBatchWithAdminDetails(urls, batchSize = MAX_CONCURRENT_SCR
 async function scrapeProductWithAdminDetails(url) {
   const product = await scrapeProduct(url);
   
-  // Add detailed admin calculations
-  const adminDetails = calculateAdminDetails(product, url);
-  product.adminDetails = adminDetails;
+  // Add detailed shipping breakdown
+  const shippingBreakdown = calculateDetailedShippingCost(
+    product.dimensions,
+    product.weight,
+    product.price || 100,
+    product.category,
+    1, // pieceCount - could be extracted from product name
+    detectFlatPacked(product.name, product.category)
+  );
+  
+  product.shippingBreakdown = shippingBreakdown;
   
   return product;
 }
 
-// Calculate detailed admin information
-function calculateAdminDetails(product, url) {
-  const dimensions = product.dimensions;
-  const cubicInches = dimensions.length * dimensions.width * dimensions.height;
-  const cubicFeet = cubicInches / 1728;
-  
-  // Recreate shipping calculation with details
-  const baseCost = Math.max(25, cubicFeet * 8); // $8 base rate
-  const oversizeFee = Math.max(dimensions.length, dimensions.width, dimensions.height) > 48 ? 75 : 0;
-  const valueFee = (product.price && product.price > 300) ? product.price * 0.03 : 0;
-  const handlingFee = 25;
-  const fuelSurcharge = baseCost * 0.15;
-  
-  // Detect multi-piece and flat-pack
-  const pieceMatch = product.name.toLowerCase().match(/(\d+)\s*[-\s]*piece/i);
-  const pieceCount = pieceMatch ? parseInt(pieceMatch[1]) : 1;
-  const isFlatPacked = detectFlatPacked(product.name, product.category);
-  
-  return {
-    cubicInches: Math.round(cubicInches),
-    cubicFeet: Math.round(cubicFeet * 100) / 100,
-    baseCost: Math.round(baseCost),
-    oversizeFee: oversizeFee,
-    valueFee: Math.round(valueFee),
-    handlingFee: handlingFee,
-    fuelSurcharge: Math.round(fuelSurcharge),
-    pieceCount: pieceCount,
-    isFlatPacked: isFlatPacked,
-    retailer: detectRetailer(url),
-    category: product.category
-  };
-}
 // Store pending orders temporarily (in memory for now, could use Redis later)
 const pendingOrders = new Map();
 
