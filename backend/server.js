@@ -507,10 +507,10 @@ async function scrapeProduct(url) {
     scrapingMethod = 'estimation';
     console.log('   WARNING All methods failed, using estimation');
   }
-  try {
-    const results = await Promise.allSettled([...scrapingPromises, timeoutPromise]);
-    
-  }
+  
+  const productName = productData.name || 'Product from ' + retailer;
+  const category = productData.category || categorizeProduct(productName, url);
+  
   if (!productData.dimensions) {
     productData.dimensions = estimateDimensions(category, productName);
     console.log('   📐 Estimated dimensions based on category:', category);
