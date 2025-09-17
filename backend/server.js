@@ -127,6 +127,17 @@ app.get('/admin.html', requireAuth, (req, res) => {
   res.sendFile(adminPath);
 });
 
+// Admin calculator route
+app.get('/pages/imports/admin', requireAuth, (req, res) => {
+  const adminCalculatorPath = path.join(__dirname, '../frontend', 'admin-calculator.html');
+  res.sendFile(adminCalculatorPath, (err) => {
+    if (err) {
+      console.error('Error serving admin calculator page:', err);
+      res.status(404).send('Admin calculator page not found');
+    }
+  });
+});
+
 // Admin calculator route at the specific domain path
 app.get('/pages/imports/admin', requireAuth, (req, res) => {
   const adminCalculatorPath = path.join(__dirname, '../frontend', 'admin-calculator.html');
