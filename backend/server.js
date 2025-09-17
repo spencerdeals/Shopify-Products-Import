@@ -148,6 +148,17 @@ app.get('/', (req, res) => {
   });
 });
 
+// Admin route
+app.get('/admin', (req, res) => {
+  const adminPath = path.join(__dirname, '../frontend', 'admin.html');
+  res.sendFile(adminPath, (err) => {
+    if (err) {
+      console.error('Error serving admin page:', err);
+      res.status(404).send('Admin page not found');
+    }
+  });
+});
+
 // Serve complete-order page
 app.get('/complete-order.html', (req, res) => {
   const completePath = path.join(__dirname, '../frontend', 'complete-order.html');
@@ -1178,6 +1189,141 @@ app.post('/api/scrape', async (req, res) => {
   }
 });
 
+// Admin API endpoint with detailed calculations
+app.post('/api/scrape-admin', async (req, res) => {
+  try {
+    const { urls } = req.body;
+    
+    if (!urls || !Array.isArray(urls) || urls.length === 0) {
+      return res.status(400).json({ error: 'No URLs provided' });
+    }
+    
+    // Check for SDL domains
+    const sdlUrls = urls.filter(url => isSDLDomain(url));
+    if (sdlUrls.length > 0) {
+      return res.status(400).json({ 
+        error: 'SDL domain detected. This calculator is for importing products from other retailers.' 
+      });
+    }
+    
+    console.log(`\n🔧 ADMIN: Starting detailed analysis for ${urls.length} products...`);
+    
+    const products = await processBatchWithAdminDetails(urls);
+    
+    // Calculate delivery fees
+    const deliveryFees = {};
+    products.forEach(product => {
+      if (!deliveryFees[product.retailer]) {
+        const retailerFees = {
+          'Amazon': 25, 'Wayfair': 30, 'Target': 20, 'Walmart': 15, 'Best Buy': 25, 'Home Depot': 20
+        };
+        deliveryFees[product.retailer] = retailerFees[product.retailer] || 25;
+      }
+    });
+    
+    // Calculate totals
+    const totals = calculateOrderTotals(products, deliveryFees);
+    
+    // Log detailed admin summary
+    console.log('\n🔧 ADMIN ANALYSIS COMPLETE:');
+    products.forEach(product => {
+      const admin = product.adminDetails;
+      console.log(`\n📦 ${product.name.substring(0, 50)}...`);
+      console.log(`   📏 Final Box: ${product.dimensions.length}" × ${product.dimensions.width}" × ${product.dimensions.height}"`);
+      console.log(`   📊 Volume: ${admin.cubicFeet} ft³`);
+      console.log(`   💰 Shipping: $${product.shippingCost}`);
+      console.log(`   🔍 Source: ${product.scrapingMethod}`);
+    });
+    
+    res.json({ 
+      products,
+      deliveryFees,
+      totals,
+      summary: {
+        total: products.length,
+        scrapingMethods: products.reduce((acc, p) => {
+          p.scrapingMethod.split('+').forEach(method => {
+            acc[method] = (acc[method] || 0) + 1;
+          });
+          return acc;
+        }, {})
+      }
+    });
+    
+  } catch (error) {
+    console.error('Admin scraping error:', error);
+    res.status(500).json({ error: 'Failed to analyze products' });
+  }
+});
+
+// Enhanced batch processing with admin details
+async function processBatchWithAdminDetails(urls, batchSize = MAX_CONCURRENT_SCRAPES) {
+  const results = [];
+  for (let i = 0; i < urls.length; i += batchSize) {
+    const batch = urls.slice(i, i + batchSize);
+    const batchResults = await Promise.all(
+      batch.map(url => scrapeProductWithAdminDetails(url).catch(error => {
+        console.error(`Failed to process ${url}:`, error);
+        return {
+          id: generateProductId(),
+          url: url,
+          name: 'Failed to load product',
+          category: 'general',
+          retailer: detectRetailer(url),
+          shippingCost: 50,
+          error: true,
+          adminDetails: { error: error.message }
+        };
+      }))
+    );
+    results.push(...batchResults);
+  }
+  return results;
+}
+
+// Enhanced scraping with detailed admin tracking
+async function scrapeProductWithAdminDetails(url) {
+  const product = await scrapeProduct(url);
+  
+  // Add detailed admin calculations
+  const adminDetails = calculateAdminDetails(product, url);
+  product.adminDetails = adminDetails;
+  
+  return product;
+}
+
+// Calculate detailed admin information
+function calculateAdminDetails(product, url) {
+  const dimensions = product.dimensions;
+  const cubicInches = dimensions.length * dimensions.width * dimensions.height;
+  const cubicFeet = cubicInches / 1728;
+  
+  // Recreate shipping calculation with details
+  const baseCost = Math.max(25, cubicFeet * 8); // $8 base rate
+  const oversizeFee = Math.max(dimensions.length, dimensions.width, dimensions.height) > 48 ? 75 : 0;
+  const valueFee = (product.price && product.price > 300) ? product.price * 0.03 : 0;
+  const handlingFee = 25;
+  const fuelSurcharge = baseCost * 0.15;
+  
+  // Detect multi-piece and flat-pack
+  const pieceMatch = product.name.toLowerCase().match(/(\d+)\s*[-\s]*piece/i);
+  const pieceCount = pieceMatch ? parseInt(pieceMatch[1]) : 1;
+  const isFlatPacked = detectFlatPacked(product.name, product.category);
+  
+  return {
+    cubicInches: Math.round(cubicInches),
+    cubicFeet: Math.round(cubicFeet * 100) / 100,
+    baseCost: Math.round(baseCost),
+    oversizeFee: oversizeFee,
+    valueFee: Math.round(valueFee),
+    handlingFee: handlingFee,
+    fuelSurcharge: Math.round(fuelSurcharge),
+    pieceCount: pieceCount,
+    isFlatPacked: isFlatPacked,
+    retailer: detectRetailer(url),
+    category: product.category
+  };
+}
 // Store pending orders temporarily (in memory for now, could use Redis later)
 const pendingOrders = new Map();
 
