@@ -141,9 +141,6 @@ class AmazonCrawler {
             }
           }
         }
-            break;
-          }
-        }
 
         // Extract variant (color, size, style)
         const variantSelectors = [
@@ -166,7 +163,6 @@ class AmazonCrawler {
               data.variant = variantText;
               break;
             }
-            break;
           }
         }
 
