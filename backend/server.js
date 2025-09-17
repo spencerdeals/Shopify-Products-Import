@@ -291,7 +291,7 @@ class ApifyScraper {
           async function pageFunction(context) {
             const { $, request } = context;
             
-            // Enhanced Wayfair title selectors
+          console.log(\`   ✅ Basic scraper completed in ${Date.now() - basicStart}ms`);
             const titleSelectors = [
               'h1[data-enzyme-id="ProductTitle"]',
               'h1.pl-Heading',
