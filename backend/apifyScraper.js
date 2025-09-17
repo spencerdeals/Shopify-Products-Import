@@ -653,19 +653,72 @@ class ApifyScraper {
 
     result.name = data.title || data.name || 'Unknown Product';
 
+    // Enhanced Amazon price extraction with validation
     if (data.price) {
       if (typeof data.price === 'object') {
-        result.price = data.price.value || data.price.amount || null;
+        // Try multiple price fields in order of preference
+        result.price = data.price.value || data.price.amount || data.price.current || data.price.now || null;
       } else if (typeof data.price === 'string') {
-        const priceMatch = data.price.match(/[\d,]+\.?\d*/);
-        result.price = priceMatch ? parseFloat(priceMatch[0].replace(',', '')) : null;
+        // Enhanced price pattern matching
+        const pricePatterns = [
+          /\$\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/,  // $123.45
+          /(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*\$/,  // 123.45$
+          /(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/        // 123.45
+        ];
+        
+        for (const pattern of pricePatterns) {
+          const match = data.price.match(pattern);
+          if (match) {
+            const price = parseFloat(match[1].replace(/,/g, ''));
+            // Validate price range - reject obviously wrong prices
+            if (price >= 1 && price <= 50000) {
+              result.price = price;
+              break;
+            }
+          }
+        }
       } else {
         result.price = parseFloat(data.price);
       }
     }
 
-    if (!result.price && data.offer?.price) {
-      result.price = parseFloat(data.offer.price);
+    // Try alternative price sources if main price failed or seems wrong
+    if (!result.price || result.price < 1) {
+      const alternativePrices = [
+        data.offer?.price,
+        data.offers?.[0]?.price,
+        data.priceRange?.min,
+        data.currentPrice,
+        data.listPrice,
+        data.salePrice
+      ].filter(Boolean);
+      
+      for (const altPrice of alternativePrices) {
+        const price = parseFloat(altPrice);
+        if (price >= 1 && price <= 50000) {
+          result.price = price;
+          break;
+        }
+      }
+    }
+    
+    // Final validation - if price seems too low for the product category, flag it
+    if (result.price && result.price < 10) {
+      const productName = (result.name || '').toLowerCase();
+      const expensiveKeywords = [
+        'kayak', 'furniture', 'appliance', 'electronics', 'tv', 'laptop', 
+        'computer', 'tablet', 'phone', 'camera', 'speaker', 'headphone',
+        'sofa', 'chair', 'table', 'desk', 'bed', 'mattress'
+      ];
+      
+      const hasExpensiveKeyword = expensiveKeywords.some(keyword => 
+        productName.includes(keyword)
+      );
+      
+      if (hasExpensiveKeyword) {
+        console.log(`   ⚠️ Suspicious low price $${result.price} for ${productName.substring(0, 30)}...`);
+        // Don't completely reject, but flag for manual review
+      }
     }
 
     result.image = data.mainImage || data.image || data.images?.[0] || null;
