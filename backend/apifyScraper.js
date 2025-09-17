@@ -291,14 +291,16 @@ class ApifyScraper {
           async function pageFunction(context) {
             const { $, request } = context;
             
-            // Enhanced Wayfair title selectors
+            // Updated Wayfair title selectors for 2025
             const titleSelectors = [
+              'h1[data-testid="ProductTitle"]',
+              'h1.ProductTitle',
+              'h1[class*="ProductTitle"]',
+              '.ProductDetailInfoBlock h1',
+              '.ProductTitleBlock h1',
               'h1[data-enzyme-id="ProductTitle"]',
               'h1.pl-Heading',
-              'h1[data-testid="product-title"]',
-              '.ProductDetailInfoBlock h1',
-              '.ProductTitle h1',
-              'h1.ProductTitle'
+              'h1[data-testid="product-title"]'
             ];
             
             let title = '';
@@ -306,23 +308,26 @@ class ApifyScraper {
               const element = $(selector).first();
               if (element.length && element.text().trim()) {
                 title = element.text().trim();
+                console.log('Found title with selector:', selector, 'Title:', title.substring(0, 50));
                 break;
               }
             }
             
-            // Updated Wayfair price selectors for 2025 structure
+            // Completely updated Wayfair price selectors for current structure
             const priceSelectors = [
-              '[data-testid="PriceBlock"] [data-testid="PriceDisplay"]',
               '[data-testid="PriceDisplay"]',
+              '[data-testid="ProductPrice"] [data-testid="PriceDisplay"]',
+              '.ProductPrice [data-testid="PriceDisplay"]',
+              '.PriceBlock [data-testid="PriceDisplay"]',
+              '[class*="PriceDisplay"]',
+              '.ProductDetailInfoBlock [class*="Price"]:not([class*="Strike"]):not([class*="Was"])',
+              '[data-testid="price"]',
+              '.price-current',
+              '.current-price',
+              '[data-testid="PriceBlock"] [data-testid="PriceDisplay"]',
               '.BasePriceBlock span:not([class*="strike"])',
               '.PriceBlock span:not([class*="strike"])',
-              '[class*="PriceDisplay"] span',
-              '.ProductPrice span:first-child',
-              '[data-enzyme-id="PriceBlock"] span:not([class*="strike"]):not([class*="was"])',
-              '[data-testid="product-price"]',
-              '.ProductDetailInfoBlock [class*="Price"]:not([class*="Strike"]):not([class*="Was"])',
-              '.price:not(.strike):not(.was-price)',
-              'span[class*="price"]:not([class*="strike"]):not([class*="was"])'
+              '.ProductPrice span:first-child'
             ];
             
             let price = '';
@@ -332,18 +337,19 @@ class ApifyScraper {
                 const priceText = element.text().trim();
                 console.log('Checking selector:', selector, 'Text:', priceText);
                 
-                // Multiple price patterns to match
+                // Enhanced price patterns
                 const pricePatterns = [
                   /\$\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/,
                   /(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*\$/,
-                  /(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/
+                  /(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/,
+                  /\$\s*(\d+\s*\.\s*\d{2})/  // Handle spaced decimals
                 ];
                 
                 for (const pattern of pricePatterns) {
                   const priceMatch = priceText.match(pattern);
                   if (priceMatch) {
-                    const extractedPrice = priceMatch[1] || priceMatch[0];
-                    const numericPrice = parseFloat(extractedPrice.replace(/[,$]/g, ''));
+                    const extractedPrice = priceMatch[1].replace(/[,\s]/g, '');
+                    const numericPrice = parseFloat(extractedPrice);
                     
                     // Validate price range
                     if (numericPrice >= 1 && numericPrice <= 50000) {
@@ -354,49 +360,90 @@ class ApifyScraper {
                   }
                 }
                 
-                if (priceMatch) {
+                if (price) {
                   break;
                 }
               }
             }
             
-            // If no price found, try searching in all text content
+            // Fallback: search entire page for price patterns
             if (!price) {
-              const allText = $('body').text();
-              const priceMatch = allText.match(/\$\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/);
-              if (priceMatch) {
-                const numericPrice = parseFloat(priceMatch[1].replace(/,/g, ''));
-                if (numericPrice >= 1 && numericPrice <= 50000) {
+              console.log('No price found with selectors, trying page text search...');
+              const pageText = $('body').text();
+              const priceMatches = [...pageText.matchAll(/\$\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/g)];
+              
+              for (const match of priceMatches) {
+                const numericPrice = parseFloat(match[1].replace(/,/g, ''));
+                if (numericPrice >= 10 && numericPrice <= 50000) { // Minimum $10 for furniture
                   price = '$' + numericPrice.toFixed(2);
+                  console.log('Found price in page text:', price);
+                  break;
                 }
               }
             }
             
-            // Enhanced image selectors
+            // Updated image selectors
             const imageSelectors = [
+              '[data-testid="ProductImage"] img',
+              '.ProductImage img',
+              '.ProductDetailImages img:first-child',
+              '.MediaCarousel img:first-child',
+              '.product-media img:first-child',
               '[data-enzyme-id="ProductImageCarousel"] img',
               '.ProductDetailImageThumbnail img',
               '.ImageComponent img',
-              '.ProductImageCarousel img',
-              '.product-image img',
-              '.ProductDetailImages img'
+              '.ProductImageCarousel img'
             ];
             
             let image = '';
             for (const selector of imageSelectors) {
               const element = $(selector).first();
-              if (element.length && element.attr('src')) {
-                image = element.attr('src');
-                if (!image.includes('placeholder') && !image.includes('loading')) {
+              if (element.length) {
+                const src = element.attr('src') || element.attr('data-src');
+                if (src && !src.includes('placeholder') && !src.includes('loading') && !src.includes('data:image')) {
+                  image = src;
+                  console.log('Found image:', image.substring(0, 50));
                   break;
                 }
               }
             }
             
-            // Look for dimensions in specifications
-            const dimensions = $('.Specifications').text() || 
-                             $('.ProductSpecs').text() || 
-                             $('.product-specs').text() || '';
+            // Enhanced specifications search
+            const specsSelectors = [
+              '.ProductSpecifications',
+              '.Specifications', 
+              '.ProductSpecs',
+              '.product-specs',
+              '.ProductDetails',
+              '[data-testid="ProductSpecifications"]'
+            ];
+            
+            let dimensions = '';
+            for (const selector of specsSelectors) {
+              const specs = $(selector).text();
+              if (specs && specs.length > 10) {
+                dimensions = specs;
+                break;
+              }
+            }
+            
+            // Enhanced brand detection
+            const brandSelectors = [
+              '[data-testid="ProductBrand"]',
+              '.ProductBrand',
+              '.brand-name',
+              '[data-testid="product-brand"]',
+              '.ProductDetailInfoBlock .brand'
+            ];
+            
+            let brand = '';
+            for (const selector of brandSelectors) {
+              const brandElement = $(selector).first();
+              if (brandElement.length && brandElement.text().trim()) {
+                brand = brandElement.text().trim();
+                break;
+              }
+            }
             
             return {
               url: request.url,
@@ -404,32 +451,44 @@ class ApifyScraper {
               price: price,
               image: image,
               dimensions: dimensions,
-              brand: $('[data-testid="product-brand"]').text().trim() ||
-                     $('.brand-name').text().trim() ||
-                     $('.ProductBrand').text().trim()
+              brand: brand,
+              debug: {
+                titleFound: !!title,
+                priceFound: !!price,
+                imageFound: !!image,
+                specsFound: !!dimensions
+              }
             };
           }
         `,
         proxyConfiguration: {
           useApifyProxy: true
         },
-        maxRequestsPerCrawl: 5,
-        maxRequestRetries: 5,
-        requestHandlerTimeoutSecs: 120
+        maxRequestsPerCrawl: 3,
+        maxRequestRetries: 3,
+        requestHandlerTimeoutSecs: 60
       });
 
       await this.client.run(run.id).waitForFinish({ waitSecs: 60 });
       const { items } = await this.client.dataset(run.defaultDatasetId).listItems();
       
       if (!items || items.length === 0) {
-        // Fallback to universal scraper
+        console.log('❌ Wayfair scraper returned no items, falling back to universal scraper');
         return this.scrapeUniversal(url);
       }
 
-      return this.parseGenericData(items[0]);
+      const result = this.parseGenericData(items[0]);
+      console.log('📦 Wayfair scrape result:', {
+        hasName: !!result.name,
+        hasPrice: !!result.price,
+        hasImage: !!result.image,
+        debug: items[0].debug
+      });
+      
+      return result;
 
     } catch (error) {
-      // Fallback to universal scraper
+      console.error('❌ Wayfair scraper failed:', error.message);
       return this.scrapeUniversal(url);
     }
   }
