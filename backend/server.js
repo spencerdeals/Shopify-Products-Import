@@ -944,11 +944,12 @@ async function scrapeWithScrapingBee(url) {
 
     // Extract product name
     if (extracted.title) {
-      productData.name = extracted.title.trim();
+      // Optimized settings for better reliability
       console.log('   📝 AI extracted title:', productData.name.substring(0, 50) + '...');
+        timeout: 180000, // 3 min timeout (was too long before)
+        memory: 2048,    // Reasonable memory allocation
+        waitSecs: 90     // Wait up to 90 seconds
     }
-
-    // Parse the price from AI extraction - robust parsing
     if (extracted.price) {
       // Try multiple patterns to extract price
       const pricePatterns = [
@@ -1153,7 +1154,17 @@ async function scrapeProduct(url) {
         }
         scrapingMethod += '+upcitemdb';
       }
-    } catch (error) {
+      console.error('❌ Wayfair scraper failed:', error.message);
+      
+      // If timeout, try with generic scraper as backup
+      if (error.message.includes('timeout') || error.message.includes('Timeout')) {
+        console.log('🔄 Trying generic scraper as backup...');
+        try {
+          return await this.scrapeGeneric(url);
+        } catch (genericError) {
+          console.error('❌ Generic backup also failed:', genericError.message);
+        }
+      }
       console.log('   ⚠️ UPCitemdb enhancement failed:', error.message);
     }
   }
