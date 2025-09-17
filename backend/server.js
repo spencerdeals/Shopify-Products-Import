@@ -48,7 +48,7 @@ const USE_PRO_CRAWLER = proWebCrawler.isAvailable();
 const USE_AMAZON_CRAWLER = amazonCrawler.isAvailable();
 
 // FAST timeouts for speed
-const SCRAPING_TIMEOUT = 30000;  // 30 seconds max
+const SCRAPING_TIMEOUT = 15000;  // 15 seconds max for speed
 const MAX_CONCURRENT_SCRAPES = 3;
 
 console.log('=== SERVER STARTUP ===');
@@ -389,12 +389,12 @@ async function scrapeWithScrapingBee(url) {
           country_code: 'us',
           render_js: 'false',
           block_resources: 'true',
-          wait: '2000'
+          wait: '1000' // Reduce wait time for speed
         },
-        timeout: SCRAPING_TIMEOUT
+        timeout: 6000 // Faster timeout
       }),
       new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('ScrapingBee timeout')), SCRAPING_TIMEOUT)
+        setTimeout(() => reject(new Error('ScrapingBee timeout')), 6000)
       )
     ]);
 
@@ -435,17 +435,20 @@ async function scrapeWithScrapingBee(url) {
     // Extract variant information (color, size, style, etc.)
     const variantPatterns = [
       // Wayfair specific patterns
-      /selected[^>]*option[^>]*>([^<]+)</i,
-      /data-selected[^>]*>([^<]+)</i,
-      /"selectedOption"[^>]*>([^<]+)</i,
+      /class="[^"]*selected[^"]*option[^"]*"[^>]*>([^<]+)</i,
+      /data-testid="[^"]*selected[^"]*"[^>]*>([^<]+)</i,
+      /aria-selected="true"[^>]*>([^<]+)</i,
+      /"selectedOption":\s*"([^"]+)"/i,
       // Generic patterns for variants
-      /color[^>]*selected[^>]*>([^<]+)</i,
-      /size[^>]*selected[^>]*>([^<]+)</i,
-      /style[^>]*selected[^>]*>([^<]+)</i,
+      /class="[^"]*color[^"]*selected[^"]*"[^>]*>([^<]+)</i,
+      /class="[^"]*size[^"]*selected[^"]*"[^>]*>([^<]+)</i,
       // Look for variant in structured data
       /"variant":\s*"([^"]+)"/i,
       /"color":\s*"([^"]+)"/i,
-      /"size":\s*"([^"]+)"/i
+      /"size":\s*"([^"]+)"/i,
+      // Wayfair specific JSON patterns
+      /"selectedOptionName":\s*"([^"]+)"/i,
+      /"optionName":\s*"([^"]+)"/i
     ];
     
     for (const pattern of variantPatterns) {
@@ -562,7 +565,7 @@ async function scrapeProduct(url) {
       
       const amazonPromise = amazonCrawler.scrapeProduct(url);
       const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Amazon crawler timeout')), SCRAPING_TIMEOUT)
+        setTimeout(() => reject(new Error('Amazon crawler timeout')), 10000) // 10s for Amazon
       );
       
       productData = await Promise.race([amazonPromise, timeoutPromise]);
@@ -581,43 +584,16 @@ async function scrapeProduct(url) {
     }
   }
   
-  // STEP 2: Try Apify if Amazon crawler didn't work or for non-Amazon URLs
-  if (USE_APIFY) {
-    try {
-      console.log('   🔄 Attempting Apify scrape...');
-      
-      const apifyPromise = apifyScraper.scrapeProduct(url);
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Apify timeout')), SCRAPING_TIMEOUT)
-      );
-      
-      const apifyData = await Promise.race([apifyPromise, timeoutPromise]);
-      
-      if (apifyData) {
-        if (!productData) {
-          productData = apifyData;
-          scrapingMethod = 'apify';
-          console.log('   ✅ Apify returned data');
-        } else {
-          const mergedData = mergeProductData(productData, apifyData);
-          productData = mergedData;
-          scrapingMethod = scrapingMethod + '+apify';
-        }
-        
-        if (!isDataComplete(productData)) {
-          console.log('   ⚠️ Apify data incomplete, will try ScrapingBee');
-        }
-      }
-    } catch (error) {
-      console.log('   ❌ Apify failed:', error.message);
-    }
-  }
-  
-  // STEP 3: Try ProWebCrawler if needed (most comprehensive)
-  if (USE_PRO_CRAWLER && (!productData || !isDataComplete(productData))) {
+  // STEP 2: For non-Amazon, try ProWebCrawler first (most accurate for Wayfair)
+  if (USE_PRO_CRAWLER && !isAmazonUrl(url) && (!productData || !isDataComplete(productData))) {
     try {
       console.log('   🕸️ Attempting ProWebCrawler...');
-      const proWebData = await proWebCrawler.scrapeProduct(url);
+      const proWebPromise = proWebCrawler.scrapeProduct(url);
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('ProWebCrawler timeout')), 12000) // 12s for ProWeb
+      );
+      
+      const proWebData = await Promise.race([proWebPromise, timeoutPromise]);
       
       if (proWebData) {
         if (!productData) {
@@ -635,11 +611,44 @@ async function scrapeProduct(url) {
     }
   }
   
+  // STEP 3: Try Apify as fallback
+  if (USE_APIFY && (!productData || !isDataComplete(productData))) {
+    try {
+      console.log('   🔄 Attempting Apify scrape...');
+      
+      const apifyPromise = apifyScraper.scrapeProduct(url);
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Apify timeout')), 8000) // 8s for Apify
+      );
+      
+      const apifyData = await Promise.race([apifyPromise, timeoutPromise]);
+      
+      if (apifyData) {
+        if (!productData) {
+          productData = apifyData;
+          scrapingMethod = 'apify';
+          console.log('   ✅ Apify returned data');
+        } else {
+          const mergedData = mergeProductData(productData, apifyData);
+          productData = mergedData;
+          scrapingMethod = scrapingMethod + '+apify';
+        }
+      }
+    } catch (error) {
+      console.log('   ❌ Apify failed:', error.message);
+    }
+  }
+  
   // STEP 4: Try ScrapingBee if still needed
   if (USE_SCRAPINGBEE && (!productData || !isDataComplete(productData))) {
     try {
       console.log('   🐝 Attempting ScrapingBee...');
-      const scrapingBeeData = await scrapeWithScrapingBee(url);
+      const scrapingBeePromise = scrapeWithScrapingBee(url);
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('ScrapingBee timeout')), 6000) // 6s for ScrapingBee
+      );
+      
+      const scrapingBeeData = await Promise.race([scrapingBeePromise, timeoutPromise]);
       
       if (scrapingBeeData) {
         if (!productData) {

@@ -2099,7 +2099,7 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
                     // Format product name with variant
                     let productNameHTML = product.name;
                     if (product.variant) {
-                        productNameHTML = `${product.name} <span class="product-variant">${product.variant}</span>`;
+                        productNameHTML = `${product.name}<br><span class="product-variant">${product.variant}</span>`;
                     }
                     
                     vendorHTML += `
