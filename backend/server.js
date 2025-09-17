@@ -1132,9 +1132,9 @@ async function scrapeProduct(url) {
   let scrapingMethod = successfulResults.map(r => r.source).join('+') || 'estimation';
   
   // Try UPCitemdb enhancement if we have a product name but missing dimensions
-  if (USE_UPCITEMDB && productData && productData.name && (!productData.dimensions || !productData.weight)) {
+  if (USE_UPCITEMDB && productData && productData.name && (!productData.dimensions || !productData.weight || !productData.image)) {
     try {
-      console.log('   📦 Enhancing with UPCitemdb...');
+      console.log('   🔍 Enhancing with UPCitemdb...');
       const upcData = await upcItemDB.searchByName(productData.name);
       
       if (upcData) {
@@ -1330,7 +1330,6 @@ app.post('/api/scrape', async (req, res) => {
           scrapingBee: scrapingBeeCount,
           basic: basicCount,
           upcitemdb: upcitemdbCount,
-          gptParser: gptCount,
           fused: fusedCount,
           estimation: estimatedCount
         }
