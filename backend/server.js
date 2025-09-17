@@ -262,12 +262,14 @@ function estimateDimensions(category, name = '') {
     }
   }
   
-  // Check if item is likely flat-packed
+  // Detect if item is flat-packed
+  const isFlatPacked = detectFlatPacked(name, category);
+  
   const baseEstimates = {
     'furniture': { 
-      length: 60 + Math.random() * 20,  // 60-80"
-      width: 30 + Math.random() * 10,   // 30-40"
-      height: 30 + Math.random() * 10   // 30-40"
+      length: isFlatPacked ? (70 + Math.random() * 20) : (48 + Math.random() * 30),  // Flat: 70-90", Regular: 48-78"
+      width: isFlatPacked ? (20 + Math.random() * 10) : (30 + Math.random() * 20),   // Flat: 20-30", Regular: 30-50"
+      height: isFlatPacked ? (6 + Math.random() * 8) : (30 + Math.random() * 24)     // Flat: 6-14", Regular: 30-54"
     },
     'electronics': { 
       length: 18 + Math.random() * 15,
@@ -328,6 +330,61 @@ function estimateDimensions(category, name = '') {
     width: Math.round(estimate.width * 10) / 10,
     height: Math.round(estimate.height * 10) / 10
   };
+}
+
+// Detect if furniture item is flat-packed
+function detectFlatPacked(productName, category) {
+  if (category !== 'furniture') return false;
+  
+  const name = productName.toLowerCase();
+  const url = ''; // We could pass URL here if needed
+  
+  // Flat-pack indicators
+  const flatPackKeywords = [
+    'assembly required', 'some assembly', 'easy assembly', 'self assembly',
+    'flat pack', 'flatpack', 'flat-pack', 'unassembled',
+    'diy', 'build yourself', 'assemble yourself',
+    'knock down', 'rta', 'ready to assemble'
+  ];
+  
+  // Retailers known for flat-pack
+  const flatPackRetailers = [
+    'ikea', 'wayfair', 'overstock', 'amazon', 'walmart'
+  ];
+  
+  // Pre-assembled indicators  
+  const preAssembledKeywords = [
+    'fully assembled', 'pre-assembled', 'ready to use', 'no assembly',
+    'assembled', 'delivered assembled', 'white glove', 'setup included'
+  ];
+  
+  // Check for pre-assembled first (overrides flat-pack)
+  for (const keyword of preAssembledKeywords) {
+    if (name.includes(keyword)) {
+      console.log(`   📦 Detected PRE-ASSEMBLED: "${keyword}"`);
+      return false;
+    }
+  }
+  
+  // Check for flat-pack keywords
+  for (const keyword of flatPackKeywords) {
+    if (name.includes(keyword)) {
+      console.log(`   📦 Detected FLAT-PACKED: "${keyword}"`);
+      return true;
+    }
+  }
+  
+  // Check retailer patterns (most furniture from these is flat-packed)
+  for (const retailer of flatPackRetailers) {
+    if (name.includes(retailer)) {
+      console.log(`   📦 Detected FLAT-PACKED retailer: "${retailer}"`);
+      return true;
+    }
+  }
+  
+  // Default assumption for furniture (most modern furniture is flat-packed)
+  console.log(`   📦 Default assumption: FLAT-PACKED furniture`);
+  return true;
 }
 
 // Convert product dimensions to shipping box dimensions
