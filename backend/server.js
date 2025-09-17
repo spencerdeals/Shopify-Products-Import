@@ -435,20 +435,23 @@ async function scrapeWithScrapingBee(url) {
     // Extract variant information (color, size, style, etc.)
     const variantPatterns = [
       // Wayfair specific patterns
+      // Look for selected options in Wayfair's structure
+      /class="[^"]*SelectedOption[^"]*"[^>]*>([^<]+)</i,
       /class="[^"]*selected[^"]*option[^"]*"[^>]*>([^<]+)</i,
       /data-testid="[^"]*selected[^"]*"[^>]*>([^<]+)</i,
       /aria-selected="true"[^>]*>([^<]+)</i,
+      // JSON data patterns for Wayfair
+      /"selectedOptionName":\s*"([^"]+)"/i,
+      /"optionName":\s*"([^"]+)"/i,
       /"selectedOption":\s*"([^"]+)"/i,
+      /"currentOption":\s*"([^"]+)"/i,
       // Generic patterns for variants
       /class="[^"]*color[^"]*selected[^"]*"[^>]*>([^<]+)</i,
       /class="[^"]*size[^"]*selected[^"]*"[^>]*>([^<]+)</i,
       // Look for variant in structured data
       /"variant":\s*"([^"]+)"/i,
       /"color":\s*"([^"]+)"/i,
-      /"size":\s*"([^"]+)"/i,
-      // Wayfair specific JSON patterns
-      /"selectedOptionName":\s*"([^"]+)"/i,
-      /"optionName":\s*"([^"]+)"/i
+      /"size":\s*"([^"]+)"/i
     ];
     
     for (const pattern of variantPatterns) {
@@ -751,6 +754,7 @@ async function scrapeProduct(url) {
     url: url,
     name: productName,
     price: productData.price,
+    variant: productData.variant || null,
     image: productData.image || 'https://placehold.co/400x400/7CB342/FFFFFF/png?text=SDL',
     category: category,
     retailer: retailer,
