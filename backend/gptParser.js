@@ -49,18 +49,21 @@ async function fetchViaScrapingBee(url){
   const key = process.env.SCRAPINGBEE_API_KEY;
   if (!key) return null;
 
-  const countries = ['CA','US','GB']; // CA first (worked in your logs)
+  const countries = ['US','CA','GB']; // Try US first, then CA
 
   for (const country of countries){
     try{
+      console.log(`[ScrapingBee] Trying ${country}...`);
       const res = await axios.get('https://app.scrapingbee.com/api/v1', {
         timeout: TIMEOUT_MS,
         params: {
           api_key: key,
           url,
-          render_js: 'true',
+          render_js: 'false',  // Disable JS rendering to reduce 500 errors
           country_code: country,
-          block_resources: 'false',
+          block_resources: 'true',  // Block images/css to speed up
+          premium_proxy: 'true',
+          wait: 2000
         },
         validateStatus: () => true,
       });
@@ -68,10 +71,14 @@ async function fetchViaScrapingBee(url){
         console.log(`[ScrapingBee] OK via ${country}`);
         return typeof res.data === 'string' ? res.data : res.data.toString();
       }
-      console.warn(`[ScrapingBee] Non-2xx ${res.status} via ${country}`);
+      console.warn(`[ScrapingBee] Status ${res.status} via ${country}: ${res.data?.message || 'Unknown error'}`);
       if (res.status !== 429 && (res.status < 500 || res.status >= 600)) return null;
+      
+      // Wait between country attempts
+      await sleep(1000);
     }catch(e){
       console.warn('[ScrapingBee] Error:', e.message);
+      await sleep(1000);
     }
   }
   return null;
@@ -112,12 +119,23 @@ async function fetchViaAxios(url){
   let lastErr = null;
   for (let i=0;i<MAX_AXIOS_RETRIES;i++){
     try{
+      const delay = i * 2000; // Progressive delay
+      if (i > 0) {
+        console.log(`[Axios] Waiting ${delay}ms before retry ${i+1}...`);
+        await sleep(delay);
+      }
+      
       const res = await axios.get(url, {
         timeout: TIMEOUT_MS,
         headers: {
           'User-Agent': `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${rnd(118,126)} Safari/537.36`,
           'Accept-Language': 'en-US,en;q=0.9',
-          'Cache-Control': 'no-cache', 'Pragma': 'no-cache',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+          'Cache-Control': 'no-cache', 
+          'Pragma': 'no-cache',
+          'Sec-Fetch-Dest': 'document',
+          'Sec-Fetch-Mode': 'navigate',
+          'Sec-Fetch-Site': 'none'
         },
         validateStatus: () => true,
       });
@@ -126,12 +144,12 @@ async function fetchViaAxios(url){
         return typeof res.data === 'string' ? res.data : res.data.toString();
       }
       if (res.status === 429){
-        const waitMs = 1500*(i+1) + rnd(0,1500);
+        const waitMs = 3000*(i+1) + rnd(0,2000); // Longer waits for 429
         console.warn(`[Axios] 429. Retry ${i+1}/${MAX_AXIOS_RETRIES} after ${waitMs}ms`);
         await sleep(waitMs); continue;
       }
       if (res.status >= 500 && res.status < 600){
-        const waitMs = 1000*(i+1);
+        const waitMs = 2000*(i+1);
         console.warn(`[Axios] ${res.status}. Retry ${i+1}/${MAX_AXIOS_RETRIES} after ${waitMs}ms`);
         await sleep(waitMs); continue;
       }
@@ -139,7 +157,7 @@ async function fetchViaAxios(url){
       return null;
     }catch(e){
       lastErr = e;
-      const waitMs = 800*(i+1);
+      const waitMs = 1500*(i+1);
       console.warn(`[Axios] Error ${i+1}/${MAX_AXIOS_RETRIES}: ${e.message}. Waiting ${waitMs}ms...`);
       await sleep(waitMs);
     }

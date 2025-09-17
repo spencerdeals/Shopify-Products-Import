@@ -71,11 +71,11 @@ class ApifyScraper {
       console.log('🏠 Scraping Wayfair with 123webdata/wayfair-scraper...');
       const input = { urls: [url] };
 
-      // IMPORTANT: waitSecs so we actually wait for the run to finish
+      // Increased timeout and memory for better reliability
       const run = await this.client.actor('123webdata/wayfair-scraper').call(input, {
-        timeout: 180000, // 3 min ceiling for tough pages
-        memory: 2048,
-        waitSecs: 90     // wait up to 90s for the actor to finish
+        timeout: 300000, // 5 min timeout for complex pages
+        memory: 4096,    // More memory for stability
+        waitSecs: 120    // Wait up to 2 minutes for completion
       });
 
       const { items } = await this.client.dataset(run.defaultDatasetId).listItems();
@@ -122,13 +122,14 @@ class ApifyScraper {
       console.log('🔄 Using generic web scraper...');
       const input = {
         startUrls: [{ url }],
+        maxConcurrency: 1,  // Reduce concurrency to avoid timeouts
         pageFunction: `
           async function pageFunction(context) {
             const { page } = context;
-            await page.waitForTimeout(2000);
+            await page.waitForTimeout(3000);  // Wait longer for page load
             return await page.evaluate(() => {
               const nameSelectors = ['h1', '.product-title', '.product-name', '[data-testid*="title"]'];
-              const priceSelectors = ['.price', '[data-testid*="price"]', '[class*="price"]'];
+              const priceSelectors = ['.price', '[data-testid*="price"]', '[class*="price"]', '.MoneyPrice', '.Price'];
               const imageSelectors = ['.product-image img', '.main-image img', 'img[data-testid*="image"]'];
               
               let name = null;
@@ -157,13 +158,14 @@ class ApifyScraper {
           }
         `,
         maxRequestsPerCrawl: 1,
-        proxyConfiguration: { useApifyProxy: true }
+        proxyConfiguration: { useApifyProxy: true },
+        additionalMimeTypes: ['application/json']
       };
 
       const run = await this.client.actor('apify/web-scraper').call(input, {
-        timeout: 60000,
-        memory: 512,
-        waitSecs: 45
+        timeout: 120000,  // 2 minutes
+        memory: 1024,     // More memory
+        waitSecs: 90      // Wait longer
       });
 
       const { items } = await this.client.dataset(run.defaultDatasetId).listItems();
