@@ -139,7 +139,7 @@
     return productData;
 
       console.log('   ❌ Apify FAILED:', error.message);
-    console.error('❌ ScrapingBee failed:', error.message);
+      console.log('   ❌ ScrapingBee FAILED:', error.message);
     throw error;
   }
 }
