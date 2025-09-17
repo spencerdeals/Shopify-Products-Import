@@ -1187,27 +1187,27 @@ app.post('/api/scrape', async (req, res) => {
     }
     
     console.log(`\n🚀 Starting batch scrape for ${urls.length} products...`);
-    console.log('   Strategy: Retailer APIs → Apify → ScrapingBee → Basic → UPCitemdb\n');
+    console.log('   Strategy: Parallel Multi-Source → Data Fusion → UPCitemdb Enhancement\n');
     
     const products = await processBatch(urls);
     
     // Log summary
-    const retailerAPICount = products.filter(p => p.scrapingMethod?.includes('-api')).length;
     const apifyCount = products.filter(p => p.scrapingMethod?.includes('apify')).length;
     const scrapingBeeCount = products.filter(p => p.scrapingMethod?.includes('scrapingbee')).length;
     const basicCount = products.filter(p => p.scrapingMethod?.includes('basic')).length;
     const upcitemdbCount = products.filter(p => p.scrapingMethod?.includes('upcitemdb')).length;
+    const fusedCount = products.filter(p => p.scrapingMethod?.includes('+')).length;
     const estimatedCount = products.filter(p => p.scrapingMethod === 'estimation').length;
     
     console.log('\n📊 SCRAPING SUMMARY:');
     console.log(`   Total products: ${products.length}`);
-    console.log(`   Retailer APIs used: ${retailerAPICount}`);
     console.log(`   Apify used: ${apifyCount}`);
     console.log(`   ScrapingBee AI used: ${scrapingBeeCount}`);
     console.log(`   Basic scraper used: ${basicCount}`);
     console.log(`   UPCitemdb used: ${upcitemdbCount}`);
+    console.log(`   Multi-source fused: ${fusedCount}`);
     console.log(`   Fully estimated: ${estimatedCount}`);
-    console.log(`   Success rate: ${((products.length - estimatedCount) / products.length * 100).toFixed(1)}%\n`);
+    console.log(`   Data accuracy: ${((products.length - estimatedCount) / products.length * 100).toFixed(1)}%\n`);
     
     // Calculate delivery fees (this would come from frontend in real implementation)
     const deliveryFees = {};
@@ -1247,11 +1247,11 @@ app.post('/api/scrape', async (req, res) => {
         scraped: products.length - estimatedCount,
         estimated: estimatedCount,
         scrapingMethods: {
-          retailerAPIs: retailerAPICount,
           apify: apifyCount,
           scrapingBee: scrapingBeeCount,
           basic: basicCount,
           upcitemdb: upcitemdbCount,
+          fused: fusedCount,
           estimation: estimatedCount
         }
       }
