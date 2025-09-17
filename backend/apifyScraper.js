@@ -712,72 +712,148 @@ class ApifyScraper {
 
     result.name = data.title || data.name || 'Unknown Product';
 
-    // Enhanced Amazon price extraction with validation
+    // COMPLETELY REWRITTEN Amazon price extraction - 2025 version
+    console.log('🔍 Amazon price debug - Raw data:', JSON.stringify(data.price, null, 2));
+    
     if (data.price) {
       if (typeof data.price === 'object') {
-        // Try multiple price fields in order of preference
-        result.price = data.price.value || data.price.amount || data.price.current || data.price.now || null;
+        // Amazon price object - try ALL possible fields
+        const priceFields = [
+          data.price.value,
+          data.price.amount, 
+          data.price.current,
+          data.price.now,
+          data.price.price,
+          data.price.displayPrice,
+          data.price.salePrice,
+          data.price.listPrice,
+          data.price.regularPrice,
+          data.price.finalPrice,
+          data.price.priceRange?.min,
+          data.price.priceRange?.max,
+          data.price.min,
+          data.price.max
+        ].filter(Boolean);
+        
+        console.log('🔍 Amazon price fields found:', priceFields);
+        
+        // Find the most reasonable price
+        for (const priceField of priceFields) {
+          let price = null;
+          
+          if (typeof priceField === 'number') {
+            price = priceField;
+          } else if (typeof priceField === 'string') {
+            // Parse string prices with multiple patterns
+            const patterns = [
+              /\$\s*(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)/,  // $123.45
+              /(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)\s*\$/,  // 123.45$
+              /(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)/        // 123.45
+            ];
+            
+            for (const pattern of patterns) {
+              const match = priceField.match(pattern);
+              if (match) {
+                price = parseFloat(match[1].replace(/,/g, ''));
+                break;
+              }
+            }
+          }
+          
+          // Validate price - kayaks should be $50-$2000, not $4
+          if (price && price >= 10 && price <= 10000) {
+            result.price = price;
+            console.log(`✅ Amazon price found: $${price} from field:`, priceField);
+            break;
+          } else if (price) {
+            console.log(`⚠️ Amazon price rejected: $${price} (out of range) from:`, priceField);
+          }
+        }
       } else if (typeof data.price === 'string') {
-        // Enhanced price pattern matching
+        // String price - enhanced patterns
         const pricePatterns = [
-          /\$\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/,  // $123.45
-          /(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*\$/,  // 123.45$
-          /(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/        // 123.45
+          /\$\s*(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)/g,  // $123.45 - global to find all
+          /(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)\s*\$/g,  // 123.45$
+          /Price:\s*\$?\s*(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)/gi, // Price: $123.45
+          /(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)/g        // Just numbers
         ];
         
+        console.log('🔍 Amazon string price:', data.price);
+        const allPrices = [];
+        
         for (const pattern of pricePatterns) {
-          const match = data.price.match(pattern);
-          if (match) {
+          const matches = [...data.price.matchAll(pattern)];
+          for (const match of matches) {
             const price = parseFloat(match[1].replace(/,/g, ''));
-            // Validate price range - reject obviously wrong prices
-            if (price >= 1 && price <= 50000) {
-              result.price = price;
-              break;
+            if (price >= 10 && price <= 10000) {
+              allPrices.push(price);
             }
           }
         }
+        
+        if (allPrices.length > 0) {
+          // Take the median price to avoid outliers
+          allPrices.sort((a, b) => a - b);
+          result.price = allPrices[Math.floor(allPrices.length / 2)];
+          console.log(`✅ Amazon string price found: $${result.price} from prices:`, allPrices);
+        }
       } else {
-        result.price = parseFloat(data.price);
+        const price = parseFloat(data.price);
+        if (price >= 10 && price <= 10000) {
+          result.price = price;
+        }
       }
     }
 
-    // Try alternative price sources if main price failed or seems wrong
-    if (!result.price || result.price < 1) {
+    // Try alternative price sources if main price failed
+    if (!result.price) {
+      console.log('🔍 Amazon trying alternative price sources...');
       const alternativePrices = [
         data.offer?.price,
         data.offers?.[0]?.price,
         data.priceRange?.min,
+        data.priceRange?.max,
         data.currentPrice,
         data.listPrice,
-        data.salePrice
+        data.salePrice,
+        data.regularPrice,
+        data.finalPrice,
+        data.displayPrice,
+        // Try nested price objects
+        data.priceInfo?.price,
+        data.priceInfo?.current,
+        data.pricing?.price,
+        data.pricing?.current
       ].filter(Boolean);
       
+      console.log('🔍 Amazon alternative prices:', alternativePrices);
+      
       for (const altPrice of alternativePrices) {
-        const price = parseFloat(altPrice);
-        if (price >= 1 && price <= 50000) {
+        let price = null;
+        
+        if (typeof altPrice === 'number') {
+          price = altPrice;
+        } else if (typeof altPrice === 'string') {
+          const match = altPrice.match(/(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)/);
+          if (match) {
+            price = parseFloat(match[1].replace(/,/g, ''));
+          }
+        }
+        
+        if (price && price >= 10 && price <= 10000) {
           result.price = price;
+          console.log(`✅ Amazon alternative price found: $${price}`);
           break;
         }
       }
     }
     
-    // Final validation - if price seems too low for the product category, flag it
-    if (result.price && result.price < 10) {
-      const productName = (result.name || '').toLowerCase();
-      const expensiveKeywords = [
-        'kayak', 'furniture', 'appliance', 'electronics', 'tv', 'laptop', 
-        'computer', 'tablet', 'phone', 'camera', 'speaker', 'headphone',
-        'sofa', 'chair', 'table', 'desk', 'bed', 'mattress'
-      ];
-      
-      const hasExpensiveKeyword = expensiveKeywords.some(keyword => 
-        productName.includes(keyword)
-      );
-      
-      if (hasExpensiveKeyword) {
-        console.log(`   ⚠️ Suspicious low price $${result.price} for ${productName.substring(0, 30)}...`);
-        // Don't completely reject, but flag for manual review
-      }
+    // Final validation and logging
+    if (!result.price) {
+      console.log('❌ Amazon price extraction completely failed');
+      console.log('📊 Full Amazon data structure:', JSON.stringify(data, null, 2));
+    } else {
+      console.log(`✅ Amazon final price: $${result.price}`);
     }
 
     result.image = data.mainImage || data.image || data.images?.[0] || null;
