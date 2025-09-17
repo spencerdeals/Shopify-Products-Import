@@ -245,6 +245,20 @@ function estimateWeight(dimensions, category) {
   return Math.round(estimatedWeight * 10) / 10;
 }
 
+// Apply flat-pack reduction to assembled furniture dimensions
+function applyFlatPackReduction(assembledDimensions) {
+  // Flat-pack reduction factors:
+  // - Length: stays roughly the same (longest piece)
+  // - Width: reduced significantly (pieces stacked)  
+  // - Height: reduced dramatically (thin flat box)
+  
+  return {
+    length: assembledDimensions.length * 1.0,  // No reduction - longest piece determines length
+    width: assembledDimensions.width * 0.6,   // 40% reduction - pieces stacked narrower
+    height: assembledDimensions.height * 0.25 // 75% reduction - flat box instead of full height
+  };
+}
+
 function estimateDimensions(category, name = '') {
   const text = name.toLowerCase();
   
@@ -267,9 +281,9 @@ function estimateDimensions(category, name = '') {
   
   const baseEstimates = {
     'furniture': { 
-      length: isFlatPacked ? (70 + Math.random() * 20) : (48 + Math.random() * 30),  // Flat: 70-90", Regular: 48-78"
-      width: isFlatPacked ? (20 + Math.random() * 10) : (30 + Math.random() * 20),   // Flat: 20-30", Regular: 30-50"
-      height: isFlatPacked ? (6 + Math.random() * 8) : (30 + Math.random() * 24)     // Flat: 6-14", Regular: 30-54"
+      length: 48 + Math.random() * 30,  // 48-78" assembled dimensions
+      width: 30 + Math.random() * 20,   // 30-50" assembled dimensions  
+      height: 30 + Math.random() * 24   // 30-54" assembled dimensions
     },
     'electronics': { 
       length: 18 + Math.random() * 15,
@@ -325,10 +339,22 @@ function estimateDimensions(category, name = '') {
   
   const estimate = baseEstimates[category] || baseEstimates['general'];
   
-  return {
+  let dimensions = {
     length: Math.round(estimate.length * 10) / 10,
     width: Math.round(estimate.width * 10) / 10,
     height: Math.round(estimate.height * 10) / 10
+  };
+  
+  // Apply flat-pack reduction if detected
+  if (category === 'furniture' && detectFlatPacked(name, category)) {
+    dimensions = applyFlatPackReduction(dimensions);
+    console.log(`   📦 Applied flat-pack reduction: ${dimensions.length}" × ${dimensions.width}" × ${dimensions.height}"`);
+  }
+  
+  return {
+    length: Math.round(dimensions.length * 10) / 10,
+    width: Math.round(dimensions.width * 10) / 10,
+    height: Math.round(dimensions.height * 10) / 10
   };
 }
 
