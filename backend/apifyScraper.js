@@ -75,6 +75,7 @@ class ApifyScraper {
           brand: item.brand || null,
           category: null,
           inStock: item.availability !== 'out of stock'
+        }
         return this.parseProCrawlerData(item);
       }
       

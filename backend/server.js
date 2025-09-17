@@ -83,11 +83,11 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     port: PORT,
     scraping: {
-      primary: USE_APIFY ? 'Apify' : 'None',
+      primary: USE_APIFY ? 'Specialized Apify Actors' : 'None',
       fallback: USE_SCRAPINGBEE ? 'ScrapingBee' : 'None',
       basic: 'Always Available',
       dimensions: USE_UPCITEMDB ? 'UPCitemdb' : 'None',
-      strategy: USE_APIFY && USE_SCRAPINGBEE && USE_UPCITEMDB ? 'Optimal' : 
+      strategy: USE_APIFY && USE_SCRAPINGBEE && USE_UPCITEMDB ? 'Optimal (Specialized)' : 
                 USE_APIFY && USE_SCRAPINGBEE ? 'Good' :
                 USE_APIFY || USE_SCRAPINGBEE ? 'Limited' : 'Minimal'
     },
