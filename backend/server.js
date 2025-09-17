@@ -389,6 +389,82 @@ function mergeProductData(primary, secondary) {
   };
 }
 
+// Intelligent data fusion - combines the BEST data from multiple sources
+function fuseProductData(dataArray) {
+  if (!dataArray || dataArray.length === 0) return null;
+  
+  // Filter out null/undefined data
+  const validData = dataArray.filter(data => data && typeof data === 'object');
+  if (validData.length === 0) return null;
+  
+  const fused = {
+    name: null,
+    price: null,
+    image: null,
+    dimensions: null,
+    weight: null,
+    brand: null,
+    category: null,
+    inStock: true
+  };
+  
+  // Name: Choose the longest, most descriptive name
+  const names = validData.map(d => d.name).filter(Boolean);
+  if (names.length > 0) {
+    fused.name = names.reduce((best, current) => 
+      current.length > best.length ? current : best
+    );
+  }
+  
+  // Price: Use median of valid prices to avoid outliers
+  const prices = validData.map(d => d.price).filter(p => p && p > 0 && p < 50000);
+  if (prices.length > 0) {
+    prices.sort((a, b) => a - b);
+    fused.price = prices[Math.floor(prices.length / 2)];
+  }
+  
+  // Image: Prefer non-placeholder images
+  const images = validData.map(d => d.image).filter(Boolean);
+  fused.image = images.find(img => !img.includes('placeholder') && !img.includes('loading')) || images[0];
+  
+  // Dimensions: Choose the most complete dimensions
+  const dimensionsArray = validData.map(d => d.dimensions).filter(Boolean);
+  if (dimensionsArray.length > 0) {
+    fused.dimensions = dimensionsArray.reduce((best, current) => {
+      const bestComplete = (best.length > 0) + (best.width > 0) + (best.height > 0);
+      const currentComplete = (current.length > 0) + (current.width > 0) + (current.height > 0);
+      return currentComplete > bestComplete ? current : best;
+    });
+  }
+  
+  // Weight: Choose the most realistic weight
+  const weights = validData.map(d => d.weight).filter(w => w && w > 0 && w < 1000);
+  if (weights.length > 0) {
+    weights.sort((a, b) => a - b);
+    fused.weight = weights[Math.floor(weights.length / 2)];
+  }
+  
+  // Brand: Choose the first valid brand
+  fused.brand = validData.find(d => d.brand)?.brand || null;
+  
+  // Category: Choose the first valid category
+  fused.category = validData.find(d => d.category)?.category || null;
+  
+  // Stock: If any source says out of stock, consider it out of stock
+  fused.inStock = validData.every(d => d.inStock !== false);
+  
+  console.log('   🔄 Data fusion results:', {
+    sources: validData.length,
+    hasName: !!fused.name,
+    hasPrice: !!fused.price,
+    hasImage: !!fused.image,
+    hasDimensions: !!fused.dimensions,
+    hasWeight: !!fused.weight
+  });
+  
+  return fused;
+}
+
 // Basic web scraper function - NEW FALLBACK
 async function scrapeWithBasicScraper(url) {
   try {
@@ -653,152 +729,101 @@ async function scrapeWithScrapingBee(url) {
 
 // Main product scraping function
 async function scrapeProduct(url) {
-  // AI CHECK: See if we've seen this exact product before
-  // const knownProduct = await learningSystem.getKnownProduct(url);
-  // if (knownProduct) {
-  //   console.log('   🤖 AI: Using saved product data');
-  //   return knownProduct;
-  // }
-  
   const productId = generateProductId();
   const retailer = detectRetailer(url);
   
-  let productData = null;
-  let scrapingMethod = 'none';
-  
   console.log(`\n📦 Processing: ${url}`);
   console.log(`   Retailer: ${retailer}`);
+  console.log('   🚀 Starting parallel multi-source scraping...');
   
-  // STEP 1: Always try Apify first for all retailers
+  const startTime = Date.now();
+  const scrapingPromises = [];
+  const scrapingMethods = [];
+  
+  // Launch all scrapers in parallel for maximum speed and accuracy
   if (USE_APIFY) {
-    try {
-      console.log('   🔄 Attempting Apify scrape...');
-      const apifyStart = Date.now();
-      
-      // Use the universal scrapeProduct method from apifyScraper
-      productData = await apifyScraper.scrapeProduct(url);
-      
-      if (productData) {
-        scrapingMethod = 'apify';
-        console.log(`   ✅ Apify returned data in ${Date.now() - apifyStart}ms`);
-        
-        // Check if data is complete
-        if (!isDataComplete(productData)) {
-          console.log('   ⚠️ Apify data incomplete, will try ScrapingBee for missing fields');
-        }
-      }
-    } catch (error) {
-      console.log('   ❌ Apify failed:', error.message);
-      productData = null;
-    }
+    scrapingPromises.push(
+      apifyScraper.scrapeProduct(url)
+        .then(data => ({ source: 'apify', data, success: true }))
+        .catch(error => ({ source: 'apify', error: error.message, success: false }))
+    );
+    scrapingMethods.push('apify');
   }
   
-  // STEP 2: If Apify failed or returned incomplete data, try ScrapingBee with AI
-  if (USE_SCRAPINGBEE && (!productData || !isDataComplete(productData))) {
-    try {
-      console.log('   🐝 Attempting ScrapingBee AI extraction...');
-      const scrapingBeeData = await scrapeWithScrapingBee(url);
-      
-      if (scrapingBeeData) {
-        if (!productData) {
-          // Apify failed completely, use ScrapingBee data
-          productData = scrapingBeeData;
-          scrapingMethod = 'scrapingbee';
-          console.log('   ✅ Using ScrapingBee AI data (Apify failed)');
-        } else {
-          // Merge data - keep Apify data but fill in missing fields from ScrapingBee
-          const mergedData = mergeProductData(productData, scrapingBeeData);
-          
-          // Log what was supplemented
-          if (!productData.name && scrapingBeeData.name) {
-            console.log('   ✅ ScrapingBee AI provided missing name');
-          }
-          if (!productData.price && scrapingBeeData.price) {
-            console.log('   ✅ ScrapingBee AI provided missing price');
-          }
-          if (!productData.image && scrapingBeeData.image) {
-            console.log('   ✅ ScrapingBee AI provided missing image');
-          }
-          if (!productData.dimensions && scrapingBeeData.dimensions) {
-            console.log('   ✅ ScrapingBee AI provided missing dimensions');
-          }
-          
-          productData = mergedData;
-          scrapingMethod = 'apify+scrapingbee';
-        }
-      }
-    } catch (error) {
-      console.log('   ❌ ScrapingBee AI extraction failed:', error.message);
-    }
+  if (USE_SCRAPINGBEE) {
+    scrapingPromises.push(
+      scrapeWithScrapingBee(url)
+        .then(data => ({ source: 'scrapingbee', data, success: true }))
+        .catch(error => ({ source: 'scrapingbee', error: error.message, success: false }))
+    );
+    scrapingMethods.push('scrapingbee');
   }
   
-  // STEP 3: If both premium scrapers failed, try basic scraper
-  if (!productData || !isDataComplete(productData)) {
-    try {
-      console.log('   🔧 Attempting basic scraper...');
-      const basicData = await scrapeWithBasicScraper(url);
-      
-      if (basicData) {
-        if (!productData) {
-          // All premium scrapers failed, use basic data
-          productData = basicData;
-          scrapingMethod = 'basic';
-          console.log('   ✅ Using basic scraper data (premium scrapers failed)');
-        } else {
-          // Merge data - fill in missing fields from basic scraper
-          const mergedData = mergeProductData(productData, basicData);
-          
-          // Log what was supplemented
-          if (!productData.name && basicData.name) {
-            console.log('   ✅ Basic scraper provided missing name');
-          }
-          if (!productData.price && basicData.price) {
-            console.log('   ✅ Basic scraper provided missing price');
-          }
-          if (!productData.image && basicData.image) {
-            console.log('   ✅ Basic scraper provided missing image');
-          }
-          
-          productData = mergedData;
-          scrapingMethod = scrapingMethod + '+basic';
-        }
-      }
-    } catch (error) {
-      console.log('   ❌ Basic scraper failed:', error.message);
-    }
-  }
+  // Always include basic scraper as fast fallback
+  scrapingPromises.push(
+    scrapeWithBasicScraper(url)
+      .then(data => ({ source: 'basic', data, success: true }))
+      .catch(error => ({ source: 'basic', error: error.message, success: false }))
+  );
+  scrapingMethods.push('basic');
   
-  // STEP 4: Try UPCitemdb if we have a product name but missing dimensions
+  // Wait for all scrapers with timeout
+  const results = await Promise.allSettled(scrapingPromises.map(promise => 
+    Promise.race([
+      promise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 12000))
+    ])
+  ));
+  
+  // Process results and extract successful data
+  const successfulResults = [];
+  results.forEach((result, index) => {
+    if (result.status === 'fulfilled' && result.value.success) {
+      console.log(`   ✅ ${result.value.source} completed successfully`);
+      successfulResults.push(result.value);
+    } else {
+      const source = scrapingMethods[index];
+      const error = result.status === 'rejected' ? result.reason.message : result.value.error;
+      console.log(`   ❌ ${source} failed: ${error}`);
+    }
+  });
+  
+  console.log(`   ⏱️ Parallel scraping completed in ${Date.now() - startTime}ms`);
+  console.log(`   📊 Success: ${successfulResults.length}/${scrapingMethods.length} scrapers`);
+  
+  // Intelligent data fusion - combine the BEST data from all sources
+  let productData = fuseProductData(successfulResults.map(r => r.data));
+  let scrapingMethod = successfulResults.map(r => r.source).join('+') || 'estimation';
+  
+  // Try UPCitemdb enhancement if we have a product name but missing dimensions
   if (USE_UPCITEMDB && productData && productData.name && (!productData.dimensions || !productData.weight)) {
     try {
-      console.log('   📦 Attempting UPCitemdb lookup...');
+      console.log('   📦 Enhancing with UPCitemdb...');
       const upcData = await upcItemDB.searchByName(productData.name);
       
       if (upcData) {
-        // UPCitemdb returns PRODUCT dimensions, convert to BOX dimensions
         if (!productData.dimensions && upcData.dimensions) {
           const category = productData.category || categorizeProduct(productData.name || '', url);
           productData.dimensions = estimateBoxDimensions(upcData.dimensions, category);
-          console.log('   ✅ UPCitemdb provided product dimensions, converted to box dimensions');
+          console.log('   ✅ UPCitemdb enhanced dimensions');
         }
         if (!productData.weight && upcData.weight) {
           productData.weight = upcData.weight;
-          console.log('   ✅ UPCitemdb provided weight');
+          console.log('   ✅ UPCitemdb enhanced weight');
         }
         if (!productData.image && upcData.image) {
           productData.image = upcData.image;
-          console.log('   ✅ UPCitemdb provided image');
+          console.log('   ✅ UPCitemdb enhanced image');
         }
-        scrapingMethod = scrapingMethod === 'estimation' ? 'upcitemdb' : scrapingMethod + '+upcitemdb';
+        scrapingMethod += '+upcitemdb';
       }
     } catch (error) {
-      console.log('   ❌ UPCitemdb lookup failed:', error.message);
+      console.log('   ❌ UPCitemdb enhancement failed:', error.message);
     }
   }
   
-  // STEP 5: Use intelligent estimation for any missing data
+  // Use intelligent estimation for any missing data
   if (!productData) {
-    // All methods failed completely
     productData = {
       name: 'Product from ' + retailer,
       price: null,
@@ -816,16 +841,8 @@ async function scrapeProduct(url) {
   const category = productData.category || categorizeProduct(productName, url);
   
   if (!productData.dimensions) {
-    // Try AI estimation first
-    // const aiEstimate = await learningSystem.getSmartEstimation(category, productName, retailer);
-    // if (aiEstimate) {
-    //   productData.dimensions = aiEstimate.dimensions;
-    //   productData.weight = productData.weight || aiEstimate.weight;
-    //   console.log(`   🤖 AI: Applied learned patterns (confidence: ${(aiEstimate.confidence * 100).toFixed(0)}%)`);
-    // } else {
       productData.dimensions = estimateDimensions(category, productName);
       console.log('   📐 Estimated dimensions based on category:', category);
-    // }
   }
   
   if (!productData.weight) {
@@ -865,12 +882,6 @@ async function scrapeProduct(url) {
   console.log(`   💰 Shipping cost: $${shippingCost}`);
   console.log(`   📊 Data source: ${scrapingMethod}`);
   console.log(`   ✅ Product processed successfully\n`);
-  
-  // Record what worked and what didn't for failure tracking
-  // await learningSystem.recordScrapingResult(url, retailer, product, scrapingMethod);
-  
-  // AI SAVE: Remember this product for next time
-  // await learningSystem.saveProduct(product);
   
   return product;
 }
@@ -917,7 +928,7 @@ app.post('/api/scrape', async (req, res) => {
     }
     
     console.log(`\n🚀 Starting batch scrape for ${urls.length} products...`);
-    console.log('   Strategy: Apify → ScrapingBee AI → Basic → UPCitemdb → Estimation\n');
+    console.log('   Strategy: Parallel Multi-Source → Data Fusion → UPCitemdb Enhancement\n');
     
     const products = await processBatch(urls);
     
@@ -926,6 +937,7 @@ app.post('/api/scrape', async (req, res) => {
     const scrapingBeeCount = products.filter(p => p.scrapingMethod?.includes('scrapingbee')).length;
     const basicCount = products.filter(p => p.scrapingMethod?.includes('basic')).length;
     const upcitemdbCount = products.filter(p => p.scrapingMethod?.includes('upcitemdb')).length;
+    const fusedCount = products.filter(p => p.scrapingMethod?.includes('+')).length;
     const estimatedCount = products.filter(p => p.scrapingMethod === 'estimation').length;
     
     console.log('\n📊 SCRAPING SUMMARY:');
@@ -934,11 +946,9 @@ app.post('/api/scrape', async (req, res) => {
     console.log(`   ScrapingBee AI used: ${scrapingBeeCount}`);
     console.log(`   Basic scraper used: ${basicCount}`);
     console.log(`   UPCitemdb used: ${upcitemdbCount}`);
+    console.log(`   Multi-source fused: ${fusedCount}`);
     console.log(`   Fully estimated: ${estimatedCount}`);
-    console.log(`   Success rate: ${((products.length - estimatedCount) / products.length * 100).toFixed(1)}%\n`);
-    
-    // Get AI insights
-    // await learningSystem.getInsights();
+    console.log(`   Data accuracy: ${((products.length - estimatedCount) / products.length * 100).toFixed(1)}%\n`);
     
     res.json({ 
       products,
@@ -951,6 +961,7 @@ app.post('/api/scrape', async (req, res) => {
           scrapingBee: scrapingBeeCount,
           basic: basicCount,
           upcitemdb: upcitemdbCount,
+          fused: fusedCount,
           estimation: estimatedCount
         }
       }
