@@ -36,6 +36,7 @@ const MAX_CONCURRENT_SCRAPES = 2;
 const BERMUDA_DUTY_RATE = 0.265;
 const USE_SCRAPINGBEE = !!SCRAPINGBEE_API_KEY;
 const SHIPPING_RATE_PER_CUBIC_FOOT = 15; // $15 per cubic foot - more realistic for ocean freight
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'sdl2024admin';
 
 // Initialize Apify scraper
 const apifyScraper = new ApifyScraper(APIFY_API_KEY);
@@ -152,6 +153,26 @@ app.get('/', (req, res) => {
 
 // Admin route
 app.get('/admin', (req, res) => {
+  // Check for basic auth
+  const auth = req.headers.authorization;
+  
+  if (!auth || !auth.startsWith('Basic ')) {
+    res.setHeader('WWW-Authenticate', 'Basic realm="SDL Admin Access"');
+    return res.status(401).send('Authentication required');
+  }
+  
+  // Decode basic auth
+  const credentials = Buffer.from(auth.split(' ')[1], 'base64').toString().split(':');
+  const username = credentials[0];
+  const password = credentials[1];
+  
+  // Check credentials (username: admin, password from env)
+  if (username !== 'admin' || password !== ADMIN_PASSWORD) {
+    res.setHeader('WWW-Authenticate', 'Basic realm="SDL Admin Access"');
+    return res.status(401).send('Invalid credentials');
+  }
+  
+  // Serve admin page if authenticated
   const adminPath = path.join(__dirname, '../frontend', 'admin.html');
   res.sendFile(adminPath, (err) => {
     if (err) {
