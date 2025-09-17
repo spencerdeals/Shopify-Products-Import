@@ -1,5 +1,5 @@
 [build]
-command = "PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install && npx playwright install chromium --with-deps"
+command = "PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install && npx playwright install chromium"
 
 [deploy]
 startCommand = "npm start"
