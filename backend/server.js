@@ -15,7 +15,7 @@ const PORT = process.env.PORT || 8080;
 const SHOPIFY_DOMAIN = process.env.SHOPIFY_DOMAIN || 'spencer-deals-ltd.myshopify.com';
 const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN || '';
 const SHOPIFY_WEBHOOK_SECRET = process.env.SHOPIFY_WEBHOOK_SECRET || '';
-const SCRAPINGBEE_API_KEY = process.env.SCRAPINGBEE_API_KEY || '7Z45R9U0PVA9SCI5P4R6RACA0PZUVSWDGNXCZ0OV0EXA17FAVC0PANLM6FAFDDO1PE7MRSZX4JT3SDIG';
+const SCRAPINGBEE_API_KEY = process.env.SCRAPINGBEE_API_KEY || '';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'sdl2024admin';
 const BERMUDA_DUTY_RATE = 0.265;
 const SHIPPING_RATE_PER_CUBIC_FOOT = 6;
@@ -47,7 +47,7 @@ try {
   if (ENABLE_APIFY && APIFY_API_KEY) {
     const { ApifyClient } = require('apify-client');
     apifyClient = new ApifyClient({ token: APIFY_API_KEY });
-    console.log('✅ Apify initialized for Wayfair scraping');
+    console.log('✅ Apify initialized for multi-retailer scraping');
   }
 } catch (error) {
   console.log('⚠️ Apify client not available:', error.message);
@@ -314,9 +314,9 @@ console.log(`Port: ${PORT}`);
 console.log(`Shopify: ${SHOPIFY_ACCESS_TOKEN ? 'CONNECTED' : 'NOT CONFIGURED'}`);
 console.log(`Email: ${sendgrid ? 'ENABLED' : 'DISABLED'}`);
 console.log(`Google Sheets: ${GOOGLE_SERVICE_ACCOUNT_KEY ? 'ENABLED' : 'DISABLED'}`);
-console.log(`Apify: ${ENABLE_APIFY && apifyClient ? '✅ ENABLED (Wayfair priority)' : '❌ DISABLED'}`);
-console.log(`ScrapingBee: ${SCRAPINGBEE_API_KEY ? 'ENABLED' : 'DISABLED'}`);
-console.log('Margin Structure: TIERED (20%/25%/22%/18%/15% by volume)');
+console.log(`Apify: ${ENABLE_APIFY && apifyClient ? '✅ ENABLED (Multi-retailer)' : '❌ DISABLED'}`);
+console.log(`ScrapingBee: ${SCRAPINGBEE_API_KEY ? 'ENABLED (Fallback)' : 'DISABLED'}`);
+console.log('Margin Structure: TIERED on Total Order Value');
 console.log(`Documentation Fee: $${DOCUMENTATION_FEE_PER_VENDOR} per vendor`);
 console.log('Flat-Pack Intelligence: ENABLED');
 console.log('Variant & Thumbnail Support: ENHANCED');
@@ -355,7 +355,7 @@ app.get('/health', (req, res) => {
     status: 'OK',
     timestamp: new Date().toISOString(),
     environment: TEST_MODE ? 'test' : 'production',
-    marginStructure: 'tiered',
+    marginStructure: 'tiered on total order',
     features: {
       flatPackIntelligence: true,
       variantSupport: true,
@@ -613,7 +613,7 @@ function estimateWeightFromBOL(dimensions, category) {
   return Math.round(estimatedWeight);
 }
 
-// NEW LOWER MARGIN CALCULATION
+// MARGIN CALCULATION ON TOTAL ORDER VALUE
 function calculateSDLMargin(cubicFeet, landedCost) {
   let marginRate;
   if (cubicFeet < 5) {
@@ -646,6 +646,7 @@ function roundToNinetyFive(amount) {
   return rounded;
 }
 
+// SIMPLIFIED SHIPPING CALCULATION (NO OVERSIZE/HEAVY FEES)
 function calculateShippingCost(dimensions, weight, price) {
   if (!dimensions) {
     return Math.round(Math.max(25, price * 0.15));
@@ -654,83 +655,15 @@ function calculateShippingCost(dimensions, weight, price) {
   const cubicInches = dimensions.length * dimensions.width * dimensions.height;
   const cubicFeet = cubicInches / 1728;
   
+  // Simple calculation: just volumetric rate + handling
   const baseCost = Math.max(15, cubicFeet * SHIPPING_RATE_PER_CUBIC_FOOT);
-  const oversizeFee = Math.max(dimensions.length, dimensions.width, dimensions.height) > 60 ? 75 : 0;
-  const heavyWeightFee = weight > 150 ? weight * 0.25 : 0;
-  const valueFee = price > 500 ? price * 0.02 : 0;
   const handlingFee = 15;
   
-  const totalCost = baseCost + oversizeFee + heavyWeightFee + valueFee + handlingFee;
+  const totalCost = baseCost + handlingFee;
   return Math.round(totalCost);
 }
 
-// ORDER STAGE MANAGEMENT
-async function updateOrderStage(orderId, stage) {
-  const stages = {
-    1: 'payment-received',
-    2: 'ordered-from-vendor',
-    3: 'at-nj-warehouse',
-    4: 'ready-for-delivery',
-    5: 'delivered'
-  };
-  
-  const stageDescriptions = {
-    1: '💳 Payment Received - Need to order from vendor',
-    2: '📦 Ordered from Vendor - Waiting for delivery to NJ',
-    3: '🏭 At NJ Warehouse - Preparing for shipment',
-    4: '✅ Ready for Delivery/Collection in Bermuda',
-    5: '🎉 Delivered - Order complete'
-  };
-  
-  try {
-    const orderResponse = await axios.get(
-      `https://${SHOPIFY_DOMAIN}/admin/api/2023-10/orders/${orderId}.json`,
-      {
-        headers: {
-          'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN
-        }
-      }
-    );
-    
-    const order = orderResponse.data.order;
-    
-    let newTags = order.tags
-      .split(',')
-      .filter(tag => !tag.trim().startsWith('stage-'))
-      .filter(tag => !tag.includes('IMPORT-ACTION-REQUIRED'));
-    
-    newTags.push(`stage-${stage}-${stages[stage]}`);
-    
-    if (stage === 1) {
-      newTags.push('🚨IMPORT-ACTION-REQUIRED');
-    }
-    
-    await axios.put(
-      `https://${SHOPIFY_DOMAIN}/admin/api/2023-10/orders/${orderId}.json`,
-      {
-        order: {
-          id: orderId,
-          tags: newTags.join(','),
-          note: order.note + `\n\n[${new Date().toISOString()}] Status Update: ${stageDescriptions[stage]}`
-        }
-      },
-      {
-        headers: {
-          'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN
-        }
-      }
-    );
-    
-    console.log(`✅ Order ${orderId} updated to: ${stageDescriptions[stage]}`);
-    return true;
-    
-  } catch (error) {
-    console.error('Error updating order stage:', error.response?.data || error);
-    return false;
-  }
-}
-
-// ENHANCED SCRAPING WITH IMPROVED WAYFAIR VARIANTS AND THUMBNAILS
+// APIFY-PRIORITIZED SCRAPING WITH SCRAPINGBEE FALLBACK
 async function scrapeWithScrapingBee(url) {
   if (TEST_MODE) {
     return {
@@ -745,7 +678,80 @@ async function scrapeWithScrapingBee(url) {
   
   const retailer = detectRetailer(url);
   
-  // ENHANCED WAYFAIR APIFY SCRAPER
+  // AMAZON APIFY SCRAPER
+  if (retailer === 'Amazon' && ENABLE_APIFY && apifyClient) {
+    try {
+      console.log('   🔄 Using junglee Amazon Crawler...');
+      
+      const run = await apifyClient.actor('junglee/Amazon-crawler').call({
+        categoryOrProductUrls: [
+          { url: url, method: "GET" }
+        ],
+        maxItemsPerStartUrl: 1,
+        scraperProductDetails: true,
+        useCaptchaSolver: false,
+        proxyCountry: "AUTO_SELECT_PROXY_COUNTRY"
+      });
+      
+      console.log('   ⏳ Waiting for Amazon scraper to complete...');
+      const result = await apifyClient.run(run.id).waitForFinish({ waitSecs: 30 });
+      const { items } = await apifyClient.dataset(run.defaultDatasetId).listItems();
+      
+      if (items && items.length > 0) {
+        const item = items[0];
+        console.log('   ✅ Amazon scraping success!');
+        
+        // Extract price
+        let price = null;
+        if (item.price) {
+          if (typeof item.price === 'object') {
+            price = item.price.value || item.price.amount || null;
+          } else if (typeof item.price === 'string') {
+            const priceMatch = item.price.match(/[\d,]+\.?\d*/);
+            price = priceMatch ? parseFloat(priceMatch[0].replace(',', '')) : null;
+          } else {
+            price = parseFloat(item.price);
+          }
+        }
+        
+        if (!price && item.offer?.price) {
+          price = parseFloat(item.offer.price);
+        }
+        
+        // Extract variant from title or variations
+        let variant = null;
+        if (item.variationSelection) {
+          variant = Object.entries(item.variationSelection)
+            .map(([key, value]) => `${key}: ${value}`)
+            .join(', ');
+        } else if (item.selectedVariations) {
+          variant = item.selectedVariations;
+        }
+        
+        // Extract image
+        const image = item.mainImage || item.image || item.images?.[0] || null;
+        
+        console.log('   💰 Price:', price || 'Not found');
+        console.log('   🎨 Variant:', variant || 'Not specified');
+        console.log('   📋 ASIN:', item.asin || 'Not found');
+        
+        return {
+          price: price,
+          title: item.title || item.name || 'Amazon Product',
+          image: image,
+          thumbnail: image,
+          variant: variant,
+          sku: item.asin || null,
+          brand: item.brand || item.manufacturer || null
+        };
+      }
+      
+    } catch (apifyError) {
+      console.log('   ⚠️ Amazon Apify scraping failed:', apifyError.message);
+    }
+  }
+  
+  // WAYFAIR APIFY SCRAPER
   if (retailer === 'Wayfair' && ENABLE_APIFY && apifyClient) {
     try {
       console.log('   🔄 Using 123webdata Wayfair Scraper...');
@@ -761,15 +767,12 @@ async function scrapeWithScrapingBee(url) {
       
       const run = await apifyClient.actor('123webdata/wayfair-scraper').call({
         productUrls: [url],
-        usePagination: false,
         includeOptionDetails: true,
         includeAllImages: true,
         proxy: {
           useApifyProxy: true,
           apifyProxyCountry: 'US'
-        },
-        maxRequestRetries: 3,
-        requestHandlerTimeoutSecs: 60
+        }
       });
       
       console.log('   ⏳ Waiting for Wayfair scraper to complete...');
@@ -905,169 +908,278 @@ async function scrapeWithScrapingBee(url) {
     }
   }
   
-  // ENHANCED SCRAPINGBEE WITH BETTER AI EXTRACTION FOR ALL RETAILERS
-  try {
-    console.log('   🐝 ScrapingBee requesting with enhanced AI rules...');
-    
-    let scrapingParams = {
-      api_key: SCRAPINGBEE_API_KEY,
-      url: url,
-      premium_proxy: 'true',
-      country_code: 'us',
-      render_js: 'true',
-      wait: '3000',
-      timeout: 30000
-    };
-    
-    // Luna Furniture and smaller retailers need simpler scraping
-    if (retailer === 'Luna Furniture' || retailer === 'Other Retailer') {
-      scrapingParams.premium_proxy = 'false';
-      scrapingParams.wait = '2000';
-      console.log('   Using simple mode for smaller retailer');
-    }
-    
-    scrapingParams.ai_extract_rules = JSON.stringify({
-      price: "Product Price, Sale Price, or Current Price in USD",
-      original_price: "Original Price or Regular Price if on sale",
-      title: "Product Title, Product Name, or Item Name",
-      variant: "Selected variant, selected options, or configuration (color, size, style, model)",
-      selectedOptions: "All selected or chosen product options as key-value pairs",
-      color: "Selected Product Color, Color Option, or Color Choice",
-      size: "Selected Product Size, Dimensions, Size Option, or Size Choice",
-      configuration: "Product Configuration (Left/Right Facing, With/Without Arms, etc)",
-      material: "Product Material, Fabric Type, or Material Option",
-      style: "Product Style, Design Option, or Style Choice",
-      finish: "Product Finish, Surface Finish, or Finish Option",
-      model: "Model Name, Model Number, or Product Model",
-      pattern: "Pattern, Design Pattern, or Pattern Option",
-      capacity: "Capacity, Volume, or Storage Size",
-      image: "Main Product Image URL, Primary Image, or Hero Image",
-      thumbnail: "Product Thumbnail, Small Image, Gallery Thumbnail, or Swatch Image",
-      allImages: "Array of all product images, gallery images, or product photos",
-      sku: "SKU, Product ID, Item Number, Model Number, or Product Code",
-      brand: "Brand Name, Manufacturer, or Company Name"
-    });
-    
-    const response = await axios({
-      method: 'GET',
-      url: 'https://app.scrapingbee.com/api/v1',
-      params: scrapingParams,
-      timeout: 20000
-    });
-    
-    const data = response.data;
-    
-    let price = null;
-    const priceToCheck = data.price || data.original_price;
-    if (priceToCheck) {
-      const priceStr = priceToCheck.toString();
-      const cleanPrice = priceStr.replace(/[^\d.,]/g, '').replace(/,/g, '');
-      const priceMatch = cleanPrice.match(/([\d]+\.?\d*)/);
-      if (priceMatch) {
-        price = parseFloat(priceMatch[1]);
-      }
-    }
-    
-    let variant = data.variant || null;
-    let variantParts = [];
-    
-    if (data.selectedOptions && typeof data.selectedOptions === 'object') {
-      Object.entries(data.selectedOptions).forEach(([key, value]) => {
-        if (value && value !== 'Default' && value !== 'None') {
-          variantParts.push(`${key}: ${value}`);
-        }
+  // GENERAL APIFY WEB SCRAPER FOR ALL OTHER RETAILERS
+  if (ENABLE_APIFY && apifyClient && retailer !== 'Amazon' && retailer !== 'Wayfair') {
+    try {
+      console.log('   🔄 Using Apify Web Scraper for', retailer, '...');
+      
+      const run = await apifyClient.actor('apify/web-scraper').call({
+        startUrls: [{ url: url }],
+        pageFunction: `
+          async function pageFunction(context) {
+            const { $, request } = context;
+            
+            // Price selectors
+            const priceSelectors = [
+              '[data-testid="product-price"]',
+              '.price-now',
+              '.price',
+              '[itemprop="price"]',
+              '.product-price',
+              '.current-price',
+              'span.wux-price-display',
+              '.pdp-price',
+              '.sale-price',
+              '[data-price]',
+              '.product-price-value',
+              '.price-box .price',
+              '.product-info .price'
+            ];
+            
+            // Title selectors
+            const titleSelectors = [
+              'h1', 
+              '[data-testid="product-title"]',
+              '.product-title',
+              '#productTitle',
+              '[itemprop="name"]',
+              '.product-name',
+              '.product-info h1',
+              '.pdp-title'
+            ];
+            
+            // Image selectors
+            const imageSelectors = [
+              'img.mainImage',
+              '[data-testid="product-image"] img',
+              '.product-photo img',
+              '#landingImage',
+              '[itemprop="image"]',
+              '.primary-image img',
+              '.product-image img',
+              '.gallery-image img',
+              'picture img'
+            ];
+            
+            // Extract functions
+            function extractText(selectors) {
+              for (const selector of selectors) {
+                const element = $(selector).first();
+                if (element.length) {
+                  return element.text().trim();
+                }
+              }
+              return null;
+            }
+            
+            function extractImage(selectors) {
+              for (const selector of selectors) {
+                const element = $(selector).first();
+                if (element.length) {
+                  return element.attr('src') || element.attr('data-src');
+                }
+              }
+              return null;
+            }
+            
+            // Extract variant info
+            function extractVariant() {
+              const variantTexts = [];
+              $('[data-selected="true"], .selected-option, .variant-selected').each((i, el) => {
+                const text = $(el).text().trim();
+                if (text) variantTexts.push(text);
+              });
+              return variantTexts.join(', ') || null;
+            }
+            
+            // Extract dimensions
+            function extractDimensions() {
+              const text = $('body').text();
+              const patterns = [
+                /(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*(?:inches|in|")/gi,
+                /L:\s*(\d+\.?\d*).*W:\s*(\d+\.?\d*).*H:\s*(\d+\.?\d*)/gi
+              ];
+              
+              for (const pattern of patterns) {
+                const match = text.match(pattern);
+                if (match && match[0]) {
+                  return match[0];
+                }
+              }
+              return null;
+            }
+            
+            return {
+              url: request.url,
+              title: extractText(titleSelectors),
+              price: extractText(priceSelectors),
+              image: extractImage(imageSelectors),
+              variant: extractVariant(),
+              dimensions: extractDimensions(),
+              description: $('.product-description, .product-details').text().slice(0, 500)
+            };
+          }
+        `,
+        proxyConfiguration: {
+          useApifyProxy: true
+        },
+        maxRequestsPerCrawl: 10,
+        maxRequestRetries: 2,
+        requestHandlerTimeoutSecs: 30
       });
-    }
-    
-    const variantFields = [
-      'color', 'size', 'configuration', 'material', 'style', 
-      'finish', 'model', 'pattern', 'capacity'
-    ];
-    
-    variantFields.forEach(field => {
-      if (data[field] && !variantParts.some(p => p.toLowerCase().includes(field))) {
-        const label = field.charAt(0).toUpperCase() + field.slice(1);
-        variantParts.push(`${label}: ${data[field]}`);
+
+      console.log('   ⏳ Waiting for Web Scraper...');
+      const result = await apifyClient.run(run.id).waitForFinish({ waitSecs: 30 });
+      const { items } = await apifyClient.dataset(run.defaultDatasetId).listItems();
+      
+      if (items && items.length > 0) {
+        const item = items[0];
+        console.log('   ✅ Web Scraper success!');
+        
+        // Parse price
+        let price = null;
+        if (item.price) {
+          const priceStr = item.price.toString();
+          const cleanPrice = priceStr.replace(/[^\d.,]/g, '').replace(/,/g, '');
+          const priceMatch = cleanPrice.match(/([\d]+\.?\d*)/);
+          if (priceMatch) {
+            price = parseFloat(priceMatch[1]);
+          }
+        }
+        
+        console.log('   💰 Price:', price || 'Not found');
+        console.log('   🎨 Variant:', item.variant || 'Not specified');
+        
+        return {
+          price: price,
+          title: item.title || 'Product',
+          image: item.image,
+          thumbnail: item.image,
+          variant: item.variant,
+          sku: null,
+          brand: null
+        };
       }
-    });
-    
-    if (!variantParts.length) {
-      if (data.title) {
-        const titleVariantMatch = data.title.match(/[-–]\s*([^,]+(?:,\s*[^,]+)*)\s*$/) ||
-                                 data.title.match(/\(([^)]+)\)/);
-        if (titleVariantMatch) {
-          variantParts.push(titleVariantMatch[1]);
+      
+    } catch (apifyError) {
+      console.log('   ⚠️ Apify Web Scraper failed:', apifyError.message);
+      
+      // Try Pro Web Content Crawler as secondary fallback
+      try {
+        console.log('   🔄 Trying Pro Web Content Crawler...');
+        
+        const run = await apifyClient.actor('assertive_analogy/pro-web-content-crawler').call({
+          startUrls: [{ url: url }],
+          maxCrawlDepth: 0,
+          maxCrawlPages: 1,
+          proxyConfiguration: {
+            useApifyProxy: true
+          }
+        });
+        
+        const result = await apifyClient.run(run.id).waitForFinish({ waitSecs: 30 });
+        const { items } = await apifyClient.dataset(run.defaultDatasetId).listItems();
+        
+        if (items && items.length > 0) {
+          const item = items[0];
+          console.log('   ✅ Pro Web Content Crawler success!');
+          
+          // Extract price from text content
+          let price = null;
+          if (item.text) {
+            const priceMatch = item.text.match(/\$\s*([\d,]+\.?\d*)/);
+            if (priceMatch) {
+              price = parseFloat(priceMatch[1].replace(',', ''));
+            }
+          }
+          
+          return {
+            price: price,
+            title: item.title || 'Product',
+            image: item.images?.[0] || null,
+            thumbnail: item.images?.[0] || null,
+            variant: null,
+            sku: null,
+            brand: null
+          };
+        }
+      } catch (error) {
+        console.log('   ⚠️ Pro Web Content Crawler also failed:', error.message);
+      }
+    }
+  }
+  
+  // SCRAPINGBEE AS LAST RESORT FALLBACK
+  if (SCRAPINGBEE_API_KEY) {
+    try {
+      console.log('   🐝 All Apify scrapers failed, falling back to ScrapingBee...');
+      
+      let scrapingParams = {
+        api_key: SCRAPINGBEE_API_KEY,
+        url: url,
+        premium_proxy: 'true',
+        country_code: 'us',
+        render_js: 'true',
+        wait: '3000',
+        timeout: 30000
+      };
+      
+      // Simplified AI extraction for fallback
+      scrapingParams.ai_extract_rules = JSON.stringify({
+        price: "Product Price, Sale Price, or Current Price in USD",
+        title: "Product Title or Name",
+        image: "Main Product Image URL",
+        variant: "Selected options (color, size, style)",
+        sku: "SKU or Product ID",
+        brand: "Brand Name or Manufacturer"
+      });
+      
+      const response = await axios({
+        method: 'GET',
+        url: 'https://app.scrapingbee.com/api/v1',
+        params: scrapingParams,
+        timeout: 20000
+      });
+      
+      const data = response.data;
+      
+      let price = null;
+      if (data.price) {
+        const priceStr = data.price.toString();
+        const cleanPrice = priceStr.replace(/[^\d.,]/g, '').replace(/,/g, '');
+        const priceMatch = cleanPrice.match(/([\d]+\.?\d*)/);
+        if (priceMatch) {
+          price = parseFloat(priceMatch[1]);
         }
       }
+      
+      console.log(`   💰 ScrapingBee Price: ${price || 'Not found'}`);
+      
+      return {
+        price: price,
+        title: data.title || 'Product',
+        image: data.image || null,
+        thumbnail: data.image || null,
+        variant: data.variant || null,
+        sku: data.sku || null,
+        brand: data.brand || null
+      };
+      
+    } catch (error) {
+      console.log('   ❌ ScrapingBee also failed:', error.message);
     }
-    
-    if (variantParts.length > 0 && !variant) {
-      variant = variantParts.join(', ');
-    }
-    
-    let image = data.image || null;
-    let thumbnail = data.thumbnail || null;
-    
-    if (!thumbnail && data.allImages && Array.isArray(data.allImages)) {
-      image = data.allImages[0];
-      thumbnail = data.allImages.find(img => 
-        img.includes('thumb') || 
-        img.includes('small') ||
-        img.includes('_s.') ||
-        img.includes('100x100') ||
-        img.includes('150x150')
-      ) || data.allImages[0];
-    }
-    
-    if (image && !image.startsWith('http')) {
-      image = 'https:' + image;
-    }
-    if (thumbnail && !thumbnail.startsWith('http')) {
-      thumbnail = 'https:' + thumbnail;
-    }
-    
-    if (image && !thumbnail) {
-      if (retailer === 'Wayfair' && image.includes('wayfair')) {
-        thumbnail = image.replace(/w=\d+/, 'w=100').replace(/h=\d+/, 'h=100');
-      } else if (retailer === 'Amazon' && image.includes('amazon')) {
-        thumbnail = image.replace(/\._[^.]+_\./, '._SL100_.');
-      } else if (retailer === 'Target' && image.includes('target')) {
-        thumbnail = image.replace(/fmt=webp&qlt=\d+&wid=\d+&hei=\d+/, 'fmt=webp&qlt=80&wid=100&hei=100');
-      } else if (retailer === 'Walmart' && image.includes('walmart')) {
-        thumbnail = image.includes('?') ? image + '&odnWidth=100&odnHeight=100' : image + '?odnWidth=100&odnHeight=100';
-      } else {
-        thumbnail = image;
-      }
-    }
-    
-    const sku = data.sku || null;
-    
-    console.log(`   💰 Price: ${price || 'Not found'}`);
-    console.log(`   🎨 Variant: ${variant || 'Not specified'}`);
-    console.log(`   📋 SKU: ${sku || 'Not found'}`);
-    console.log(`   🖼️ Thumbnail: ${thumbnail && thumbnail !== image ? 'Separate' : 'Same as main'}`);
-    
-    return {
-      price: price,
-      title: data.title || 'Product',
-      image: image,
-      thumbnail: thumbnail || image,
-      variant: variant,
-      sku: sku,
-      brand: data.brand || null
-    };
-    
-  } catch (error) {
-    console.log('   ❌ ScrapingBee failed:', error.message);
-    return {
-      price: null,
-      title: 'Product from ' + retailer,
-      image: null,
-      thumbnail: null,
-      variant: null,
-      sku: null
-    };
   }
+  
+  // If all scrapers failed, return minimal data
+  console.log('   ❌ All scraping methods failed');
+  return {
+    price: null,
+    title: 'Product from ' + retailer,
+    image: null,
+    thumbnail: null,
+    variant: null,
+    sku: null
+  };
 }
 
 // Process individual product
@@ -1102,10 +1214,18 @@ async function processProduct(url, index, urls) {
   const baseShippingCost = calculateShippingCost(dimensions, weight, scraped.price || 100);
   const cubicInches = dimensions.length * dimensions.width * dimensions.height;
   const cubicFeet = cubicInches / 1728;
-  const landedCost = (scraped.price || 100) + baseShippingCost + ((scraped.price || 100) * BERMUDA_DUTY_RATE);
-  const marginRate = calculateSDLMargin(cubicFeet, landedCost);
-  const marginAmount = Math.round(baseShippingCost * marginRate);
-  const totalShippingWithMargin = Math.round(baseShippingCost + marginAmount);
+  
+  // Calculate total order value BEFORE margin
+  const productPrice = scraped.price || 100;
+  const dutyAmount = productPrice * BERMUDA_DUTY_RATE;
+  const subtotal = productPrice + dutyAmount + baseShippingCost;
+  
+  // Apply margin to the TOTAL order value
+  const marginRate = calculateSDLMargin(cubicFeet, subtotal);
+  const marginAmount = Math.round(subtotal * marginRate);
+  
+  // Note: shipping cost displayed is just the base shipping without margin
+  // The margin is applied to the entire order at checkout
   
   const product = {
     id: Date.now() + Math.random().toString(36).substr(2, 9),
@@ -1124,8 +1244,9 @@ async function processProduct(url, index, urls) {
     packaging: packaging,
     baseShippingCost: Math.round(baseShippingCost),
     marginRate: marginRate,
-    marginAmount: marginAmount.toFixed(2),
-    shippingCost: totalShippingWithMargin,
+    marginAmount: marginAmount,
+    shippingCost: Math.round(baseShippingCost), // Display just base shipping
+    totalMarginOnOrder: marginAmount, // This is the margin on the entire order
     dataCompleteness: {
       hasName: !!scraped.title,
       hasPrice: !!scraped.price,
@@ -1146,8 +1267,9 @@ async function processProduct(url, index, urls) {
   console.log(`   Packaging: ${packaging}`);
   console.log(`   Volume: ${cubicFeet.toFixed(1)} ft³`);
   console.log(`   Weight: ${weight} lbs`);
-  console.log(`   Margin: ${(marginRate * 100).toFixed(0)}% ($${marginAmount.toFixed(2)})`);
-  console.log(`   Total Shipping: $${totalShippingWithMargin}`);
+  console.log(`   Base Shipping: $${baseShippingCost}`);
+  console.log(`   Order Subtotal: $${subtotal.toFixed(2)}`);
+  console.log(`   Margin: ${(marginRate * 100).toFixed(0)}% of total order ($${marginAmount})`);
   
   learnFromProduct(url, product);
   return product;
