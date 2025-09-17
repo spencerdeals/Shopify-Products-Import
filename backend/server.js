@@ -306,7 +306,7 @@ function mergeProductData(primary, secondary) {
   };
 }
 
-// FAST ScrapingBee scraper
+// FAST ScrapingBee scraper with Wayfair-specific patterns
 async function scrapeWithScrapingBee(url) {
   if (!USE_SCRAPINGBEE) {
     throw new Error('ScrapingBee not configured');
@@ -323,11 +323,11 @@ async function scrapeWithScrapingBee(url) {
         params: {
           api_key: SCRAPINGBEE_API_KEY,
           url: url,
-          premium_proxy: 'false',
+          premium_proxy: 'false',  // Disable for speed
           country_code: 'us',
-          render_js: 'false',
-          block_resources: 'true',
-          wait: '1000'
+          render_js: 'false',      // Disable for speed
+          block_resources: 'true', // Block images/css for speed
+          wait: '1000'             // Minimal wait
         },
         timeout: SCRAPINGBEE_TIMEOUT
       }),
@@ -353,7 +353,7 @@ async function scrapeWithScrapingBee(url) {
       inStock: true
     };
 
-    // Wayfair-specific extraction patterns
+    // Wayfair-specific title extraction
     const wayfairTitlePatterns = [
       /<h1[^>]*data-enzyme-id="ProductTitle"[^>]*>([^<]+)<\/h1>/i,
       /<h1[^>]*class="[^"]*ProductDetailInfoBlock-productTitle[^"]*"[^>]*>([^<]+)<\/h1>/i,
@@ -370,7 +370,7 @@ async function scrapeWithScrapingBee(url) {
       }
     }
 
-    // Wayfair-specific price patterns
+    // Wayfair-specific price extraction
     const wayfairPricePatterns = [
       /data-enzyme-id="PriceBlock"[^>]*>[\s\S]*?\$(\d+(?:,\d{3})*(?:\.\d{2})?)/i,
       /class="[^"]*MoneyPrice[^"]*"[^>]*>[\s\S]*?\$(\d+(?:,\d{3})*(?:\.\d{2})?)/i,
@@ -403,7 +403,7 @@ async function scrapeWithScrapingBee(url) {
       if (productData.price) break;
     }
 
-    // Wayfair dimensions
+    // Wayfair dimensions extraction
     const wayfairDimPatterns = [
       /Overall:\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)/i,
       /Dimensions[^:]*:\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)/i,
