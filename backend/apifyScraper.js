@@ -1,5 +1,18 @@
+// apifyScraper.js
 const axios = require('axios');
 const { ApifyClient } = require('apify-client');
+
+// NEW: optional GPT fallback
+const USE_GPT_FALLBACK = (process.env.USE_GPT_FALLBACK || 'false').toLowerCase() === 'true';
+let gptParser = null;
+if (USE_GPT_FALLBACK) {
+  try {
+    gptParser = require('./gptParser');
+    console.log('🧠 GPT fallback enabled (gptParser.js loaded)');
+  } catch (e) {
+    console.warn('⚠️ GPT fallback requested but gptParser.js not found. Continuing without it.');
+  }
+}
 
 class ApifyScraper {
   constructor(apiKey) {
@@ -26,19 +39,37 @@ class ApifyScraper {
     const retailer = this.detectRetailer(url);
     console.log(`🔄 Apify scraping ${retailer} product...`);
 
+    let result = null;
+
     try {
       // For Wayfair, use the paid mscraper/wayfair-scraper
       if (retailer === 'Wayfair') {
-        return await this.scrapeWayfair(url);
+        result = await this.scrapeWayfair(url);
+      } else {
+        // For other retailers, use generic web scraper
+        result = await this.scrapeGeneric(url);
       }
-      
-      // For other retailers, use generic web scraper
-      return await this.scrapeGeneric(url);
-      
     } catch (error) {
       console.error(`❌ Apify ${retailer} scraping failed:`, error.message);
-      return null;
+      result = null;
     }
+
+    // === NEW: Safe GPT fallback ===
+    if (!result && USE_GPT_FALLBACK && gptParser) {
+      try {
+        console.log('🧠 Falling back to GPT parser...');
+        result = await gptParser.parseProduct(url, {
+          currencyFallback: 'USD',
+        });
+        if (result) {
+          console.log('✅ GPT fallback succeeded:', (result.name || 'Unnamed').slice(0, 60));
+        }
+      } catch (e) {
+        console.warn('⚠️ GPT fallback failed:', e.message);
+      }
+    }
+
+    return result; // may be null (same behavior as before)
   }
 
   async scrapeWayfair(url) {
