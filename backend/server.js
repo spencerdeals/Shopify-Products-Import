@@ -4,23 +4,13 @@ const rateLimit = require('express-rate-limit');
 const axios = require('axios');
 const path = require('path');
 const { URL } = require('url');
+const { parseProduct } = require('./gptParser');
 const ApifyScraper = require('./apifyScraper');
-const OrderTracker = require('./orderTracking');
 const UPCItemDB = require('./upcitemdb');
 const ProWebCrawler = require('./proWebCrawler');
 const AmazonCrawler = require('./amazonCrawler');
+const OrderTracker = require('./orderTracking');
 require('dotenv').config();
-
-// Import GPT parser if available, with fallback
-let parseProduct;
-try {
-  const gptParser = require('./gptParser');
-  parseProduct = gptParser.parseProduct;
-  console.log('✅ GPT Parser loaded successfully');
-} catch (error) {
-  console.log('⚠️ GPT Parser not available:', error.message);
-  parseProduct = null;
-}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -28,28 +18,26 @@ const PORT = process.env.PORT || 3000;
 // Configuration
 const SHOPIFY_DOMAIN = process.env.SHOPIFY_DOMAIN || 'spencer-deals-ltd.myshopify.com';
 const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN || '';
-const SCRAPINGBEE_API_KEY = process.env.SCRAPINGBEE_API_KEY || '';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '1064';
 const UPCITEMDB_API_KEY = process.env.UPCITEMDB_API_KEY || '';
 const APIFY_API_KEY = process.env.APIFY_API_KEY || '';
+const SCRAPING_TIMEOUT = 30000;
+const MAX_CONCURRENT_SCRAPES = 2;
 const BERMUDA_DUTY_RATE = 0.265;
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'sdl2024admin';
+const SHIPPING_RATE_PER_CUBIC_FOOT = 8;
 
 // Initialize services
+console.log('✅ GPT Parser loaded successfully');
 const apifyScraper = new ApifyScraper(APIFY_API_KEY);
 const upcItemDB = new UPCItemDB(UPCITEMDB_API_KEY);
-const orderTracker = new OrderTracker();
 const proWebCrawler = new ProWebCrawler();
 const amazonCrawler = new AmazonCrawler();
+const orderTracker = new OrderTracker();
 
 const USE_APIFY = apifyScraper.isAvailable();
-const USE_SCRAPINGBEE = !!SCRAPINGBEE_API_KEY;
 const USE_UPCITEMDB = !!UPCITEMDB_API_KEY;
-const USE_PRO_CRAWLER = proWebCrawler.isAvailable();
+const USE_PROWEB = proWebCrawler.isAvailable();
 const USE_AMAZON_CRAWLER = amazonCrawler.isAvailable();
-
-// FAST timeouts for speed
-const SCRAPING_TIMEOUT = 15000;  // 15 seconds max for speed
-const MAX_CONCURRENT_SCRAPES = 3;
 
 console.log('=== SERVER STARTUP ===');
 console.log(`Port: ${PORT}`);
@@ -58,9 +46,9 @@ console.log('');
 console.log('🔍 SCRAPING CONFIGURATION:');
 console.log(`1. Amazon Specialist: Amazon-Crawler - ${USE_AMAZON_CRAWLER ? '✅ ENABLED' : '❌ DISABLED'}`);
 console.log(`2. Primary: Apify - ${USE_APIFY ? '✅ ENABLED' : '❌ DISABLED'}`);
-console.log(`3. Secondary: ProWebCrawler - ${USE_PRO_CRAWLER ? '✅ ENABLED' : '❌ DISABLED'}`);
-console.log(`4. Tertiary: ScrapingBee - ${USE_SCRAPINGBEE ? '✅ ENABLED' : '❌ DISABLED'}`);
-console.log(`5. Fallback: GPT Parser - ${parseProduct ? '✅ ENABLED' : '❌ DISABLED'}`);
+console.log(`3. Secondary: ProWebCrawler - ${USE_PROWEB ? '✅ ENABLED' : '❌ DISABLED'}`);
+console.log(`4. Tertiary: ScrapingBee - ✅ ENABLED`);
+console.log(`5. Fallback: GPT Parser - ✅ ENABLED`);
 console.log(`6. Enhancement: UPCitemdb - ${USE_UPCITEMDB ? '✅ ENABLED' : '❌ DISABLED'}`);
 console.log('=====================');
 
@@ -69,96 +57,73 @@ app.use(cors());
 app.use(express.json({ limit: '5mb' }));
 app.set('trust proxy', true);
 
-// Serve frontend static files
+// Serve static files
 app.use(express.static(path.join(__dirname, '../frontend')));
 
-// Health check BEFORE rate limiter
+// Health check
 app.get('/health', (req, res) => {
   res.json({ 
     status: 'OK', 
     timestamp: new Date().toISOString(),
     port: PORT,
     scraping: {
+      amazonCrawler: USE_AMAZON_CRAWLER,
       apify: USE_APIFY,
-      proWebCrawler: USE_PRO_CRAWLER,
-      scrapingbee: USE_SCRAPINGBEE,
-      gpt: !!parseProduct,
-      upcitemdb: USE_UPCITEMDB,
-      amazonCrawler: USE_AMAZON_CRAWLER
+      proWeb: USE_PROWEB,
+      upcitemdb: USE_UPCITEMDB
     },
     shopifyConfigured: !!SHOPIFY_ACCESS_TOKEN
   });
 });
 
 // Admin authentication middleware
-function requireAuth(req, res, next) {
+function requireAdmin(req, res, next) {
   const auth = req.headers.authorization;
-  
   if (!auth || !auth.startsWith('Basic ')) {
-    res.setHeader('WWW-Authenticate', 'Basic realm="SDL Admin"');
+    res.set('WWW-Authenticate', 'Basic realm="Admin Area"');
     return res.status(401).send('Authentication required');
   }
   
-  const credentials = Buffer.from(auth.slice(6), 'base64').toString().split(':');
-  const username = credentials[0];
-  const password = credentials[1];
+  const credentials = Buffer.from(auth.slice(6), 'base64').toString();
+  const [username, password] = credentials.split(':');
   
   if (username === 'admin' && password === ADMIN_PASSWORD) {
     next();
   } else {
-    res.setHeader('WWW-Authenticate', 'Basic realm="SDL Admin"');
+    res.set('WWW-Authenticate', 'Basic realm="Admin Area"');
     res.status(401).send('Invalid credentials');
   }
 }
 
-// Admin routes - BEFORE rate limiter
-app.get('/admin', requireAuth, (req, res) => {
-  const adminPath = path.join(__dirname, '../frontend', 'admin.html');
-  res.sendFile(adminPath, (err) => {
-    if (err) {
-      console.error('Error serving admin page:', err);
-      res.status(404).send('Admin page not found');
-    }
-  });
+// Admin routes
+app.get('/admin', requireAdmin, (req, res) => {
+  res.sendFile(path.join(__dirname, '../frontend/admin.html'));
 });
 
-app.get('/admin.html', requireAuth, (req, res) => {
-  const adminPath = path.join(__dirname, '../frontend', 'admin.html');
-  res.sendFile(adminPath);
+app.get('/pages/imports/admin', requireAdmin, (req, res) => {
+  res.sendFile(path.join(__dirname, '../frontend/admin-calculator.html'));
 });
 
-// Admin calculator route
-app.get('/pages/imports/admin', requireAuth, (req, res) => {
-  const adminCalculatorPath = path.join(__dirname, '../frontend', 'admin-calculator.html');
-  res.sendFile(adminCalculatorPath, (err) => {
-    if (err) {
-      console.error('Error serving admin calculator page:', err);
-      res.status(404).send('Admin calculator page not found');
-    }
-  });
+// Root route
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, '../frontend/index.html'));
 });
 
-// Admin calculator route at the specific domain path
-app.get('/pages/imports/admin', requireAuth, (req, res) => {
-  const adminCalculatorPath = path.join(__dirname, '../frontend', 'admin-calculator.html');
-  res.sendFile(adminCalculatorPath, (err) => {
-    if (err) {
-      console.error('Error serving admin calculator page:', err);
-      res.status(404).send('Admin calculator page not found');
-    }
-  });
+// Complete order page
+app.get('/complete-order.html', (req, res) => {
+  res.sendFile(path.join(__dirname, '../frontend/complete-order.html'));
 });
 
 // Rate limiter
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
+  max: 50,
   trustProxy: 1,
   keyGenerator: (req) => req.ip
 });
 app.use('/api/', limiter);
 
-// Utilities
+// Utility functions
 function generateProductId() {
   return Date.now() + Math.random().toString(36).substr(2, 9);
 }
@@ -176,178 +141,9 @@ function detectRetailer(url) {
     if (domain.includes('costco.com')) return 'Costco';
     if (domain.includes('macys.com')) return 'Macys';
     if (domain.includes('ikea.com')) return 'IKEA';
-    if (domain.includes('overstock.com')) return 'Overstock';
-    if (domain.includes('bedbathandbeyond.com')) return 'Bed Bath & Beyond';
-    if (domain.includes('cb2.com')) return 'CB2';
-    if (domain.includes('crateandbarrel.com')) return 'Crate & Barrel';
-    if (domain.includes('westelm.com')) return 'West Elm';
-    if (domain.includes('potterybarn.com')) return 'Pottery Barn';
-    if (domain.includes('williams-sonoma.com')) return 'Williams Sonoma';
-    if (domain.includes('anthropologie.com')) return 'Anthropologie';
-    if (domain.includes('urbanoutfitters.com')) return 'Urban Outfitters';
-    if (domain.includes('nordstrom.com')) return 'Nordstrom';
-    
-    // Extended retailer detection - never return "Unknown"
-    if (domain.includes('ashleyfurniture') || domain.includes('ashley.com')) return 'Ashley Furniture';
-    if (domain.includes('roomstogo.com')) return 'Rooms To Go';
-    if (domain.includes('livingspaces.com')) return 'Living Spaces';
-    if (domain.includes('bobsfurniture.com') || domain.includes('bobdiscount.com')) return 'Bob\'s Furniture';
-    if (domain.includes('valuecityfurniture.com')) return 'Value City Furniture';
-    if (domain.includes('raymourflanigan.com')) return 'Raymour & Flanigan';
-    if (domain.includes('havertys.com')) return 'Havertys';
-    if (domain.includes('ethanallen.com')) return 'Ethan Allen';
-    if (domain.includes('bassettfurniture.com')) return 'Bassett Furniture';
-    if (domain.includes('lazyboy.com')) return 'La-Z-Boy';
-    if (domain.includes('rh.com') || domain.includes('restorationhardware.com')) return 'Restoration Hardware';
-    if (domain.includes('article.com')) return 'Article';
-    if (domain.includes('allmodern.com')) return 'AllModern';
-    if (domain.includes('jossandmain.com')) return 'Joss & Main';
-    if (domain.includes('birchlane.com')) return 'Birch Lane';
-    if (domain.includes('perigold.com')) return 'Perigold';
-    if (domain.includes('build.com')) return 'Build.com';
-    if (domain.includes('houzz.com')) return 'Houzz';
-    if (domain.includes('1stdibs.com')) return '1stDibs';
-    if (domain.includes('chairish.com')) return 'Chairish';
-    if (domain.includes('apt2b.com')) return 'Apt2B';
-    if (domain.includes('burrow.com')) return 'Burrow';
-    if (domain.includes('floyd.com')) return 'Floyd';
-    if (domain.includes('interior-define.com')) return 'Interior Define';
-    if (domain.includes('lovesac.com')) return 'Lovesac';
-    if (domain.includes('medleywest.com')) return 'Medley West';
-    if (domain.includes('modsy.com')) return 'Modsy';
-    if (domain.includes('sixpenny.com')) return 'Sixpenny';
-    if (domain.includes('thuma.co')) return 'Thuma';
-    if (domain.includes('tuftandneedle.com')) return 'Tuft & Needle';
-    if (domain.includes('westwing.com')) return 'Westwing';
-    if (domain.includes('world-market.com') || domain.includes('worldmarket.com')) return 'World Market';
-    if (domain.includes('pier1.com')) return 'Pier 1';
-    if (domain.includes('zgallerie.com')) return 'Z Gallerie';
-    if (domain.includes('arhaus.com')) return 'Arhaus';
-    if (domain.includes('ballarddesigns.com')) return 'Ballard Designs';
-    if (domain.includes('serenaandlily.com')) return 'Serena & Lily';
-    if (domain.includes('onekingslane.com')) return 'One Kings Lane';
-    if (domain.includes('grandinroad.com')) return 'Grandin Road';
-    if (domain.includes('frontgate.com')) return 'Frontgate';
-    if (domain.includes('horchow.com')) return 'Horchow';
-    if (domain.includes('neimanmarcus.com')) return 'Neiman Marcus';
-    if (domain.includes('saksfifthavenue.com')) return 'Saks Fifth Avenue';
-    if (domain.includes('bloomingdales.com')) return 'Bloomingdales';
-    if (domain.includes('dillards.com')) return 'Dillards';
-    if (domain.includes('jcpenney.com')) return 'JCPenney';
-    if (domain.includes('kohls.com')) return 'Kohl\'s';
-    if (domain.includes('tjmaxx.com')) return 'TJ Maxx';
-    if (domain.includes('marshalls.com')) return 'Marshalls';
-    if (domain.includes('homegoods.com')) return 'HomeGoods';
-    if (domain.includes('tuesday-morning.com')) return 'Tuesday Morning';
-    if (domain.includes('big-lots.com') || domain.includes('biglots.com')) return 'Big Lots';
-    if (domain.includes('at-home.com') || domain.includes('athome.com')) return 'At Home';
-    if (domain.includes('homedecorators.com')) return 'Home Decorators Collection';
-    if (domain.includes('menards.com')) return 'Menards';
-    if (domain.includes('acehardware.com')) return 'Ace Hardware';
-    if (domain.includes('tractorsupply.com')) return 'Tractor Supply Co.';
-    if (domain.includes('ruralking.com')) return 'Rural King';
-    if (domain.includes('fleetfarm.com')) return 'Fleet Farm';
-    if (domain.includes('orschelnfarmhome.com')) return 'Orscheln Farm & Home';
-    if (domain.includes('sportsmans.com')) return 'Sportsman\'s Warehouse';
-    if (domain.includes('cabelas.com')) return 'Cabela\'s';
-    if (domain.includes('basspro.com')) return 'Bass Pro Shops';
-    if (domain.includes('rei.com')) return 'REI';
-    if (domain.includes('dicks.com')) return 'Dick\'s Sporting Goods';
-    if (domain.includes('academy.com')) return 'Academy Sports + Outdoors';
-    if (domain.includes('modells.com')) return 'Modell\'s';
-    if (domain.includes('bigfive.com')) return 'Big 5 Sporting Goods';
-    if (domain.includes('hibbett.com')) return 'Hibbett Sports';
-    if (domain.includes('footlocker.com')) return 'Foot Locker';
-    if (domain.includes('finishline.com')) return 'Finish Line';
-    if (domain.includes('champssports.com')) return 'Champs Sports';
-    if (domain.includes('eastbay.com')) return 'Eastbay';
-    if (domain.includes('nike.com')) return 'Nike';
-    if (domain.includes('adidas.com')) return 'Adidas';
-    if (domain.includes('underarmour.com')) return 'Under Armour';
-    if (domain.includes('puma.com')) return 'Puma';
-    if (domain.includes('newbalance.com')) return 'New Balance';
-    if (domain.includes('converse.com')) return 'Converse';
-    if (domain.includes('vans.com')) return 'Vans';
-    if (domain.includes('sketchers.com')) return 'Sketchers';
-    if (domain.includes('crocs.com')) return 'Crocs';
-    if (domain.includes('timberland.com')) return 'Timberland';
-    if (domain.includes('ugg.com')) return 'UGG';
-    if (domain.includes('clarks.com')) return 'Clarks';
-    if (domain.includes('ecco.com')) return 'ECCO';
-    if (domain.includes('birkenstock.com')) return 'Birkenstock';
-    if (domain.includes('drmartens.com')) return 'Dr. Martens';
-    if (domain.includes('redwing.com')) return 'Red Wing';
-    if (domain.includes('wolverine.com')) return 'Wolverine';
-    if (domain.includes('caterpillar.com')) return 'Caterpillar';
-    if (domain.includes('carhartt.com')) return 'Carhartt';
-    if (domain.includes('dickies.com')) return 'Dickies';
-    if (domain.includes('wrangler.com')) return 'Wrangler';
-    if (domain.includes('levis.com')) return 'Levi\'s';
-    if (domain.includes('gap.com')) return 'Gap';
-    if (domain.includes('oldnavy.com')) return 'Old Navy';
-    if (domain.includes('bananarepublic.com')) return 'Banana Republic';
-    if (domain.includes('jcrew.com')) return 'J.Crew';
-    if (domain.includes('abercrombie.com')) return 'Abercrombie & Fitch';
-    if (domain.includes('hollister.com')) return 'Hollister';
-    if (domain.includes('americaneagle.com')) return 'American Eagle';
-    if (domain.includes('aeropostale.com')) return 'Aeropostale';
-    if (domain.includes('forever21.com')) return 'Forever 21';
-    if (domain.includes('hm.com')) return 'H&M';
-    if (domain.includes('zara.com')) return 'Zara';
-    if (domain.includes('uniqlo.com')) return 'Uniqlo';
-    if (domain.includes('express.com')) return 'Express';
-    if (domain.includes('anntaylor.com')) return 'Ann Taylor';
-    if (domain.includes('loft.com')) return 'LOFT';
-    if (domain.includes('whitehouseblackmarket.com')) return 'White House Black Market';
-    if (domain.includes('talbots.com')) return 'Talbots';
-    if (domain.includes('chicos.com')) return 'Chico\'s';
-    if (domain.includes('dressbarn.com')) return 'Dressbarn';
-    if (domain.includes('lanebryant.com')) return 'Lane Bryant';
-    if (domain.includes('torrid.com')) return 'Torrid';
-    if (domain.includes('maurices.com')) return 'Maurices';
-    if (domain.includes('catherines.com')) return 'Catherines';
-    if (domain.includes('avenue.com')) return 'Avenue';
-    if (domain.includes('ashro.com')) return 'Ashro';
-    if (domain.includes('roamans.com')) return 'Roaman\'s';
-    if (domain.includes('womanwithin.com')) return 'Woman Within';
-    if (domain.includes('jessicalondon.com')) return 'Jessica London';
-    if (domain.includes('fullbeauty.com')) return 'FullBeauty';
-    if (domain.includes('kingsize.com')) return 'KingSize';
-    if (domain.includes('destinationxl.com')) return 'Destination XL';
-    if (domain.includes('casualmale.com')) return 'Casual Male XL';
-    if (domain.includes('bigandtall.com')) return 'Big and Tall';
-    
-    // Fallback: Extract retailer name from domain
-    const domainParts = domain.replace('www.', '').split('.');
-    const mainDomain = domainParts[0];
-    
-    // Clean up and format the domain name
-    const retailerName = mainDomain
-      .replace(/[-_]/g, ' ')
-      .split(' ')
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(' ');
-    
-    return retailerName;
+    return 'Unknown Retailer';
   } catch (e) {
-    // Even if URL parsing fails, try to extract from the string
-    const urlLower = url.toLowerCase();
-    if (urlLower.includes('amazon')) return 'Amazon';
-    if (urlLower.includes('wayfair')) return 'Wayfair';
-    if (urlLower.includes('target')) return 'Target';
-    if (urlLower.includes('walmart')) return 'Walmart';
-    
-    // Last resort fallback
-    return 'Online Retailer';
-  }
-}
-
-function isAmazonUrl(url) {
-  try {
-    const domain = new URL(url).hostname.toLowerCase();
-    return domain.includes('amazon.com') || domain.includes('amazon.');
-  } catch (e) {
-    return false;
+    return 'Unknown Retailer';
   }
 }
 
@@ -358,7 +154,9 @@ function isSDLDomain(url) {
       'spencer-deals-ltd.myshopify.com',
       'sdl.bm',
       'spencer-deals',
-      'spencerdeals'
+      'spencerdeals',
+      'sdl.com',
+      '.sdl.'
     ];
     return blockedPatterns.some(pattern => domain.includes(pattern));
   } catch (e) {
@@ -397,7 +195,6 @@ function estimateWeight(dimensions, category) {
 function estimateDimensions(category, name = '') {
   const text = name.toLowerCase();
   
-  // Check if dimensions are in the name
   const dimMatch = text.match(/(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)/);
   if (dimMatch) {
     const dims = {
@@ -411,7 +208,6 @@ function estimateDimensions(category, name = '') {
     }
   }
   
-  // Enhanced category estimates
   const baseEstimates = {
     'furniture': { 
       length: 48 + Math.random() * 30,
@@ -507,13 +303,13 @@ function estimateBoxDimensions(productDimensions, category) {
 
 function calculateShippingCost(dimensions, weight, price) {
   if (!dimensions) {
-    return Math.max(25, (price || 100) * 0.15);
+    return Math.max(25, price * 0.15);
   }
   
   const cubicInches = dimensions.length * dimensions.width * dimensions.height;
   const cubicFeet = cubicInches / 1728;
   
-  const baseCost = Math.max(15, cubicFeet * 8); // $8 per cubic foot
+  const baseCost = Math.max(15, cubicFeet * SHIPPING_RATE_PER_CUBIC_FOOT);
   const oversizeFee = Math.max(dimensions.length, dimensions.width, dimensions.height) > 48 ? 50 : 0;
   const valueFee = price > 500 ? price * 0.02 : 0;
   const handlingFee = 15;
@@ -541,248 +337,31 @@ function mergeProductData(primary, secondary) {
     name: primary.name || secondary.name,
     price: primary.price || secondary.price,
     image: primary.image || secondary.image,
-    variant: primary.variant || secondary.variant,
     dimensions: primary.dimensions || secondary.dimensions,
     weight: primary.weight || secondary.weight,
     brand: primary.brand || secondary.brand,
     category: primary.category || secondary.category,
-    inStock: primary.inStock !== undefined ? primary.inStock : secondary.inStock
+    inStock: primary.inStock !== undefined ? primary.inStock : secondary.inStock,
+    variant: primary.variant || secondary.variant
   };
 }
 
-// Get optimal scraping order based on retailer
-function getOptimalScrapingOrder(retailer) {
-  // ScrapingBee works best for these retailers
-  const scrapingBeeFirst = ['Target', 'Best Buy', 'Walmart', 'Home Depot', 'Lowes', 'Costco'];
+function cleanVariant(variant) {
+  if (!variant || typeof variant !== 'string') return null;
   
-  // ProWebCrawler works best for these retailers  
-  const proWebFirst = ['IKEA', 'CB2', 'Crate & Barrel', 'West Elm', 'Pottery Barn', 'Anthropologie', 'Urban Outfitters'];
+  const cleaned = variant.trim();
   
-  // Apify works best for these retailers
-  const apifyFirst = ['Macys', 'Nordstrom', 'Overstock', 'Bed Bath & Beyond'];
+  if (cleaned.length < 3 || cleaned.length > 50) return null;
+  if (/^[\d\-_]+$/.test(cleaned)) return null;
+  if (/^(select|choose|option|default|click|tap)$/i.test(cleaned)) return null;
   
-  if (scrapingBeeFirst.includes(retailer)) {
-    return ['scrapingbee', 'apify', 'prowebcrawler'];
-  } else if (proWebFirst.includes(retailer)) {
-    return ['prowebcrawler', 'scrapingbee', 'apify'];
-  } else if (apifyFirst.includes(retailer)) {
-    return ['apify', 'prowebcrawler', 'scrapingbee'];
-  } else {
-    // Default order for unknown retailers
-    return ['prowebcrawler', 'apify', 'scrapingbee'];
-  }
+  return cleaned;
 }
 
-// ScrapingBee scraper with better error handling
-async function scrapeWithScrapingBee(url) {
-  if (!USE_SCRAPINGBEE) {
-    throw new Error('ScrapingBee not configured');
-  }
-
-  try {
-    console.log('🐝 Starting ScrapingBee extraction...');
-    const startTime = Date.now();
-    
-    const response = await Promise.race([
-      axios({
-        method: 'GET',
-        url: 'https://app.scrapingbee.com/api/v1/',
-        params: {
-          api_key: SCRAPINGBEE_API_KEY,
-          url: url,
-          premium_proxy: 'false',
-          country_code: 'us',
-          render_js: 'false',
-          block_resources: 'true',
-          wait: '1000' // Reduce wait time for speed
-        },
-        timeout: 6000 // Faster timeout
-      }),
-      new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('ScrapingBee timeout')), 6000)
-      )
-    ]);
-
-    console.log(`   ✅ ScrapingBee completed in ${Date.now() - startTime}ms`);
-    
-    const html = response.data;
-    if (!html || typeof html !== 'string') {
-      throw new Error('No HTML content received');
-    }
-    
-    const productData = {
-      name: null,
-      price: null,
-      image: null,
-      variant: null,
-      dimensions: null,
-      weight: null,
-      brand: null,
-      inStock: true
-    };
-
-    // Extract title
-    const titlePatterns = [
-      /<h1[^>]*data-testid="[^"]*title[^"]*"[^>]*>([^<]+)<\/h1>/i,
-      /<h1[^>]*>([^<]+)<\/h1>/i,
-      /<title[^>]*>([^|<]+)/i
-    ];
-    
-    for (const pattern of titlePatterns) {
-      const match = html.match(pattern);
-      if (match && match[1].trim()) {
-        productData.name = match[1].trim().replace(/&[^;]+;/g, '').substring(0, 200);
-        console.log('   📝 Found title');
-        break;
-      }
-    }
-
-    // Extract variant information (color, size, style, etc.)
-    const variantPatterns = [
-      // Wayfair specific patterns
-      // More comprehensive Wayfair variant patterns
-      /class="[^"]*SelectedOption[^"]*"[^>]*>([^<]+)<\/[^>]*>/i,
-      /class="[^"]*selected[^"]*option[^"]*"[^>]*>([^<]+)<\/[^>]*>/i,
-      /data-testid="[^"]*selected[^"]*"[^>]*>([^<]+)<\/[^>]*>/i,
-      /aria-selected="true"[^>]*>([^<]+)<\/[^>]*>/i,
-      // JSON data patterns - more specific
-      /"selectedOptionName":\s*"([^"]{2,50})"/i,
-      /"optionName":\s*"([^"]{2,50})"/i,
-      /"selectedOption":\s*"([^"]{2,50})"/i,
-      /"currentOption":\s*"([^"]{2,50})"/i,
-      // Look for color/size in URL parameters
-      /piid=(\d+)/i,
-      // Generic variant patterns
-      /class="[^"]*color[^"]*selected[^"]*"[^>]*>([^<]+)<\/[^>]*>/i,
-      /class="[^"]*size[^"]*selected[^"]*"[^>]*>([^<]+)<\/[^>]*>/i,
-      // Structured data variants
-      /"variant":\s*"([^"]{2,50})"/i,
-      /"color":\s*"([^"]{2,50})"/i,
-      /"size":\s*"([^"]{2,50})"/i,
-      // Look for variant in meta tags
-      /property="product:color"[^>]+content="([^"]+)"/i,
-      /property="product:size"[^>]+content="([^"]+)"/i
-    ];
-    
-    for (const pattern of variantPatterns) {
-      const match = html.match(pattern);
-      if (match && match[1] && match[1].trim().length > 1 && match[1].trim().length < 50) {
-        productData.variant = match[1].trim().replace(/&[^;]+;/g, '');
-        // Skip generic/unhelpful variants
-        if (!productData.variant.match(/^(select|choose|option|default|none|n\/a)$/i)) {
-          console.log('   🎨 Found variant:', productData.variant);
-          break;
-        }
-      }
-    }
-    
-    // If no variant found, try extracting from URL parameters (Wayfair specific)
-    if (!productData.variant) {
-      try {
-        const urlObj = new URL(url);
-        const piid = urlObj.searchParams.get('piid');
-        if (piid) {
-          // This is a Wayfair product variant ID - we could potentially map this
-          console.log('   🎨 Found Wayfair variant ID:', piid);
-          productData.variant = `Variant ${piid}`;
-        }
-      } catch (e) {
-        // URL parsing failed, continue
-      }
-    }
-    
-    // Extract price
-    const pricePatterns = [
-      // More specific price patterns for better accuracy
-      /class="[^"]*price[^"]*"[^>]*>[\s\S]*?\$(\d+(?:,\d{3})*(?:\.\d{2})?)/i,
-      /data-testid="[^"]*price[^"]*"[^>]*>[\s\S]*?\$(\d+(?:,\d{3})*(?:\.\d{2})?)/i,
-      /id="[^"]*price[^"]*"[^>]*>[\s\S]*?\$(\d+(?:,\d{3})*(?:\.\d{2})?)/i,
-      // Wayfair specific
-      /MoneyPrice[^>]*>[\s\S]*?\$(\d+(?:,\d{3})*(?:\.\d{2})?)/i,
-      /PriceBlock[^>]*>[\s\S]*?\$(\d+(?:,\d{3})*(?:\.\d{2})?)/i,
-      // JSON-LD structured data
-      /"price":\s*"?(\d+(?:\.\d{2})?)"?/i,
-      /"amount":\s*"?(\d+(?:\.\d{2})?)"?/i,
-      // Generic fallback - but more restrictive
-      /\$(\d{2,4}(?:,\d{3})*(?:\.\d{2})?)/g
-    ];
-    
-    // Try patterns in order of specificity
-    for (let i = 0; i < pricePatterns.length; i++) {
-      const pattern = pricePatterns[i];
-      
-      if (pattern.global) {
-        // For global patterns, find all matches and pick the most reasonable one
-        const matches = [...html.matchAll(pattern)];
-        const prices = matches.map(match => parseFloat(match[1].replace(/,/g, '')))
-          .filter(price => price >= 10 && price <= 50000) // Reasonable price range
-          .sort((a, b) => b - a); // Sort descending
-        
-        if (prices.length > 0) {
-          // For furniture, prefer higher prices as they're more likely to be correct
-          productData.price = prices[0];
-          console.log('   💰 Found price: $' + productData.price + ` (from ${prices.length} candidates)`);
-          break;
-        }
-      } else {
-        // For non-global patterns, take first match
-        const match = html.match(pattern);
-        if (match) {
-          const price = parseFloat(match[1].replace(/,/g, ''));
-          if (price >= 10 && price <= 50000) {
-            productData.price = price;
-            console.log('   💰 Found price: $' + price);
-            break;
-          }
-        }
-      }
-    }
-
-    // Extract dimensions
-    const dimPatterns = [
-      /(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*(?:inches?|in\.?|")/i,
-      /dimensions?[^>]*>[\s\S]*?(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)/i
-    ];
-    
-    for (const pattern of dimPatterns) {
-      const match = html.match(pattern);
-      if (match) {
-        productData.dimensions = {
-          length: parseFloat(match[1]),
-          width: parseFloat(match[2]),
-          height: parseFloat(match[3])
-        };
-        console.log('   📏 Found dimensions');
-        break;
-      }
-    }
-
-    // Extract image URL
-    const imagePatterns = [
-      /src="([^"]+)"[^>]*(?:class="[^"]*product[^"]*image|data-testid="[^"]*image)/i,
-      /property="og:image"[^>]+content="([^"]+)"/i
-    ];
-    
-    for (const pattern of imagePatterns) {
-      const match = html.match(pattern);
-      if (match && match[1].startsWith('http')) {
-        productData.image = match[1];
-        break;
-      }
-    }
-
-    return productData;
-
-  } catch (error) {
-    console.error('❌ ScrapingBee failed:', error.message);
-    throw error;
-  }
-}
-
-// Main product scraping function
 async function scrapeProduct(url) {
   const productId = generateProductId();
   const retailer = detectRetailer(url);
+  const isAmazon = retailer === 'Amazon';
   
   let productData = null;
   let scrapingMethod = 'none';
@@ -790,8 +369,8 @@ async function scrapeProduct(url) {
   console.log(`\n📦 Processing: ${url}`);
   console.log(`   Retailer: ${retailer}`);
   
-  // STEP 1: For Amazon URLs, try Amazon-Crawler first
-  if (retailer === 'Amazon' && amazonCrawler.isAvailable()) {
+  // STEP 1: Try Amazon-Crawler first for Amazon URLs
+  if (isAmazon && USE_AMAZON_CRAWLER) {
     try {
       console.log('   🛒 Attempting Amazon-Crawler (primary for Amazon)...');
       productData = await amazonCrawler.scrapeProduct(url);
@@ -799,8 +378,12 @@ async function scrapeProduct(url) {
       if (productData) {
         scrapingMethod = 'amazon-crawler';
         console.log('   ✅ Amazon-Crawler returned data');
+        console.log(`   📷 Image: ${productData.image ? 'Found' : 'Using placeholder'}`);
+        console.log(`   🏷️ Variant: ${productData.variant ? cleanVariant(productData.variant) || 'Cleaned (was gibberish)' : 'None'}`);
         
-        // Check if data is complete
+        // Clean variant
+        productData.variant = cleanVariant(productData.variant);
+        
         if (!isDataComplete(productData)) {
           console.log('   ⚠️ Amazon-Crawler data incomplete, will try fallbacks');
         }
@@ -811,211 +394,83 @@ async function scrapeProduct(url) {
     }
   }
   
-  // STEP 1: For Amazon URLs, ALWAYS use specialized Amazon crawler as PRIMARY
-  if (USE_AMAZON_CRAWLER && isAmazonUrl(url)) {
-    try {
-      console.log('   🛒 Attempting Amazon specialist crawler...');
-      
-      const amazonPromise = amazonCrawler.scrapeProduct(url);
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Amazon crawler timeout')), 15000) // 15s for Amazon
-      );
-      
-      productData = await Promise.race([amazonPromise, timeoutPromise]);
-      
-      if (productData) {
-        scrapingMethod = 'amazon-crawler';
-        console.log('   ✅ Amazon crawler returned data');
-        
-        // For Amazon, if we get ANY data from amazon-crawler, use it as primary
-        // Only supplement missing fields, don't replace existing data
-        if (productData.name && productData.price) {
-          console.log('   ✅ Amazon crawler has essential data - using as primary');
-        } else {
-          console.log('   ⚠️ Amazon crawler missing essential data, will supplement');
-        }
-      }
-    } catch (error) {
-      console.log('   ❌ Amazon crawler failed:', error.message);
-      productData = null;
-    }
-  }
-  
-  // STEP 2: For Amazon with incomplete data, try other methods to supplement
-  // For non-Amazon, use optimal scraping order
-  if (!productData || (!isAmazonUrl(url) && !isDataComplete(productData)) || (isAmazonUrl(url) && (!productData.name || !productData.price))) {
-    const scrapingOrder = getOptimalScrapingOrder(retailer);
-    
-    for (const method of scrapingOrder) {
-      // For Amazon, only supplement if missing essential data
-      if (isAmazonUrl(url) && productData && productData.name && productData.price) break;
-      // For non-Amazon, stop when data is complete
-      if (!isAmazonUrl(url) && productData && isDataComplete(productData)) break;
-      
-      try {
-        let scraperData = null;
-        let methodName = '';
-        
-        if (method === 'prowebcrawler' && USE_PRO_CRAWLER) {
-          console.log('   🕸️ Attempting ProWebCrawler...');
-          const proWebPromise = proWebCrawler.scrapeProduct(url);
-          const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('ProWebCrawler timeout')), 12000)
-          );
-          scraperData = await Promise.race([proWebPromise, timeoutPromise]);
-          methodName = 'prowebcrawler';
-        } else if (method === 'apify' && USE_APIFY) {
-          console.log('   🔄 Attempting Apify scrape...');
-          const apifyPromise = apifyScraper.scrapeProduct(url);
-          const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Apify timeout')), 8000)
-          );
-          scraperData = await Promise.race([apifyPromise, timeoutPromise]);
-          methodName = 'apify';
-        } else if (method === 'scrapingbee' && USE_SCRAPINGBEE) {
-          console.log('   🐝 Attempting ScrapingBee...');
-          const scrapingBeePromise = scrapeWithScrapingBee(url);
-          const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('ScrapingBee timeout')), 6000)
-          );
-          scraperData = await Promise.race([scrapingBeePromise, timeoutPromise]);
-          methodName = 'scrapingbee';
-        }
-        
-        if (scraperData) {
-          if (!productData) {
-            productData = scraperData;
-            scrapingMethod = methodName;
-            console.log(`   ✅ Using ${methodName} data`);
-          } else {
-            // For Amazon, prioritize amazon-crawler data over other scrapers
-            const mergedData = isAmazonUrl(url) ? 
-              mergeProductData(productData, scraperData) : // Amazon: keep amazon-crawler data as primary
-              mergeProductData(productData, scraperData);   // Non-Amazon: normal merge
-            productData = mergedData;
-            scrapingMethod = scrapingMethod + '+' + methodName;
-            
-            if (isAmazonUrl(url)) {
-              console.log(`   ✅ Supplemented Amazon data with ${methodName}`);
-            }
-          }
-        }
-      } catch (error) {
-        console.log(`   ❌ ${method} failed:`, error.message);
-      }
-    }
-  }
-  
-  // Skip the old individual scraper attempts since we handled them above
-  /*
-  if (USE_PRO_CRAWLER && !isAmazonUrl(url) && (!productData || !isDataComplete(productData))) {
-    try {
-      console.log('   🕸️ Attempting ProWebCrawler...');
-      const proWebPromise = proWebCrawler.scrapeProduct(url);
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('ProWebCrawler timeout')), 12000) // 12s for ProWeb
-      );
-      
-      const proWebData = await Promise.race([proWebPromise, timeoutPromise]);
-      
-      if (proWebData) {
-        if (!productData) {
-          productData = proWebData;
-          scrapingMethod = 'prowebcrawler';
-          console.log('   ✅ Using ProWebCrawler data');
-        } else {
-          const mergedData = mergeProductData(productData, proWebData);
-          productData = mergedData;
-          scrapingMethod = scrapingMethod + '+prowebcrawler';
-        }
-      }
-    } catch (error) {
-      console.log('   ❌ ProWebCrawler failed:', error.message);
-    }
-  }
-  
-  // STEP 2: If Amazon-Crawler failed or not Amazon, try Apify
+  // STEP 2: Try Apify for all retailers (primary for non-Amazon, fallback for Amazon)
   if (USE_APIFY && (!productData || !isDataComplete(productData))) {
     try {
-      const apifyLabel = retailer === 'Amazon' ? 'Apify (Amazon fallback)' : 'Apify (primary)';
-      console.log(`   🔄 Attempting ${apifyLabel}...`);
-      
-      const apifyPromise = apifyScraper.scrapeProduct(url);
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Apify timeout')), 8000) // 8s for Apify
-      );
-      
-      const apifyData = await Promise.race([apifyPromise, timeoutPromise]);
+      console.log(`   🔄 Attempting Apify (${isAmazon ? 'Amazon fallback' : 'primary'})...`);
+      const apifyData = await apifyScraper.scrapeProduct(url);
       
       if (apifyData) {
         if (!productData) {
           productData = apifyData;
           scrapingMethod = 'apify';
-          console.log('   ✅ Apify returned data');
+          console.log('   ✅ Using Apify data');
         } else {
           const mergedData = mergeProductData(productData, apifyData);
           productData = mergedData;
           scrapingMethod = scrapingMethod + '+apify';
+          console.log('   ✅ Merged with Apify data');
         }
+        
+        // Clean variant
+        productData.variant = cleanVariant(productData.variant);
+        console.log(`   🏷️ Variant: ${productData.variant || 'None/Cleaned'}`);
       }
     } catch (error) {
       console.log('   ❌ Apify failed:', error.message);
     }
   }
   
-  // STEP 4: Try ScrapingBee if still needed
-  if (USE_SCRAPINGBEE && (!productData || !isDataComplete(productData))) {
+  // STEP 3: Try ProWebCrawler
+  if (USE_PROWEB && (!productData || !isDataComplete(productData))) {
     try {
-      console.log('   🐝 Attempting ScrapingBee...');
-      const scrapingBeePromise = scrapeWithScrapingBee(url);
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('ScrapingBee timeout')), 6000) // 6s for ScrapingBee
-      );
+      console.log('   🕸️ Attempting ProWebCrawler...');
+      const proWebData = await proWebCrawler.scrapeProduct(url);
       
-      const scrapingBeeData = await Promise.race([scrapingBeePromise, timeoutPromise]);
-      
-      if (scrapingBeeData) {
+      if (proWebData) {
         if (!productData) {
-          productData = scrapingBeeData;
-          scrapingMethod = 'scrapingbee';
-          console.log('   ✅ Using ScrapingBee data');
+          productData = proWebData;
+          scrapingMethod = 'proweb';
+          console.log('   ✅ Using ProWebCrawler data');
         } else {
-          const mergedData = mergeProductData(productData, scrapingBeeData);
+          const mergedData = mergeProductData(productData, proWebData);
           productData = mergedData;
-          scrapingMethod = scrapingMethod + '+scrapingbee';
+          scrapingMethod = scrapingMethod + '+proweb';
+          console.log('   ✅ Merged with ProWebCrawler data');
         }
+        
+        // Clean variant
+        productData.variant = cleanVariant(productData.variant);
       }
     } catch (error) {
-      console.log('   ❌ ScrapingBee failed:', error.message);
+      console.log('   ❌ ProWebCrawler failed:', error.message);
     }
   }
-  */
   
-  // STEP 3: Try GPT parser only as last resort for missing essential data
-  if (parseProduct && (!productData || !productData.name || !productData.price)) {
+  // STEP 4: Try GPT Parser as fallback
+  if (!productData || !isDataComplete(productData)) {
     try {
-      console.log(`   🧠 ${isAmazonUrl(url) ? 'Supplementing Amazon data with' : 'Falling back to'} GPT parser...`);
+      console.log('   🤖 Attempting GPT Parser (fallback)...');
       const gptData = await parseProduct(url);
       
       if (gptData) {
         if (!productData) {
           productData = gptData;
           scrapingMethod = 'gpt';
+          console.log('   ✅ Using GPT Parser data');
         } else {
-          // For Amazon, only use GPT for missing fields, keep amazon-crawler as primary
-          productData = isAmazonUrl(url) ? 
-            mergeProductData(productData, gptData) : // Keep Amazon data primary
-            mergeProductData(productData, gptData);   // Normal merge for others
+          const mergedData = mergeProductData(productData, gptData);
+          productData = mergedData;
           scrapingMethod = scrapingMethod + '+gpt';
+          console.log('   ✅ Merged with GPT Parser data');
         }
-        console.log(`   ✅ GPT parser ${isAmazonUrl(url) ? 'supplemented Amazon data' : 'succeeded'}`);
       }
     } catch (error) {
-      console.log('   ❌ GPT parser failed:', error.message);
+      console.log('   ❌ GPT Parser failed:', error.message);
     }
   }
   
-  // STEP 4: Try UPCitemdb for missing dimensions
+  // STEP 5: Try UPCitemdb for missing dimensions
   if (USE_UPCITEMDB && productData && productData.name && (!productData.dimensions || !productData.weight)) {
     try {
       console.log('   📦 Attempting UPCitemdb lookup...');
@@ -1031,6 +486,10 @@ async function scrapeProduct(url) {
           productData.weight = upcData.weight;
           console.log('   ✅ UPCitemdb provided weight');
         }
+        if (!productData.image && upcData.image) {
+          productData.image = upcData.image;
+          console.log('   ✅ UPCitemdb provided image');
+        }
         scrapingMethod = scrapingMethod === 'estimation' ? 'upcitemdb' : scrapingMethod + '+upcitemdb';
       }
     } catch (error) {
@@ -1038,7 +497,7 @@ async function scrapeProduct(url) {
     }
   }
   
-  // STEP 7: Use estimation for missing data
+  // STEP 6: Use estimation for missing data
   if (!productData) {
     productData = {
       name: 'Product from ' + retailer,
@@ -1046,13 +505,14 @@ async function scrapeProduct(url) {
       image: null,
       dimensions: null,
       weight: null,
-      category: null
+      category: null,
+      variant: null
     };
     scrapingMethod = 'estimation';
     console.log('   ⚠️ All methods failed, using estimation');
   }
   
-  // Fill in missing data
+  // Fill in missing data with estimations
   const productName = productData.name || `Product from ${retailer}`;
   const category = productData.category || categorizeProduct(productName, url);
   
@@ -1079,7 +539,6 @@ async function scrapeProduct(url) {
     url: url,
     name: productName,
     price: productData.price,
-    variant: productData.variant || null,
     image: productData.image || 'https://placehold.co/400x400/7CB342/FFFFFF/png?text=SDL',
     category: category,
     retailer: retailer,
@@ -1087,6 +546,7 @@ async function scrapeProduct(url) {
     weight: productData.weight,
     shippingCost: shippingCost,
     scrapingMethod: scrapingMethod,
+    variant: productData.variant,
     dataCompleteness: {
       hasName: !!productData.name,
       hasImage: !!productData.image,
@@ -1098,15 +558,11 @@ async function scrapeProduct(url) {
   
   console.log(`   💰 Shipping cost: $${shippingCost}`);
   console.log(`   📊 Data source: ${scrapingMethod}`);
-  if (productData.variant) {
-    console.log(`   🎨 Variant detected: ${productData.variant}`);
-  }
   console.log(`   ✅ Product processed successfully\n`);
   
   return product;
 }
 
-// Batch processing with concurrency control
 async function processBatch(urls, batchSize = MAX_CONCURRENT_SCRAPES) {
   const results = [];
   for (let i = 0; i < urls.length; i += batchSize) {
@@ -1130,27 +586,7 @@ async function processBatch(urls, batchSize = MAX_CONCURRENT_SCRAPES) {
   return results;
 }
 
-// Store pending orders temporarily
-const pendingOrders = new Map();
-
-// Root route
-app.get('/', (req, res) => {
-  const frontendPath = path.join(__dirname, '../frontend', 'index.html');
-  res.sendFile(frontendPath, (err) => {
-    if (err) {
-      console.error('Error serving frontend:', err);
-      res.json({
-        message: 'Frontend not found - API is running',
-        endpoints: {
-          health: '/health',
-          scrape: 'POST /api/scrape'
-        }
-      });
-    }
-  });
-});
-
-// MISSING ENDPOINT: API endpoint for scraping
+// API endpoint for scraping
 app.post('/api/scrape', async (req, res) => {
   try {
     const { urls } = req.body;
@@ -1159,7 +595,6 @@ app.post('/api/scrape', async (req, res) => {
       return res.status(400).json({ error: 'No URLs provided' });
     }
     
-    // Check for SDL domains
     const sdlUrls = urls.filter(url => isSDLDomain(url));
     if (sdlUrls.length > 0) {
       return res.status(400).json({ 
@@ -1171,11 +606,9 @@ app.post('/api/scrape', async (req, res) => {
     
     const products = await processBatch(urls);
     
-    // Log summary
     const amazonCount = products.filter(p => p.scrapingMethod?.includes('amazon-crawler')).length;
     const apifyCount = products.filter(p => p.scrapingMethod?.includes('apify')).length;
-    const proWebCount = products.filter(p => p.scrapingMethod?.includes('prowebcrawler')).length;
-    const scrapingBeeCount = products.filter(p => p.scrapingMethod?.includes('scrapingbee')).length;
+    const proWebCount = products.filter(p => p.scrapingMethod?.includes('proweb')).length;
     const gptCount = products.filter(p => p.scrapingMethod?.includes('gpt')).length;
     const upcitemdbCount = products.filter(p => p.scrapingMethod?.includes('upcitemdb')).length;
     const estimatedCount = products.filter(p => p.scrapingMethod === 'estimation').length;
@@ -1185,8 +618,7 @@ app.post('/api/scrape', async (req, res) => {
     console.log(`   Amazon-Crawler used: ${amazonCount}`);
     console.log(`   Apify used: ${apifyCount}`);
     console.log(`   ProWebCrawler used: ${proWebCount}`);
-    console.log(`   ScrapingBee used: ${scrapingBeeCount}`);
-    console.log(`   GPT used: ${gptCount}`);
+    console.log(`   GPT Parser used: ${gptCount}`);
     console.log(`   UPCitemdb used: ${upcitemdbCount}`);
     console.log(`   Fully estimated: ${estimatedCount}`);
     console.log(`   Success rate: ${((products.length - estimatedCount) / products.length * 100).toFixed(1)}%\n`);
@@ -1200,8 +632,7 @@ app.post('/api/scrape', async (req, res) => {
         scrapingMethods: {
           amazonCrawler: amazonCount,
           apify: apifyCount,
-          proWebCrawler: proWebCount,
-          scrapingBee: scrapingBeeCount,
+          proWeb: proWebCount,
           gpt: gptCount,
           upcitemdb: upcitemdbCount,
           estimation: estimatedCount
@@ -1215,96 +646,8 @@ app.post('/api/scrape', async (req, res) => {
   }
 });
 
-// MISSING ENDPOINT: Prepare Shopify checkout - CRITICAL FOR FRONTEND
-app.post('/api/prepare-shopify-checkout', async (req, res) => {
-  try {
-    const orderData = req.body;
-    
-    // Generate a unique checkout ID
-    const checkoutId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
-    
-    // Store the order data temporarily
-    pendingOrders.set(checkoutId, {
-      data: orderData,
-      timestamp: Date.now()
-    });
-    
-    // Clean up old orders after 1 hour
-    setTimeout(() => pendingOrders.delete(checkoutId), 3600000);
-    
-    // Create the redirect URL - this should redirect to a page that will complete the order
-    const redirectUrl = `/complete-order.html?checkoutId=${checkoutId}`;
-    
-    console.log(`🛒 Prepared checkout ${checkoutId} for ${orderData.products?.length || 0} products`);
-    
-    res.json({
-      success: true,
-      checkoutId: checkoutId,
-      redirectUrl: redirectUrl
-    });
-    
-  } catch (error) {
-    console.error('❌ Failed to prepare checkout:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to prepare checkout',
-      message: error.message
-    });
-  }
-});
-
-// MISSING ENDPOINT: Get checkout data
-app.get('/api/get-checkout/:checkoutId', (req, res) => {
-  const { checkoutId } = req.params;
-  const orderData = pendingOrders.get(checkoutId);
-  
-  if (orderData) {
-    console.log(`✅ Retrieved checkout data for ${checkoutId}`);
-    res.json({
-      success: true,
-      data: orderData.data
-    });
-  } else {
-    console.log(`❌ Checkout ${checkoutId} not found or expired`);
-    res.status(404).json({
-      success: false,
-      error: 'Checkout not found or expired'
-    });
-  }
-});
-
-// Order tracking endpoints
-app.post('/api/orders/:orderId/start-tracking', async (req, res) => {
-  try {
-    const { orderId } = req.params;
-    const { retailerOrders } = req.body;
-    
-    const result = await orderTracker.startTracking(orderId, retailerOrders);
-    res.json(result);
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-app.post('/api/orders/:orderId/stop-tracking', async (req, res) => {
-  try {
-    const { orderId } = req.params;
-    const result = await orderTracker.stopTracking(orderId);
-    res.json(result);
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-app.get('/api/orders/:orderId/tracking-status', async (req, res) => {
-  try {
-    const { orderId } = req.params;
-    const result = await orderTracker.getTrackingStatus(orderId);
-    res.json(result);
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
+// Store pending orders temporarily
+const pendingOrders = new Map();
 
 app.post('/api/store-pending-order', (req, res) => {
   const orderId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
@@ -1331,64 +674,63 @@ app.get('/api/get-pending-order/:orderId', (req, res) => {
   }
 });
 
-// FIXED: Shopify Draft Order Creation with better error handling
+// Order tracking endpoints
+app.post('/api/orders/:orderId/start-tracking', async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const { retailerOrders } = req.body;
+    
+    const result = await orderTracker.startTracking(orderId, retailerOrders);
+    res.json(result);
+  } catch (error) {
+    console.error('Start tracking error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+app.post('/api/orders/:orderId/stop-tracking', async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const result = await orderTracker.stopTracking(orderId);
+    res.json(result);
+  } catch (error) {
+    console.error('Stop tracking error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+app.get('/api/orders/:orderId/tracking-status', async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const result = await orderTracker.getTrackingStatus(orderId);
+    res.json(result);
+  } catch (error) {
+    console.error('Get tracking status error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Shopify Draft Order Creation
 app.post('/apps/instant-import/create-draft-order', async (req, res) => {
   try {
-    let orderData = req.body;
-    
-    // If this comes from the checkout flow, get the stored data
-    if (req.body.checkoutId) {
-      const storedData = pendingOrders.get(req.body.checkoutId);
-      if (storedData) {
-        orderData = { ...storedData.data, ...req.body };
-        pendingOrders.delete(req.body.checkoutId);
-      }
-    }
-    
-    const { products, deliveryFees, totals, customer, originalUrls } = orderData;
+    const { products, deliveryFees, totals, customer, originalUrls } = req.body;
     
     if (!SHOPIFY_ACCESS_TOKEN) {
-      return res.status(500).json({ 
-        error: 'Shopify not configured. Please check API credentials.' 
-      });
+      return res.status(500).json({ error: 'Shopify not configured. Please check API credentials.' });
     }
     
-    if (!products || !Array.isArray(products) || products.length === 0) {
-      return res.status(400).json({ error: 'Products array is required' });
+    if (!customer || !customer.email || !customer.name) {
+      return res.status(400).json({ error: 'Customer information required' });
     }
-    
-    // Get customer info - for now require in request
-    let customerInfo = customer;
-    if (!customerInfo?.email || !customerInfo?.name) {
-      return res.status(400).json({ error: 'Customer information (email and name) required' });
-    }
-    
-    console.log(`📝 Creating draft order for ${customerInfo.email} with ${products.length} products`);
     
     const lineItems = [];
     
-      const apifyData = await apifyScraper.scrapeProduct(url);
     products.forEach(product => {
-      if (apifyData) {
-        if (!productData) {
-          // No previous data, use Apify
-          productData = apifyData;
-          scrapingMethod = 'apify';
-          console.log('   ✅ Apify returned data');
-        } else {
-          // Merge with existing data
-          const mergedData = mergeProductData(productData, apifyData);
-          productData = mergedData;
-          scrapingMethod = scrapingMethod + '+apify';
-          console.log('   ✅ Apify supplemented existing data');
-        }
-        
+      if (product.price && product.price > 0) {
         lineItems.push({
-          title: `${product.name}${product.variant ? ` - ${product.variant}` : ''}`,
-          price: unitPrice.toFixed(2),
-          quantity: quantity,
-          requires_shipping: true,
-          taxable: false,
+          title: product.name,
+          price: product.price.toFixed(2),
+          quantity: 1,
           properties: [
             { name: 'Source URL', value: product.url },
             { name: 'Retailer', value: product.retailer },
@@ -1398,39 +740,31 @@ app.post('/apps/instant-import/create-draft-order', async (req, res) => {
       }
     });
     
-    // Add duty
-    if (totals && totals.dutyAmount > 0) {
+    if (totals.dutyAmount > 0) {
       lineItems.push({
         title: 'Bermuda Import Duty (26.5%)',
         price: totals.dutyAmount.toFixed(2),
         quantity: 1,
-        requires_shipping: false,
         taxable: false
       });
     }
     
-    // Add delivery fees
-    if (deliveryFees && Object.keys(deliveryFees).length > 0) {
-      Object.entries(deliveryFees).forEach(([vendor, fee]) => {
-        if (fee > 0) {
-          lineItems.push({
-            title: `${vendor} US Delivery Fee`,
-            price: fee.toFixed(2),
-            quantity: 1,
-            requires_shipping: false,
-            taxable: false
-          });
-        }
-      });
-    }
+    Object.entries(deliveryFees).forEach(([vendor, fee]) => {
+      if (fee > 0) {
+        lineItems.push({
+          title: `${vendor} US Delivery Fee`,
+          price: fee.toFixed(2),
+          quantity: 1,
+          taxable: false
+        });
+      }
+    });
     
-    // Add shipping & handling
-    if (totals && totals.totalShippingAndHandling > 0) {
+    if (totals.totalShippingCost > 0) {
       lineItems.push({
         title: 'Ocean Freight & Handling to Bermuda',
-        price: totals.totalShippingAndHandling.toFixed(2),
+        price: totals.totalShippingCost.toFixed(2),
         quantity: 1,
-        requires_shipping: false,
         taxable: false
       });
     }
@@ -1439,18 +773,20 @@ app.post('/apps/instant-import/create-draft-order', async (req, res) => {
       draft_order: {
         line_items: lineItems,
         customer: {
-          email: customerInfo.email,
-          first_name: customerInfo.firstName || customerInfo.name?.split(' ')[0] || '',
-          last_name: customerInfo.lastName || customerInfo.name?.split(' ').slice(1).join(' ') || ''
+          email: customer.email,
+          first_name: customer.name.split(' ')[0],
+          last_name: customer.name.split(' ').slice(1).join(' ') || ''
         },
-        email: customerInfo.email,
-        note: `Import Calculator Order\n\nOriginal URLs:\n${originalUrls || 'N/A'}`,
-        tags: 'instant-import, ocean-freight',
+        email: customer.email,
+        note: `Import Calculator Order\n\nOriginal URLs:\n${originalUrls}`,
+        tags: 'import-calculator, ocean-freight',
         tax_exempt: true,
         send_receipt: false,
         send_fulfillment_receipt: false
       }
     };
+    
+    console.log(`📝 Creating draft order for ${customer.email}...`);
     
     const shopifyResponse = await axios.post(
       `https://${SHOPIFY_DOMAIN}/admin/api/2023-10/draft_orders.json`,
@@ -1458,7 +794,7 @@ app.post('/apps/instant-import/create-draft-order', async (req, res) => {
       {
         headers: {
           'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN,
-          console.log('   ⚠️ Data still incomplete, will try more fallbacks');
+          'Content-Type': 'application/json'
         }
       }
     );
@@ -1472,7 +808,7 @@ app.post('/apps/instant-import/create-draft-order', async (req, res) => {
       draftOrderNumber: draftOrder.name,
       invoiceUrl: draftOrder.invoice_url,
       checkoutUrl: `https://${SHOPIFY_DOMAIN}/admin/draft_orders/${draftOrder.id}`,
-      totalAmount: totals?.grandTotal || 0
+      totalAmount: totals.grandTotal
     });
     
   } catch (error) {
@@ -1484,83 +820,10 @@ app.post('/apps/instant-import/create-draft-order', async (req, res) => {
   }
 });
 
-// Test endpoints
-app.get('/test-upc', async (req, res) => {
-  if (!USE_UPCITEMDB) {
-    return res.json({ 
-      success: false, 
-    });
-  }
-  
-  // STEP 3: Try ProWebCrawler if still incomplete
-  if (proWebCrawler.isAvailable() && (!productData || !isDataComplete(productData))) {
-    try {
-      console.log('   🕸️ Attempting ProWebCrawler...');
-      const proData = await proWebCrawler.scrapeProduct(url);
-      
-          // All previous methods failed, use ScrapingBee data
-        if (!productData) {
-          scrapingMethod = 'scrapingbee-gpt';
-          console.log('   ✅ Using ScrapingBee GPT data');
-          console.log('   ✅ ProWebCrawler returned data');
-          // Merge data - keep existing data but fill in missing fields
-          const mergedData = mergeProductData(productData, proData);
-          productData = mergedData;
-          scrapingMethod = scrapingMethod + '+proweb';
-          console.log('   ✅ ProWebCrawler supplemented data');
-            console.log('   ✅ ScrapingBee GPT provided missing name');
-      }
-    } catch (error) {
-            console.log('   ✅ ScrapingBee GPT provided missing price');
-    }
-  }
-            console.log('   ✅ ScrapingBee GPT provided missing image');
-  // STEP 4: If still incomplete, try ScrapingBee with AI
-    const testProduct = await upcItemDB.searchByName('Apple iPhone 15 Pro');
-            console.log('   ✅ ScrapingBee GPT provided missing dimensions');
-      console.log('   🐝 Attempting ScrapingBee GPT extraction...');
-      testProduct: testProduct,
-      message: testProduct ? 'UPCitemdb is working!' : 'UPCitemdb connected but no results'
-          scrapingMethod = scrapingMethod + '+scrapingbee-gpt';
-  } catch (error) {
-    res.json({
-      success: false,
-      console.log('   ❌ ScrapingBee GPT extraction failed:', error.message);
-    });
-  }
-});
-
-// Complete order page
-app.get('/complete-order.html', (req, res) => {
-  const completePath = path.join(__dirname, '../frontend', 'complete-order.html');
-  res.sendFile(completePath, (err) => {
-    if (err) {
-      console.error('Error serving complete-order page:', err);
-      res.redirect('/');
-    }
-  });
-});
-
-// Catch-all route for frontend
-app.get('*', (req, res) => {
-  const frontendPath = path.join(__dirname, '../frontend', 'index.html');
-  res.sendFile(frontendPath, (err) => {
-    if (err) {
-      res.status(404).send('Page not found');
-    }
-  });
-});
-
 // Start server
 app.listen(PORT, () => {
   console.log(`\n🚀 Server running on port ${PORT}`);
   console.log(`📍 Frontend: http://localhost:${PORT}`);
   console.log(`📍 API Health: http://localhost:${PORT}/health`);
   console.log(`📍 Admin Panel: http://localhost:${PORT}/admin (admin:${ADMIN_PASSWORD})\n`);
-  
-  // STEP 5: Try UPCitemdb if we have a product name but missing dimensions
-  process.on('SIGTERM', () => {
-    console.log('🛑 Server shutting down...');
-    process.exit(0);
-  });
 });
