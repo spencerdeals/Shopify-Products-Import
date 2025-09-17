@@ -7,16 +7,22 @@ class UPCItemDB {
     this.baseURL = 'https://api.upcitemdb.com/prod/trial';
     this.enabled = !!apiKey;
     
-    console.log('🔍 UPCitemdb initialization check:');
-    console.log(`   API Key provided: ${apiKey ? 'YES (length: ' + apiKey.length + ')' : 'NO'}`);
-    console.log(`   API Key preview: ${apiKey ? apiKey.substring(0, 8) + '...' : 'undefined'}`);
-    console.log(`   Base URL: ${this.baseURL}`);
+    console.log('🔍 UPCitemdb Constructor Debug:');
+    console.log(`   Raw API Key: ${apiKey}`);
+    console.log(`   API Key type: ${typeof apiKey}`);
+    console.log(`   API Key length: ${apiKey ? apiKey.length : 0}`);
+    console.log(`   API Key truthy: ${!!apiKey}`);
+    console.log(`   Expected format: 32 character hex string`);
     
     if (this.enabled) {
-      console.log('✅ UPCitemdb initialized');
+      console.log('✅ UPCitemdb initialized successfully');
+      console.log(`   Using API endpoint: ${this.baseURL}`);
     } else {
       console.log('❌ UPCitemdb disabled - no API key provided');
-      console.log('   Check Railway environment variable: UPCITEMDB_API_KEY');
+      console.log('   Check Railway environment variables:');
+      console.log('   - UPCITEMDB_API_KEY');
+      console.log('   - UPC_ITEMDB_API_KEY'); 
+      console.log('   - UPCITEMDB_KEY');
     }
   }
 

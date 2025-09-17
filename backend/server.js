@@ -16,7 +16,18 @@ const PORT = process.env.PORT || 3000;
 const SHOPIFY_DOMAIN = process.env.SHOPIFY_DOMAIN || 'spencer-deals-ltd.myshopify.com';
 const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN || '';
 const SCRAPINGBEE_API_KEY = process.env.SCRAPINGBEE_API_KEY || '';
-const UPCITEMDB_API_KEY = process.env.UPCITEMDB_API_KEY || '';
+
+// Enhanced UPCitemdb API key detection
+const UPCITEMDB_API_KEY = process.env.UPCITEMDB_API_KEY || 
+                         process.env.UPC_ITEMDB_API_KEY || 
+                         process.env.UPCITEMDB_KEY || '';
+
+console.log('🔍 Environment Variable Debug:');
+console.log(`   NODE_ENV: ${process.env.NODE_ENV}`);
+console.log(`   UPCITEMDB_API_KEY exists: ${!!process.env.UPCITEMDB_API_KEY}`);
+console.log(`   UPCITEMDB_API_KEY length: ${process.env.UPCITEMDB_API_KEY ? process.env.UPCITEMDB_API_KEY.length : 0}`);
+console.log(`   UPCITEMDB_API_KEY preview: ${process.env.UPCITEMDB_API_KEY ? process.env.UPCITEMDB_API_KEY.substring(0, 8) + '...' : 'undefined'}`);
+
 const upcItemDB = new UPCItemDB(UPCITEMDB_API_KEY);
 const USE_UPCITEMDB = !!UPCITEMDB_API_KEY;
 const APIFY_API_KEY = process.env.APIFY_API_KEY || '';
@@ -35,12 +46,10 @@ console.log(`Port: ${PORT}`);
 console.log(`Shopify Domain: ${SHOPIFY_DOMAIN}`);
 console.log('');
 console.log('🔍 SCRAPING CONFIGURATION:');
-console.log(`   Environment: ${process.env.NODE_ENV || 'development'}`);
-console.log(`   UPCitemdb API Key: ${UPCITEMDB_API_KEY ? 'SET (length: ' + UPCITEMDB_API_KEY.length + ')' : 'NOT SET'}`);
 console.log(`1. Primary: Apify - ${USE_APIFY ? '✅ ENABLED (All Retailers)' : '❌ DISABLED (Missing API Key)'}`);
 console.log(`2. Fallback: ScrapingBee - ${USE_SCRAPINGBEE ? '✅ ENABLED' : '❌ DISABLED (Missing API Key)'}`);
 console.log(`3. Basic Scraper - ✅ ENABLED (Always Available)`);
-console.log(`4. Dimension Data: UPCitemdb - ${USE_UPCITEMDB ? '✅ ENABLED' : '❌ DISABLED (Missing API Key)'}`);
+console.log(`4. Dimension Data: UPCitemdb - ${USE_UPCITEMDB ? '✅ ENABLED (Key: ' + UPCITEMDB_API_KEY.substring(0, 8) + '...)' : '❌ DISABLED (Missing API Key)'}`);
 console.log('');
 console.log('📊 SCRAPING STRATEGY:');
 if (USE_APIFY && USE_SCRAPINGBEE && USE_UPCITEMDB) {
