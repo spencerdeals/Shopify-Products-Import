@@ -412,7 +412,7 @@ function fuseProductData(dataArray) {
   const names = validData.map(d => d.name).filter(Boolean);
   if (names.length > 0) {
     fused.name = names.reduce((best, current) => 
-      current.length > best.length ? current : best
+      (current && current.length > (best?.length || 0)) ? current : best
     );
   }
   
@@ -431,8 +431,10 @@ function fuseProductData(dataArray) {
   const dimensionsArray = validData.map(d => d.dimensions).filter(Boolean);
   if (dimensionsArray.length > 0) {
     fused.dimensions = dimensionsArray.reduce((best, current) => {
-      const bestComplete = (best.length > 0) + (best.width > 0) + (best.height > 0);
-      const currentComplete = (current.length > 0) + (current.width > 0) + (current.height > 0);
+      if (!best) return current;
+      if (!current) return best;
+      const bestComplete = (best.length > 0 ? 1 : 0) + (best.width > 0 ? 1 : 0) + (best.height > 0 ? 1 : 0);
+      const currentComplete = (current.length > 0 ? 1 : 0) + (current.width > 0 ? 1 : 0) + (current.height > 0 ? 1 : 0);
       return currentComplete > bestComplete ? current : best;
     });
   }
@@ -743,7 +745,7 @@ async function scrapeProduct(url) {
   // Launch all scrapers in parallel for maximum speed and accuracy
   if (USE_APIFY) {
     scrapingPromises.push(
-      apifyScraper.scrapeProduct(url)
+      Promise.resolve().then(() => apifyScraper.scrapeProduct(url))
         .then(data => ({ source: 'apify', data, success: true }))
         .catch(error => ({ source: 'apify', error: error.message, success: false }))
     );
@@ -752,7 +754,7 @@ async function scrapeProduct(url) {
   
   if (USE_SCRAPINGBEE) {
     scrapingPromises.push(
-      scrapeWithScrapingBee(url)
+      Promise.resolve().then(() => scrapeWithScrapingBee(url))
         .then(data => ({ source: 'scrapingbee', data, success: true }))
         .catch(error => ({ source: 'scrapingbee', error: error.message, success: false }))
     );
@@ -761,29 +763,37 @@ async function scrapeProduct(url) {
   
   // Always include basic scraper as fast fallback
   scrapingPromises.push(
-    scrapeWithBasicScraper(url)
+    Promise.resolve().then(() => scrapeWithBasicScraper(url))
       .then(data => ({ source: 'basic', data, success: true }))
       .catch(error => ({ source: 'basic', error: error.message, success: false }))
   );
   scrapingMethods.push('basic');
   
   // Wait for all scrapers with timeout
-  const results = await Promise.allSettled(scrapingPromises.map(promise => 
-    Promise.race([
-      promise,
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 12000))
-    ])
-  ));
+  let results;
+  try {
+    results = await Promise.allSettled(scrapingPromises.map(promise => 
+      Promise.race([
+        promise,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 12000))
+      ])
+    ));
+  } catch (error) {
+    console.error('   ❌ Promise.allSettled failed:', error);
+    results = [];
+  }
   
   // Process results and extract successful data
   const successfulResults = [];
   results.forEach((result, index) => {
-    if (result.status === 'fulfilled' && result.value.success) {
+    if (result.status === 'fulfilled' && result.value && result.value.success) {
       console.log(`   ✅ ${result.value.source} completed successfully`);
       successfulResults.push(result.value);
-    } else {
+    } else if (index < scrapingMethods.length) {
       const source = scrapingMethods[index];
-      const error = result.status === 'rejected' ? result.reason.message : result.value.error;
+      const error = result.status === 'rejected' ? 
+        (result.reason?.message || 'Unknown error') : 
+        (result.value?.error || 'Unknown error');
       console.log(`   ❌ ${source} failed: ${error}`);
     }
   });
