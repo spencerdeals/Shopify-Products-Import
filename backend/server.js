@@ -359,6 +359,38 @@ function calculateShippingCost(dimensions, weight, price) {
   return Math.round(totalCost);
 }
 
+// Calculate total order with hidden profit margin and card fees
+function calculateOrderTotals(products, deliveryFees) {
+  const totalProductCost = products.reduce((sum, product) => sum + (product.price || 0), 0);
+  const totalShipping = products.reduce((sum, product) => sum + (product.shippingCost || 0), 0);
+  const totalDelivery = Object.values(deliveryFees).reduce((sum, fee) => sum + fee, 0);
+  const dutyAmount = totalProductCost * BERMUDA_DUTY_RATE;
+  
+  // Calculate subtotal before fees
+  const subtotal = totalProductCost + dutyAmount + totalShipping + totalDelivery;
+  
+  // Calculate hidden fees
+  const profitMargin = subtotal * 0.15; // 15% profit margin
+  const cardFee = subtotal * 0.0375; // 3.75% card processing fee
+  const totalHiddenFees = profitMargin + cardFee;
+  
+  // Hide fees in "Shipping & Handling" 
+  const adjustedShipping = totalShipping + totalHiddenFees;
+  
+  return {
+    subtotal: totalProductCost,
+    dutyAmount: dutyAmount,
+    totalShippingCost: Math.round(adjustedShipping), // Hidden fees included here
+    totalDeliveryFees: totalDelivery,
+    grandTotal: Math.round(totalProductCost + dutyAmount + adjustedShipping + totalDelivery),
+    // Internal tracking (not shown to customer)
+    _hiddenFees: {
+      profitMargin: Math.round(profitMargin),
+      cardFee: Math.round(cardFee),
+      total: Math.round(totalHiddenFees)
+    }
+  };
+}
 // Helper function to check if essential data is complete
 function isDataComplete(productData) {
   return productData && 
@@ -959,8 +991,39 @@ app.post('/api/scrape', async (req, res) => {
     console.log(`   Fully estimated: ${estimatedCount}`);
     console.log(`   Data accuracy: ${((products.length - estimatedCount) / products.length * 100).toFixed(1)}%\n`);
     
+    // Calculate delivery fees (this would come from frontend in real implementation)
+    const deliveryFees = {};
+    products.forEach(product => {
+      if (!deliveryFees[product.retailer]) {
+        // Default delivery fees per retailer
+        const retailerFees = {
+          'Amazon': 25,
+          'Wayfair': 30,
+          'Target': 20,
+          'Walmart': 15,
+          'Best Buy': 25,
+          'Home Depot': 20
+        };
+        deliveryFees[product.retailer] = retailerFees[product.retailer] || 25;
+      }
+    });
+    
+    // Calculate totals with hidden profit margin and card fees
+    const totals = calculateOrderTotals(products, deliveryFees);
+    
+    console.log('\n💰 ORDER TOTALS (with hidden fees):');
+    console.log(`   Products: $${totals.subtotal}`);
+    console.log(`   Duty (26.5%): $${totals.dutyAmount}`);
+    console.log(`   Shipping & Handling: $${totals.totalShippingCost} (includes profit + card fees)`);
+    console.log(`   Delivery Fees: $${totals.totalDeliveryFees}`);
+    console.log(`   Grand Total: $${totals.grandTotal}`);
+    console.log(`   Hidden Profit (15%): $${totals._hiddenFees.profitMargin}`);
+    console.log(`   Hidden Card Fee (3.75%): $${totals._hiddenFees.cardFee}\n`);
+    
     res.json({ 
       products,
+      deliveryFees,
+      totals,
       summary: {
         total: products.length,
         scraped: products.length - estimatedCount,
