@@ -532,7 +532,6 @@ function calculateDetailedShippingCost(dimensions, weight, price, category, piec
     // No dimensions - use price-based estimate
     breakdown.customerPrice = Math.max(25, price * 0.15);
     breakdown.actualShippingCost = breakdown.customerPrice * 0.6; // 40% markup
-  }
 }
 
 // Enhanced shipping calculation with detailed breakdown for admin
@@ -566,7 +565,6 @@ function calculateDetailedShippingCost(dimensions, weight, price, category, piec
     // No dimensions - use price-based estimate
     breakdown.customerPrice = Math.max(25, price * 0.15);
     breakdown.actualShippingCost = breakdown.customerPrice * 0.6; // 40% markup
-  }
 }
 
 // Enhanced shipping calculation with detailed breakdown for admin
@@ -600,7 +598,6 @@ function calculateDetailedShippingCost(dimensions, weight, price, category, piec
     // No dimensions - use price-based estimate
     breakdown.customerPrice = Math.max(25, price * 0.15);
     breakdown.actualShippingCost = breakdown.customerPrice * 0.6; // 40% markup
-  }
 }
 
 // Enhanced shipping calculation with detailed breakdown for admin
@@ -634,7 +631,6 @@ function calculateDetailedShippingCost(dimensions, weight, price, category, piec
     // No dimensions - use price-based estimate
     breakdown.customerPrice = Math.max(25, price * 0.15);
     breakdown.actualShippingCost = breakdown.customerPrice * 0.6; // 40% markup
-  }
 }
 
 // Enhanced shipping calculation with detailed breakdown for admin
@@ -668,7 +664,6 @@ function calculateDetailedShippingCost(dimensions, weight, price, category, piec
     // No dimensions - use price-based estimate
     breakdown.customerPrice = Math.max(25, price * 0.15);
     breakdown.actualShippingCost = breakdown.customerPrice * 0.6; // 40% markup
-  }
 }
 
 // Enhanced shipping calculation with detailed breakdown for admin
@@ -702,7 +697,6 @@ function calculateDetailedShippingCost(dimensions, weight, price, category, piec
     // No dimensions - use price-based estimate
     breakdown.customerPrice = Math.max(25, price * 0.15);
     breakdown.actualShippingCost = breakdown.customerPrice * 0.6; // 40% markup
-  }
 }
 
 // Enhanced shipping calculation with detailed breakdown for admin
@@ -736,75 +730,6 @@ function calculateDetailedShippingCost(dimensions, weight, price, category, piec
     // No dimensions - use price-based estimate
     breakdown.customerPrice = Math.max(25, price * 0.15);
     breakdown.actualShippingCost = breakdown.customerPrice * 0.6; // 40% markup
-  }
-}
-
-// Enhanced shipping calculation with detailed breakdown for admin
-function calculateDetailedShippingCost(dimensions, weight, price, category, pieceCount = 1, isFlatPacked = false) {
-  const breakdown = {
-    // Dimension details
-    boxDimensions: dimensions,
-    cubicInches: 0,
-    cubicFeet: 0,
-    boxCount: pieceCount,
-    
-    // Cost breakdown
-    baseCost: 0,
-    oversizeFee: 0,
-    valueFee: 0,
-    handlingFee: 15,
-    fuelSurcharge: 0,
-    insuranceFee: 0,
-    
-    // Business costs (hidden from customer)
-    actualShippingCost: 0,  // What we actually pay
-    profitMargin: 0,        // Our markup
-    cardProcessingFee: 0,   // 2.9% + $0.30
-    
-    // Totals
-    subtotal: 0,
-    customerPrice: 0
-  };
-  
-  if (!dimensions) {
-    // No dimensions - use price-based estimate
-    breakdown.customerPrice = Math.max(25, price * 0.15);
-    breakdown.actualShippingCost = breakdown.customerPrice * 0.6; // 40% markup
-  }
-}
-
-// Enhanced shipping calculation with detailed breakdown for admin
-function calculateDetailedShippingCost(dimensions, weight, price, category, pieceCount = 1, isFlatPacked = false) {
-  const breakdown = {
-    // Dimension details
-    boxDimensions: dimensions,
-    cubicInches: 0,
-    cubicFeet: 0,
-    boxCount: pieceCount,
-    
-    // Cost breakdown
-    baseCost: 0,
-    oversizeFee: 0,
-    valueFee: 0,
-    handlingFee: 15,
-    fuelSurcharge: 0,
-    insuranceFee: 0,
-    
-    // Business costs (hidden from customer)
-    actualShippingCost: 0,  // What we actually pay
-    profitMargin: 0,        // Our markup
-    cardProcessingFee: 0,   // 2.9% + $0.30
-    
-    // Totals
-    subtotal: 0,
-    customerPrice: 0
-  };
-  
-  if (!dimensions) {
-    // No dimensions - use price-based estimate
-    breakdown.customerPrice = Math.max(25, price * 0.15);
-    breakdown.actualShippingCost = breakdown.customerPrice * 0.6; // 40% markup
-  }
   
   // Value-based insurance fee
   breakdown.valueFee = price > 500 ? price * 0.02 : 0;
@@ -865,7 +790,6 @@ function calculateDetailedShippingCost(dimensions, weight, price, category, piec
     // No dimensions - use price-based estimate
     breakdown.customerPrice = Math.max(25, price * 0.15);
     breakdown.actualShippingCost = breakdown.customerPrice * 0.6; // 40% markup
-  }
 }
 
 // Calculate total order with hidden profit margin and card fees

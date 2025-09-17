@@ -543,7 +543,8 @@ function calculateDetailedShippingCost(dimensions, weight, price, category, piec
   breakdown.baseCost = Math.max(25, breakdown.cubicFeet * SHIPPING_RATE_PER_CUBIC_FOOT);
   
   // Oversize fee
-  breakdown.oversizeFee = Math.max(dimensions.length, dimensions.width, dimensions.height) > 48 ? 75 : 0;
+  const maxDimension = Math.max(dimensions.length, dimensions.width, dimensions.height);
+  breakdown.oversizeFee = maxDimension > 48 ? 75 : 0;
   
   // Value-based insurance fee
   breakdown.valueFee = price > 500 ? price * 0.02 : 0;
@@ -605,6 +606,800 @@ function calculateOrderTotals(products, deliveryFees) {
     }
   };
 }
+
+// Retailer APIs class
+class RetailerAPIs {
+  constructor() {
+    // API Keys from environment
+    this.bestBuyAPIKey = process.env.BESTBUY_API_KEY || '';
+    this.homedepotAPIKey = process.env.HOMEDEPOT_API_KEY || '';
+    this.lowesAPIKey = process.env.LOWES_API_KEY || '';
+    this.macysAPIKey = process.env.MACYS_API_KEY || '';
+    this.walmartAPIKey = process.env.WALMART_API_KEY || '';
+    
+    // API Base URLs
+    this.walmartBaseURL = 'https://api.walmart.com/v1';
+    this.targetBaseURL = 'https://redsky.target.com/redsky_aggregations/v1';
+    this.bestBuyBaseURL = 'https://api.bestbuy.com/v1';
+    this.homedepotBaseURL = 'https://api.homedepot.com/v1';
+    this.lowesBaseURL = 'https://api.lowes.com/v1';
+    this.macysBaseURL = 'https://api.macys.com/v4';
+    this.costcoBaseURL = 'https://api.costco.com/v1';
+    this.ikea_baseURL = 'https://api.ikea.com/v1';
+    
+    console.log('🏪 Retailer APIs initialized:');
+    console.log(`   Walmart: ✅ Available ${this.walmartAPIKey ? '(with API key)' : '(public endpoints)'}`);
+    console.log(`   Target: ✅ Available (unofficial API)`);
+    console.log(`   Best Buy: ${this.bestBuyAPIKey ? '✅ Available' : '❌ No API key'}`);
+    console.log(`   Home Depot: ${this.homedepotAPIKey ? '✅ Available' : '❌ No API key'}`);
+    console.log(`   Lowes: ${this.lowesAPIKey ? '✅ Available' : '❌ No API key'}`);
+    console.log(`   Macys: ${this.macysAPIKey ? '✅ Available' : '❌ No API key'}`);
+    console.log(`   Costco: ✅ Available (public endpoints)`);
+    console.log(`   IKEA: ✅ Available (public endpoints)`);
+    console.log(`   Wayfair: ✅ Available (public endpoints)`);
+    console.log(`   Overstock: ✅ Available (public endpoints)`);
+  }
+
+  // Extract product ID from URL
+  extractProductId(url, retailer) {
+    try {
+      switch (retailer) {
+        case 'Walmart':
+          // Walmart URLs: /ip/Product-Name/12345678
+          const walmartMatch = url.match(/\/ip\/[^\/]+\/(\d+)/);
+          return walmartMatch ? walmartMatch[1] : null;
+          
+        case 'Target':
+          // Target URLs: /p/product-name/-/A-12345678
+          const targetMatch = url.match(/\/A-(\d+)/);
+          return targetMatch ? targetMatch[1] : null;
+          
+        case 'Best Buy':
+          // Best Buy URLs: /site/product-name/12345678.p
+          const bestBuyMatch = url.match(/\/site\/[^\/]+\/(\d+)\.p/);
+          return bestBuyMatch ? bestBuyMatch[1] : null;
+          
+        case 'Home Depot':
+          // Home Depot URLs: /p/Product-Name/123456789
+          const homedepotMatch = url.match(/\/p\/[^\/]+\/(\d+)/);
+          return homedepotMatch ? homedepotMatch[1] : null;
+          
+        case 'Lowes':
+          // Lowes URLs: /pd/Product-Name/123456789
+          const lowesMatch = url.match(/\/pd\/[^\/]+\/(\d+)/);
+          return lowesMatch ? lowesMatch[1] : null;
+          
+        case 'Macys':
+          // Macys URLs: /shop/product/product-name?ID=123456
+          const macysMatch = url.match(/ID=(\d+)/);
+          return macysMatch ? macysMatch[1] : null;
+          
+        case 'Costco':
+          // Costco URLs: /product-name.product.123456.html
+          const costcoMatch = url.match(/\.product\.(\d+)\.html/);
+          return costcoMatch ? costcoMatch[1] : null;
+          
+        case 'IKEA':
+          // IKEA URLs: /us/en/p/product-name-12345678/
+          const ikeaMatch = url.match(/\/p\/[^\/]+-(\d+)\//);
+          return ikeaMatch ? ikeaMatch[1] : null;
+          
+        case 'Wayfair':
+          // Wayfair URLs: /product-name~SKU123.html
+          const wayfairMatch = url.match(/~([A-Z0-9]+)\.html/);
+          return wayfairMatch ? wayfairMatch[1] : null;
+          
+        case 'Overstock':
+          // Overstock URLs: /product-name/123456/product.html
+          const overstockMatch = url.match(/\/(\d+)\/product\.html/);
+          return overstockMatch ? overstockMatch[1] : null;
+          
+        default:
+          return null;
+      }
+    } catch (error) {
+      console.error(`Error extracting product ID for ${retailer}:`, error);
+      return null;
+    }
+  }
+
+  // Walmart API
+  async getWalmartProduct(url) {
+    try {
+      const productId = this.extractProductId(url, 'Walmart');
+      if (!productId) return null;
+
+      console.log(`🔍 Fetching Walmart product ${productId}...`);
+      
+      const response = await axios.get(`${this.walmartBaseURL}/items/${productId}`, {
+        params: {
+          format: 'json'
+        },
+        headers: {
+          'Accept': 'application/json'
+        },
+        timeout: 10000
+      });
+
+      const product = response.data;
+      if (!product) return null;
+
+      console.log('✅ Walmart API returned product data');
+      return this.parseWalmartProduct(product);
+
+    } catch (error) {
+      console.error('❌ Walmart API error:', error.message);
+      return null;
+    }
+  }
+
+  // Target API
+  async getTargetProduct(url) {
+    try {
+      const productId = this.extractProductId(url, 'Target');
+      if (!productId) return null;
+
+      console.log(`🔍 Fetching Target product ${productId}...`);
+      
+      const response = await axios.get(`${this.targetBaseURL}/pdp/web/v1/pdp`, {
+        params: {
+          key: 'ff457966e64d5e877fdbad070f276d18ecec4a01',
+          tcin: productId,
+          is_bot: false
+        },
+        headers: {
+          'Accept': 'application/json'
+        },
+        timeout: 10000
+      });
+
+      const product = response.data?.data?.product;
+      if (!product) return null;
+
+      console.log('✅ Target API returned product data');
+      return this.parseTargetProduct(product);
+
+    } catch (error) {
+      console.error('❌ Target API error:', error.message);
+      return null;
+    }
+  }
+
+  // Best Buy API
+  async getBestBuyProduct(url) {
+    try {
+      if (!this.bestBuyAPIKey) {
+        console.log('❌ Best Buy API key not configured');
+        return null;
+      }
+
+      const productId = this.extractProductId(url, 'Best Buy');
+      if (!productId) return null;
+
+      console.log(`🔍 Fetching Best Buy product ${productId}...`);
+      
+      const response = await axios.get(`${this.bestBuyBaseURL}/products/${productId}.json`, {
+        params: {
+          apikey: this.bestBuyAPIKey,
+          format: 'json'
+        },
+        timeout: 10000
+      });
+
+      const product = response.data;
+      if (!product) return null;
+
+      console.log('✅ Best Buy API returned product data');
+      return this.parseBestBuyProduct(product);
+
+    } catch (error) {
+      console.error('❌ Best Buy API error:', error.message);
+      return null;
+    }
+  }
+
+  // Home Depot API
+  async getHomeDepotProduct(url) {
+    try {
+      const productId = this.extractProductId(url, 'Home Depot');
+      if (!productId) {
+        console.log('❌ Could not extract Home Depot product ID from URL');
+        return null;
+      }
+
+      console.log(`🔍 Fetching Home Depot product ${productId}...`);
+      
+      // Try official API first if key available
+      if (this.homedepotAPIKey) {
+        const response = await axios.get(`${this.homedepotBaseURL}/products/${productId}`, {
+          headers: {
+            'Authorization': `Bearer ${this.homedepotAPIKey}`,
+            'Accept': 'application/json'
+          },
+          timeout: 10000
+        });
+        
+        const product = response.data;
+        return this.parseHomeDepotProduct(product);
+      }
+      
+      // Fallback to public endpoints
+      const response = await axios.get(`https://www.homedepot.com/p/services/ProductDisplayService/productdetail/${productId}`, {
+        headers: {
+          'Accept': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (compatible; SDL-Import-Calculator/1.0)'
+        },
+        timeout: 10000
+      });
+
+      const product = response.data?.product;
+      if (!product) return null;
+
+      console.log('✅ Home Depot API returned product data');
+      return this.parseHomeDepotProduct(product);
+
+    } catch (error) {
+      console.error('❌ Home Depot API error:', error.message);
+      return null;
+    }
+  }
+
+  // Lowes API
+  async getLowesProduct(url) {
+    try {
+      const productId = this.extractProductId(url, 'Lowes');
+      if (!productId) return null;
+
+      console.log(`🔍 Fetching Lowes product ${productId}...`);
+      
+      // Lowes public API endpoint
+      const response = await axios.get(`https://www.lowes.com/wcs/resources/store/10151/productdetails/byId/${productId}`, {
+        headers: {
+          'Accept': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (compatible; SDL-Import-Calculator/1.0)'
+        },
+        timeout: 10000
+      });
+
+      const product = response.data?.product;
+      if (!product) return null;
+
+      console.log('✅ Lowes API returned product data');
+      return this.parseLowesProduct(product);
+
+    } catch (error) {
+      console.error('❌ Lowes API error:', error.message);
+      return null;
+    }
+  }
+
+  // Macys API
+  async getMacysProduct(url) {
+    try {
+      const productId = this.extractProductId(url, 'Macys');
+      if (!productId) return null;
+
+      console.log(`🔍 Fetching Macys product ${productId}...`);
+      
+      const response = await axios.get(`https://www.macys.com/xapi/digital/v1/product/${productId}`, {
+        headers: {
+          'Accept': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (compatible; SDL-Import-Calculator/1.0)'
+        },
+        timeout: 10000
+      });
+
+      const product = response.data?.product;
+      if (!product) return null;
+
+      console.log('✅ Macys API returned product data');
+      return this.parseMacysProduct(product);
+
+    } catch (error) {
+      console.error('❌ Macys API error:', error.message);
+      return null;
+    }
+  }
+
+  // Costco API (public endpoints)
+  async getCostcoProduct(url) {
+    try {
+      const productId = this.extractProductId(url, 'Costco');
+      if (!productId) return null;
+
+      console.log(`🔍 Fetching Costco product ${productId}...`);
+      
+      const response = await axios.get(`https://www.costco.com/wcsstore/CostcoUSBCCatalogAssetStore/Attachment/product_${productId}.json`, {
+        headers: {
+          'Accept': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (compatible; SDL-Import-Calculator/1.0)'
+        },
+        timeout: 10000
+      });
+
+      const product = response.data;
+      if (!product) return null;
+
+      console.log('✅ Costco API returned product data');
+      return this.parseCostcoProduct(product);
+
+    } catch (error) {
+      console.error('❌ Costco API error:', error.message);
+      return null;
+    }
+  }
+
+  // IKEA API (public endpoints)
+  async getIKEAProduct(url) {
+    try {
+      const productId = this.extractProductId(url, 'IKEA');
+      if (!productId) return null;
+
+      console.log(`🔍 Fetching IKEA product ${productId}...`);
+      
+      const response = await axios.get(`https://api.ikea.com/api/catalogue/us/en/products/${productId}`, {
+        headers: {
+          'Accept': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (compatible; SDL-Import-Calculator/1.0)'
+        },
+        timeout: 10000
+      });
+
+      const product = response.data?.product;
+      if (!product) return null;
+
+      console.log('✅ IKEA API returned product data');
+      return this.parseIKEAProduct(product);
+
+    } catch (error) {
+      console.error('❌ IKEA API error:', error.message);
+      return null;
+    }
+  }
+
+  // Wayfair API (public endpoints)
+  async getWayfairProduct(url) {
+    try {
+      const productId = this.extractProductId(url, 'Wayfair');
+      if (!productId) return null;
+
+      console.log(`🔍 Fetching Wayfair product ${productId}...`);
+      
+      const response = await axios.get(`https://www.wayfair.com/a/products/${productId}/specifications`, {
+        headers: {
+          'Accept': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (compatible; SDL-Import-Calculator/1.0)'
+        },
+        timeout: 10000
+      });
+
+      const product = response.data?.product;
+      if (!product) return null;
+
+      console.log('✅ Wayfair API returned product data');
+      return this.parseWayfairProduct(product);
+
+    } catch (error) {
+      console.error('❌ Wayfair API error:', error.message);
+      return null;
+    }
+  }
+
+  // Overstock API (public endpoints)
+  async getOverstockProduct(url) {
+    try {
+      const productId = this.extractProductId(url, 'Overstock');
+      if (!productId) return null;
+
+      console.log(`🔍 Fetching Overstock product ${productId}...`);
+      
+      const response = await axios.get(`https://www.overstock.com/api/product.json?prod_id=${productId}`, {
+        headers: {
+          'Accept': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (compatible; SDL-Import-Calculator/1.0)'
+        },
+        timeout: 10000
+      });
+
+      const product = response.data?.product;
+      if (!product) return null;
+
+      console.log('✅ Overstock API returned product data');
+      return this.parseOverstockProduct(product);
+
+    } catch (error) {
+      console.error('❌ Overstock API error:', error.message);
+      return null;
+    }
+  }
+
+  // Product parsing methods
+  parseHomeDepotProduct(product) {
+    return {
+      name: product.productLabel || product.displayName,
+      price: product.pricing?.value || product.price,
+      image: product.media?.mainImage || product.imageUrl,
+      dimensions: this.parseHomeDepotDimensions(product),
+      weight: this.parseHomeDepotWeight(product),
+      brand: product.brand?.brandName,
+      category: product.taxonomy?.categories?.[0]?.name,
+      inStock: product.fulfillment?.backordered !== true
+    };
+  }
+
+  parseLowesProduct(product) {
+    return {
+      name: product.title || product.name,
+      price: product.pricing?.selling?.value,
+      image: product.images?.[0]?.url,
+      dimensions: this.parseLowesDimensions(product),
+      weight: this.parseLowesWeight(product),
+      brand: product.brand,
+      category: product.category?.name,
+      inStock: product.availability?.purchasable
+    };
+  }
+
+  parseMacysProduct(product) {
+    return {
+      name: product.name || product.title,
+      price: product.price?.tieredPrice?.[0]?.values?.value,
+      image: product.imagery?.images?.[0]?.filePath,
+      dimensions: this.parseMacysDimensions(product),
+      weight: this.parseMacysWeight(product),
+      brand: product.brand?.name,
+      category: product.taxonomy?.categories?.[0]?.name,
+      inStock: product.availability?.status === 'IN_STOCK'
+    };
+  }
+
+  parseCostcoProduct(product) {
+    return {
+      name: product.displayName || product.name,
+      price: product.price?.value,
+      image: product.images?.[0]?.url,
+      dimensions: this.parseCostcoDimensions(product),
+      weight: this.parseCostcoWeight(product),
+      brand: product.brand,
+      category: product.department,
+      inStock: product.inventoryStatus === 'Available'
+    };
+  }
+
+  parseIKEAProduct(product) {
+    return {
+      name: product.name,
+      price: product.salesPrice?.numeral,
+      image: product.mainImageUrl,
+      dimensions: this.parseIKEADimensions(product),
+      weight: this.parseIKEAWeight(product),
+      brand: 'IKEA',
+      category: product.categoryPath?.[0]?.name,
+      inStock: product.availabilities?.[0]?.stock?.availableStock > 0
+    };
+  }
+
+  parseWayfairProduct(product) {
+    return {
+      name: product.name || product.title,
+      price: product.pricing?.salePrice || product.pricing?.listPrice,
+      image: product.images?.[0]?.url,
+      dimensions: this.parseWayfairDimensions(product),
+      weight: this.parseWayfairWeight(product),
+      brand: product.manufacturer?.name,
+      category: product.class?.name,
+      inStock: product.availability?.isAvailable
+    };
+  }
+
+  parseOverstockProduct(product) {
+    return {
+      name: product.title || product.name,
+      price: product.price?.sale || product.price?.list,
+      image: product.images?.[0]?.url,
+      dimensions: this.parseOverstockDimensions(product),
+      weight: this.parseOverstockWeight(product),
+      brand: product.brand,
+      category: product.category,
+      inStock: product.inventory?.inStock
+    };
+  }
+
+  // Dimension parsing methods for each retailer
+  parseHomeDepotDimensions(product) {
+    const specs = product.specifications || product.details || {};
+    
+    // Look for shipping dimensions first
+    if (specs.shippingDimensions) {
+      return this.parseDimensionString(specs.shippingDimensions);
+    }
+    
+    // Look for product dimensions
+    if (specs.dimensions || specs.productDimensions) {
+      const dims = this.parseDimensionString(specs.dimensions || specs.productDimensions);
+      if (dims) {
+        // Add 20% padding for shipping box
+        return {
+          length: dims.length * 1.2,
+          width: dims.width * 1.2,
+          height: dims.height * 1.2
+        };
+      }
+    }
+    
+    return null;
+  }
+
+  parseLowesDimensions(product) {
+    const attributes = product.attributes || {};
+    
+    if (attributes.packageDimensions) {
+      return this.parseDimensionString(attributes.packageDimensions);
+    }
+    
+    if (attributes.productDimensions) {
+      const dims = this.parseDimensionString(attributes.productDimensions);
+      if (dims) {
+        return {
+          length: dims.length * 1.2,
+          width: dims.width * 1.2,
+          height: dims.height * 1.2
+        };
+      }
+    }
+    
+    return null;
+  }
+
+  parseMacysDimensions(product) {
+    const attributes = product.attributes || {};
+    
+    if (attributes.dimensions) {
+      return this.parseDimensionString(attributes.dimensions);
+    }
+    
+    return null;
+  }
+
+  parseCostcoDimensions(product) {
+    const specs = product.specifications || {};
+    
+    if (specs.shippingDimensions) {
+      return this.parseDimensionString(specs.shippingDimensions);
+    }
+    
+    if (specs.dimensions) {
+      const dims = this.parseDimensionString(specs.dimensions);
+      if (dims) {
+        return {
+          length: dims.length * 1.15, // Costco usually has good packaging
+          width: dims.width * 1.15,
+          height: dims.height * 1.15
+        };
+      }
+    }
+    
+    return null;
+  }
+
+  parseIKEADimensions(product) {
+    // IKEA provides package dimensions directly
+    if (product.packageMeasurements) {
+      return {
+        length: product.packageMeasurements.length,
+        width: product.packageMeasurements.width,
+        height: product.packageMeasurements.height
+      };
+    }
+    
+    // Fallback to product dimensions + padding
+    if (product.measurements) {
+      return {
+        length: product.measurements.length * 1.1,
+        width: product.measurements.width * 1.1,
+        height: product.measurements.height * 1.1
+      };
+    }
+    
+    return null;
+  }
+
+  parseWayfairDimensions(product) {
+    const specs = product.specifications || {};
+    
+    if (specs.shippingDimensions) {
+      return this.parseDimensionString(specs.shippingDimensions);
+    }
+    
+    if (specs.overallDimensions) {
+      const dims = this.parseDimensionString(specs.overallDimensions);
+      if (dims) {
+        return {
+          length: dims.length * 1.25, // Wayfair furniture needs more padding
+          width: dims.width * 1.25,
+          height: dims.height * 1.25
+        };
+      }
+    }
+    
+    return null;
+  }
+
+  parseOverstockDimensions(product) {
+    const specs = product.specifications || {};
+    
+    if (specs.packageDimensions) {
+      return this.parseDimensionString(specs.packageDimensions);
+    }
+    
+    if (specs.dimensions) {
+      const dims = this.parseDimensionString(specs.dimensions);
+      if (dims) {
+        return {
+          length: dims.length * 1.2,
+          width: dims.width * 1.2,
+          height: dims.height * 1.2
+        };
+      }
+    }
+    
+    return null;
+  }
+
+  // Weight parsing methods
+  parseHomeDepotWeight(product) {
+    const specs = product.specifications || product.details || {};
+    return this.parseWeightString(specs.shippingWeight || specs.weight);
+  }
+
+  parseLowesWeight(product) {
+    const attributes = product.attributes || {};
+    return this.parseWeightString(attributes.shippingWeight || attributes.weight);
+  }
+
+  parseMacysWeight(product) {
+    const attributes = product.attributes || {};
+    return this.parseWeightString(attributes.weight);
+  }
+
+  parseCostcoWeight(product) {
+    const specs = product.specifications || {};
+    return this.parseWeightString(specs.shippingWeight || specs.weight);
+  }
+
+  parseIKEAWeight(product) {
+    return product.packageMeasurements?.weight || product.measurements?.weight;
+  }
+
+  parseWayfairWeight(product) {
+    const specs = product.specifications || {};
+    return this.parseWeightString(specs.shippingWeight || specs.weight);
+  }
+
+  parseOverstockWeight(product) {
+    const specs = product.specifications || {};
+    return this.parseWeightString(specs.shippingWeight || specs.weight);
+  }
+
+  // Main method to get product data from any supported retailer
+  async getProductData(url) {
+    const retailer = detectRetailer(url);
+    
+    switch (retailer) {
+      case 'Walmart':
+        return await this.getWalmartProduct(url);
+      case 'Target':
+        return await this.getTargetProduct(url);
+      case 'Best Buy':
+        return await this.getBestBuyProduct(url);
+      case 'Home Depot':
+        return await this.getHomeDepotProduct(url);
+      case 'Lowes':
+        return await this.getLowesProduct(url);
+      case 'Macys':
+        return await this.getMacysProduct(url);
+      case 'Costco':
+        return await this.getCostcoProduct(url);
+      case 'IKEA':
+        return await this.getIKEAProduct(url);
+      case 'Wayfair':
+        return await this.getWayfairProduct(url);
+      case 'Overstock':
+        return await this.getOverstockProduct(url);
+      default:
+        console.log(`❌ No API available for ${retailer}`);
+        return null;
+    }
+  }
+
+  // Helper methods for parsing dimensions and weights
+  parseDimensionString(dimStr) {
+    if (!dimStr) return null;
+    
+    const patterns = [
+      /(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)/i,
+      /L:\s*(\d+(?:\.\d+)?).*W:\s*(\d+(?:\.\d+)?).*H:\s*(\d+(?:\.\d+)?)/i,
+      /(\d+(?:\.\d+)?)"?\s*[WL]\s*[x×]\s*(\d+(?:\.\d+)?)"?\s*[DW]\s*[x×]\s*(\d+(?:\.\d+)?)"?\s*[HT]/i
+    ];
+    
+    for (const pattern of patterns) {
+      const match = dimStr.match(pattern);
+      if (match) {
+        return {
+          length: parseFloat(match[1]),
+          width: parseFloat(match[2]),
+          height: parseFloat(match[3])
+        };
+      }
+    }
+    
+    return null;
+  }
+
+  parseWeightString(weightStr) {
+    if (!weightStr) return null;
+    
+    const patterns = [
+      /(\d+(?:\.\d+)?)\s*(?:pounds?|lbs?)/i,
+      /(\d+(?:\.\d+)?)\s*(?:kilograms?|kgs?)/i,
+      /(\d+(?:\.\d+)?)\s*(?:ounces?|oz)/i
+    ];
+    
+    for (const pattern of patterns) {
+      const match = weightStr.match(pattern);
+      if (match) {
+        let weight = parseFloat(match[1]);
+        // Convert to pounds if needed
+        if (/kg/i.test(weightStr)) weight *= 2.205;
+        if (/oz/i.test(weightStr)) weight *= 0.0625;
+        
+        return Math.round(weight * 10) / 10;
+      }
+    }
+    
+    return null;
+  }
+
+  parseWalmartProduct(product) {
+    return {
+      name: product.name,
+      price: product.salePrice || product.msrp,
+      image: product.mediumImage || product.thumbnailImage,
+      dimensions: null, // Walmart API doesn't provide dimensions
+      weight: null,
+      brand: product.brandName,
+      category: product.categoryPath,
+      inStock: product.stock === 'Available'
+    };
+  }
+
+  parseTargetProduct(product) {
+    return {
+      name: product.item?.product_description?.title,
+      price: product.price?.current_retail,
+      image: product.item?.enrichment?.images?.primary_image_url,
+      dimensions: null, // Target API doesn't provide dimensions
+      weight: null,
+      brand: product.item?.product_brand?.brand,
+      category: product.item?.product_classification?.product_type,
+      inStock: product.available_to_promise_network?.availability_status === 'IN_STOCK'
+    };
+  }
+
+  parseBestBuyProduct(product) {
+    return {
+      name: product.name,
+      price: product.salePrice || product.regularPrice,
+      image: product.image,
+      dimensions: null, // Best Buy API doesn't provide dimensions
+      weight: product.shippingWeight,
+      brand: product.manufacturer,
+      category: product.category,
+      inStock: product.inStoreAvailability
+    };
+  }
+}
+
 // Helper function to check if essential data is complete
 function isDataComplete(productData) {
   return productData && 
