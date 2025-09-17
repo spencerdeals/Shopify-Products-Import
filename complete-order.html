@@ -1,0 +1,13 @@
+@@ .. @@
+                 const response = await fetch(`/api/get-checkout/${checkoutId}`);
+                 
+                 if (!response.ok) {
+                     throw new Error('Order not found or expired');
+                 }
+                 
+                 const result = await response.json();
+-                orderData = result.data;
++                orderData = result;
+                 
+                 displayOrderSummary();
+                 showCustomerForm();
