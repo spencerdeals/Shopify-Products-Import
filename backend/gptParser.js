@@ -1,68 +1,98 @@
 // gptParser.js
-// GPT-backed parser with resilient HTML fetch:
-// 1) ScrapingBee (render_js) -> 2) Apify web-scraper snapshot -> 3) Axios w/ retries
-// Env: OPENAI_API_KEY (required), SCRAPINGBEE_API_KEY (optional), APIFY_API_KEY (optional)
+// GPT-backed parser with robust HTML fetch + guardrails + richer fields.
+// Order of fetch: 1) ScrapingBee (JS render) → 2) Apify snapshot → 3) Axios retries
+// Env needed: OPENAI_API_KEY
+// Optional env: SCRAPINGBEE_API_KEY, SCRAPINGBEE_COUNTRY (US|CA|GB), APIFY_API_KEY,
+//               GPT_PARSER_MODEL (default gpt-4o-mini), DEFAULT_CURRENCY (default USD),
+//               MAX_GPT_CALLS_PER_RUN (e.g., 50)
 
 const axios = require('axios');
 const cheerio = require('cheerio');
 const OpenAI = require('openai');
 const { ApifyClient } = require('apify-client');
 
+// ---- Config ----
 const MODEL = process.env.GPT_PARSER_MODEL || 'gpt-4o-mini';
 const TIMEOUT_MS = 30000;
 const MAX_AXIOS_RETRIES = 3;
+const DEFAULT_CURRENCY = (process.env.DEFAULT_CURRENCY || 'USD').toUpperCase();
+const ALLOWED_CURRENCIES = ['USD','BMD','CAD','GBP','EUR'];
+const MAX_GPT_CALLS_PER_RUN = parseInt(process.env.MAX_GPT_CALLS_PER_RUN || '100', 10);
 
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+// Budget guard (per process)
+let gptCallsUsed = 0;
 
-function rnd(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
-
-function htmlToVisibleText(html) {
+// ---- Utils ----
+function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
+function rnd(min,max){ return Math.floor(Math.random()*(max-min+1))+min; }
+function htmlToVisibleText(html){
   const $ = cheerio.load(html);
-  $('script, style, noscript').remove();
-  return $('body').text().replace(/\s+/g, ' ').trim();
+  $('script,style,noscript').remove();
+  return $('body').text().replace(/\s+/g,' ').trim();
 }
-
-function coerceNumber(n) {
+function coerceNumber(n){
   if (typeof n === 'number') return n;
-  if (typeof n === 'string') {
-    const cleaned = n.replace(/[^0-9.]/g, '');
+  if (typeof n === 'string'){
+    const cleaned = n.replace(/[^0-9.]/g,'');
     const val = Number(cleaned);
     return Number.isFinite(val) ? val : null;
   }
   return null;
 }
-
-// ---------- FETCHERS ----------
-async function fetchViaScrapingBee(url) {
-  const key = process.env.SCRAPINGBEE_API_KEY;
-  if (!key) return null;
-  try {
-    const res = await axios.get('https://app.scrapingbee.com/api/v1', {
-      timeout: TIMEOUT_MS,
-      params: {
-        api_key: key,
-        url,
-        render_js: 'true',
-        country_code: 'US',
-        block_resources: 'false',
-      },
-      validateStatus: () => true,
-    });
-    if (res.status >= 200 && res.status < 300 && res.data) {
-      return typeof res.data === 'string' ? res.data : res.data.toString();
-    }
-    console.warn(`[ScrapingBee] Non-2xx: ${res.status}`);
-    return null;
-  } catch (e) {
-    console.warn('[ScrapingBee] Error:', e.message);
-    return null;
-  }
+function detectRetailer(url){
+  try{
+    const host = new URL(url).hostname.toLowerCase();
+    if (host.includes('wayfair')) return 'Wayfair';
+    if (host.includes('amazon')) return 'Amazon';
+    if (host.includes('walmart')) return 'Walmart';
+    if (host.includes('target')) return 'Target';
+    if (host.includes('bestbuy')) return 'BestBuy';
+    if (host.includes('homedepot')) return 'HomeDepot';
+    return 'Generic';
+  }catch{ return 'Generic'; }
 }
 
-async function fetchViaApifySnapshot(url) {
+// ---- FETCHERS ----
+async function fetchViaScrapingBee(url){
+  const key = process.env.SCRAPINGBEE_API_KEY;
+  if (!key) return null;
+
+  const countries = [
+    process.env.SCRAPINGBEE_COUNTRY || 'US',
+    'CA','GB'
+  ];
+
+  for (const country of countries){
+    try{
+      const res = await axios.get('https://app.scrapingbee.com/api/v1', {
+        timeout: TIMEOUT_MS,
+        params: {
+          api_key: key,
+          url,
+          render_js: 'true',
+          country_code: country,
+          block_resources: 'false',
+        },
+        validateStatus: () => true,
+      });
+      if (res.status >= 200 && res.status < 300 && res.data) {
+        console.log(`[ScrapingBee] OK via ${country}`);
+        return typeof res.data === 'string' ? res.data : res.data.toString();
+      }
+      console.warn(`[ScrapingBee] Non-2xx ${res.status} via ${country}`);
+      // Try next country on 429/5xx
+      if (res.status !== 429 && (res.status < 500 || res.status >= 600)) return null;
+    }catch(e){
+      console.warn('[ScrapingBee] Error:', e.message);
+    }
+  }
+  return null;
+}
+
+async function fetchViaApifySnapshot(url){
   const token = process.env.APIFY_API_KEY;
   if (!token) return null;
-  try {
+  try{
     const client = new ApifyClient({ token });
     const input = {
       startUrls: [{ url }],
@@ -77,55 +107,52 @@ async function fetchViaApifySnapshot(url) {
         }
       `,
     };
-    const run = await client.actor('apify/web-scraper').call(input, {
-      timeout: 90000,
-      memory: 1024,
-    });
+    const run = await client.actor('apify/web-scraper').call(input, { timeout: 90000, memory: 1024 });
     const { items } = await client.dataset(run.defaultDatasetId).listItems();
-    if (items && items[0] && items[0].html) return items[0].html;
+    if (items && items[0] && items[0].html){
+      console.log('[Apify snapshot] OK');
+      return items[0].html;
+    }
     return null;
-  } catch (e) {
+  }catch(e){
     console.warn('[Apify snapshot] Error:', e.message);
     return null;
   }
 }
 
-async function fetchViaAxios(url) {
-  // Basic axios with UA, retries, jitter, and 429 backoff
+async function fetchViaAxios(url){
   let lastErr = null;
-  for (let i = 0; i < MAX_AXIOS_RETRIES; i++) {
-    try {
+  for (let i=0;i<MAX_AXIOS_RETRIES;i++){
+    try{
       const res = await axios.get(url, {
         timeout: TIMEOUT_MS,
         headers: {
-          'User-Agent': `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${rnd(118, 126)} Safari/537.36`,
+          'User-Agent': `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${rnd(118,126)} Safari/537.36`,
           'Accept-Language': 'en-US,en;q=0.9',
-          'Cache-Control': 'no-cache',
-          'Pragma': 'no-cache',
+          'Cache-Control': 'no-cache', 'Pragma': 'no-cache',
         },
         validateStatus: () => true,
       });
-      if (res.status === 200 && res.data) {
+      if (res.status === 200 && res.data){
+        console.log('[Axios] OK');
         return typeof res.data === 'string' ? res.data : res.data.toString();
       }
-      if (res.status === 429) {
-        const waitMs = 1500 * (i + 1) + rnd(0, 1500);
-        console.warn(`[Axios] 429 rate-limited. Retry ${i + 1}/${MAX_AXIOS_RETRIES} after ${waitMs}ms`);
-        await sleep(waitMs);
-        continue;
+      if (res.status === 429){
+        const waitMs = 1500*(i+1) + rnd(0,1500);
+        console.warn(`[Axios] 429. Retry ${i+1}/${MAX_AXIOS_RETRIES} after ${waitMs}ms`);
+        await sleep(waitMs); continue;
       }
-      if (res.status >= 500 && res.status < 600) {
-        const waitMs = 1000 * (i + 1);
-        console.warn(`[Axios] ${res.status} server error. Retry ${i + 1}/${MAX_AXIOS_RETRIES} after ${waitMs}ms`);
-        await sleep(waitMs);
-        continue;
+      if (res.status >= 500 && res.status < 600){
+        const waitMs = 1000*(i+1);
+        console.warn(`[Axios] ${res.status}. Retry ${i+1}/${MAX_AXIOS_RETRIES} after ${waitMs}ms`);
+        await sleep(waitMs); continue;
       }
       console.warn(`[Axios] Non-OK status: ${res.status}`);
       return null;
-    } catch (e) {
+    }catch(e){
       lastErr = e;
-      const waitMs = 800 * (i + 1);
-      console.warn(`[Axios] Error ${i + 1}/${MAX_AXIOS_RETRIES}: ${e.message}. Waiting ${waitMs}ms...`);
+      const waitMs = 800*(i+1);
+      console.warn(`[Axios] Error ${i+1}/${MAX_AXIOS_RETRIES}: ${e.message}. Waiting ${waitMs}ms...`);
       await sleep(waitMs);
     }
   }
@@ -133,8 +160,7 @@ async function fetchViaAxios(url) {
   return null;
 }
 
-async function smartFetchHtml(url) {
-  // Try ScrapingBee -> Apify snapshot -> Axios
+async function smartFetchHtml(url){
   let html = await fetchViaScrapingBee(url);
   if (html) return html;
 
@@ -144,24 +170,50 @@ async function smartFetchHtml(url) {
   html = await fetchViaAxios(url);
   return html;
 }
-// ---------- END FETCHERS ----------
 
-async function parseWithGPT({ url, html, currencyFallback = 'USD' }) {
+// ---- GPT parse ----
+function vendorPromptHints(vendor){
+  switch(vendor){
+    case 'Wayfair':
+      return `For Wayfair: prefer "Sale Price" or the prominent current price. Ignore per-month financing and struck list prices.`;
+    case 'Amazon':
+      return `For Amazon: prefer the price near the "Add to Cart" button. Ignore "Was" and subscription per-month prices.`;
+    case 'Walmart':
+      return `For Walmart: prefer the main price block above "Add to cart". Ignore pickup/delivery fees and per-month financing.`;
+    default:
+      return `Prefer the most prominent product price near the primary buy action; ignore per-month financing and struck-through prices.`;
+  }
+}
+
+async function parseWithGPT({ url, html, currencyFallback = DEFAULT_CURRENCY }){
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error('OPENAI_API_KEY is missing for gptParser.');
-  const client = new OpenAI({ apiKey });
+  if (gptCallsUsed >= MAX_GPT_CALLS_PER_RUN) throw new Error('GPT budget limit reached for this run.');
 
+  const client = new OpenAI({ apiKey });
   const visibleText = htmlToVisibleText(html).slice(0, 100000);
   const htmlSlice = html.slice(0, 100000);
+  const vendor = detectRetailer(url);
 
   const system = `
 You are a precise e-commerce product extractor.
-Return STRICT JSON with fields: url, name, price, currency, image, brand (optional).
+Return STRICT JSON with fields:
+- url (string)
+- name (string)
+- price (number, no currency symbols)
+- currency (ISO code)
+- image (string URL)
+- brand (string, optional)
+- sku (string, optional)
+- availability (one of: in_stock, out_of_stock, preorder, unknown)
+- breadcrumbs (array of strings, optional)
+
 Rules:
-- "price" must be a number (no symbols).
+- ${vendorPromptHints(vendor)}
 - If currency is unclear, use "${currencyFallback}".
-- Prefer main product price (not per-month or struck list price).
-- "image" should be the primary product image URL if visible.
+- "price" must be a positive number > 0.
+- Prefer the current selling price, not list/was or per-month.
+- "image" should be a primary product image URL if visible.
 `.trim();
 
   const user = `
@@ -170,6 +222,7 @@ Extract product data from the provided HTML and visible text.
 Return ONLY JSON, no explanations.
 `.trim();
 
+  gptCallsUsed += 1;
   const response = await client.chat.completions.create({
     model: MODEL,
     temperature: 0,
@@ -183,42 +236,68 @@ Return ONLY JSON, no explanations.
   });
 
   let data = {};
-  try {
+  try{
     data = JSON.parse(response.choices[0].message.content || '{}');
-  } catch (e) {
+  }catch(e){
     throw new Error(`LLM returned invalid JSON: ${e.message}`);
   }
 
-  const result = {
+  // Normalize & validate
+  let currency = (typeof data.currency === 'string' ? data.currency.toUpperCase().trim() : '') || currencyFallback;
+  if (!ALLOWED_CURRENCIES.includes(currency)) currency = currencyFallback;
+
+  const price = coerceNumber(data.price);
+  const name = typeof data.name === 'string' ? data.name.trim() : null;
+  const image = typeof data.image === 'string' && data.image.startsWith('http') ? data.image : null;
+  const brand = typeof data.brand === 'string' && data.brand.trim() ? data.brand.trim() : null;
+  const sku = typeof data.sku === 'string' && data.sku.trim() ? data.sku.trim() : null;
+
+  // Very light sanity bounds (ignore obvious garbage)
+  if (!name || !price || price <= 0 || price > 200000) {
+    throw new Error('GPT parse missing/invalid required fields (name/price).');
+  }
+
+  const availabilityRaw = (data.availability || '').toString().toLowerCase();
+  const availability = ['in_stock','out_of_stock','preorder','unknown'].includes(availabilityRaw)
+    ? availabilityRaw
+    : 'unknown';
+
+  const breadcrumbs = Array.isArray(data.breadcrumbs)
+    ? data.breadcrumbs.map(s => (typeof s === 'string' ? s.trim() : '')).filter(Boolean).slice(0, 10)
+    : [];
+
+  // Token usage log (if provided)
+  if (response.usage) {
+    console.log(`[GPT usage] prompt_tokens=${response.usage.prompt_tokens} completion_tokens=${response.usage.completion_tokens}`);
+  }
+
+  return {
     url,
-    name: typeof data.name === 'string' && data.name.trim() ? data.name.trim() : null,
-    price: coerceNumber(data.price),
-    currency: typeof data.currency === 'string' && data.currency.trim()
-      ? data.currency.trim().toUpperCase()
-      : currencyFallback,
-    image: typeof data.image === 'string' && data.image.startsWith('http') ? data.image : null,
-    brand: typeof data.brand === 'string' && data.brand.trim() ? data.brand.trim() : null,
+    name,
+    price,
+    currency,
+    image,
+    brand,
+    sku,
+    availability,
+    breadcrumbs,
     dimensions: null,
     weight: null,
-    category: null,
-    inStock: true,
+    category: breadcrumbs[breadcrumbs.length - 1] || null,
+    inStock: availability === 'in_stock',
+    _meta: {
+      vendor,
+      model: MODEL,
+      gptCallsUsed,
+    },
   };
-
-  if (!result.name || result.price == null) {
-    throw new Error('GPT parse missing required fields (name/price).');
-  }
-  return result;
 }
 
-/**
- * Public: parseProduct(url)
- * - Fetches HTML (Bee -> Apify -> Axios)
- * - Uses GPT to extract { name, price, image, currency, ... }
- */
-async function parseProduct(url, opts = {}) {
-  const { currencyFallback = 'USD' } = opts;
+// ---- Public API ----
+async function parseProduct(url, opts = {}){
+  const { currencyFallback = DEFAULT_CURRENCY } = opts;
 
-  // Random small jitter before fetching to reduce bursts
+  // tiny jitter to avoid bursts
   await sleep(rnd(200, 600));
 
   const html = await smartFetchHtml(url);
