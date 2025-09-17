@@ -315,11 +315,23 @@ console.log(`Shopify: ${SHOPIFY_ACCESS_TOKEN ? 'CONNECTED' : 'NOT CONFIGURED'}`)
 console.log(`Email: ${sendgrid ? 'ENABLED' : 'DISABLED'}`);
 console.log(`Google Sheets: ${GOOGLE_SERVICE_ACCOUNT_KEY ? 'ENABLED' : 'DISABLED'}`);
 console.log(`Apify: ${ENABLE_APIFY && apifyClient ? '✅ ENABLED (Multi-retailer)' : '❌ DISABLED'}`);
-console.log(`ScrapingBee: ${SCRAPINGBEE_API_KEY ? 'ENABLED (Fallback)' : 'DISABLED'}`);
+console.log(`  - API Key: ${APIFY_API_KEY ? 'SET' : 'MISSING'}`);
+console.log(`ScrapingBee: ${SCRAPINGBEE_API_KEY ? '✅ ENABLED (Fallback)' : '❌ DISABLED'}`);
+console.log(`  - API Key: ${SCRAPINGBEE_API_KEY ? 'SET' : 'MISSING'}`);
 console.log('Margin Structure: TIERED on Total Order Value');
 console.log(`Documentation Fee: $${DOCUMENTATION_FEE_PER_VENDOR} per vendor`);
 console.log('Flat-Pack Intelligence: ENABLED');
 console.log('Variant & Thumbnail Support: ENHANCED');
+console.log('\n🔧 SCRAPING STRATEGY:');
+if (ENABLE_APIFY && apifyClient && SCRAPINGBEE_API_KEY) {
+  console.log('✅ OPTIMAL: Apify (Amazon/Wayfair/General) → ScrapingBee AI → Estimation');
+} else if (ENABLE_APIFY && apifyClient) {
+  console.log('⚠️  GOOD: Apify only → Estimation (No ScrapingBee fallback)');
+} else if (SCRAPINGBEE_API_KEY) {
+  console.log('⚠️  LIMITED: ScrapingBee AI only → Estimation (No Apify)');
+} else {
+  console.log('❌ MINIMAL: Estimation only (No scrapers configured)');
+}
 console.log('====================================\n');
 
 // Middleware
@@ -689,12 +701,18 @@ async function scrapeWithScrapingBee(url) {
         ],
         maxItemsPerStartUrl: 1,
         scraperProductDetails: true,
+        locationDelverableRoutes: [
+          "PRODUCT",
+          "SEARCH", 
+          "OFFERS"
+        ],
+        maxOffersPerStartUrl: 0,
         useCaptchaSolver: false,
         proxyCountry: "AUTO_SELECT_PROXY_COUNTRY"
       });
       
       console.log('   ⏳ Waiting for Amazon scraper to complete...');
-      const result = await apifyClient.run(run.id).waitForFinish({ waitSecs: 30 });
+      await apifyClient.run(run.id).waitForFinish({ waitSecs: 60 });
       const { items } = await apifyClient.dataset(run.defaultDatasetId).listItems();
       
       if (items && items.length > 0) {
@@ -705,9 +723,9 @@ async function scrapeWithScrapingBee(url) {
         let price = null;
         if (item.price) {
           if (typeof item.price === 'object') {
-            price = item.price.value || item.price.amount || null;
+            price = item.price.value || item.price.amount || item.price.current || null;
           } else if (typeof item.price === 'string') {
-            const priceMatch = item.price.match(/[\d,]+\.?\d*/);
+            const priceMatch = item.price.match(/[\d,]+\.?\d*/) || item.price.match(/\$\s*([\d,]+\.?\d*)/);
             price = priceMatch ? parseFloat(priceMatch[0].replace(',', '')) : null;
           } else {
             price = parseFloat(item.price);
@@ -716,6 +734,16 @@ async function scrapeWithScrapingBee(url) {
         
         if (!price && item.offer?.price) {
           price = parseFloat(item.offer.price);
+        }
+        
+        // Try additional price fields
+        if (!price && item.currentPrice) {
+          price = parseFloat(item.currentPrice.toString().replace(/[^\d.]/g, ''));
+        }
+        
+        if (!price && item.priceRange) {
+          const priceMatch = item.priceRange.match(/[\d,]+\.?\d*/);
+          price = priceMatch ? parseFloat(priceMatch[0].replace(',', '')) : null;
         }
         
         // Extract variant from title or variations
@@ -729,7 +757,7 @@ async function scrapeWithScrapingBee(url) {
         }
         
         // Extract image
-        const image = item.mainImage || item.image || item.images?.[0] || null;
+        const image = item.mainImage || item.image || item.images?.[0] || item.imageUrl || null;
         
         console.log('   💰 Price:', price || 'Not found');
         console.log('   🎨 Variant:', variant || 'Not specified');
@@ -769,6 +797,8 @@ async function scrapeWithScrapingBee(url) {
         productUrls: [url],
         includeOptionDetails: true,
         includeAllImages: true,
+        maxRequestsPerCrawl: 10,
+        maxRequestRetries: 3,
         proxy: {
           useApifyProxy: true,
           apifyProxyCountry: 'US'
@@ -776,7 +806,7 @@ async function scrapeWithScrapingBee(url) {
       });
       
       console.log('   ⏳ Waiting for Wayfair scraper to complete...');
-      const result = await apifyClient.run(run.id).waitForFinish({ waitSecs: 30 });
+      await apifyClient.run(run.id).waitForFinish({ waitSecs: 60 });
       const { items } = await apifyClient.dataset(run.defaultDatasetId).listItems();
       
       if (items && items.length > 0) {
@@ -790,6 +820,8 @@ async function scrapeWithScrapingBee(url) {
             item.price;
         } else if (item.salePrice) {
           price = parseFloat(item.salePrice);
+        } else if (item.currentPrice) {
+          price = parseFloat(item.currentPrice.toString().replace(/[^0-9.]/g, ''));
         } else if (item.priceRange) {
           const priceMatch = item.priceRange.match(/[\d,]+\.?\d*/);
           if (priceMatch) {
@@ -915,25 +947,35 @@ async function scrapeWithScrapingBee(url) {
       
       const run = await apifyClient.actor('apify/web-scraper').call({
         startUrls: [{ url: url }],
+        pseudoUrls: [],
+        linkSelector: '',
+        keepUrlFragments: false,
         pageFunction: `
           async function pageFunction(context) {
             const { $, request } = context;
             
             // Price selectors
             const priceSelectors = [
-              '[data-testid="product-price"]',
+              '.price-current',
               '.price-now',
+              '.current-price',
+              '.sale-price',
+              '.product-price',
+              '[data-testid="product-price"]',
               '.price',
               '[itemprop="price"]',
-              '.product-price',
-              '.current-price',
               'span.wux-price-display',
               '.pdp-price',
-              '.sale-price',
               '[data-price]',
               '.product-price-value',
               '.price-box .price',
-              '.product-info .price'
+              '.product-info .price',
+              '.price-display',
+              '.pricing-price__regular-price',
+              '.priceView-customer-price span',
+              '.price-format__main-price',
+              '.styles__CurrentPrice',
+              '.SFPrice'
             ];
             
             // Title selectors
@@ -945,20 +987,33 @@ async function scrapeWithScrapingBee(url) {
               '[itemprop="name"]',
               '.product-name',
               '.product-info h1',
-              '.pdp-title'
+              '.pdp-title',
+              '.sku-title h1',
+              '.product-details__title',
+              'h1.pl-Heading',
+              'h1[data-test="product-title"]',
+              'h1.Heading__StyledHeading',
+              'h1.product-details__title'
             ];
             
             // Image selectors
             const imageSelectors = [
+              '.primary-image img',
+              '.product-image img',
               'img.mainImage',
               '[data-testid="product-image"] img',
               '.product-photo img',
               '#landingImage',
               '[itemprop="image"]',
-              '.primary-image img',
-              '.product-image img',
               '.gallery-image img',
-              'picture img'
+              'picture img',
+              '.mediagallery__mainimage img',
+              '.ProductDetailImageThumbnail img',
+              '.ImageComponent img',
+              'img.hover-zoom-hero-image',
+              '.prod-hero-image img',
+              '[data-test="product-image"] img',
+              '.styles__ImageWrapper img'
             ];
             
             // Extract functions
@@ -966,7 +1021,10 @@ async function scrapeWithScrapingBee(url) {
               for (const selector of selectors) {
                 const element = $(selector).first();
                 if (element.length) {
-                  return element.text().trim();
+                  const text = element.text().trim();
+                  if (text && text.length > 0) {
+                    return text;
+                  }
                 }
               }
               return null;
@@ -976,7 +1034,10 @@ async function scrapeWithScrapingBee(url) {
               for (const selector of selectors) {
                 const element = $(selector).first();
                 if (element.length) {
-                  return element.attr('src') || element.attr('data-src');
+                  const src = element.attr('src') || element.attr('data-src') || element.attr('data-lazy');
+                  if (src && !src.includes('placeholder') && !src.includes('loading')) {
+                    return src;
+                  }
                 }
               }
               return null;
@@ -985,10 +1046,22 @@ async function scrapeWithScrapingBee(url) {
             // Extract variant info
             function extractVariant() {
               const variantTexts = [];
-              $('[data-selected="true"], .selected-option, .variant-selected').each((i, el) => {
+              
+              // Look for selected options
+              $('[data-selected="true"], .selected-option, .variant-selected, .option-selected').each((i, el) => {
                 const text = $(el).text().trim();
                 if (text) variantTexts.push(text);
               });
+              
+              // Look for color/size selections
+              $('.color-selected, .size-selected, [data-color], [data-size]').each((i, el) => {
+                const $el = $(el);
+                const color = $el.attr('data-color') || $el.attr('title');
+                const size = $el.attr('data-size');
+                if (color) variantTexts.push('Color: ' + color);
+                if (size) variantTexts.push('Size: ' + size);
+              });
+              
               return variantTexts.join(', ') || null;
             }
             
@@ -997,7 +1070,9 @@ async function scrapeWithScrapingBee(url) {
               const text = $('body').text();
               const patterns = [
                 /(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*(?:inches|in|")/gi,
-                /L:\s*(\d+\.?\d*).*W:\s*(\d+\.?\d*).*H:\s*(\d+\.?\d*)/gi
+                /L:\s*(\d+\.?\d*).*W:\s*(\d+\.?\d*).*H:\s*(\d+\.?\d*)/gi,
+                /Length:\s*(\d+\.?\d*).*Width:\s*(\d+\.?\d*).*Height:\s*(\d+\.?\d*)/gi,
+                /(\d+\.?\d*)"?\s*[WL]\s*[x×]\s*(\d+\.?\d*)"?\s*[DW]\s*[x×]\s*(\d+\.?\d*)"?\s*[HT]/gi
               ];
               
               for (const pattern of patterns) {
@@ -1009,14 +1084,40 @@ async function scrapeWithScrapingBee(url) {
               return null;
             }
             
+            // Extract price more aggressively
+            function extractPrice() {
+              const priceText = extractText(priceSelectors);
+              if (!priceText) return null;
+              
+              // Try multiple price patterns
+              const patterns = [
+                /\$\s*([\d,]+\.?\d*)/,
+                /([\d,]+\.?\d*)\s*\$/,
+                /USD\s*([\d,]+\.?\d*)/i,
+                /([\d,]+\.?\d*)/
+              ];
+              
+              for (const pattern of patterns) {
+                const match = priceText.match(pattern);
+                if (match) {
+                  const price = parseFloat(match[1].replace(/,/g, ''));
+                  if (price > 0 && price < 100000) {
+                    return price;
+                  }
+                }
+              }
+              return null;
+            }
+            
             return {
               url: request.url,
               title: extractText(titleSelectors),
-              price: extractText(priceSelectors),
+              price: extractPrice(),
               image: extractImage(imageSelectors),
               variant: extractVariant(),
               dimensions: extractDimensions(),
-              description: $('.product-description, .product-details').text().slice(0, 500)
+              description: $('.product-description, .product-details, .product-info').text().slice(0, 500),
+              brand: $('.product-brand, .brand-name, [data-brand]').first().text().trim() || null
             };
           }
         `,
@@ -1025,11 +1126,11 @@ async function scrapeWithScrapingBee(url) {
         },
         maxRequestsPerCrawl: 10,
         maxRequestRetries: 2,
-        requestHandlerTimeoutSecs: 30
+        requestHandlerTimeoutSecs: 60
       });
 
       console.log('   ⏳ Waiting for Web Scraper...');
-      const result = await apifyClient.run(run.id).waitForFinish({ waitSecs: 30 });
+      await apifyClient.run(run.id).waitForFinish({ waitSecs: 60 });
       const { items } = await apifyClient.dataset(run.defaultDatasetId).listItems();
       
       if (items && items.length > 0) {
@@ -1038,13 +1139,10 @@ async function scrapeWithScrapingBee(url) {
         
         // Parse price
         let price = null;
-        if (item.price) {
-          const priceStr = item.price.toString();
-          const cleanPrice = priceStr.replace(/[^\d.,]/g, '').replace(/,/g, '');
-          const priceMatch = cleanPrice.match(/([\d]+\.?\d*)/);
-          if (priceMatch) {
-            price = parseFloat(priceMatch[1]);
-          }
+        if (typeof item.price === 'number') {
+          price = item.price;
+        } else if (item.price) {
+          price = parseFloat(item.price.toString().replace(/[^\d.]/g, ''));
         }
         
         console.log('   💰 Price:', price || 'Not found');
@@ -1057,7 +1155,7 @@ async function scrapeWithScrapingBee(url) {
           thumbnail: item.image,
           variant: item.variant,
           sku: null,
-          brand: null
+          brand: item.brand
         };
       }
       
@@ -1072,12 +1170,13 @@ async function scrapeWithScrapingBee(url) {
           startUrls: [{ url: url }],
           maxCrawlDepth: 0,
           maxCrawlPages: 1,
+          maxRequestRetries: 3,
           proxyConfiguration: {
             useApifyProxy: true
           }
         });
         
-        const result = await apifyClient.run(run.id).waitForFinish({ waitSecs: 30 });
+        await apifyClient.run(run.id).waitForFinish({ waitSecs: 60 });
         const { items } = await apifyClient.dataset(run.defaultDatasetId).listItems();
         
         if (items && items.length > 0) {
@@ -1087,15 +1186,35 @@ async function scrapeWithScrapingBee(url) {
           // Extract price from text content
           let price = null;
           if (item.text) {
-            const priceMatch = item.text.match(/\$\s*([\d,]+\.?\d*)/);
+            const pricePatterns = [
+              /\$\s*([\d,]+\.?\d*)/,
+              /Price:\s*\$?\s*([\d,]+\.?\d*)/i,
+              /Cost:\s*\$?\s*([\d,]+\.?\d*)/i,
+              /([\d,]+\.?\d*)\s*USD/i
+            ];
+            
+            for (const pattern of pricePatterns) {
+              const match = item.text.match(pattern);
+              if (match) {
+                price = parseFloat(match[1].replace(',', ''));
+                if (price > 0 && price < 100000) break;
+                price = null;
+              }
+            }
+          }
+          
+          // Extract title from text if not available
+          let title = item.title;
+          if (!title && item.text) {
+            const titleMatch = item.text.match(/^([^\n]{10,100})/);
             if (priceMatch) {
-              price = parseFloat(priceMatch[1].replace(',', ''));
+              title = titleMatch[1].trim();
             }
           }
           
           return {
             price: price,
-            title: item.title || 'Product',
+            title: title || 'Product',
             image: item.images?.[0] || null,
             thumbnail: item.images?.[0] || null,
             variant: null,
@@ -1120,40 +1239,55 @@ async function scrapeWithScrapingBee(url) {
         premium_proxy: 'true',
         country_code: 'us',
         render_js: 'true',
-        wait: '3000',
-        timeout: 30000
+        wait: '5000',
+        timeout: 45000,
+        block_ads: 'true',
+        block_resources: 'false'
       };
       
       // Simplified AI extraction for fallback
       scrapingParams.ai_extract_rules = JSON.stringify({
-        price: "Product Price, Sale Price, or Current Price in USD",
+        price: "Product Price, Sale Price, Current Price, or Regular Price in USD dollars",
         title: "Product Title or Name",
-        image: "Main Product Image URL",
-        variant: "Selected options (color, size, style)",
+        image: "Main Product Image URL or Primary Image",
+        variant: "Selected options like color, size, style, or configuration",
         sku: "SKU or Product ID",
-        brand: "Brand Name or Manufacturer"
+        brand: "Brand Name or Manufacturer",
+        availability: "Stock status or availability"
       });
       
       const response = await axios({
         method: 'GET',
         url: 'https://app.scrapingbee.com/api/v1',
         params: scrapingParams,
-        timeout: 20000
+        timeout: 50000
       });
       
       const data = response.data;
       
       let price = null;
       if (data.price) {
-        const priceStr = data.price.toString();
-        const cleanPrice = priceStr.replace(/[^\d.,]/g, '').replace(/,/g, '');
-        const priceMatch = cleanPrice.match(/([\d]+\.?\d*)/);
-        if (priceMatch) {
-          price = parseFloat(priceMatch[1]);
+        const pricePatterns = [
+          /\$\s*([\d,]+\.?\d*)/,
+          /([\d,]+\.?\d*)\s*\$/,
+          /USD\s*([\d,]+\.?\d*)/i,
+          /([\d,]+\.?\d*)/
+        ];
+        
+        for (const pattern of pricePatterns) {
+          const match = data.price.toString().match(pattern);
+          if (match) {
+            const testPrice = parseFloat(match[1].replace(/,/g, ''));
+            if (testPrice > 0 && testPrice < 100000) {
+              price = testPrice;
+              break;
+            }
+          }
         }
       }
       
       console.log(`   💰 ScrapingBee Price: ${price || 'Not found'}`);
+      console.log(`   📝 ScrapingBee Title: ${data.title || 'Not found'}`);
       
       return {
         price: price,
@@ -1166,7 +1300,12 @@ async function scrapeWithScrapingBee(url) {
       };
       
     } catch (error) {
-      console.log('   ❌ ScrapingBee also failed:', error.message);
+      console.log('   ❌ ScrapingBee also failed:', error.response?.status || error.message);
+      if (error.response?.status === 422) {
+        console.log('   ⚠️ ScrapingBee: Invalid URL or blocked content');
+      } else if (error.response?.status === 429) {
+        console.log('   ⚠️ ScrapingBee: Rate limit exceeded');
+      }
     }
   }
   
@@ -1193,6 +1332,11 @@ async function processProduct(url, index, urls) {
   if (learned && learned.price) {
     console.log('   📚 Using cached data from previous scrape');
     return { ...learned, fromCache: true };
+  }
+  
+  // Add delay between requests to avoid rate limiting
+  if (index > 0) {
+    await new Promise(resolve => setTimeout(resolve, 2000));
   }
   
   const scraped = await scrapeWithScrapingBee(url);
@@ -1270,6 +1414,7 @@ async function processProduct(url, index, urls) {
   console.log(`   Base Shipping: $${baseShippingCost}`);
   console.log(`   Order Subtotal: $${subtotal.toFixed(2)}`);
   console.log(`   Margin: ${(marginRate * 100).toFixed(0)}% of total order ($${marginAmount})`);
+  console.log(`   Success: ${scraped.price ? 'YES' : 'NO'} - ${scraped.title ? 'Title found' : 'No title'}`);
   
   learnFromProduct(url, product);
   return product;
@@ -1293,6 +1438,8 @@ app.post('/api/scrape', scrapeRateLimiter, async (req, res) => {
     
     console.log(`\n========================================`);
     console.log(`SCRAPING ${urls.length} PRODUCTS`);
+    console.log(`Apify Status: ${ENABLE_APIFY && apifyClient ? 'ENABLED' : 'DISABLED'}`);
+    console.log(`ScrapingBee Status: ${SCRAPINGBEE_API_KEY ? 'ENABLED' : 'DISABLED'}`);
     console.log(`========================================\n`);
     
     const products = [];
@@ -1303,6 +1450,7 @@ app.post('/api/scrape', scrapeRateLimiter, async (req, res) => {
         products.push(product);
       } catch (error) {
         console.error(`   ❌ Failed to process: ${error.message}`);
+        console.error(`   Stack trace:`, error.stack);
         
         const retailer = detectRetailer(urls[i]);
         products.push({
@@ -1340,6 +1488,8 @@ app.post('/api/scrape', scrapeRateLimiter, async (req, res) => {
     const flatPacked = products.filter(p => p.isFlatPack).length;
     const withVariants = products.filter(p => p.variant).length;
     const withThumbnails = products.filter(p => p.thumbnail && p.thumbnail !== p.image).length;
+    const withImages = products.filter(p => p.image && !p.image.includes('placehold')).length;
+    const withTitles = products.filter(p => p.name && !p.name.includes('Product from')).length;
     
     const marginDistribution = {};
     products.forEach(p => {
@@ -1349,13 +1499,16 @@ app.post('/api/scrape', scrapeRateLimiter, async (req, res) => {
     
     console.log(`\n========================================`);
     console.log(`RESULTS: ${products.length} products processed`);
-    console.log(`   Scraped: ${successful}`);
+    console.log(`   With prices: ${successful}`);
+    console.log(`   With titles: ${withTitles}`);
+    console.log(`   With images: ${withImages}`);
     console.log(`   From cache: ${fromCache}`);
     console.log(`   Failed: ${products.length - successful}`);
     console.log(`   Flat-packed: ${flatPacked}`);
     console.log(`   With variants: ${withVariants}`);
     console.log(`   With thumbnails: ${withThumbnails}`);
     console.log(`   Margin distribution:`, marginDistribution);
+    console.log(`   Success rate: ${((successful / products.length) * 100).toFixed(1)}%`);
     console.log(`========================================\n`);
     
     res.json({ 
@@ -1363,17 +1516,21 @@ app.post('/api/scrape', scrapeRateLimiter, async (req, res) => {
       summary: {
         total: products.length,
         successful: successful,
+        withTitles: withTitles,
+        withImages: withImages,
         fromCache: fromCache,
         failed: products.length - successful,
         flatPacked: flatPacked,
         withVariants: withVariants,
         withThumbnails: withThumbnails,
-        marginDistribution: marginDistribution
+        marginDistribution: marginDistribution,
+        successRate: ((successful / products.length) * 100).toFixed(1) + '%'
       }
     });
     
   } catch (error) {
     console.error('❌ Scraping endpoint error:', error);
+    console.error('Stack trace:', error.stack);
     res.status(500).json({ 
       error: 'Failed to scrape products',
       message: error.message 
