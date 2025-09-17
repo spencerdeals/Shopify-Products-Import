@@ -1,6 +1,7 @@
 // apifyScraper.js
 const axios = require('axios');
 const { ApifyClient } = require('apify-client');
+const { estimateCarton } = require('./boxEstimator'); // <-- NEW
 
 // NEW: optional GPT fallback
 const USE_GPT_FALLBACK = (process.env.USE_GPT_FALLBACK || 'false').toLowerCase() === 'true';
@@ -63,6 +64,41 @@ class ApifyScraper {
       }
     }
 
+    // If still nothing, return null (upstream estimator will handle)
+    if (!result) return null;
+
+    // ---------- Attach carton estimate (NEW) ----------
+    // Prefer explicit package/box dimensions if present (from GPT)
+    let dims = null;
+    if (result.package_dimensions && typeof result.package_dimensions === 'object') {
+      const l = Number(result.package_dimensions.length);
+      const w = Number(result.package_dimensions.width);
+      const h = Number(result.package_dimensions.height);
+      if ([l, w, h].every(Number.isFinite)) {
+        dims = { length: l, width: w, height: h };
+      }
+    }
+    // Or fall back to any product-level dimensions parsed by actors
+    if (!dims && result.dimensions && typeof result.dimensions === 'object') {
+      const d = result.dimensions;
+      if ([d.length, d.width, d.height].every(Number.isFinite)) {
+        dims = { length: d.length, width: d.width, height: d.height };
+      }
+    }
+
+    const carton = estimateCarton({
+      name: result.name,
+      breadcrumbs: result.breadcrumbs || [],
+      category: result.category || '',
+      vendor: retailer,
+      dimensions: dims || undefined,
+      weight: result.package_weight_lbs || result.weight || undefined,
+    });
+
+    result.carton = carton;
+    result.estimatedCartonFt3 = carton.volume_ft3;
+    result.isFlatPacked = carton.isFlatPacked;
+
     return result;
   }
 
@@ -71,7 +107,7 @@ class ApifyScraper {
       console.log('🏠 Scraping Wayfair with 123webdata/wayfair-scraper...');
       const input = { urls: [url] };
 
-      // Increased timeout and memory for better reliability
+      // Increased timeout/memory/wait for tougher pages
       const run = await this.client.actor('123webdata/wayfair-scraper').call(input, {
         timeout: 300000, // 5 min timeout for complex pages
         memory: 4096,    // More memory for stability
@@ -87,7 +123,7 @@ class ApifyScraper {
 
         let dimensions = null;
         if (item.dimensions) {
-          const dimMatch = item.dimensions.match(/(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)/);
+          const dimMatch = item.dimensions.match(/(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)/i);
           if (dimMatch) {
             dimensions = {
               length: parseFloat(dimMatch[1]),
@@ -105,6 +141,7 @@ class ApifyScraper {
           weight: item.weight || null,
           brand: item.brand || null,
           category: item.category || null,
+          breadcrumbs: item.breadcrumbs || [],
           inStock: item.inStock !== false
         };
       }
@@ -180,6 +217,7 @@ class ApifyScraper {
           weight: null,
           brand: null,
           category: null,
+          breadcrumbs: [],
           inStock: true
         };
       }
