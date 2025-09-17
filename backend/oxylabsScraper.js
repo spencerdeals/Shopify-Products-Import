@@ -448,6 +448,54 @@ class OxylabsScraper {
       }
     }
 
+    // Extract variant from HTML - color, size, style selections
+    const variantPatterns = [
+      // Selected options with various attributes
+      /class="[^"]*selected[^"]*"[^>]*>([^<]+)<\/[^>]+>/gi,
+      /aria-selected="true"[^>]*>([^<]+)<\/[^>]+>/gi,
+      /class="[^"]*active[^"]*"[^>]*>([^<]+)<\/[^>]+>/gi,
+      // Shopify variant selectors
+      /class="[^"]*variant[^"]*selected[^"]*"[^>]*>([^<]+)<\/[^>]+>/gi,
+      // Color/size/style specific
+      /data-value="([^"]+)"[^>]*(?:selected|checked)/gi,
+      /value="([^"]+)"[^>]*selected/gi,
+      // JSON structured data variants
+      /"selectedVariant"[^}]*"title":\s*"([^"]+)"/i,
+      /"variant"[^}]*"name":\s*"([^"]+)"/i,
+      // Meta property variants
+      /property="product:color"[^>]+content="([^"]+)"/i,
+      /property="product:size"[^>]+content="([^"]+)"/i
+    ];
+    
+    for (const pattern of variantPatterns) {
+      if (pattern.global) {
+        const matches = [...html.matchAll(pattern)];
+        for (const match of matches) {
+          const variant = match[1].trim();
+          // Filter out generic/invalid variants
+          if (variant.length >= 3 && variant.length <= 50 && 
+              !/^[\d\-_]+$/.test(variant) && 
+              !/^(select|choose|option|default|click|tap|add|cart|buy)$/i.test(variant)) {
+            data.variant = variant;
+            console.log('   🎨 Extracted variant:', data.variant);
+            break;
+          }
+        }
+        if (data.variant) break;
+      } else {
+        const match = html.match(pattern);
+        if (match && match[1]) {
+          const variant = match[1].trim();
+          if (variant.length >= 3 && variant.length <= 50 && 
+              !/^[\d\-_]+$/.test(variant) && 
+              !/^(select|choose|option|default|click|tap|add|cart|buy)$/i.test(variant)) {
+            data.variant = variant;
+            console.log('   🎨 Extracted variant:', data.variant);
+            break;
+          }
+        }
+      }
+    }
     // Check availability
     const outOfStockKeywords = /out of stock|unavailable|sold out|not available|temporarily unavailable/i;
     data.inStock = !outOfStockKeywords.test(html);
@@ -456,9 +504,10 @@ class OxylabsScraper {
       hasName: !!data.name,
       hasPrice: !!data.price,
       hasImage: !!data.image,
+      hasVariant: !!data.variant,
       hasDimensions: !!data.dimensions,
       hasWeight: !!data.weight
-    }
+    });
 
     return data;
   }
