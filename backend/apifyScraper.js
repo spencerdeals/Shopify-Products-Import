@@ -26,8 +26,6 @@ class ApifyScraper {
     try {
       console.log('🏠 Scraping Wayfair with multiple methods...');
       
-        urls: [url],
-        extractImages: true,
       // Try the specialized Wayfair scraper first
       try {
         const input = {
