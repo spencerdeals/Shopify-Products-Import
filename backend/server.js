@@ -263,21 +263,11 @@ function estimateDimensions(category, name = '') {
   }
   
   // Check if item is likely flat-packed
-  const isFlatPacked = /\b(ikea|wayfair|assembly|flat.pack|diy|assemble|kit)\b/i.test(text) ||
-                      category === 'furniture';
-  
-  // Flat-pack vs assembled dimension estimates
   const baseEstimates = {
-    'furniture': isFlatPacked ? {
-      // Flat-packed furniture - much thinner boxes
-      length: 70 + Math.random() * 20,  // Long boxes
-      width: 20 + Math.random() * 10,   // Narrow
-      height: 6 + Math.random() * 8     // Very thin (2-14")
-    } : {
-      // Pre-assembled furniture - bulky
-      length: 60 + Math.random() * 20,
-      width: 32 + Math.random() * 8,  
-      height: 32 + Math.random() * 8
+    'furniture': { 
+      length: 60 + Math.random() * 20,  // 60-80"
+      width: 30 + Math.random() * 10,   // 30-40"
+      height: 30 + Math.random() * 10   // 30-40"
     },
     'electronics': { 
       length: 18 + Math.random() * 15,
@@ -332,8 +322,6 @@ function estimateDimensions(category, name = '') {
   };
   
   const estimate = baseEstimates[category] || baseEstimates['general'];
-  
-  console.log(`   📦 ${isFlatPacked ? 'FLAT-PACKED' : 'ASSEMBLED'} ${category} estimated`);
   
   return {
     length: Math.round(estimate.length * 10) / 10,
