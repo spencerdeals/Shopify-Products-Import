@@ -1,507 +1,664 @@
-const express = require('express');
-const cors = require('cors');
-const rateLimit = require('express-rate-limit');
-const axios = require('axios');
-const path = require('path');
-const { URL } = require('url');
-const ApifyScraper = require('./apifyScraper');
-const OrderTracker = require('./orderTracking');
-const UPCItemDB = require('./upcitemdb');
-const ProWebCrawler = require('./proWebCrawler');
-const AmazonCrawler = require('./amazonCrawler');
-require('dotenv').config();
-
-// Import GPT parser if available, with fallback
-let parseProduct;
-try {
-  const gptParser = require('./gptParser');
-  parseProduct = gptParser.parseProduct;
-  console.log('✅ GPT Parser loaded successfully');
-} catch (error) {
-  console.log('⚠️ GPT Parser not available:', error.message);
-  parseProduct = null;
-}
-
-const app = express();
-const PORT = process.env.PORT || 3000;
-
-// Configuration
-const SHOPIFY_DOMAIN = process.env.SHOPIFY_DOMAIN || 'spencer-deals-ltd.myshopify.com';
-const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN || '';
-const SCRAPINGBEE_API_KEY = process.env.SCRAPINGBEE_API_KEY || '';
-const UPCITEMDB_API_KEY = process.env.UPCITEMDB_API_KEY || '';
-const APIFY_API_KEY = process.env.APIFY_API_KEY || '';
-const BERMUDA_DUTY_RATE = 0.265;
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'sdl2024admin';
-
-// Initialize services
-const apifyScraper = new ApifyScraper(APIFY_API_KEY);
-const upcItemDB = new UPCItemDB(UPCITEMDB_API_KEY);
-const orderTracker = new OrderTracker();
-const proWebCrawler = new ProWebCrawler();
-const amazonCrawler = new AmazonCrawler();
-
-const USE_APIFY = apifyScraper.isAvailable();
-const USE_SCRAPINGBEE = !!SCRAPINGBEE_API_KEY;
-const USE_UPCITEMDB = !!UPCITEMDB_API_KEY;
-const USE_PRO_CRAWLER = proWebCrawler.isAvailable();
-const USE_AMAZON_CRAWLER = amazonCrawler.isAvailable();
-
-// FAST timeouts for speed
-const SCRAPING_TIMEOUT = 15000;  // 15 seconds max for speed
-const MAX_CONCURRENT_SCRAPES = 3;
-
-console.log('=== SERVER STARTUP ===');
-console.log(`Port: ${PORT}`);
-console.log(`Shopify Domain: ${SHOPIFY_DOMAIN}`);
-console.log('');
-console.log('🔍 SCRAPING CONFIGURATION:');
-console.log(`1. Amazon Specialist: Amazon-Crawler - ${USE_AMAZON_CRAWLER ? '✅ ENABLED' : '❌ DISABLED'}`);
-console.log(`2. Primary: Apify - ${USE_APIFY ? '✅ ENABLED' : '❌ DISABLED'}`);
-console.log(`3. Secondary: ProWebCrawler - ${USE_PRO_CRAWLER ? '✅ ENABLED' : '❌ DISABLED'}`);
-console.log(`4. Tertiary: ScrapingBee - ${USE_SCRAPINGBEE ? '✅ ENABLED' : '❌ DISABLED'}`);
-console.log(`5. Fallback: GPT Parser - ${parseProduct ? '✅ ENABLED' : '❌ DISABLED'}`);
-console.log(`6. Enhancement: UPCitemdb - ${USE_UPCITEMDB ? '✅ ENABLED' : '❌ DISABLED'}`);
-console.log('=====================');
-
-// Middleware
-app.use(cors());
-app.use(express.json({ limit: '5mb' }));
-app.set('trust proxy', true);
-
-// Serve frontend static files
-app.use(express.static(path.join(__dirname, '../frontend')));
-
-// Health check BEFORE rate limiter
-app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'OK', 
-    timestamp: new Date().toISOString(),
-    port: PORT,
-    scraping: {
-      apify: USE_APIFY,
-      proWebCrawler: USE_PRO_CRAWLER,
-      scrapingbee: USE_SCRAPINGBEE,
-      gpt: !!parseProduct,
-      upcitemdb: USE_UPCITEMDB,
-      amazonCrawler: USE_AMAZON_CRAWLER
-    },
-    shopifyConfigured: !!SHOPIFY_ACCESS_TOKEN
-  });
-});
-
-// Admin authentication middleware
-function requireAuth(req, res, next) {
-  const auth = req.headers.authorization;
-  
-  if (!auth || !auth.startsWith('Basic ')) {
-    res.setHeader('WWW-Authenticate', 'Basic realm="SDL Admin"');
-    return res.status(401).send('Authentication required');
-  }
-  
-  const credentials = Buffer.from(auth.slice(6), 'base64').toString().split(':');
-  const username = credentials[0];
-  const password = credentials[1];
-  
-  if (username === 'admin' && password === ADMIN_PASSWORD) {
-    next();
-  } else {
-    res.setHeader('WWW-Authenticate', 'Basic realm="SDL Admin"');
-    res.status(401).send('Invalid credentials');
-  }
-}
-
-// Admin routes - BEFORE rate limiter
-app.get('/admin', requireAuth, (req, res) => {
-  const adminPath = path.join(__dirname, '../frontend', 'admin.html');
-  res.sendFile(adminPath, (err) => {
-    if (err) {
-      console.error('Error serving admin page:', err);
-      res.status(404).send('Admin page not found');
-    }
-  });
-});
-
-app.get('/admin.html', requireAuth, (req, res) => {
-  const adminPath = path.join(__dirname, '../frontend', 'admin.html');
-  res.sendFile(adminPath);
-});
-
-// Rate limiter
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 100,
-  trustProxy: 1,
-  keyGenerator: (req) => req.ip
-});
-app.use('/api/', limiter);
-
-// Utilities
-function generateProductId() {
-  return Date.now() + Math.random().toString(36).substr(2, 9);
-}
-
-function detectRetailer(url) {
-  try {
-    const domain = new URL(url).hostname.toLowerCase();
-    if (domain.includes('amazon.com')) return 'Amazon';
-    if (domain.includes('wayfair.com')) return 'Wayfair';
-    if (domain.includes('target.com')) return 'Target';
-    if (domain.includes('bestbuy.com')) return 'Best Buy';
-    if (domain.includes('walmart.com')) return 'Walmart';
-    if (domain.includes('homedepot.com')) return 'Home Depot';
-    if (domain.includes('lowes.com')) return 'Lowes';
-    if (domain.includes('costco.com')) return 'Costco';
-    if (domain.includes('macys.com')) return 'Macys';
-    if (domain.includes('ikea.com')) return 'IKEA';
-    if (domain.includes('overstock.com')) return 'Overstock';
-    if (domain.includes('bedbathandbeyond.com')) return 'Bed Bath & Beyond';
-    if (domain.includes('cb2.com')) return 'CB2';
-    if (domain.includes('crateandbarrel.com')) return 'Crate & Barrel';
-    if (domain.includes('westelm.com')) return 'West Elm';
-    if (domain.includes('potterybarn.com')) return 'Pottery Barn';
-    if (domain.includes('williams-sonoma.com')) return 'Williams Sonoma';
-    if (domain.includes('anthropologie.com')) return 'Anthropologie';
-    if (domain.includes('urbanoutfitters.com')) return 'Urban Outfitters';
-    if (domain.includes('nordstrom.com')) return 'Nordstrom';
-    return 'Unknown Retailer';
-  } catch (e) {
-    return 'Unknown Retailer';
-  }
-}
-
-function isAmazonUrl(url) {
-  try {
-    const domain = new URL(url).hostname.toLowerCase();
-    return domain.includes('amazon.com') || domain.includes('amazon.');
-  } catch (e) {
-    return false;
-  }
-}
-
-function isSDLDomain(url) {
-  try {
-    const domain = new URL(url).hostname.toLowerCase();
-    const blockedPatterns = [
-      'spencer-deals-ltd.myshopify.com',
-      'sdl.bm',
-      'spencer-deals',
-      'spencerdeals'
-    ];
-    return blockedPatterns.some(pattern => domain.includes(pattern));
-  } catch (e) {
-    return false;
-  }
-}
-
-function categorizeProduct(name, url) {
-  const text = (name + ' ' + url).toLowerCase();
-  
-  if (/\b(sofa|sectional|loveseat|couch|chair|recliner|ottoman|table|desk|dresser|nightstand|bookshelf|cabinet|wardrobe|armoire|bed|frame|headboard|mattress|dining|kitchen|office)\b/.test(text)) return 'furniture';
-  if (/\b(tv|television|monitor|laptop|computer|tablet|phone|smartphone|camera|speaker|headphone|earbuds|router|gaming|console|xbox|playstation|nintendo)\b/.test(text)) return 'electronics';
-  if (/\b(refrigerator|fridge|washer|dryer|dishwasher|microwave|oven|stove|range|freezer|ac|air.conditioner|heater|vacuum)\b/.test(text)) return 'appliances';
-  if (/\b(shirt|pants|dress|jacket|coat|shoes|boots|sneakers|clothing|apparel|jeans|sweater|hoodie|shorts|skirt)\b/.test(text)) return 'clothing';
-  if (/\b(book|novel|textbook|magazine|journal|encyclopedia|bible|dictionary)\b/.test(text)) return 'books';
-  if (/\b(toy|game|puzzle|doll|action.figure|lego|playset|board.game|video.game|stuffed|plush)\b/.test(text)) return 'toys';
-  if (/\b(exercise|fitness|gym|bike|bicycle|treadmill|weights|dumbbells|yoga|golf|tennis|basketball|football|soccer)\b/.test(text)) return 'sports';
-  if (/\b(decor|decoration|vase|picture|frame|artwork|painting|candle|lamp|mirror|pillow|curtain|rug|carpet)\b/.test(text)) return 'home-decor';
-  if (/\b(tool|hardware|drill|saw|hammer|screwdriver|wrench|toolbox)\b/.test(text)) return 'tools';
-  if (/\b(garden|plant|pot|soil|fertilizer|hose|mower|outdoor)\b/.test(text)) return 'garden';
-  return 'general';
-}
-
-function estimateWeight(dimensions, category) {
-  const volume = dimensions.length * dimensions.width * dimensions.height;
-  const cubicFeet = volume / 1728;
-  const densityFactors = {
-    'furniture': 8, 'electronics': 15, 'appliances': 20, 'clothing': 3,
-    'books': 25, 'toys': 5, 'sports': 10, 'home-decor': 6, 'general': 8
-  };
-  const density = densityFactors[category] || 8;
-  const estimatedWeight = Math.max(1, cubicFeet * density);
-  return Math.round(estimatedWeight * 10) / 10;
-}
-
-function estimateDimensions(category, name = '') {
-  const text = name.toLowerCase();
-  
-  // Check if dimensions are in the name
-  const dimMatch = text.match(/(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)/);
-  if (dimMatch) {
-    const dims = {
-      length: Math.max(1, parseFloat(dimMatch[1]) * 1.2),
-      width: Math.max(1, parseFloat(dimMatch[2]) * 1.2), 
-      height: Math.max(1, parseFloat(dimMatch[3]) * 1.2)
-    };
-    
-    if (dims.length <= 120 && dims.width <= 120 && dims.height <= 120) {
-      return dims;
-    }
-  }
-  
-  // Enhanced category estimates
-  const baseEstimates = {
-    'furniture': { 
-      length: 48 + Math.random() * 30,
-      width: 30 + Math.random() * 20,  
-      height: 36 + Math.random() * 24
-    },
-    'electronics': { 
-      length: 18 + Math.random() * 15,
-      width: 12 + Math.random() * 8,
-      height: 8 + Math.random() * 6
-    },
-    'appliances': { 
-      length: 30 + Math.random() * 12,
-      width: 30 + Math.random() * 12,
-      height: 36 + Math.random() * 20
-    },
-    'clothing': { 
-      length: 12 + Math.random() * 6,
-      width: 10 + Math.random() * 6,
-      height: 2 + Math.random() * 2
-    },
-    'books': { 
-      length: 8 + Math.random() * 3,
-      width: 5 + Math.random() * 3,
-      height: 1 + Math.random() * 2
-    },
-    'toys': { 
-      length: 12 + Math.random() * 8,
-      width: 10 + Math.random() * 8,
-      height: 8 + Math.random() * 8
-    },
-    'sports': { 
-      length: 24 + Math.random() * 12,
-      width: 18 + Math.random() * 10,
-      height: 12 + Math.random() * 8
-    },
-    'home-decor': { 
-      length: 12 + Math.random() * 12,
-      width: 10 + Math.random() * 10,
-      height: 12 + Math.random() * 12
-    },
-    'tools': { 
-      length: 18 + Math.random() * 6,
-      width: 12 + Math.random() * 6,
-      height: 6 + Math.random() * 4
-    },
-    'garden': { 
-      length: 24 + Math.random() * 12,
-      width: 18 + Math.random() * 12,
-      height: 12 + Math.random() * 12
-    },
-    'general': { 
-      length: 14 + Math.random() * 8,
-      width: 12 + Math.random() * 6,
-      height: 10 + Math.random() * 6
-    }
-  };
-  
-  const estimate = baseEstimates[category] || baseEstimates['general'];
-  
-  return {
-    length: Math.round(estimate.length * 10) / 10,
-    width: Math.round(estimate.width * 10) / 10,
-    height: Math.round(estimate.height * 10) / 10
-  };
-}
-
-function estimateBoxDimensions(productDimensions, category) {
-  if (!productDimensions) return null;
-  
-  const paddingFactors = {
-    'electronics': 1.3,
-    'appliances': 1.2,
-    'furniture': 1.1,
-    'clothing': 1.4,
-    'books': 1.2,
-    'toys': 1.25,
-    'sports': 1.2,
-    'home-decor': 1.35,
-    'tools': 1.15,
-    'garden': 1.2,
-    'general': 1.25
-  };
-  
-  const factor = paddingFactors[category] || 1.25;
-  
-  return {
-    length: Math.round(productDimensions.length * factor * 10) / 10,
-    width: Math.round(productDimensions.width * factor * 10) / 10,
-    height: Math.round(productDimensions.height * factor * 10) / 10
-  };
-}
-
-function calculateShippingCost(dimensions, weight, price) {
-  if (!dimensions) {
-    return Math.max(25, (price || 100) * 0.15);
-  }
-  
-  const cubicInches = dimensions.length * dimensions.width * dimensions.height;
-  const cubicFeet = cubicInches / 1728;
-  
-  const baseCost = Math.max(15, cubicFeet * 8); // $8 per cubic foot
-  const oversizeFee = Math.max(dimensions.length, dimensions.width, dimensions.height) > 48 ? 50 : 0;
-  const valueFee = price > 500 ? price * 0.02 : 0;
-  const handlingFee = 15;
-  
-  const totalCost = baseCost + oversizeFee + valueFee + handlingFee;
-  return Math.round(totalCost);
-}
-
-function isDataComplete(productData) {
-  return productData && 
-         productData.name && 
-         productData.name !== 'Unknown Product' &&
-         productData.image && 
-         productData.dimensions &&
-         productData.dimensions.length > 0 &&
-         productData.dimensions.width > 0 &&
-         productData.dimensions.height > 0;
-}
-
-function mergeProductData(primary, secondary) {
-  if (!primary) return secondary;
-  if (!secondary) return primary;
-  
-  return {
-    name: primary.name || secondary.name,
-    price: primary.price || secondary.price,
-    image: primary.image || secondary.image,
-    variant: primary.variant || secondary.variant,
-    dimensions: primary.dimensions || secondary.dimensions,
-    weight: primary.weight || secondary.weight,
-    brand: primary.brand || secondary.brand,
-    category: primary.category || secondary.category,
-    inStock: primary.inStock !== undefined ? primary.inStock : secondary.inStock
-  };
-}
-
-// Get optimal scraping order based on retailer
-function getOptimalScrapingOrder(retailer) {
-  // ScrapingBee works best for these retailers
-  const scrapingBeeFirst = ['Target', 'Best Buy', 'Walmart', 'Home Depot', 'Lowes', 'Costco'];
-  
-  // ProWebCrawler works best for these retailers  
-  const proWebFirst = ['IKEA', 'CB2', 'Crate & Barrel', 'West Elm', 'Pottery Barn', 'Anthropologie', 'Urban Outfitters'];
-  
-  // Apify works best for these retailers
-  const apifyFirst = ['Macys', 'Nordstrom', 'Overstock', 'Bed Bath & Beyond'];
-  
-  if (scrapingBeeFirst.includes(retailer)) {
-    return ['scrapingbee', 'apify', 'prowebcrawler'];
-  } else if (proWebFirst.includes(retailer)) {
-    return ['prowebcrawler', 'scrapingbee', 'apify'];
-  } else if (apifyFirst.includes(retailer)) {
-    return ['apify', 'prowebcrawler', 'scrapingbee'];
-  } else {
-    // Default order for unknown retailers
-    return ['prowebcrawler', 'apify', 'scrapingbee'];
-  }
-}
-
-// ScrapingBee scraper with better error handling
-async function scrapeWithScrapingBee(url) {
-  if (!USE_SCRAPINGBEE) {
-    throw new Error('ScrapingBee not configured');
-  }
-
-  try {
-    console.log('🐝 Starting ScrapingBee extraction...');
-    const startTime = Date.now();
-    
-    const response = await Promise.race([
-      axios({
-        method: 'GET',
-        url: 'https://app.scrapingbee.com/api/v1/',
-        params: {
-          api_key: SCRAPINGBEE_API_KEY,
-          url: url,
-          premium_proxy: 'false',
-          country_code: 'us',
-          render_js: 'false',
-          block_resources: 'true',
-          wait: '1000' // Reduce wait time for speed
-        },
-        timeout: 6000 // Faster timeout
-      }),
-      new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('ScrapingBee timeout')), 6000)
-      )
-    ]);
-
-    console.log(`   ✅ ScrapingBee completed in ${Date.now() - startTime}ms`);
-    
-    const html = response.data;
-    if (!html || typeof html !== 'string') {
-      throw new Error('No HTML content received');
-    }
-    
-    const productData = {
-      name: null,
-      price: null,
-      image: null,
-      variant: null,
-      dimensions: null,
-      weight: null,
-      brand: null,
-      inStock: true
-    };
-
-    // Extract title
-    const titlePatterns = [
-      /<h1[^>]*data-testid="[^"]*title[^"]*"[^>]*>([^<]+)<\/h1>/i,
-      /<h1[^>]*>([^<]+)<\/h1>/i,
-      /<title[^>]*>([^|<]+)/i
-    ];
-    
-    for (const pattern of titlePatterns) {
-      const match = html.match(pattern);
-      if (match && match[1].trim()) {
-        productData.name = match[1].trim().replace(/&[^;]+;/g, '').substring(0, 200);
-        console.log('   📝 Found title');
-        break;
-      }
-    }
-
-    // Extract variant information (color, size, style, etc.)
-    const variantPatterns = [
-      // Wayfair specific patterns
-      // More comprehensive Wayfair variant patterns
-      /class="[^"]*SelectedOption[^"]*"[^>]*>([^<]+)<\/[^>]*>/i,
-      /class="[^"]*selected[^"]*option[^"]*"[^>]*>([^<]+)<\/[^>]*>/i,
-      /data-testid="[^"]*selected[^"]*"[^>]*>([^<]+)<\/[^>]*>/i,
-      /aria-selected="true"[^>]*>([^<]+)<\/[^>]*>/i,
-      // JSON data patterns - more specific
-      /"selectedOptionName":\s*"([^"]{2,50})"/i,
-      /"optionName":\s*"([^"]{2,50})"/i,
-      /"selectedOption":\s*"([^"]{2,50})"/i,
-      /"currentOption":\s*"([^"]{2,50})"/i,
-      // Look for color/size in URL parameters
-      /piid=(\d+)/i,
-      // Generic variant patterns
-      /class="[^"]*color[^"]*selected[^"]*"[^>]*>([^<]+)<\/[^>]*>/i,
-      /class="[^"]*size[^"]*selected[^"]*"[^>]*>([^<]+)<\/[^>]*>/i,
-      // Structured data variants
-      /"variant":\s*"([^"]{2,50})"/i,
-      /"color":\s*"([^"]{2,50})"/i,
-      /"size":\s*"([^"]{2,50})"/i,
-      // Look for variant in meta tags
-      /property="product:color"[^>]+content="([^"]+)"/i,
-      /property="product:size"[^>]+content="([^"]+)"/i
-    ];
-    
-    for (const pattern of variantPatterns) {
-      const match = html.match(pattern);
-      if (match && match[1] && match[1].trim().length > 1 && match[1].trim().length < 50) {
-        productData.variant = match[1].trim().replace(/&[^;]+;/g, '');
-        // Skip generic/unhelpful variants
-        if (!productData.variant.match(/^(select|choose|option|default|none|n\/a)$/i)) {
-          console.log('   🎨 Found variant:', productData.variant);
-          break;
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SDL Instant Imports - Bermuda Import Calculator</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
         }
-      }
-    }
-    
-    // If no variant found, try extracting from URL parameters (Wayfair specific
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #7cb342 0%, #2e7d32 100%);
+            color: white;
+            padding: 40px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 3em;
+            margin-bottom: 10px;
+            font-weight: 300;
+        }
+        
+        .header p {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+        
+        .content {
+            padding: 40px;
+        }
+        
+        .section {
+            margin-bottom: 40px;
+            padding: 30px;
+            background: #f8f9fa;
+            border-radius: 15px;
+            border-left: 5px solid #7cb342;
+        }
+        
+        .section h2 {
+            color: #2e7d32;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+        }
+        
+        .url-input-section {
+            margin-bottom: 30px;
+        }
+        
+        .url-input-container {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        
+        .url-input {
+            flex: 1;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        
+        .url-input:focus {
+            outline: none;
+            border-color: #7cb342;
+        }
+        
+        .add-url-btn {
+            background: #7cb342;
+            color: white;
+            border: none;
+            padding: 15px 20px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background 0.3s;
+        }
+        
+        .add-url-btn:hover {
+            background: #689f38;
+        }
+        
+        .url-list {
+            margin-top: 20px;
+        }
+        
+        .url-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 15px;
+            background: white;
+            border-radius: 10px;
+            margin-bottom: 10px;
+            border: 1px solid #e0e0e0;
+        }
+        
+        .url-text {
+            flex: 1;
+            margin-right: 15px;
+            word-break: break-all;
+            color: #333;
+        }
+        
+        .remove-url-btn {
+            background: #f44336;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        
+        .remove-url-btn:hover {
+            background: #d32f2f;
+        }
+        
+        .calculate-btn {
+            background: linear-gradient(135deg, #7cb342 0%, #2e7d32 100%);
+            color: white;
+            border: none;
+            padding: 20px 40px;
+            border-radius: 25px;
+            font-size: 18px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            width: 100%;
+            margin-top: 20px;
+        }
+        
+        .calculate-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(124, 179, 66, 0.3);
+        }
+        
+        .calculate-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            display: none;
+        }
+        
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #7cb342;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .results {
+            display: none;
+        }
+        
+        .product-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .product-card {
+            background: white;
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            border: 1px solid #e0e0e0;
+        }
+        
+        .product-image {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+            border-radius: 10px;
+            margin-bottom: 15px;
+        }
+        
+        .product-name {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: #333;
+            line-height: 1.4;
+        }
+        
+        .product-details {
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 5px;
+        }
+        
+        .product-price {
+            font-size: 18px;
+            font-weight: 700;
+            color: #7cb342;
+            margin-top: 10px;
+        }
+        
+        .totals-section {
+            background: #f8f9fa;
+            padding: 30px;
+            border-radius: 15px;
+            border-left: 5px solid #7cb342;
+        }
+        
+        .totals-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .total-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px;
+            background: white;
+            border-radius: 10px;
+            border: 1px solid #e0e0e0;
+        }
+        
+        .total-label {
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .total-value {
+            font-weight: 700;
+            color: #7cb342;
+            font-size: 16px;
+        }
+        
+        .grand-total {
+            background: linear-gradient(135deg, #7cb342 0%, #2e7d32 100%);
+            color: white;
+            font-size: 18px;
+            margin-top: 20px;
+        }
+        
+        .grand-total .total-label,
+        .grand-total .total-value {
+            color: white;
+            font-size: 20px;
+        }
+        
+        .checkout-btn {
+            background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%);
+            color: white;
+            border: none;
+            padding: 20px 40px;
+            border-radius: 25px;
+            font-size: 18px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            width: 100%;
+            margin-top: 20px;
+        }
+        
+        .checkout-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(255, 107, 53, 0.3);
+        }
+        
+        .error {
+            background: #ffebee;
+            color: #c62828;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            border-left: 5px solid #f44336;
+        }
+        
+        .info-box {
+            background: #e3f2fd;
+            color: #1565c0;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            border-left: 5px solid #2196f3;
+        }
+        
+        .info-box h3 {
+            margin-bottom: 10px;
+            color: #0d47a1;
+        }
+        
+        .info-box ul {
+            margin-left: 20px;
+        }
+        
+        .info-box li {
+            margin-bottom: 5px;
+        }
+        
+        @media (max-width: 768px) {
+            .container {
+                margin: 10px;
+                border-radius: 15px;
+            }
+            
+            .header {
+                padding: 30px 20px;
+            }
+            
+            .header h1 {
+                font-size: 2em;
+            }
+            
+            .content {
+                padding: 20px;
+            }
+            
+            .section {
+                padding: 20px;
+            }
+            
+            .url-input-container {
+                flex-direction: column;
+            }
+            
+            .product-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .totals-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚢 SDL Instant Imports</h1>
+            <p>Calculate shipping costs and duties for importing to Bermuda</p>
+        </div>
+        
+        <div class="content">
+            <div class="section">
+                <h2>📦 Add Product URLs</h2>
+                <p style="margin-bottom: 20px; color: #666;">
+                    Paste product URLs from US retailers like Amazon, Wayfair, Target, Best Buy, Walmart, and more.
+                </p>
+                
+                <div class="url-input-section">
+                    <div class="url-input-container">
+                        <input type="url" id="urlInput" class="url-input" 
+                               placeholder="https://www.amazon.com/product-name/dp/B123456789" 
+                               onkeypress="handleUrlKeyPress(event)">
+                        <button onclick="addUrl()" class="add-url-btn">Add URL</button>
+                    </div>
+                    
+                    <div id="urlList" class="url-list"></div>
+                    
+                    <button onclick="calculateImport()" id="calculateBtn" class="calculate-btn" disabled>
+                        🧮 Calculate Import Costs
+                    </button>
+                </div>
+            </div>
+            
+            <div class="info-box">
+                <h3>ℹ️ How it works:</h3>
+                <ul>
+                    <li>Add product URLs from US retailers</li>
+                    <li>We'll scrape product details and calculate shipping costs</li>
+                    <li>Bermuda duty (26.5%) is automatically calculated</li>
+                    <li>Complete your order through our secure checkout</li>
+                    <li>We handle the entire import process for you</li>
+                </ul>
+            </div>
+            
+            <div id="loading" class="loading">
+                <div class="spinner"></div>
+                <p>Analyzing products and calculating costs...</p>
+                <p style="font-size: 14px; color: #666; margin-top: 10px;">This may take a few moments</p>
+            </div>
+            
+            <div id="results" class="results">
+                <div class="section">
+                    <h2>📋 Import Calculation Results</h2>
+                    <div id="productGrid" class="product-grid"></div>
+                </div>
+                
+                <div id="totalsSection" class="totals-section">
+                    <h2>💰 Cost Breakdown</h2>
+                    <div id="totalsGrid" class="totals-grid"></div>
+                    
+                    <button onclick="proceedToCheckout()" class="checkout-btn">
+                        🛒 Proceed to Checkout
+                    </button>
+                </div>
+            </div>
+            
+            <div id="errorSection" style="display: none;"></div>
+        </div>
+    </div>
+
+    <script>
+        let urls = [];
+        let calculationResults = null;
+
+        function handleUrlKeyPress(event) {
+            if (event.key === 'Enter') {
+                addUrl();
+            }
+        }
+
+        function addUrl() {
+            const input = document.getElementById('urlInput');
+            const url = input.value.trim();
+            
+            if (!url) {
+                showError('Please enter a URL');
+                return;
+            }
+            
+            if (!isValidUrl(url)) {
+                showError('Please enter a valid URL');
+                return;
+            }
+            
+            if (urls.includes(url)) {
+                showError('This URL has already been added');
+                return;
+            }
+            
+            urls.push(url);
+            input.value = '';
+            updateUrlList();
+            updateCalculateButton();
+            hideError();
+        }
+
+        function removeUrl(index) {
+            urls.splice(index, 1);
+            updateUrlList();
+            updateCalculateButton();
+        }
+
+        function updateUrlList() {
+            const urlList = document.getElementById('urlList');
+            
+            if (urls.length === 0) {
+                urlList.innerHTML = '';
+                return;
+            }
+            
+            urlList.innerHTML = urls.map((url, index) => `
+                <div class="url-item">
+                    <div class="url-text">${url}</div>
+                    <button onclick="removeUrl(${index})" class="remove-url-btn">Remove</button>
+                </div>
+            `).join('');
+        }
+
+        function updateCalculateButton() {
+            const btn = document.getElementById('calculateBtn');
+            btn.disabled = urls.length === 0;
+        }
+
+        function isValidUrl(string) {
+            try {
+                new URL(string);
+                return true;
+            } catch (_) {
+                return false;
+            }
+        }
+
+        async function calculateImport() {
+            if (urls.length === 0) {
+                showError('Please add at least one product URL');
+                return;
+            }
+            
+            // Show loading
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('results').style.display = 'none';
+            document.getElementById('calculateBtn').disabled = true;
+            hideError();
+            
+            try {
+                const response = await fetch('/api/scrape', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ urls })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                
+                calculationResults = data;
+                displayResults(data);
+                
+            } catch (error) {
+                console.error('Calculation error:', error);
+                showError(`Failed to calculate import costs: ${error.message}`);
+            } finally {
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('calculateBtn').disabled = false;
+            }
+        }
+
+        function displayResults(data) {
+            const { products, summary } = data;
+            
+            // Display products
+            const productGrid = document.getElementById('productGrid');
+            productGrid.innerHTML = products.map(product => `
+                <div class="product-card">
+                    <img src="${product.image || 'https://placehold.co/300x200/7CB342/FFFFFF/png?text=SDL'}" 
+                         alt="${product.name}" class="product-image" 
+                         onerror="this.src='https://placehold.co/300x200/7CB342/FFFFFF/png?text=SDL'">
+                    <div class="product-name">${product.name}</div>
+                    <div class="product-details">Retailer: ${product.retailer}</div>
+                    <div class="product-details">Category: ${product.category}</div>
+                    ${product.dimensions ? `
+                        <div class="product-details">
+                            Dimensions: ${product.dimensions.length}" × ${product.dimensions.width}" × ${product.dimensions.height}"
+                        </div>
+                    ` : ''}
+                    ${product.weight ? `<div class="product-details">Weight: ${product.weight} lbs</div>` : ''}
+                    <div class="product-price">
+                        ${product.price ? `$${product.price.toFixed(2)}` : 'Price not available'}
+                    </div>
+                    <div class="product-details">Shipping: $${product.shippingCost}</div>
+                </div>
+            `).join('');
+            
+            // Calculate totals
+            const subtotal = products.reduce((sum, p) => sum + (p.price || 0), 0);
+            const totalShipping = products.reduce((sum, p) => sum + (p.shippingCost || 0), 0);
+            const dutyAmount = subtotal * 0.265; // 26.5% Bermuda duty
+            const grandTotal = subtotal + totalShipping + dutyAmount;
+            
+            // Display totals
+            const totalsGrid = document.getElementById('totalsGrid');
+            totalsGrid.innerHTML = `
+                <div class="total-item">
+                    <span class="total-label">Product Subtotal</span>
+                    <span class="total-value">$${subtotal.toFixed(2)}</span>
+                </div>
+                <div class="total-item">
+                    <span class="total-label">Shipping to Bermuda</span>
+                    <span class="total-value">$${totalShipping.toFixed(2)}</span>
+                </div>
+                <div class="total-item">
+                    <span class="total-label">Bermuda Duty (26.5%)</span>
+                    <span class="total-value">$${dutyAmount.toFixed(2)}</span>
+                </div>
+                <div class="total-item grand-total">
+                    <span class="total-label">Grand Total</span>
+                    <span class="total-value">$${grandTotal.toFixed(2)}</span>
+                </div>
+            `;
+            
+            // Store totals for checkout
+            calculationResults.totals = {
+                subtotal,
+                totalShipping,
+                dutyAmount,
+                grandTotal
+            };
+            
+            document.getElementById('results').style.display = 'block';
+        }
+
+        async function proceedToCheckout() {
+            if (!calculationResults) {
+                showError('No calculation results available');
+                return;
+            }
+            
+            try {
+                // Store the order data temporarily
+                const response = await fetch('/api/store-pending-order', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        products: calculationResults.products,
+                        totals: calculationResults.totals,
+                        originalUrls: urls.join('\n')
+                    })
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Failed to store order data');
+                }
+                
+                const result = await response.json();
+                
+                // Redirect to checkout page
+                window.location.href = `/complete-order.html?checkoutId=${result.orderId}`;
+                
+            } catch (error) {
+                console.error('Checkout error:', error);
+                showError(`Failed to proceed to checkout: ${error.message}`);
+            }
+        }
+
+        function showError(message) {
+            const errorSection = document.getElementById('errorSection');
+            errorSection.innerHTML = `<div class="error">${message}</div>`;
+            errorSection.style.display = 'block';
+        }
+
+        function hideError() {
+            document.getElementById('errorSection').style.display = 'none';
+        }
+
+        // Initialize
+        updateCalculateButton();
+    </script>
+</body>
+</html>
