@@ -24,49 +24,60 @@ class ApifyScraper {
     }
 
     try {
-      console.log('🔄 Starting Apify scrape for:', url);
+      console.log('🏠 Scraping Wayfair with multiple methods...');
       
-      const input = {
         urls: [url],
         extractImages: true,
-        extractProductInfo: true,
-        maxPages: 1,
-        outputFormat: 'json'
-      };
+      // Try the specialized Wayfair scraper first
+      try {
+        const input = {
+          startUrls: [{ url }],
+          maxRequestsPerCrawl: 1,
+          proxyConfiguration: { useApifyProxy: true }
+        };
 
       const actorId = 'apify/web-scraper';
 
       // Run the actor
-      const run = await this.client.actor(actorId).call(input, {
-        timeout: 30000,
-        memory: 256
-      });
+        const run = await this.client.actor('123webdata/wayfair-scraper').call(input, {
+          timeout: 45000,
+          memory: 512
+        });
 
       // Get results
-      const { items } = await this.client.dataset(run.defaultDatasetId).listItems();
-      
-      if (items && items.length > 0) {
-        const item = items[0];
-        console.log('✅ Apify scrape successful');
+        const { items } = await this.client.dataset(run.defaultDatasetId).listItems();
         
-        return {
-          name: item.title || item.name || null,
-          price: this.extractPrice(item),
-          image: item.image || item.imageUrl || null,
-          dimensions: this.extractDimensions(item),
-          weight: this.extractWeight(item),
-          brand: item.brand || null,
-          category: null,
-          inStock: item.availability !== 'out of stock'
-        };
+        if (items && items.length > 0) {
+          const item = items[0];
+          console.log('✅ Wayfair specialized scraper successful');
+          
+          const productData = {
+            name: item.productName || item.title || item.name || null,
+            price: this.extractPrice(item),
+            image: item.productImage || item.imageUrl || item.image || null,
+            dimensions: this.extractDimensions(item),
+            weight: this.extractWeight(item),
+            brand: item.brand || item.manufacturer || null,
+            category: null,
+            inStock: item.availability !== 'out of stock' && item.inStock !== false
+          };
+          
+          // If we got good data, return it
+          if (productData.name && productData.name !== 'null' && productData.price) {
+            return productData;
+          }
+        }
+      } catch (error) {
+        console.log('❌ Wayfair specialized scraper failed:', error.message);
       }
       
-      console.log('❌ Apify: No results found');
-      return null;
+      // Fallback to Pro Web Content Crawler for Wayfair
+      console.log('🔄 Falling back to Pro Web Content Crawler for Wayfair...');
+      return await this.scrapeWithProCrawler(url);
       
     } catch (error) {
-      console.error('❌ Apify scrape failed:', error.message);
-      throw error;
+      console.error('❌ All Wayfair scraping methods failed:', error.message);
+      return null;
     }
   }
 
@@ -85,20 +96,48 @@ class ApifyScraper {
 
   extractPrice(item) {
     // Try various price fields
-    const priceFields = ['price', 'currentPrice', 'salePrice', 'regularPrice'];
+    const priceFields = [
+      'price', 'currentPrice', 'salePrice', 'regularPrice', 
+      'productPrice', 'listPrice', 'retailPrice', 'finalPrice',
+      'priceRange', 'minPrice', 'maxPrice'
+    ];
     
     for (const field of priceFields) {
       if (item[field]) {
-        const price = typeof item[field] === 'string' ? 
-          parseFloat(item[field].replace(/[^0-9.]/g, '')) : 
-          parseFloat(item[field]);
+        let priceValue = item[field];
+        
+        // Handle price ranges - take the first/lower price
+        if (typeof priceValue === 'string' && priceValue.includes('-')) {
+          priceValue = priceValue.split('-')[0];
+        }
+        
+        const price = typeof priceValue === 'string' ? 
+          parseFloat(priceValue.replace(/[^0-9.]/g, '')) : 
+          parseFloat(priceValue);
         
         if (price > 0 && price < 50000) {
+          console.log(`   💰 Extracted price from ${field}: $${price}`);
           return price;
         }
       }
     }
     
+    // Try to extract from any text field that might contain price
+    const allFields = Object.keys(item);
+    for (const field of allFields) {
+      if (typeof item[field] === 'string' && item[field].includes('$')) {
+        const match = item[field].match(/\$(\d+(?:,\d{3})*(?:\.\d{2})?)/);
+        if (match) {
+          const price = parseFloat(match[1].replace(/,/g, ''));
+          if (price > 0 && price < 50000) {
+            console.log(`   💰 Extracted price from ${field} text: $${price}`);
+            return price;
+          }
+        }
+      }
+    }
+    
+    console.log('   ❌ No valid price found in item data');
     return null;
   }
 
