@@ -35,7 +35,7 @@ const SCRAPING_TIMEOUT = 15000;  // 15 seconds timeout
 const MAX_CONCURRENT_SCRAPES = 2;
 const BERMUDA_DUTY_RATE = 0.265;
 const USE_SCRAPINGBEE = !!SCRAPINGBEE_API_KEY;
-const SHIPPING_RATE_PER_CUBIC_FOOT = 8; // $8 per cubic foot as discussed
+const SHIPPING_RATE_PER_CUBIC_FOOT = 15; // $15 per cubic foot - more realistic for ocean freight
 
 // Initialize Apify scraper
 const apifyScraper = new ApifyScraper(APIFY_API_KEY);
@@ -281,9 +281,9 @@ function estimateDimensions(category, name = '') {
   
   const baseEstimates = {
     'furniture': { 
-      length: 48 + Math.random() * 30,  // 48-78" assembled dimensions
-      width: 30 + Math.random() * 20,   // 30-50" assembled dimensions  
-      height: 30 + Math.random() * 24   // 30-54" assembled dimensions
+      length: 60 + Math.random() * 40,  // 60-100" for furniture sets
+      width: 35 + Math.random() * 25,   // 35-60" for furniture sets  
+      height: 35 + Math.random() * 30   // 35-65" for furniture sets
     },
     'electronics': { 
       length: 18 + Math.random() * 15,
@@ -451,14 +451,16 @@ function calculateShippingCost(dimensions, weight, price) {
   const cubicInches = dimensions.length * dimensions.width * dimensions.height;
   const cubicFeet = cubicInches / 1728;
   
-  // Base rate: $8 per cubic foot
-  const baseCost = Math.max(15, cubicFeet * SHIPPING_RATE_PER_CUBIC_FOOT);
+  // Base rate: $15 per cubic foot (increased from $8)
+  const baseCost = Math.max(25, cubicFeet * 15);
   
-  // Add surcharges
-  const valueFee = price > 500 ? price * 0.02 : 0;
-  const handlingFee = 15;
+  // Add realistic surcharges for furniture
+  const oversizeFee = Math.max(dimensions.length, dimensions.width, dimensions.height) > 48 ? 75 : 0;
+  const valueFee = price > 300 ? price * 0.03 : 0; // 3% for items over $300
+  const handlingFee = 25; // Increased base handling
+  const fuelSurcharge = baseCost * 0.15; // 15% fuel surcharge
   
-  const totalCost = baseCost + valueFee + handlingFee;
+  const totalCost = baseCost + oversizeFee + valueFee + handlingFee + fuelSurcharge;
   
   return Math.round(totalCost);
 }
