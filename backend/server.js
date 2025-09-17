@@ -141,6 +141,16 @@ function detectRetailer(url) {
     if (domain.includes('costco.com')) return 'Costco';
     if (domain.includes('macys.com')) return 'Macys';
     if (domain.includes('ikea.com')) return 'IKEA';
+    if (domain.includes('lunafurn.com')) return 'Luna Furniture';
+    if (domain.includes('overstock.com')) return 'Overstock';
+    if (domain.includes('bedbathandbeyond.com')) return 'Bed Bath & Beyond';
+    if (domain.includes('cb2.com')) return 'CB2';
+    if (domain.includes('crateandbarrel.com')) return 'Crate & Barrel';
+    if (domain.includes('westelm.com')) return 'West Elm';
+    if (domain.includes('potterybarn.com')) return 'Pottery Barn';
+    if (domain.includes('ashleyfurniture.com')) return 'Ashley Furniture';
+    if (domain.includes('roomstogo.com')) return 'Rooms To Go';
+    if (domain.includes('livingspaces.com')) return 'Living Spaces';
     return 'Unknown Retailer';
   } catch (e) {
     return 'Unknown Retailer';
@@ -470,6 +480,8 @@ async function scrapeProduct(url) {
   if (USE_UPCITEMDB && productData && productData.name && (!productData.dimensions || !productData.weight)) {
     try {
       console.log('   📦 Attempting UPCitemdb lookup...');
+      // Add delay to avoid rate limiting
+      await new Promise(resolve => setTimeout(resolve, 1000));
       const upcData = await upcItemDB.searchByName(productData.name);
       
       if (upcData) {
@@ -547,7 +559,8 @@ async function scrapeProduct(url) {
       hasImage: !!productData.image,
       hasDimensions: !!productData.dimensions,
       hasWeight: !!productData.weight,
-      hasPrice: !!productData.price
+      hasPrice: !!productData.price,
+      hasVariant: !!productData.variant
     }
   };
   

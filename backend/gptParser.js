@@ -199,6 +199,7 @@ Return STRICT JSON with fields:
 - image (string URL)
 - brand (string, optional)
 - sku (string, optional)
+ - variant (string, optional - color, size, style if available)
 - availability (in_stock | out_of_stock | preorder | unknown)
 - breadcrumbs (array of strings, optional)
 
@@ -208,6 +209,7 @@ Rules:
 - "price" must be > 0 and realistic.
 - Prefer current selling price, not list/was/per-month.
 - "image" should be a primary product image URL if visible.
+ - "variant" should capture color, size, style variations if clearly shown
 `.trim();
 
   const user = `URL: ${url}\nExtract product data from the provided HTML and visible text.\nReturn ONLY JSON, no explanations.`;
@@ -237,6 +239,7 @@ Rules:
   const image = typeof data.image === 'string' && data.image.startsWith('http') ? data.image : null;
   const brand = typeof data.brand === 'string' && data.brand.trim() ? data.brand.trim() : null;
   const sku = typeof data.sku === 'string' && data.sku.trim() ? data.sku.trim() : null;
+  const variant = typeof data.variant === 'string' && data.variant.trim() ? data.variant.trim() : null;
 
   if (!name || !price || price <= 0 || price > 200000) {
     throw new Error('GPT parse missing/invalid required fields (name/price).');
@@ -257,6 +260,7 @@ Rules:
     url, name, price, currency, image, brand, sku, availability, breadcrumbs,
     dimensions: null, weight: null, category: breadcrumbs[breadcrumbs.length - 1] || null,
     inStock: availability === 'in_stock',
+    variant: variant,
     _meta: { vendor, model: MODEL, gptCallsUsed },
   };
 }
