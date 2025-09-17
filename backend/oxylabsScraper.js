@@ -305,7 +305,7 @@ class OxylabsScraper {
   }
 
   parseHtmlContent(html, url) {
-    // Basic HTML parsing fallback
+    // Enhanced HTML parsing with better regex patterns
     const data = {
       name: null,
       price: null,
@@ -318,30 +318,146 @@ class OxylabsScraper {
       inStock: true
     };
 
-    // Extract title from HTML
-    const titleMatch = html.match(/<h1[^>]*>([^<]+)<\/h1>/i) || 
-                      html.match(/<title[^>]*>([^<]+)<\/title>/i);
-    if (titleMatch) {
-      data.name = titleMatch[1].trim().replace(/&[^;]+;/g, '');
+    // Extract title from HTML - multiple patterns
+    const titlePatterns = [
+      /<h1[^>]*class="[^"]*product[^"]*title[^"]*"[^>]*>([^<]+)<\/h1>/i,
+      /<h1[^>]*data-testid="[^"]*title[^"]*"[^>]*>([^<]+)<\/h1>/i,
+      /<h1[^>]*>([^<]+)<\/h1>/i,
+      /<title[^>]*>([^<]+?)\s*[-|]\s*[^<]*<\/title>/i, // Remove site name from title
+      /"name"\s*:\s*"([^"]+)"/i, // JSON-LD structured data
+      /property="og:title"[^>]+content="([^"]+)"/i
+    ];
+    
+    for (const pattern of titlePatterns) {
+      const match = html.match(pattern);
+      if (match && match[1].trim()) {
+        data.name = match[1].trim()
+          .replace(/&[^;]+;/g, '') // Remove HTML entities
+          .replace(/\s+/g, ' ') // Normalize whitespace
+          .substring(0, 200); // Limit length
+        console.log('   📝 Extracted title:', data.name.substring(0, 50) + '...');
+        break;
+      }
     }
 
-    // Extract price from HTML
-    const priceMatches = html.match(/\$(\d+(?:,\d{3})*(?:\.\d{2})?)/g);
-    if (priceMatches) {
-      for (const match of priceMatches) {
-        const price = parseFloat(match.replace(/[$,]/g, ''));
-        if (price > 0 && price < 100000) {
-          data.price = price;
+    // Extract price from HTML - enhanced patterns
+    const pricePatterns = [
+      /class="[^"]*price[^"]*"[^>]*>[\s\S]*?\$(\d+(?:,\d{3})*(?:\.\d{2})?)/i,
+      /data-testid="[^"]*price[^"]*"[^>]*>[\s\S]*?\$(\d+(?:,\d{3})*(?:\.\d{2})?)/i,
+      /"price"\s*:\s*"?\$?(\d+(?:,\d{3})*(?:\.\d{2})?)"?/i,
+      /property="product:price:amount"[^>]+content="([^"]+)"/i,
+      /\$(\d+(?:,\d{3})*(?:\.\d{2})?)/g // Fallback: any dollar amount
+    ];
+    
+    for (const pattern of pricePatterns) {
+      if (pattern.global) {
+        // Handle global regex differently
+        const matches = [...html.matchAll(pattern)];
+        for (const match of matches) {
+          const price = parseFloat(match[1].replace(/,/g, ''));
+          if (price > 0 && price < 100000) {
+            data.price = price;
+            console.log('   💰 Extracted price: $' + data.price);
+            break;
+          }
+        }
+        if (data.price) break;
+      } else {
+        const match = html.match(pattern);
+        if (match) {
+          const price = parseFloat(match[1].replace(/,/g, ''));
+          if (price > 0 && price < 100000) {
+            data.price = price;
+            console.log('   💰 Extracted price: $' + data.price);
+            break;
+          }
+        }
+      }
+    }
+
+    // Extract image from HTML - enhanced patterns
+    const imagePatterns = [
+      /class="[^"]*product[^"]*image[^"]*"[^>]*src="([^"]+)"/i,
+      /data-testid="[^"]*image[^"]*"[^>]*src="([^"]+)"/i,
+      /property="og:image"[^>]+content="([^"]+)"/i,
+      /"image"\s*:\s*"([^"]+)"/i,
+      /src="([^"]+)"[^>]*(?:alt="[^"]*product|class="[^"]*main)/i
+    ];
+    
+    for (const pattern of imagePatterns) {
+      const match = html.match(pattern);
+      if (match && match[1]) {
+        let imageUrl = match[1];
+        // Handle relative URLs
+        if (imageUrl.startsWith('//')) {
+          imageUrl = 'https:' + imageUrl;
+        } else if (imageUrl.startsWith('/')) {
+          try {
+            const urlObj = new URL(url);
+            imageUrl = urlObj.origin + imageUrl;
+          } catch (e) {
+            continue;
+          }
+        }
+        
+        if (imageUrl.startsWith('http')) {
+          data.image = imageUrl;
+          console.log('   🖼️ Extracted image URL');
           break;
         }
       }
     }
 
-    // Extract image from HTML
-    const imgMatch = html.match(/src="([^"]+)"[^>]*(?:product|main)/i) ||
-                    html.match(/property="og:image"[^>]+content="([^"]+)"/i);
-    if (imgMatch && imgMatch[1].startsWith('http')) {
-      data.image = imgMatch[1];
+    // Extract dimensions from HTML
+    const dimensionPatterns = [
+      /(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*(?:inches?|in\.?|")/i,
+      /dimensions?[^>]*>[\s\S]*?(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)/i,
+      /L:\s*(\d+(?:\.\d+)?).*?W:\s*(\d+(?:\.\d+)?).*?H:\s*(\d+(?:\.\d+)?)/i
+    ];
+    
+    for (const pattern of dimensionPatterns) {
+      const match = html.match(pattern);
+      if (match) {
+        data.dimensions = {
+          length: parseFloat(match[1]),
+          width: parseFloat(match[2]),
+          height: parseFloat(match[3])
+        };
+        console.log('   📏 Extracted dimensions:', data.dimensions);
+        break;
+      }
+    }
+
+    // Extract weight from HTML
+    const weightPatterns = [
+      /(\d+(?:\.\d+)?)\s*(?:pounds?|lbs?)/i,
+      /weight[^>]*>[\s\S]*?(\d+(?:\.\d+)?)\s*(?:pounds?|lbs?)/i,
+      /(\d+(?:\.\d+)?)\s*(?:kilograms?|kgs?)/i
+    ];
+    
+    for (const pattern of weightPatterns) {
+      const match = html.match(pattern);
+      if (match) {
+        let weight = parseFloat(match[1]);
+        // Convert kg to lbs if needed
+        if (/kg/i.test(match[0])) weight *= 2.205;
+        
+        data.weight = Math.round(weight * 10) / 10;
+        console.log('   ⚖️ Extracted weight:', data.weight + ' lbs');
+        break;
+      }
+    }
+
+    // Check availability
+    const outOfStockKeywords = /out of stock|unavailable|sold out|not available|temporarily unavailable/i;
+    data.inStock = !outOfStockKeywords.test(html);
+    
+    console.log('📦 Oxylabs HTML parsing results:', {
+      hasName: !!data.name,
+      hasPrice: !!data.price,
+      hasImage: !!data.image,
+      hasDimensions: !!data.dimensions,
+      hasWeight: !!data.weight
     }
 
     return data;
