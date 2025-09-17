@@ -369,108 +369,101 @@ async function scrapeProduct(url) {
   console.log(`\n📦 Processing: ${url}`);
   console.log(`   Retailer: ${retailer}`);
   
-  // STEP 1: Try Amazon-Crawler first for Amazon URLs
+  // PARALLEL SCRAPING: Try multiple methods simultaneously for speed
+  const scrapingPromises = [];
+  const scrapingResults = [];
+  
+  // Add Amazon-Crawler for Amazon URLs
   if (isAmazon && USE_AMAZON_CRAWLER) {
-    try {
-      console.log('   🛒 Attempting Amazon-Crawler (primary for Amazon)...');
-      productData = await amazonCrawler.scrapeProduct(url);
-      
-      if (productData) {
-        scrapingMethod = 'amazon-crawler';
-        console.log('   ✅ Amazon-Crawler returned data');
-        console.log(`   📷 Image: ${productData.image ? 'Found' : 'Using placeholder'}`);
-        console.log(`   🏷️ Variant: ${productData.variant ? cleanVariant(productData.variant) || 'Cleaned (was gibberish)' : 'None'}`);
-        
-        // Clean variant
-        productData.variant = cleanVariant(productData.variant);
-        
-        if (!isDataComplete(productData)) {
-          console.log('   WARNING: Data still incomplete, will try more fallbacks');
-        }
-      }
-    } catch (error) {
-      console.log('   ❌ Amazon-Crawler failed:', error.message);
-      productData = null;
-    }
+    scrapingPromises.push(
+      amazonCrawler.scrapeProduct(url)
+        .then(data => ({ method: 'amazon-crawler', data, priority: 1 }))
+        .catch(error => ({ method: 'amazon-crawler', error: error.message, priority: 1 }))
+    );
   }
   
-  // STEP 2: Try Apify for all retailers (primary for non-Amazon, fallback for Amazon)
-  if (USE_APIFY && (!productData || !isDataComplete(productData))) {
-    try {
-      console.log(`   🔄 Attempting Apify (${isAmazon ? 'Amazon fallback' : 'primary'})...`);
-      const apifyData = await apifyScraper.scrapeProduct(url);
-      
-      if (apifyData) {
-        if (!productData) {
-          productData = apifyData;
-          scrapingMethod = 'apify';
-          console.log('   ✅ Using Apify data');
+  // Add Apify (high priority for non-Amazon, medium for Amazon)
+  if (USE_APIFY) {
+    scrapingPromises.push(
+      apifyScraper.scrapeProduct(url)
+        .then(data => ({ method: 'apify', data, priority: isAmazon ? 2 : 1 }))
+        .catch(error => ({ method: 'apify', error: error.message, priority: isAmazon ? 2 : 1 }))
+    );
+  }
+  
+  // Add ProWebCrawler (medium priority)
+  if (USE_PROWEB) {
+    scrapingPromises.push(
+      proWebCrawler.scrapeProduct(url)
+        .then(data => ({ method: 'proweb', data, priority: 3 }))
+        .catch(error => ({ method: 'proweb', error: error.message, priority: 3 }))
+    );
+  }
+  
+  // Add GPT Parser (lowest priority, but still parallel)
+  scrapingPromises.push(
+    parseProduct(url)
+      .then(data => ({ method: 'gpt', data, priority: 4 }))
+      .catch(error => ({ method: 'gpt', error: error.message, priority: 4 }))
+  );
+  
+  // Wait for all scraping methods to complete (with timeout)
+  console.log(`   🚀 Running ${scrapingPromises.length} scrapers in parallel...`);
+  const timeoutPromise = new Promise(resolve => 
+    setTimeout(() => resolve({ method: 'timeout', error: 'Timeout reached' }), 25000)
+  );
+  
+  try {
+    const results = await Promise.allSettled([...scrapingPromises, timeoutPromise]);
+    
+    // Process successful results, sorted by priority
+    const successfulResults = results
+      .filter(result => result.status === 'fulfilled' && result.value.data)
+      .map(result => result.value)
+      .sort((a, b) => a.priority - b.priority);
+    
+    // Merge data from all successful scrapers
+    let mergedData = null;
+    const usedMethods = [];
+    
+    for (const result of successfulResults) {
+      if (result.data) {
+        if (!mergedData) {
+          mergedData = result.data;
+          usedMethods.push(result.method);
+          console.log(`   ✅ Primary data from: ${result.method}`);
         } else {
-          const mergedData = mergeProductData(productData, apifyData);
-          productData = mergedData;
-          scrapingMethod = scrapingMethod + '+apify';
-          console.log('   ✅ Merged with Apify data');
+          // Only merge if we're missing critical data
+          const beforeMerge = isDataComplete(mergedData);
+          mergedData = mergeProductData(mergedData, result.data);
+          const afterMerge = isDataComplete(mergedData);
+          
+          if (!beforeMerge && afterMerge) {
+            usedMethods.push(result.method);
+            console.log(`   ✅ Enhanced with: ${result.method}`);
+          }
         }
         
-        // Clean variant
-        productData.variant = cleanVariant(productData.variant);
-        console.log(`   🏷️ Variant: ${productData.variant || 'None/Cleaned'}`);
-      }
-    } catch (error) {
-      console.log('   ❌ Apify failed:', error.message);
-    }
-  }
-  
-  // STEP 3: Try ProWebCrawler
-  if (USE_PROWEB && (!productData || !isDataComplete(productData))) {
-    try {
-      console.log('   🕸️ Attempting ProWebCrawler...');
-      const proWebData = await proWebCrawler.scrapeProduct(url);
-      
-      if (proWebData) {
-        if (!productData) {
-          productData = proWebData;
-          scrapingMethod = 'proweb';
-          console.log('   ✅ Using ProWebCrawler data');
-        } else {
-          const mergedData = mergeProductData(productData, proWebData);
-          productData = mergedData;
-          scrapingMethod = scrapingMethod + '+proweb';
-          console.log('   ✅ Merged with ProWebCrawler data');
-        }
-        
-        // Clean variant
-        productData.variant = cleanVariant(productData.variant);
-      }
-    } catch (error) {
-      console.log('   ❌ ProWebCrawler failed:', error.message);
-    }
-  }
-  
-  // STEP 4: Try GPT Parser as fallback
-  if (!productData || !isDataComplete(productData)) {
-    try {
-      console.log('   🤖 Attempting GPT Parser (fallback)...');
-      const gptData = await parseProduct(url);
-      
-      if (gptData) {
-        if (!productData) {
-          productData = gptData;
-          scrapingMethod = 'gpt';
-          console.log('   ✅ Using GPT Parser data');
-        } else {
-          const mergedData = mergeProductData(productData, gptData);
-          productData = mergedData;
-          scrapingMethod = scrapingMethod + '+gpt';
-          console.log('   ✅ Merged with GPT Parser data');
+        // Stop merging if we have complete data
+        if (isDataComplete(mergedData)) {
+          break;
         }
       }
-    } catch (error) {
-      console.log('   ❌ GPT Parser failed:', error.message);
     }
+    
+    productData = mergedData;
+    scrapingMethod = usedMethods.join('+');
+    
+    // Clean variant
+    if (productData) {
+      productData.variant = cleanVariant(productData.variant);
+    }
+    
+  } catch (error) {
+    console.log('   ❌ Parallel scraping failed:', error.message);
   }
   
-  // STEP 5: Try UPCitemdb for missing dimensions
+  // STEP 2: Try UPCitemdb for missing dimensions (only if needed)
   if (USE_UPCITEMDB && productData && productData.name && (!productData.dimensions || !productData.weight)) {
     try {
       console.log('   📦 Attempting UPCitemdb lookup...');
@@ -497,7 +490,7 @@ async function scrapeProduct(url) {
     }
   }
   
-  // STEP 6: Use estimation for missing data
+  // STEP 3: Use estimation for missing data
   if (!productData) {
     productData = {
       name: 'Product from ' + retailer,
@@ -509,7 +502,7 @@ async function scrapeProduct(url) {
       variant: null
     };
     scrapingMethod = 'estimation';
-    console.log('   ⚠️ All methods failed, using estimation');
+    console.log('   WARNING All methods failed, using estimation');
   }
   
   // Fill in missing data with estimations
@@ -563,11 +556,14 @@ async function scrapeProduct(url) {
   return product;
 }
 
-async function processBatch(urls, batchSize = MAX_CONCURRENT_SCRAPES) {
+async function processBatch(urls, batchSize = 4) { // Increased from 2 to 4
   const results = [];
   for (let i = 0; i < urls.length; i += batchSize) {
     const batch = urls.slice(i, i + batchSize);
-    const batchResults = await Promise.all(
+    
+    console.log(`\n🔄 Processing batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(urls.length/batchSize)} (${batch.length} URLs)`);
+    
+    const batchResults = await Promise.allSettled(
       batch.map(url => scrapeProduct(url).catch(error => {
         console.error(`Failed to process ${url}:`, error);
         return {
@@ -581,7 +577,18 @@ async function processBatch(urls, batchSize = MAX_CONCURRENT_SCRAPES) {
         };
       }))
     );
-    results.push(...batchResults);
+    
+    // Extract successful results
+    const successfulResults = batchResults.map(result => 
+      result.status === 'fulfilled' ? result.value : result.reason
+    );
+    
+    results.push(...successfulResults);
+    
+    // Small delay between batches to avoid overwhelming servers
+    if (i + batchSize < urls.length) {
+      await new Promise(resolve => setTimeout(resolve, 500)); // Reduced from 2000ms
+    }
   }
   return results;
 }

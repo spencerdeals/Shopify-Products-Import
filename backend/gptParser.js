@@ -11,7 +11,7 @@ const TIMEOUT_MS = 30000;
 const MAX_AXIOS_RETRIES = 3;
 const DEFAULT_CURRENCY = (process.env.DEFAULT_CURRENCY || 'USD').toUpperCase();
 const ALLOWED_CURRENCIES = ['USD','BMD','CAD','GBP','EUR'];
-const MAX_GPT_CALLS_PER_RUN = parseInt(process.env.MAX_GPT_CALLS_PER_RUN || '100', 10);
+const MAX_GPT_CALLS_PER_RUN = parseInt(process.env.MAX_GPT_CALLS_PER_RUN || '200', 10); // Increased limit
 
 let gptCallsUsed = 0;
 
@@ -49,36 +49,29 @@ async function fetchViaScrapingBee(url){
   const key = process.env.SCRAPINGBEE_API_KEY;
   if (!key) return null;
 
-  const countries = ['US','CA','GB']; // Try US first, then CA
+  const countries = ['US']; // Only try US for speed, add others if needed
 
   for (const country of countries){
     try{
-      console.log(`[ScrapingBee] Trying ${country}...`);
       const res = await axios.get('https://app.scrapingbee.com/api/v1', {
-        timeout: TIMEOUT_MS,
+        timeout: 15000, // Reduced timeout for speed
         params: {
           api_key: key,
           url,
           render_js: 'false',  // Disable JS rendering to reduce 500 errors
           country_code: country,
           block_resources: 'true',  // Block images/css to speed up
-          premium_proxy: 'true',
-          wait: 2000
+          premium_proxy: 'false', // Disable premium for speed
+          wait: 1000 // Reduced wait time
         },
         validateStatus: () => true,
       });
       if (res.status >= 200 && res.status < 300 && res.data) {
-        console.log(`[ScrapingBee] OK via ${country}`);
         return typeof res.data === 'string' ? res.data : res.data.toString();
       }
-      console.warn(`[ScrapingBee] Status ${res.status} via ${country}: ${res.data?.message || 'Unknown error'}`);
       if (res.status !== 429 && (res.status < 500 || res.status >= 600)) return null;
-      
-      // Wait between country attempts
-      await sleep(1000);
     }catch(e){
-      console.warn('[ScrapingBee] Error:', e.message);
-      await sleep(1000);
+      // Silent fail for speed
     }
   }
   return null;
@@ -117,16 +110,15 @@ async function fetchViaApifySnapshot(url){
 
 async function fetchViaAxios(url){
   let lastErr = null;
-  for (let i=0;i<MAX_AXIOS_RETRIES;i++){
+  for (let i=0;i<2;i++){ // Reduced retries from 3 to 2
     try{
-      const delay = i * 2000; // Progressive delay
+      const delay = i * 1000; // Reduced delay
       if (i > 0) {
-        console.log(`[Axios] Waiting ${delay}ms before retry ${i+1}...`);
         await sleep(delay);
       }
       
       const res = await axios.get(url, {
-        timeout: TIMEOUT_MS,
+        timeout: 15000, // Reduced timeout
         headers: {
           'User-Agent': `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${rnd(118,126)} Safari/537.36`,
           'Accept-Language': 'en-US,en;q=0.9',
@@ -140,29 +132,23 @@ async function fetchViaAxios(url){
         validateStatus: () => true,
       });
       if (res.status === 200 && res.data){
-        console.log('[Axios] OK');
         return typeof res.data === 'string' ? res.data : res.data.toString();
       }
       if (res.status === 429){
-        const waitMs = 3000*(i+1) + rnd(0,2000); // Longer waits for 429
-        console.warn(`[Axios] 429. Retry ${i+1}/${MAX_AXIOS_RETRIES} after ${waitMs}ms`);
+        const waitMs = 1500*(i+1) + rnd(0,1000); // Reduced wait for 429
         await sleep(waitMs); continue;
       }
       if (res.status >= 500 && res.status < 600){
-        const waitMs = 2000*(i+1);
-        console.warn(`[Axios] ${res.status}. Retry ${i+1}/${MAX_AXIOS_RETRIES} after ${waitMs}ms`);
+        const waitMs = 1000*(i+1); // Reduced wait for 5xx
         await sleep(waitMs); continue;
       }
-      console.warn(`[Axios] Non-OK status: ${res.status}`);
       return null;
     }catch(e){
       lastErr = e;
-      const waitMs = 1500*(i+1);
-      console.warn(`[Axios] Error ${i+1}/${MAX_AXIOS_RETRIES}: ${e.message}. Waiting ${waitMs}ms...`);
+      const waitMs = 800*(i+1); // Reduced wait for errors
       await sleep(waitMs);
     }
   }
-  if (lastErr) console.warn('[Axios] Final error:', lastErr.message);
   return null;
 }
 
@@ -277,7 +263,7 @@ Rules:
 
 async function parseProduct(url, opts = {}){
   const { currencyFallback = DEFAULT_CURRENCY } = opts;
-  await sleep(rnd(200, 600));
+  await sleep(rnd(100, 300)); // Reduced random delay
   const html = await smartFetchHtml(url);
   if (!html) throw new Error('All HTML fetch methods failed (Bee/Apify/Axios).');
   return parseWithGPT({ url, html, currencyFallback });
