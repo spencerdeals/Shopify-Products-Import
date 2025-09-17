@@ -334,22 +334,26 @@ function estimateDimensions(category, name = '') {
 function estimateBoxDimensions(productDimensions, category) {
   if (!productDimensions) return null;
   
-  // Add padding based on category
+  // Add realistic packaging padding based on category
   const paddingFactors = {
-    'electronics': 1.3,  // More padding for fragile items
-    'appliances': 1.2,
-    'furniture': 1.1,   // Less padding for large items
-    'clothing': 1.4,     // More padding for soft goods
-    'books': 1.2,
-    'toys': 1.25,
-    'sports': 1.2,
-    'home-decor': 1.35,  // More padding for fragile decor
-    'tools': 1.15,
-    'garden': 1.2,
-    'general': 1.25
+    'electronics': 1.25,  // Moderate padding for fragile items
+    'appliances': 1.15,   // Minimal padding - usually well-packed
+    'furniture': 1.05,    // Very little padding - often flat-packed
+    'clothing': 1.3,      // More padding for soft goods
+    'books': 1.1,         // Minimal padding
+    'toys': 1.2,          // Moderate padding
+    'sports': 1.15,       // Usually compact packaging
+    'home-decor': 1.25,   // Moderate padding for fragile items
+    'tools': 1.1,         // Usually compact
+    'garden': 1.15,       // Usually efficient packaging
+    'general': 1.2
   };
   
   const factor = paddingFactors[category] || 1.25;
+  
+  console.log(`   📦 BOX DIMENSION CALCULATION:`);
+  console.log(`      Product dimensions: ${productDimensions.length}" x ${productDimensions.width}" x ${productDimensions.height}"`);
+  console.log(`      Category: ${category} (padding factor: ${factor}x)`);
   
   return {
     length: Math.round(productDimensions.length * factor * 10) / 10,
@@ -377,17 +381,15 @@ function calculateShippingCost(dimensions, weight, price) {
   const baseCost = Math.max(15, cubicFeet * SHIPPING_RATE_PER_CUBIC_FOOT);
   
   // Add surcharges
-  const oversizeFee = Math.max(dimensions.length, dimensions.width, dimensions.height) > 48 ? 50 : 0;
   const valueFee = price > 500 ? price * 0.02 : 0;
   const handlingFee = 15;
   
-  const totalCost = baseCost + oversizeFee + valueFee + handlingFee;
+  const totalCost = baseCost + valueFee + handlingFee;
   
   console.log(`   📦 SHIPPING CALCULATION BREAKDOWN:`);
   console.log(`      Dimensions: ${dimensions.length}" x ${dimensions.width}" x ${dimensions.height}"`);
   console.log(`      Volume: ${cubicInches.toFixed(0)} cubic inches = ${cubicFeet.toFixed(2)} cubic feet`);
   console.log(`      Base cost: ${cubicFeet.toFixed(2)} ft³ × $${SHIPPING_RATE_PER_CUBIC_FOOT} = $${baseCost.toFixed(2)}`);
-  console.log(`      Oversize fee (>48"): $${oversizeFee}`);
   console.log(`      Value fee (2% if >$500): $${valueFee.toFixed(2)}`);
   console.log(`      Handling fee: $${handlingFee}`);
   console.log(`      TOTAL SHIPPING: $${totalCost.toFixed(2)}`);
