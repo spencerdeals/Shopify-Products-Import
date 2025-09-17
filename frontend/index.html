@@ -9,7 +9,6 @@ async function createDraftOrder() {
     btn.textContent = 'Creating your order...';
     
     try {
-        // Get customer information directly in the frontend
         const customerName = prompt('Please enter your full name:');
         const customerEmail = prompt('Please enter your email address:');
         
@@ -17,7 +16,6 @@ async function createDraftOrder() {
             throw new Error('Customer information is required');
         }
         
-        // Validate email format
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         if (!emailRegex.test(customerEmail)) {
             throw new Error('Please enter a valid email address');
@@ -25,7 +23,6 @@ async function createDraftOrder() {
         
         btn.textContent = 'Processing order...';
         
-        // Create the order directly with Shopify
         const orderPayload = {
             products: finalCalculation.products,
             deliveryFees: finalCalculation.deliveryFees,
@@ -38,8 +35,6 @@ async function createDraftOrder() {
             },
             originalUrls: finalCalculation.originalUrls
         };
-        
-        console.log('Creating draft order with payload:', orderPayload);
         
         const response = await fetch('/apps/instant-import/create-draft-order', {
             method: 'POST',
@@ -56,28 +51,21 @@ async function createDraftOrder() {
         
         if (result.success) {
             btn.textContent = 'Order created successfully!';
-            
-            // Show success message
             alert(`✅ Order Created Successfully!\n\nOrder Number: ${result.draftOrderNumber}\nTotal: $${(result.totalAmount || 0).toFixed(2)}\n\nWhat happens next:\n• We'll review your order within 24 hours\n• If any adjustments are needed, we'll contact you\n• Once confirmed, we'll place the orders with US retailers\n• Estimated delivery: 3-5 weeks\n\nQuestions? Contact us at info@spencerdeals.bm`);
             
-            // Reset the form
             setTimeout(() => {
                 if (confirm('Would you like to start a new import calculation?')) {
                     location.reload();
                 }
             }, 2000);
-            
         } else {
             throw new Error(result.error || 'Failed to create order');
         }
         
     } catch (error) {
         console.error('Error creating order:', error);
-        
         btn.textContent = 'Confirm & Create Order';
         btn.disabled = false;
-        
-        // Show detailed error message
         alert(`❌ Error creating order:\n\n${error.message}\n\nPlease try again or contact support at info@spencerdeals.bm`);
     }
 }
