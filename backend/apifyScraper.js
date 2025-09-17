@@ -27,7 +27,7 @@ class ApifyScraper {
     console.log(`🔄 Apify scraping ${retailer} product...`);
 
     try {
-      // For Wayfair, use the Web Scraper with custom selectors
+      // For Wayfair, use the paid mscraper/wayfair-scraper
       if (retailer === 'Wayfair') {
         return await this.scrapeWayfair(url);
       }
@@ -43,140 +43,55 @@ class ApifyScraper {
 
   async scrapeWayfair(url) {
     try {
-      console.log('🏠 Scraping Wayfair with Web Scraper...');
+      console.log('🏠 Scraping Wayfair with paid mscraper/wayfair-scraper...');
       
       const input = {
-        startUrls: [{ url }],
-        pageFunction: `
-          async function pageFunction(context) {
-            const { page, request } = context;
-            
-            // Wait for page to load
-            await page.waitForTimeout(3000);
-            
-            // Extract product data
-            const result = await page.evaluate(() => {
-              // Product name
-              const nameSelectors = [
-                'h1[data-enzyme-id="ProductTitle"]',
-                'h1.ProductDetailInfoBlock-productTitle',
-                'h1[data-testid="product-title"]',
-                '.ProductDetailInfoBlock h1',
-                'h1'
-              ];
-              
-              let name = null;
-              for (const selector of nameSelectors) {
-                const element = document.querySelector(selector);
-                if (element && element.textContent.trim()) {
-                  name = element.textContent.trim();
-                  break;
-                }
-              }
-              
-              // Price
-              const priceSelectors = [
-                '[data-enzyme-id="PriceBlock"] .BaseFontStyles',
-                '.ProductDetailInfoBlock-price',
-                '[data-testid="price"]',
-                '.price',
-                '[class*="price"]'
-              ];
-              
-              let price = null;
-              for (const selector of priceSelectors) {
-                const element = document.querySelector(selector);
-                if (element) {
-                  const priceText = element.textContent;
-                  const match = priceText.match(/\\$([\\d,]+(?:\\.\\d{2})?)/);
-                  if (match) {
-                    price = parseFloat(match[1].replace(/,/g, ''));
-                    break;
-                  }
-                }
-              }
-              
-              // Image
-              const imageSelectors = [
-                '[data-enzyme-id="ProductImageCarousel"] img',
-                '.ProductImageCarousel img',
-                '.product-image img',
-                'img[data-testid="product-image"]'
-              ];
-              
-              let image = null;
-              for (const selector of imageSelectors) {
-                const element = document.querySelector(selector);
-                if (element && element.src) {
-                  image = element.src;
-                  break;
-                }
-              }
-              
-              // Dimensions from specifications
-              let dimensions = null;
-              const specElements = document.querySelectorAll('[data-testid="specifications"] tr, .specifications tr, .product-specs tr');
-              for (const row of specElements) {
-                const text = row.textContent.toLowerCase();
-                if (text.includes('dimension') || text.includes('size')) {
-                  const match = text.match(/(\\d+(?:\\.\\d+)?)\\s*[x×]\\s*(\\d+(?:\\.\\d+)?)\\s*[x×]\\s*(\\d+(?:\\.\\d+)?)/);
-                  if (match) {
-                    dimensions = {
-                      length: parseFloat(match[1]),
-                      width: parseFloat(match[2]),
-                      height: parseFloat(match[3])
-                    };
-                    break;
-                  }
-                }
-              }
-              
-              return {
-                name,
-                price,
-                image,
-                dimensions,
-                url: window.location.href
-              };
-            });
-            
-            return result;
-          }
-        `,
-        maxRequestsPerCrawl: 1,
-        proxyConfiguration: { useApifyProxy: true }
+        urls: [url]
       };
 
-      const run = await this.client.actor('apify/web-scraper').call(input, {
-        timeout: 60000,
-        memory: 1024
+      const run = await this.client.actor('mscraper/wayfair-scraper').call(input, {
+        timeout: 120000,
+        memory: 2048
       });
 
       const { items } = await this.client.dataset(run.defaultDatasetId).listItems();
       
       if (items && items.length > 0) {
         const item = items[0];
-        console.log('✅ Wayfair Web Scraper successful');
-        console.log('   📝 Name:', item.name?.substring(0, 50) + '...');
-        console.log('   💰 Price:', item.price ? `$${item.price}` : 'Not found');
+        console.log('✅ Wayfair mscraper successful');
+        console.log('   📝 Name:', (item.name || item.title || 'Not found').substring(0, 50) + '...');
+        console.log('   💰 Price:', item.price || item.currentPrice || 'Not found');
+        
+        // Parse dimensions if available
+        let dimensions = null;
+        if (item.dimensions) {
+          const dimMatch = item.dimensions.match(/(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)/);
+          if (dimMatch) {
+            dimensions = {
+              length: parseFloat(dimMatch[1]),
+              width: parseFloat(dimMatch[2]),
+              height: parseFloat(dimMatch[3])
+            };
+          }
+        }
         
         return {
-          name: item.name || null,
-          price: item.price || null,
-          image: item.image || null,
-          dimensions: item.dimensions || null,
-          weight: null,
-          brand: null,
-          category: null,
-          inStock: true
+          name: item.name || item.title || null,
+          price: item.price || item.currentPrice || null,
+          image: item.image || item.imageUrl || null,
+          dimensions: dimensions,
+          weight: item.weight || null,
+          brand: item.brand || null,
+          category: item.category || null,
+          inStock: item.inStock !== false
         };
       }
       
-      console.log('❌ Wayfair Web Scraper returned no data');
+      console.log('❌ Wayfair mscraper returned no data');
       return null;
       
     } catch (error) {
-      console.error('❌ Wayfair Web Scraper failed:', error.message);
+      console.error('❌ Wayfair mscraper failed:', error.message);
       return null;
     }
   }
