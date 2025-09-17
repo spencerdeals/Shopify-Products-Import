@@ -939,18 +939,6 @@
             box-shadow: 0 8px 25px rgba(255, 87, 34, 0.4);
         }
 
-        .nav-btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-            transform: none;
-            box-shadow: none;
-        }
-        
-        .nav-btn:disabled:hover {
-            transform: none;
-            box-shadow: none;
-        }
-
         @media (max-width: 768px) {
             .calculator-content {
                 padding: 15px 10px;
@@ -1204,6 +1192,9 @@
 
             originalUrls = urls;
             const urlList = urls.split('\n').filter(url => url.trim());
+            
+            // Hide the Calculate Total button during scraping
+            document.getElementById('calculateTotalBtn').style.display = 'none';
             
             if (urlList.length === 0) {
                 alert('Please enter valid product URLs');
