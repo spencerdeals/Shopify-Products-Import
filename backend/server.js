@@ -7,10 +7,14 @@ const { URL } = require('url');
 const ApifyScraper = require('./apifyScraper');
 require('dotenv').config();
 const UPCItemDB = require('./upcitemdb');
+const OrderTracker = require('./orderTracking');
 // const learningSystem = require('./learningSystem');  // TODO: Re-enable with PostgreSQL later
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Initialize order tracker
+const orderTracker = new OrderTracker();
 
 // Configuration
 const SHOPIFY_DOMAIN = process.env.SHOPIFY_DOMAIN || 'spencer-deals-ltd.myshopify.com';
@@ -166,6 +170,37 @@ app.get('/complete-order.html', (req, res) => {
     if (err) {
       console.error('Error serving complete-order page:', err);
       res.redirect('/');
+    }
+  });
+});
+
+// Serve admin page at multiple routes
+app.get('/admin', (req, res) => {
+  const adminPath = path.join(__dirname, '../frontend', 'admin.html');
+  res.sendFile(adminPath, (err) => {
+    if (err) {
+      console.error('Error serving admin page:', err);
+      res.status(404).send('Admin page not found');
+    }
+  });
+});
+
+app.get('/pages/imports/admin', (req, res) => {
+  const adminPath = path.join(__dirname, '../frontend', 'admin.html');
+  res.sendFile(adminPath, (err) => {
+    if (err) {
+      console.error('Error serving admin page:', err);
+      res.status(404).send('Admin page not found');
+    }
+  });
+});
+
+app.get('/admin.html', (req, res) => {
+  const adminPath = path.join(__dirname, '../frontend', 'admin.html');
+  res.sendFile(adminPath, (err) => {
+    if (err) {
+      console.error('Error serving admin page:', err);
+      res.status(404).send('Admin page not found');
     }
   });
 });
@@ -1586,6 +1621,63 @@ app.post('/api/check-status', async (req, res) => {
   } catch (error) {
     console.error('Manual status check error:', error);
     res.status(500).json({ error: 'Failed to check status' });
+  }
+});
+
+// Order tracking API endpoints
+app.post('/api/orders/:orderId/start-tracking', async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const { retailerOrders } = req.body;
+    
+    if (!retailerOrders || !Array.isArray(retailerOrders)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Retailer orders required' 
+      });
+    }
+    
+    const result = await orderTracker.startTracking(orderId, retailerOrders);
+    res.json(result);
+    
+  } catch (error) {
+    console.error('Start tracking error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to start tracking' 
+    });
+  }
+});
+
+app.post('/api/orders/:orderId/stop-tracking', async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const result = await orderTracker.stopTracking(orderId);
+    res.json(result);
+    
+  } catch (error) {
+    console.error('Stop tracking error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to stop tracking' 
+    });
+  }
+});
+
+app.get('/api/orders/:orderId/tracking-status', async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const status = await orderTracker.getTrackingStatus(orderId);
+    res.json(status);
+    
+  } catch (error) {
+    console.error('Get tracking status error:', error);
+    res.status(500).json({ 
+      isTracking: false, 
+      lastUpdate: null, 
+      retailerStatuses: {},
+      error: error.message 
+    });
   }
 });
 
