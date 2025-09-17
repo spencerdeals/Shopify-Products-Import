@@ -1,289 +1,1115 @@
-// Replace these functions in your frontend/index.html <script> section:
-
-// Fixed createDraftOrder function
-async function createDraftOrder() {
-    if (!finalCalculation) return;
-    
-    const btn = document.getElementById('createOrderBtn');
-    btn.disabled = true;
-    btn.textContent = 'Creating your order...';
-    
-    try {
-        const customerName = prompt('Please enter your full name:');
-        const customerEmail = prompt('Please enter your email address:');
-        
-        if (!customerName || !customerEmail) {
-            throw new Error('Customer information is required');
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SDL Instant Imports - Bermuda Import Calculator</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
         }
         
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(customerEmail)) {
-            throw new Error('Please enter a valid email address');
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
         }
         
-        btn.textContent = 'Processing order...';
-        
-        const orderPayload = {
-            products: finalCalculation.products,
-            deliveryFees: finalCalculation.deliveryFees,
-            totals: finalCalculation.totals,
-            customer: {
-                name: customerName,
-                email: customerEmail,
-                firstName: customerName.split(' ')[0],
-                lastName: customerName.split(' ').slice(1).join(' ')
-            },
-            originalUrls: finalCalculation.originalUrls
-        };
-        
-        const response = await fetch('/apps/instant-import/create-draft-order', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(orderPayload)
-        });
-        
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || `HTTP ${response.status}: Failed to create order`);
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
         }
         
-        const result = await response.json();
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 40px;
+        }
         
-        if (result.success) {
-            btn.textContent = 'Order created successfully!';
-            alert(`✅ Order Created Successfully!\n\nOrder Number: ${result.draftOrderNumber}\nTotal: $${(result.totalAmount || 0).toFixed(2)}\n\nWhat happens next:\n• We'll review your order within 24 hours\n• If any adjustments are needed, we'll contact you\n• Once confirmed, we'll place the orders with US retailers\n• Estimated delivery: 3-5 weeks\n\nQuestions? Contact us at info@spencerdeals.bm`);
+        .header h1 {
+            font-size: 3em;
+            font-weight: 300;
+            margin-bottom: 10px;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.3);
+        }
+        
+        .header p {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+        
+        .page {
+            display: none;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+            animation: fadeIn 0.5s ease-in;
+        }
+        
+        .page.active {
+            display: block;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .page-header {
+            background: linear-gradient(135deg, #7cb342 0%, #2e7d32 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .page-header h2 {
+            font-size: 2em;
+            font-weight: 300;
+            margin-bottom: 10px;
+        }
+        
+        .page-content {
+            padding: 40px;
+        }
+        
+        .form-group {
+            margin-bottom: 25px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .form-group textarea {
+            width: 100%;
+            min-height: 150px;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 16px;
+            font-family: inherit;
+            resize: vertical;
+            transition: border-color 0.3s;
+        }
+        
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #7cb342;
+        }
+        
+        .btn {
+            background: linear-gradient(135deg, #7cb342 0%, #2e7d32 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 25px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(124, 179, 66, 0.3);
+        }
+        
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .btn-secondary {
+            background: linear-gradient(135deg, #6c757d 0%, #495057 100%);
+        }
+        
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 40px;
+        }
+        
+        .loading.active {
+            display: block;
+        }
+        
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #7cb342;
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .error {
+            display: none;
+            background: #f8d7da;
+            color: #721c24;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            border-left: 5px solid #dc3545;
+        }
+        
+        .error.active {
+            display: block;
+        }
+        
+        .vendor-group {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 25px;
+            border-left: 5px solid #7cb342;
+        }
+        
+        .vendor-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .vendor-name {
+            font-size: 1.5em;
+            font-weight: 600;
+            color: #2e7d32;
+        }
+        
+        .delivery-fee-group {
+            background: white;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .product-item {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 15px;
+            border: 1px solid #e0e0e0;
+            transition: all 0.3s;
+        }
+        
+        .product-item:hover {
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+        
+        .product-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 15px;
+        }
+        
+        .product-info {
+            flex: 1;
+        }
+        
+        .product-name {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 5px;
+            line-height: 1.4;
+        }
+        
+        .product-details {
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+        
+        .product-image {
+            width: 80px;
+            height: 80px;
+            object-fit: cover;
+            border-radius: 8px;
+            margin-left: 15px;
+        }
+        
+        .product-controls {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr auto;
+            gap: 15px;
+            align-items: center;
+        }
+        
+        .input-group {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .input-group label {
+            font-size: 12px;
+            font-weight: 600;
+            color: #666;
+            margin-bottom: 5px;
+        }
+        
+        .input-group input {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+        
+        .input-group input:focus {
+            outline: none;
+            border-color: #7cb342;
+        }
+        
+        .input-group input.confirmed {
+            border-color: #28a745;
+            background-color: #f8fff9;
+        }
+        
+        .quantity-controls {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        .quantity-btn {
+            background: #e9ecef;
+            border: none;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.2s;
+        }
+        
+        .quantity-btn:hover {
+            background: #dee2e6;
+        }
+        
+        .quantity-display {
+            min-width: 40px;
+            text-align: center;
+            font-weight: 600;
+        }
+        
+        .delete-btn {
+            background: #dc3545;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.3s;
+        }
+        
+        .delete-btn:hover {
+            background: #c82333;
+            transform: translateY(-1px);
+        }
+        
+        .final-breakdown {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 30px;
+        }
+        
+        .breakdown-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        
+        .breakdown-row:last-child {
+            border-bottom: none;
+            font-weight: 600;
+            font-size: 1.2em;
+            color: #2e7d32;
+            border-top: 2px solid #7cb342;
+            padding-top: 15px;
+            margin-top: 10px;
+        }
+        
+        .navigation {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 40px;
+            background: #f8f9fa;
+            border-top: 1px solid #e0e0e0;
+        }
+        
+        .progress-indicator {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 30px;
+        }
+        
+        .progress-step {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: #e0e0e0;
+            color: #666;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            margin: 0 10px;
+            position: relative;
+        }
+        
+        .progress-step.active {
+            background: #7cb342;
+            color: white;
+        }
+        
+        .progress-step.completed {
+            background: #28a745;
+            color: white;
+        }
+        
+        .progress-step:not(:last-child)::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 100%;
+            width: 20px;
+            height: 2px;
+            background: #e0e0e0;
+            transform: translateY(-50%);
+        }
+        
+        .progress-step.completed:not(:last-child)::after {
+            background: #28a745;
+        }
+        
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+            }
             
-            setTimeout(() => {
-                if (confirm('Would you like to start a new import calculation?')) {
-                    location.reload();
+            .header h1 {
+                font-size: 2em;
+            }
+            
+            .page-content {
+                padding: 20px;
+            }
+            
+            .product-controls {
+                grid-template-columns: 1fr;
+                gap: 10px;
+            }
+            
+            .navigation {
+                padding: 15px 20px;
+                flex-direction: column;
+                gap: 15px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚢 SDL Instant Imports</h1>
+            <p>Calculate your Bermuda import costs instantly</p>
+        </div>
+
+        <!-- Progress Indicator -->
+        <div class="progress-indicator">
+            <div class="progress-step active" id="step1">1</div>
+            <div class="progress-step" id="step2">2</div>
+            <div class="progress-step" id="step3">3</div>
+        </div>
+
+        <!-- Page 1: URL Input -->
+        <div class="page active" id="page1">
+            <div class="page-header">
+                <h2>📦 Add Product URLs</h2>
+                <p>Paste the URLs of products you want to import to Bermuda</p>
+            </div>
+            <div class="page-content">
+                <div class="form-group">
+                    <label for="productUrls">Product URLs (one per line):</label>
+                    <textarea 
+                        id="productUrls" 
+                        placeholder="https://www.amazon.com/product-example&#10;https://www.wayfair.com/product-example&#10;https://www.target.com/product-example"
+                    ></textarea>
+                </div>
+                
+                <div class="loading" id="loading">
+                    <div class="spinner"></div>
+                    <p>Loading product information...</p>
+                </div>
+                
+                <div class="error" id="error"></div>
+            </div>
+            <div class="navigation">
+                <div></div>
+                <button class="btn" onclick="processUrls()">🔍 Load Products</button>
+            </div>
+        </div>
+
+        <!-- Page 2: Product Review -->
+        <div class="page" id="page2">
+            <div class="page-header">
+                <h2>✏️ Review & Confirm</h2>
+                <p>Verify product details and pricing</p>
+            </div>
+            <div class="page-content" id="vendorGroups">
+                <!-- Vendor groups will be populated here -->
+            </div>
+            <div class="navigation">
+                <button class="btn btn-secondary" onclick="goToPage(1)">← Back</button>
+                <button class="btn" onclick="calculateAndProceed()">💰 Calculate Total</button>
+            </div>
+        </div>
+
+        <!-- Page 3: Final Calculation -->
+        <div class="page" id="page3">
+            <div class="page-header">
+                <h2>📊 Import Cost Breakdown</h2>
+                <p>Your complete import calculation</p>
+            </div>
+            <div class="page-content">
+                <div id="finalBreakdown"></div>
+                
+                <div style="text-align: center; margin-top: 30px;">
+                    <button class="btn" id="createOrderBtn" onclick="createDraftOrder()">
+                        🚀 Confirm & Create Order
+                    </button>
+                </div>
+                
+                <div style="margin-top: 20px; padding: 20px; background: #e3f2fd; border-radius: 10px; font-size: 14px; color: #1565c0;">
+                    <strong>📋 What happens next:</strong><br>
+                    • We'll review your order and verify all product information<br>
+                    • If any adjustments are needed, we'll contact you within 24 hours<br>
+                    • Once confirmed, we'll place the orders with the US retailers<br>
+                    • Your items will be shipped to Bermuda via ocean freight<br>
+                    • Estimated delivery: 3-5 weeks from order confirmation
+                </div>
+            </div>
+            <div class="navigation">
+                <button class="btn btn-secondary" onclick="goToPage(2)">← Back to Review</button>
+                <button class="btn btn-secondary" onclick="startOver()">🔄 Start Over</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let scrapedProducts = [];
+        let vendorGroups = {};
+        let productQuantities = {};
+        let confirmedDeliveryFees = new Set();
+        let finalCalculation = null;
+
+        // Page navigation
+        function goToPage(pageNumber) {
+            // Hide all pages
+            document.querySelectorAll('.page').forEach(page => {
+                page.classList.remove('active');
+            });
+            
+            // Show target page
+            document.getElementById(`page${pageNumber}`).classList.add('active');
+            
+            // Update progress indicator
+            document.querySelectorAll('.progress-step').forEach((step, index) => {
+                step.classList.remove('active', 'completed');
+                if (index + 1 < pageNumber) {
+                    step.classList.add('completed');
+                } else if (index + 1 === pageNumber) {
+                    step.classList.add('active');
                 }
-            }, 2000);
-        } else {
-            throw new Error(result.error || 'Failed to create order');
+            });
         }
-        
-    } catch (error) {
-        console.error('Error creating order:', error);
-        btn.textContent = 'Confirm & Create Order';
-        btn.disabled = false;
-        alert(`❌ Error creating order:\n\n${error.message}\n\nPlease try again or contact support at info@spencerdeals.bm`);
-    }
-}
 
-// Fixed calculateTotals function with proper quantity support
-function calculateTotals(deliveryFees) {
-    let totalItemCost = 0;
-    let totalShippingCost = 0;
-    let totalDeliveryFees = 0;
-    const activeProducts = [];
-    
-    // Process all products with quantities
-    scrapedProducts.forEach((product, index) => {
-        if (product.deleted) return;
-        
-        // Get the price and quantity from inputs
-        const vendor = product.retailer || 'Unknown';
-        const vendorProducts = vendorGroups[vendor] || [];
-        const productIndex = vendorProducts.indexOf(product);
-        const productId = `${vendor.replace(/\s+/g, '')}-${productIndex}`;
-        const priceInput = document.getElementById(`price-${productId}`);
-        const quantity = productQuantities[productId] || 1;
-        
-        if (priceInput) {
-            product.price = parseFloat(priceInput.value) || 0;
-            product.quantity = quantity;
-        }
-        
-        if (product.price > 0) {
-            const itemTotal = product.price * quantity;
-            const shippingTotal = (product.shippingCost || 0) * quantity;
+        // Process URLs from textarea
+        async function processUrls() {
+            const textarea = document.getElementById('productUrls');
+            const urls = textarea.value
+                .split('\n')
+                .map(url => url.trim())
+                .filter(url => url && url.startsWith('http'));
             
-            totalItemCost += itemTotal;
-            totalShippingCost += shippingTotal;
-            activeProducts.push(product);
-        }
-    });
-    
-    // Sum delivery fees
-    Object.values(deliveryFees || {}).forEach(fee => {
-        totalDeliveryFees += fee || 0;
-    });
-    
-    // Calculate duty (26.5% on product cost only)
-    const dutyAmount = totalItemCost * 0.265;
-    
-    // Calculate subtotal before hidden fees
-    const subtotal = totalItemCost + dutyAmount + totalDeliveryFees + totalShippingCost;
-    
-    // Calculate hidden business costs
-    const profitMargin = subtotal * 0.15; // 15% profit margin
-    const cardProcessingFee = subtotal * 0.0375; // 3.75% card processing
-    const totalHiddenFees = profitMargin + cardProcessingFee;
-    
-    // Add hidden fees to shipping & handling (customer doesn't see breakdown)
-    const totalShippingAndHandling = totalShippingCost + totalHiddenFees;
-    
-    // Calculate grand total
-    const grandTotal = totalItemCost + dutyAmount + totalDeliveryFees + totalShippingAndHandling;
-    
-    return {
-        products: activeProducts,
-        deletedCount: scrapedProducts.filter(p => p.deleted).length,
-        deliveryFees: deliveryFees || {},
-        totals: {
-            totalItemCost: Math.round(totalItemCost * 100) / 100,
-            dutyAmount: Math.round(dutyAmount * 100) / 100,
-            totalDeliveryFees: Math.round(totalDeliveryFees * 100) / 100,
-            totalShippingAndHandling: Math.round(totalShippingAndHandling * 100) / 100,
-            grandTotal: Math.round(grandTotal * 100) / 100
-        },
-        originalUrls: document.getElementById('productUrls').value,
-        // Internal tracking (not displayed to customer)
-        _hiddenFees: {
-            profitMargin: Math.round(profitMargin * 100) / 100,
-            cardProcessingFee: Math.round(cardProcessingFee * 100) / 100,
-            totalHidden: Math.round(totalHiddenFees * 100) / 100
-        }
-    };
-}
-
-// Enhanced calculateAndProceed function with better validation
-async function calculateAndProceed() {
-    // Check for products that haven't been deleted
-    const activeProducts = scrapedProducts.filter(p => !p.deleted);
-    
-    if (activeProducts.length === 0) {
-        alert('No products remaining to calculate. Please add some products first.');
-        return;
-    }
-    
-    // Check for unconfirmed prices
-    const unconfirmedPrices = [];
-    const unconfirmedDeliveryFees = [];
-    
-    activeProducts.forEach((product, index) => {
-        const vendor = product.retailer || 'Unknown';
-        const vendorProducts = vendorGroups[vendor] || [];
-        const productIndex = vendorProducts.indexOf(product);
-        const productId = `${vendor.replace(/\s+/g, '')}-${productIndex}`;
-        
-        const priceInput = document.getElementById(`price-${productId}`);
-        if (priceInput && !priceInput.classList.contains('confirmed')) {
-            const price = parseFloat(priceInput.value) || 0;
-            if (price > 0) {
-                unconfirmedPrices.push(product.name);
-            } else {
-                alert(`Please enter a price for: ${product.name}`);
+            if (urls.length === 0) {
+                alert('Please enter at least one valid URL');
                 return;
             }
-        }
-    });
-    
-    // Check delivery fees
-    Object.keys(vendorGroups).forEach(vendor => {
-        const input = document.getElementById(`delivery-${vendor}`);
-        if (input && parseFloat(input.value) > 0 && !confirmedDeliveryFees.has(vendor)) {
-            unconfirmedDeliveryFees.push(vendor);
-        }
-    });
-    
-    // Warn about unconfirmed items
-    let warningMessage = '';
-    if (unconfirmedPrices.length > 0) {
-        warningMessage += `Unconfirmed prices for: ${unconfirmedPrices.join(', ')}\n`;
-    }
-    if (unconfirmedDeliveryFees.length > 0) {
-        warningMessage += `Unconfirmed delivery fees for: ${unconfirmedDeliveryFees.join(', ')}\n`;
-    }
-    
-    if (warningMessage) {
-        warningMessage += '\nUnconfirmed values may cause delays. Continue anyway?';
-        if (!confirm(warningMessage)) {
-            return;
-        }
-    }
-    
-    // Collect delivery fees
-    const deliveryFees = {};
-    Object.keys(vendorGroups).forEach(vendor => {
-        const input = document.getElementById(`delivery-${vendor}`);
-        if (input) {
-            deliveryFees[vendor] = parseFloat(input.value) || 0;
-        }
-    });
-    
-    // Calculate totals
-    const calculation = calculateTotals(deliveryFees);
-    finalCalculation = calculation;
-    
-    console.log('Final calculation:', calculation);
-    
-    // Display breakdown and go to final page
-    displayFinalBreakdown(calculation);
-    goToPage(3);
-}
-
-// Enhanced error handling for scrapeProducts function
-async function scrapeProducts(urls) {
-    document.getElementById('loading').classList.add('active');
-    document.getElementById('error').classList.remove('active');
-    
-    try {
-        console.log('Starting scrape for URLs:', urls);
-        
-        const response = await fetch('/api/scrape', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ urls })
-        });
-        
-        console.log('Scrape response status:', response.status);
-        
-        if (!response.ok) {
-            let errorMessage = `HTTP ${response.status}`;
-            try {
-                const errorData = await response.json();
-                errorMessage = errorData.error || errorMessage;
-            } catch (e) {
-                // If can't parse JSON, use status text
-                errorMessage = response.statusText || errorMessage;
+            
+            if (urls.length > 20) {
+                alert('Please limit to 20 products at a time');
+                return;
             }
-            throw new Error(errorMessage);
+            
+            await scrapeProducts(urls);
+            
+            if (scrapedProducts.length > 0) {
+                goToPage(2);
+            }
         }
-        
-        const data = await response.json();
-        console.log('Scrape response data:', data);
-        
-        if (!data.products || !Array.isArray(data.products)) {
-            throw new Error('Invalid response format - no products array');
+
+        // Scrape products from URLs
+        async function scrapeProducts(urls) {
+            document.getElementById('loading').classList.add('active');
+            document.getElementById('error').classList.remove('active');
+            
+            try {
+                console.log('Starting scrape for URLs:', urls);
+                
+                const response = await fetch('/api/scrape', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ urls })
+                });
+                
+                console.log('Scrape response status:', response.status);
+                
+                if (!response.ok) {
+                    let errorMessage = `HTTP ${response.status}`;
+                    try {
+                        const errorData = await response.json();
+                        errorMessage = errorData.error || errorMessage;
+                    } catch (e) {
+                        errorMessage = response.statusText || errorMessage;
+                    }
+                    throw new Error(errorMessage);
+                }
+                
+                const data = await response.json();
+                console.log('Scrape response data:', data);
+                
+                if (!data.products || !Array.isArray(data.products)) {
+                    throw new Error('Invalid response format - no products array');
+                }
+                
+                scrapedProducts = data.products;
+                vendorGroups = groupProductsByVendor(scrapedProducts);
+                
+                displayVendorGroups();
+                document.getElementById('loading').classList.remove('active');
+                
+                if (data.summary) {
+                    console.log('Scraping Summary:', data.summary);
+                }
+                
+                const successMsg = `Successfully loaded ${scrapedProducts.length} products! Please review and confirm all prices before proceeding.`;
+                console.log(successMsg);
+                
+            } catch (error) {
+                console.error('Scraping failed:', error);
+                document.getElementById('loading').classList.remove('active');
+                document.getElementById('error').classList.add('active');
+                document.getElementById('error').innerHTML = `
+                    <strong>Failed to load products:</strong><br>
+                    ${error.message}<br><br>
+                    <strong>Possible solutions:</strong><br>
+                    • Check that all URLs are valid and accessible<br>
+                    • Try again in a few moments<br>
+                    • Contact support if the problem persists
+                `;
+            }
         }
-        
-        scrapedProducts = data.products;
-        vendorGroups = groupProductsByVendor(scrapedProducts);
-        
-        displayVendorGroups();
-        document.getElementById('loading').classList.remove('active');
-        
-        // Show summary
-        if (data.summary) {
-            console.log('Scraping Summary:', data.summary);
+
+        // Group products by vendor
+        function groupProductsByVendor(products) {
+            const groups = {};
+            products.forEach(product => {
+                const vendor = product.retailer || 'Unknown';
+                if (!groups[vendor]) {
+                    groups[vendor] = [];
+                }
+                groups[vendor].push(product);
+            });
+            return groups;
         }
-        
-        // Show success message
-        const successMsg = `Successfully loaded ${scrapedProducts.length} products! Please review and confirm all prices before proceeding.`;
-        console.log(successMsg);
-        
-    } catch (error) {
-        console.error('Scraping failed:', error);
-        document.getElementById('loading').classList.remove('active');
-        document.getElementById('error').classList.add('active');
-        document.getElementById('error').innerHTML = `
-            <strong>Failed to load products:</strong><br>
-            ${error.message}<br><br>
-            <strong>Possible solutions:</strong><br>
-            • Check that all URLs are valid and accessible<br>
-            • Try again in a few moments<br>
-            • Contact support if the problem persists
-        `;
-    }
-}
+
+        // Display vendor groups
+        function displayVendorGroups() {
+            const container = document.getElementById('vendorGroups');
+            container.innerHTML = '';
+            
+            Object.entries(vendorGroups).forEach(([vendor, products]) => {
+                const vendorDiv = document.createElement('div');
+                vendorDiv.className = 'vendor-group';
+                
+                let vendorHtml = `
+                    <div class="vendor-header">
+                        <div class="vendor-name">${vendor}</div>
+                        <div>${products.length} product${products.length !== 1 ? 's' : ''}</div>
+                    </div>
+                    
+                    <div class="delivery-fee-group">
+                        <label>US Delivery Fee for ${vendor}:</label>
+                        <div style="display: flex; gap: 10px; align-items: center; margin-top: 8px;">
+                            <input type="number" 
+                                   id="delivery-${vendor}" 
+                                   placeholder="0.00" 
+                                   step="0.01" 
+                                   min="0"
+                                   style="flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 6px;">
+                            <button class="btn" style="padding: 8px 16px; font-size: 14px;" 
+                                    onclick="confirmDeliveryFee('${vendor}')">
+                                ✓ Confirm
+                            </button>
+                        </div>
+                        <small style="color: #666; margin-top: 5px; display: block;">
+                            Fee charged by ${vendor} to deliver to our US warehouse
+                        </small>
+                    </div>
+                `;
+                
+                products.forEach((product, index) => {
+                    if (product.deleted) return;
+                    
+                    const productId = `${vendor.replace(/\s+/g, '')}-${index}`;
+                    productQuantities[productId] = productQuantities[productId] || 1;
+                    
+                    vendorHtml += `
+                        <div class="product-item" id="product-${productId}">
+                            <div class="product-header">
+                                <div class="product-info">
+                                    <div class="product-name">${product.name}</div>
+                                    <div class="product-details">
+                                        Category: ${product.category} | 
+                                        Shipping: $${(product.shippingCost || 0).toFixed(2)} | 
+                                        Dimensions: ${product.dimensions ? 
+                                            `${product.dimensions.length}" × ${product.dimensions.width}" × ${product.dimensions.height}"` : 
+                                            'Estimated'}
+                                    </div>
+                                </div>
+                                ${product.image ? 
+                                    `<img src="${product.image}" alt="${product.name}" class="product-image" onerror="this.style.display='none'">` : 
+                                    ''}
+                            </div>
+                            
+                            <div class="product-controls">
+                                <div class="input-group">
+                                    <label>Price (USD)</label>
+                                    <input type="number" 
+                                           id="price-${productId}" 
+                                           value="${product.price || ''}" 
+                                           placeholder="0.00" 
+                                           step="0.01" 
+                                           min="0"
+                                           onchange="confirmPrice('${productId}')">
+                                </div>
+                                
+                                <div class="input-group">
+                                    <label>Quantity</label>
+                                    <div class="quantity-controls">
+                                        <button class="quantity-btn" onclick="changeQuantity('${productId}', -1)">-</button>
+                                        <span class="quantity-display" id="qty-${productId}">${productQuantities[productId]}</span>
+                                        <button class="quantity-btn" onclick="changeQuantity('${productId}', 1)">+</button>
+                                    </div>
+                                </div>
+                                
+                                <div class="input-group">
+                                    <label>Subtotal</label>
+                                    <div style="font-weight: 600; color: #2e7d32; padding: 8px 0;">
+                                        $<span id="subtotal-${productId}">0.00</span>
+                                    </div>
+                                </div>
+                                
+                                <button class="delete-btn" onclick="deleteProduct('${productId}')">
+                                    🗑️ Remove
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                vendorDiv.innerHTML = vendorHtml;
+                container.appendChild(vendorDiv);
+            });
+            
+            // Update all subtotals
+            updateAllSubtotals();
+        }
+
+        // Confirm price
+        function confirmPrice(productId) {
+            const input = document.getElementById(`price-${productId}`);
+            const price = parseFloat(input.value) || 0;
+            
+            if (price > 0) {
+                input.classList.add('confirmed');
+                updateSubtotal(productId);
+            } else {
+                input.classList.remove('confirmed');
+            }
+        }
+
+        // Change quantity
+        function changeQuantity(productId, delta) {
+            const currentQty = productQuantities[productId] || 1;
+            const newQty = Math.max(1, currentQty + delta);
+            
+            productQuantities[productId] = newQty;
+            document.getElementById(`qty-${productId}`).textContent = newQty;
+            
+            updateSubtotal(productId);
+        }
+
+        // Update subtotal for a product
+        function updateSubtotal(productId) {
+            const priceInput = document.getElementById(`price-${productId}`);
+            const price = parseFloat(priceInput.value) || 0;
+            const quantity = productQuantities[productId] || 1;
+            const subtotal = price * quantity;
+            
+            document.getElementById(`subtotal-${productId}`).textContent = subtotal.toFixed(2);
+        }
+
+        // Update all subtotals
+        function updateAllSubtotals() {
+            Object.keys(productQuantities).forEach(productId => {
+                updateSubtotal(productId);
+            });
+        }
+
+        // Confirm delivery fee
+        function confirmDeliveryFee(vendor) {
+            const input = document.getElementById(`delivery-${vendor}`);
+            const fee = parseFloat(input.value) || 0;
+            
+            if (fee >= 0) {
+                input.style.borderColor = '#28a745';
+                input.style.backgroundColor = '#f8fff9';
+                confirmedDeliveryFees.add(vendor);
+                
+                // Update button text
+                const button = input.nextElementSibling;
+                button.textContent = '✓ Confirmed';
+                button.style.background = '#28a745';
+            }
+        }
+
+        // Delete product
+        function deleteProduct(productId) {
+            if (confirm('Are you sure you want to remove this product?')) {
+                const productElement = document.getElementById(`product-${productId}`);
+                productElement.style.display = 'none';
+                
+                // Mark as deleted in the data
+                const [vendorKey, indexStr] = productId.split('-');
+                const vendor = Object.keys(vendorGroups).find(v => v.replace(/\s+/g, '') === vendorKey);
+                const index = parseInt(indexStr);
+                
+                if (vendor && vendorGroups[vendor][index]) {
+                    vendorGroups[vendor][index].deleted = true;
+                }
+            }
+        }
+
+        // Calculate and proceed to final page
+        async function calculateAndProceed() {
+            const activeProducts = scrapedProducts.filter(p => !p.deleted);
+            
+            if (activeProducts.length === 0) {
+                alert('No products remaining to calculate. Please add some products first.');
+                return;
+            }
+            
+            // Check for unconfirmed prices
+            const unconfirmedPrices = [];
+            const unconfirmedDeliveryFees = [];
+            
+            activeProducts.forEach((product, index) => {
+                const vendor = product.retailer || 'Unknown';
+                const vendorProducts = vendorGroups[vendor] || [];
+                const productIndex = vendorProducts.indexOf(product);
+                const productId = `${vendor.replace(/\s+/g, '')}-${productIndex}`;
+                
+                const priceInput = document.getElementById(`price-${productId}`);
+                if (priceInput && !priceInput.classList.contains('confirmed')) {
+                    const price = parseFloat(priceInput.value) || 0;
+                    if (price > 0) {
+                        unconfirmedPrices.push(product.name);
+                    } else {
+                        alert(`Please enter a price for: ${product.name}`);
+                        return;
+                    }
+                }
+            });
+            
+            // Check delivery fees
+            Object.keys(vendorGroups).forEach(vendor => {
+                const input = document.getElementById(`delivery-${vendor}`);
+                if (input && parseFloat(input.value) > 0 && !confirmedDeliveryFees.has(vendor)) {
+                    unconfirmedDeliveryFees.push(vendor);
+                }
+            });
+            
+            // Warn about unconfirmed items
+            let warningMessage = '';
+            if (unconfirmedPrices.length > 0) {
+                warningMessage += `Unconfirmed prices for: ${unconfirmedPrices.join(', ')}\n`;
+            }
+            if (unconfirmedDeliveryFees.length > 0) {
+                warningMessage += `Unconfirmed delivery fees for: ${unconfirmedDeliveryFees.join(', ')}\n`;
+            }
+            
+            if (warningMessage) {
+                warningMessage += '\nUnconfirmed values may cause delays. Continue anyway?';
+                if (!confirm(warningMessage)) {
+                    return;
+                }
+            }
+            
+            // Collect delivery fees
+            const deliveryFees = {};
+            Object.keys(vendorGroups).forEach(vendor => {
+                const input = document.getElementById(`delivery-${vendor}`);
+                if (input) {
+                    deliveryFees[vendor] = parseFloat(input.value) || 0;
+                }
+            });
+            
+            // Calculate totals
+            const calculation = calculateTotals(deliveryFees);
+            finalCalculation = calculation;
+            
+            console.log('Final calculation:', calculation);
+            
+            // Display breakdown and go to final page
+            displayFinalBreakdown(calculation);
+            goToPage(3);
+        }
+
+        // Calculate totals with proper quantity support
+        function calculateTotals(deliveryFees) {
+            let totalItemCost = 0;
+            let totalShippingCost = 0;
+            let totalDeliveryFees = 0;
+            const activeProducts = [];
+            
+            // Process all products with quantities
+            scrapedProducts.forEach((product, index) => {
+                if (product.deleted) return;
+                
+                // Get the price and quantity from inputs
+                const vendor = product.retailer || 'Unknown';
+                const vendorProducts = vendorGroups[vendor] || [];
+                const productIndex = vendorProducts.indexOf(product);
+                const productId = `${vendor.replace(/\s+/g, '')}-${productIndex}`;
+                const priceInput = document.getElementById(`price-${productId}`);
+                const quantity = productQuantities[productId] || 1;
+                
+                if (priceInput) {
+                    product.price = parseFloat(priceInput.value) || 0;
+                    product.quantity = quantity;
+                }
+                
+                if (product.price > 0) {
+                    const itemTotal = product.price * quantity;
+                    const shippingTotal = (product.shippingCost || 0) * quantity;
+                    
+                    totalItemCost += itemTotal;
+                    totalShippingCost += shippingTotal;
+                    activeProducts.push(product);
+                }
+            });
+            
+            // Sum delivery fees
+            Object.values(deliveryFees || {}).forEach(fee => {
+                totalDeliveryFees += fee || 0;
+            });
+            
+            // Calculate duty (26.5% on product cost only)
+            const dutyAmount = totalItemCost * 0.265;
+            
+            // Calculate subtotal before hidden fees
+            const subtotal = totalItemCost + dutyAmount + totalDeliveryFees + totalShippingCost;
+            
+            // Calculate hidden business costs
+            const profitMargin = subtotal * 0.15; // 15% profit margin
+            const cardProcessingFee = subtotal * 0.0375; // 3.75% card processing
+            const totalHiddenFees = profitMargin + cardProcessingFee;
+            
+            // Add hidden fees to shipping & handling (customer doesn't see breakdown)
+            const totalShippingAndHandling = totalShippingCost + totalHiddenFees;
+            
+            // Calculate grand total
+            const grandTotal = totalItemCost + dutyAmount + totalDeliveryFees + totalShippingAndHandling;
+            
+            return {
+                products: activeProducts,
+                deletedCount: scrapedProducts.filter(p => p.deleted).length,
+                deliveryFees: deliveryFees || {},
+                totals: {
+                    totalItemCost: Math.round(totalItemCost * 100) / 100,
+                    dutyAmount: Math.round(dutyAmount * 100) / 100,
+                    totalDeliveryFees: Math.round(totalDeliveryFees * 100) / 100,
+                    totalShippingAndHandling: Math.round(totalShippingAndHandling * 100) / 100,
+                    grandTotal: Math.round(grandTotal * 100) / 100
+                },
+                originalUrls: document.getElementById('productUrls').value,
+                // Internal tracking (not displayed to customer)
+                _hiddenFees: {
+                    profitMargin: Math.round(profitMargin * 100) / 100,
+                    cardProcessingFee: Math.round(cardProcessingFee * 100) / 100,
+                    totalHidden: Math.round(totalHiddenFees * 100) / 100
+                }
+            };
+        }
+
+        // Display final breakdown
+        function displayFinalBreakdown(calculation) {
+            const container = document.getElementById('finalBreakdown');
+            
+            let html = `
+                <div class="final-breakdown">
+                    <h3 style="margin-bottom: 20px; color: #2e7d32;">💰 Cost Breakdown</h3>
+                    
+                    <div class="breakdown-row">
+                        <span>Products Total (${calculation.products.length} items)</span>
+                        <span>$${calculation.totals.totalItemCost.toFixed(2)}</span>
+                    </div>
+                    
+                    <div class="breakdown-row">
+                        <span>Bermuda Import Duty (26.5%)</span>
+                        <span>$${calculation.totals.dutyAmount.toFixed(2)}</span>
+                    </div>
+            `;
+            
+            if (calculation.totals.totalDeliveryFees > 0) {
+                html += `
+                    <div class="breakdown-row">
+                        <span>US Delivery Fees</span>
+                        <span>$${calculation.totals.totalDeliveryFees.toFixed(2)}</span>
+                    </div>
+                `;
+            }
+            
+            html += `
+                    <div class="breakdown-row">
+                        <span>Ocean Freight & Handling</span>
+                        <span>$${calculation.totals.totalShippingAndHandling.toFixed(2)}</span>
+                    </div>
+                    
+                    <div class="breakdown-row">
+                        <span><strong>Total Import Cost</strong></span>
+                        <span><strong>$${calculation.totals.grandTotal.toFixed(2)}</strong></span>
+                    </div>
+                </div>
+                
+                <div style="background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 10px; padding: 20px; margin-top: 20px;">
+                    <h4 style="color: #856404; margin-bottom: 10px;">📋 Order Summary</h4>
+                    <p style="color: #856404; margin: 5px 0;"><strong>Products:</strong> ${calculation.products.length} items</p>
+                    <p style="color: #856404; margin: 5px 0;"><strong>Estimated Delivery:</strong> 3-5 weeks</p>
+                    <p style="color: #856404; margin: 5px 0;"><strong>Includes:</strong> All duties, taxes, shipping, and handling</p>
+                </div>
+            `;
+            
+            container.innerHTML = html;
+        }
+
+        // Create draft order
+        async function createDraftOrder() {
+            if (!finalCalculation) return;
+            
+            const btn = document.getElementById('createOrderBtn');
+            btn.disabled = true;
+            btn.textContent = 'Creating your order...';
+            
+            try {
+                const customerName = prompt('Please enter your full name:');
+                const customerEmail = prompt('Please enter your email address:');
+                
+                if (!customerName || !customerEmail) {
+                    throw new Error('Customer information is required');
+                }
+                
+                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                if (!emailRegex.test(customerEmail)) {
+                    throw new Error('Please enter a valid email address');
+                }
+                
+                btn.textContent = 'Processing order...';
+                
+                const orderPayload = {
+                    products: finalCalculation.products,
+                    deliveryFees: finalCalculation.deliveryFees,
+                    totals: finalCalculation.totals,
+                    customer: {
+                        name: customerName,
+                        email: customerEmail,
+                        firstName: customerName.split(' ')[0],
+                        lastName: customerName.split(' ').slice(1).join(' ')
+                    },
+                    originalUrls: finalCalculation.originalUrls
+                };
+                
+                const response = await fetch('/apps/instant-import/create-draft-order', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(orderPayload)
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || `HTTP ${response.status}: Failed to create order`);
+                }
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    btn.textContent = 'Order created successfully!';
+                    alert(`✅ Order Created Successfully!\n\nOrder Number: ${result.draftOrderNumber}\nTotal: $${(result.totalAmount || 0).toFixed(2)}\n\nWhat happens next:\n• We'll review your order within 24 hours\n• If any adjustments are needed, we'll contact you\n• Once confirmed, we'll place the orders with US retailers\n• Estimated delivery: 3-5 weeks\n\nQuestions? Contact us at info@spencerdeals.bm`);
+                    
+                    setTimeout(() => {
+                        if (confirm('Would you like to start a new import calculation?')) {
+                            location.reload();
+                        }
+                    }, 2000);
+                } else {
+                    throw new Error(result.error || 'Failed to create order');
+                }
+                
+            } catch (error) {
+                console.error('Error creating order:', error);
+                btn.textContent = 'Confirm & Create Order';
+                btn.disabled = false;
+                alert(`❌ Error creating order:\n\n${error.message}\n\nPlease try again or contact support at info@spencerdeals.bm`);
+            }
+        }
+
+        // Start over
+        function startOver() {
+            if (confirm('Are you sure you want to start over? All current data will be lost.')) {
+                location.reload();
+            }
+        }
+
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('SDL Import Calculator loaded');
+        });
+    </script>
+</body>
+</html>
