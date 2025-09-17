@@ -35,6 +35,8 @@ console.log(`Port: ${PORT}`);
 console.log(`Shopify Domain: ${SHOPIFY_DOMAIN}`);
 console.log('');
 console.log('🔍 SCRAPING CONFIGURATION:');
+console.log(`   Environment: ${process.env.NODE_ENV || 'development'}`);
+console.log(`   UPCitemdb API Key: ${UPCITEMDB_API_KEY ? 'SET (length: ' + UPCITEMDB_API_KEY.length + ')' : 'NOT SET'}`);
 console.log(`1. Primary: Apify - ${USE_APIFY ? '✅ ENABLED (All Retailers)' : '❌ DISABLED (Missing API Key)'}`);
 console.log(`2. Fallback: ScrapingBee - ${USE_SCRAPINGBEE ? '✅ ENABLED' : '❌ DISABLED (Missing API Key)'}`);
 console.log(`3. Basic Scraper - ✅ ENABLED (Always Available)`);
@@ -86,10 +88,19 @@ app.get('/health', (req, res) => {
 
 // Test endpoint for UPCitemdb
 app.get('/test-upc', async (req, res) => {
+  console.log('🧪 UPCitemdb test endpoint called');
+  console.log(`   API Key available: ${!!UPCITEMDB_API_KEY}`);
+  console.log(`   UPCitemdb enabled: ${USE_UPCITEMDB}`);
+  
   if (!USE_UPCITEMDB) {
     return res.json({ 
       success: false, 
-      message: 'UPCitemdb not configured' 
+      message: 'UPCitemdb not configured',
+      debug: {
+        apiKeySet: !!UPCITEMDB_API_KEY,
+        apiKeyLength: UPCITEMDB_API_KEY ? UPCITEMDB_API_KEY.length : 0,
+        environmentCheck: process.env.UPCITEMDB_API_KEY ? 'SET' : 'NOT SET'
+      }
     });
   }
   

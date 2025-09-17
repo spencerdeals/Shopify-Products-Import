@@ -7,10 +7,16 @@ class UPCItemDB {
     this.baseURL = 'https://api.upcitemdb.com/prod/trial';
     this.enabled = !!apiKey;
     
+    console.log('🔍 UPCitemdb initialization check:');
+    console.log(`   API Key provided: ${apiKey ? 'YES (length: ' + apiKey.length + ')' : 'NO'}`);
+    console.log(`   API Key preview: ${apiKey ? apiKey.substring(0, 8) + '...' : 'undefined'}`);
+    console.log(`   Base URL: ${this.baseURL}`);
+    
     if (this.enabled) {
       console.log('✅ UPCitemdb initialized');
     } else {
-      console.log('⚠️ UPCitemdb disabled - no API key');
+      console.log('❌ UPCitemdb disabled - no API key provided');
+      console.log('   Check Railway environment variable: UPCITEMDB_API_KEY');
     }
   }
 
