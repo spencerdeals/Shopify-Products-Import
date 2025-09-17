@@ -361,7 +361,12 @@ function estimateBoxDimensions(productDimensions, category) {
 function calculateShippingCost(dimensions, weight, price) {
   if (!dimensions) {
     // No dimensions available, use 0.98x the item price
-    return Math.max(25, (price || 100) * 0.98);
+    const fallbackCost = Math.max(25, (price || 100) * 0.98);
+    console.log(`   📦 SHIPPING CALCULATION (No Dimensions):`);
+    console.log(`      Fallback rate: 98% of item price`);
+    console.log(`      Item price: $${price || 100}`);
+    console.log(`      Calculated: $${fallbackCost}`);
+    return fallbackCost;
   }
   
   // Calculate volume in cubic feet
@@ -372,10 +377,21 @@ function calculateShippingCost(dimensions, weight, price) {
   const baseCost = Math.max(15, cubicFeet * SHIPPING_RATE_PER_CUBIC_FOOT);
   
   // Add surcharges
+  const oversizeFee = Math.max(dimensions.length, dimensions.width, dimensions.height) > 48 ? 50 : 0;
   const valueFee = price > 500 ? price * 0.02 : 0;
   const handlingFee = 15;
   
-  const totalCost = baseCost + valueFee + handlingFee;
+  const totalCost = baseCost + oversizeFee + valueFee + handlingFee;
+  
+  console.log(`   📦 SHIPPING CALCULATION BREAKDOWN:`);
+  console.log(`      Dimensions: ${dimensions.length}" x ${dimensions.width}" x ${dimensions.height}"`);
+  console.log(`      Volume: ${cubicInches.toFixed(0)} cubic inches = ${cubicFeet.toFixed(2)} cubic feet`);
+  console.log(`      Base cost: ${cubicFeet.toFixed(2)} ft³ × $${SHIPPING_RATE_PER_CUBIC_FOOT} = $${baseCost.toFixed(2)}`);
+  console.log(`      Oversize fee (>48"): $${oversizeFee}`);
+  console.log(`      Value fee (2% if >$500): $${valueFee.toFixed(2)}`);
+  console.log(`      Handling fee: $${handlingFee}`);
+  console.log(`      TOTAL SHIPPING: $${totalCost.toFixed(2)}`);
+  
   return Math.round(totalCost);
 }
 
@@ -941,6 +957,7 @@ async function scrapeProduct(url) {
   };
   
   console.log(`   💰 Shipping cost: $${shippingCost}`);
+  console.log(`   📏 Final dimensions used: ${product.dimensions.length}" x ${product.dimensions.width}" x ${product.dimensions.height}"`);
   console.log(`   📊 Data source: ${scrapingMethod}`);
   console.log(`   ✅ Product processed successfully\n`);
   
