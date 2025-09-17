@@ -26,32 +26,15 @@ class ApifyScraper {
     try {
       console.log('🔄 Starting Apify scrape for:', url);
       
-      // Detect retailer and use appropriate actor
-      const retailer = this.detectRetailer(url);
-      let actorId;
-      
-      switch (retailer.toLowerCase()) {
-        case 'amazon':
-          actorId = 'junglee/amazon-crawler';
-          break;
-        case 'wayfair':
-          actorId = 'dtrungtin/wayfair-scraper';
-          break;
-        case 'target':
-          actorId = 'tugkan/target-scraper';
-          break;
-        case 'walmart':
-          actorId = 'walmart-scraper';
-          break;
-        default:
-          actorId = 'apify/web-scraper';
-      }
-
       const input = {
-        startUrls: [{ url }],
-        maxRequestsPerCrawl: 1,
-        maxConcurrency: 1
+        urls: [url],
+        extractImages: true,
+        extractProductInfo: true,
+        maxPages: 1,
+        outputFormat: 'json'
       };
+
+      const actorId = 'apify/web-scraper';
 
       // Run the actor
       const run = await this.client.actor(actorId).call(input, {
@@ -75,8 +58,7 @@ class ApifyScraper {
           brand: item.brand || null,
           category: null,
           inStock: item.availability !== 'out of stock'
-        }
-        return this.parseProCrawlerData(item);
+        };
       }
       
       console.log('❌ Apify: No results found');
