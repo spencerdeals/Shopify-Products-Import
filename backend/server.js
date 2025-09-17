@@ -618,14 +618,14 @@ async function scrapeProduct(url) {
   console.log(`\n📦 Processing: ${url}`);
   console.log(`   Retailer: ${retailer}`);
   
-  // STEP 1: For Amazon URLs, try specialized Amazon crawler first
+  // STEP 1: For Amazon URLs, ALWAYS use specialized Amazon crawler as PRIMARY
   if (USE_AMAZON_CRAWLER && isAmazonUrl(url)) {
     try {
       console.log('   🛒 Attempting Amazon specialist crawler...');
       
       const amazonPromise = amazonCrawler.scrapeProduct(url);
       const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Amazon crawler timeout')), 10000) // 10s for Amazon
+        setTimeout(() => reject(new Error('Amazon crawler timeout')), 15000) // 15s for Amazon
       );
       
       productData = await Promise.race([amazonPromise, timeoutPromise]);
@@ -634,8 +634,12 @@ async function scrapeProduct(url) {
         scrapingMethod = 'amazon-crawler';
         console.log('   ✅ Amazon crawler returned data');
         
-        if (!isDataComplete(productData)) {
-          console.log('   ⚠️ Amazon crawler data incomplete, will try other methods');
+        // For Amazon, if we get ANY data from amazon-crawler, use it as primary
+        // Only supplement missing fields, don't replace existing data
+        if (productData.name && productData.price) {
+          console.log('   ✅ Amazon crawler has essential data - using as primary');
+        } else {
+          console.log('   ⚠️ Amazon crawler missing essential data, will supplement');
         }
       }
     } catch (error) {
@@ -644,12 +648,16 @@ async function scrapeProduct(url) {
     }
   }
   
-  // STEP 2: For non-Amazon, try ProWebCrawler first (most accurate for Wayfair)
-  if (!isAmazonUrl(url) && (!productData || !isDataComplete(productData))) {
+  // STEP 2: For Amazon with incomplete data, try other methods to supplement
+  // For non-Amazon, use optimal scraping order
+  if (!productData || (!isAmazonUrl(url) && !isDataComplete(productData)) || (isAmazonUrl(url) && (!productData.name || !productData.price))) {
     const scrapingOrder = getOptimalScrapingOrder(retailer);
     
     for (const method of scrapingOrder) {
-      if (productData && isDataComplete(productData)) break;
+      // For Amazon, only supplement if missing essential data
+      if (isAmazonUrl(url) && productData && productData.name && productData.price) break;
+      // For non-Amazon, stop when data is complete
+      if (!isAmazonUrl(url) && productData && isDataComplete(productData)) break;
       
       try {
         let scraperData = null;
@@ -687,9 +695,16 @@ async function scrapeProduct(url) {
             scrapingMethod = methodName;
             console.log(`   ✅ Using ${methodName} data`);
           } else {
-            const mergedData = mergeProductData(productData, scraperData);
+            // For Amazon, prioritize amazon-crawler data over other scrapers
+            const mergedData = isAmazonUrl(url) ? 
+              mergeProductData(productData, scraperData) : // Amazon: keep amazon-crawler data as primary
+              mergeProductData(productData, scraperData);   // Non-Amazon: normal merge
             productData = mergedData;
             scrapingMethod = scrapingMethod + '+' + methodName;
+            
+            if (isAmazonUrl(url)) {
+              console.log(`   ✅ Supplemented Amazon data with ${methodName}`);
+            }
           }
         }
       } catch (error) {
@@ -782,10 +797,10 @@ async function scrapeProduct(url) {
   }
   */
   
-  // STEP 5: Try GPT parser as fallback/validator
+  // STEP 3: Try GPT parser only as last resort for missing essential data
   if (parseProduct && (!productData || !productData.name || !productData.price)) {
     try {
-      console.log('   🧠 Falling back to GPT parser...');
+      console.log(`   🧠 ${isAmazonUrl(url) ? 'Supplementing Amazon data with' : 'Falling back to'} GPT parser...`);
       const gptData = await parseProduct(url);
       
       if (gptData) {
@@ -793,17 +808,20 @@ async function scrapeProduct(url) {
           productData = gptData;
           scrapingMethod = 'gpt';
         } else {
-          productData = mergeProductData(productData, gptData);
+          // For Amazon, only use GPT for missing fields, keep amazon-crawler as primary
+          productData = isAmazonUrl(url) ? 
+            mergeProductData(productData, gptData) : // Keep Amazon data primary
+            mergeProductData(productData, gptData);   // Normal merge for others
           scrapingMethod = scrapingMethod + '+gpt';
         }
-        console.log('   ✅ GPT parser succeeded');
+        console.log(`   ✅ GPT parser ${isAmazonUrl(url) ? 'supplemented Amazon data' : 'succeeded'}`);
       }
     } catch (error) {
       console.log('   ❌ GPT parser failed:', error.message);
     }
   }
   
-  // STEP 6: Try UPCitemdb for missing dimensions
+  // STEP 4: Try UPCitemdb for missing dimensions
   if (USE_UPCITEMDB && productData && productData.name && (!productData.dimensions || !productData.weight)) {
     try {
       console.log('   📦 Attempting UPCitemdb lookup...');
