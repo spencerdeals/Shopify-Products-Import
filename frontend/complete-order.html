@@ -13,7 +13,9 @@
             justify-content: center;
             align-items: center;
             padding: 20px;
+            margin: 0;
         }
+        
         .container {
             background: white;
             border-radius: 20px;
@@ -23,6 +25,7 @@
             padding: 40px;
             text-align: center;
         }
+        
         .spinner {
             border: 3px solid #f3f3f3;
             border-top: 3px solid #7cb342;
@@ -32,76 +35,393 @@
             animation: spin 1s linear infinite;
             margin: 30px auto;
         }
+        
         @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
-        h1 { color: #333; margin-bottom: 20px; }
-        .message { color: #666; margin: 20px 0; }
-        .error { color: #f44336; }
+        
+        h1 { 
+            color: #333; 
+            margin-bottom: 20px;
+            font-size: 24px;
+        }
+        
+        h2 {
+            color: #4caf50;
+            margin-bottom: 15px;
+            font-size: 20px;
+        }
+        
+        .message { 
+            color: #666; 
+            margin: 20px 0; 
+            line-height: 1.5;
+            font-size: 15px;
+        }
+        
+        .error { 
+            color: #f44336; 
+            background: #ffebee;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border-left: 4px solid #f44336;
+        }
+        
+        .success {
+            color: #2e7d32;
+            background: #e8f5e9;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border-left: 4px solid #4caf50;
+        }
+        
+        .order-details {
+            background: #f5f5f5;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            text-align: left;
+        }
+        
+        .order-details h3 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 16px;
+        }
+        
+        .order-details p {
+            margin: 8px 0;
+            color: #666;
+            font-size: 14px;
+        }
+        
+        .customer-form {
+            background: #f9f9f9;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            text-align: left;
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: #333;
+            font-size: 14px;
+        }
+        
+        .form-group input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+        
+        .form-group input:focus {
+            outline: none;
+            border-color: #7cb342;
+        }
+        
+        .btn {
+            background: linear-gradient(135deg, #7cb342 0%, #2e7d32 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin: 10px 5px;
+        }
+        
+        .btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 5px 15px rgba(124, 179, 66, 0.3);
+        }
+        
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .back-link {
+            display: inline-block;
+            color: #7cb342;
+            text-decoration: none;
+            margin-top: 20px;
+            font-weight: 600;
+            padding: 10px 20px;
+            border: 2px solid #7cb342;
+            border-radius: 6px;
+            transition: all 0.3s;
+        }
+        
+        .back-link:hover {
+            background: #7cb342;
+            color: white;
+            transform: translateY(-1px);
+        }
+        
+        @media (max-width: 768px) {
+            .container {
+                margin: 10px;
+                padding: 20px;
+            }
+            
+            h1 {
+                font-size: 20px;
+            }
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Creating Your Import Order</h1>
-        <div class="spinner"></div>
-        <div class="message" id="status">Please wait while we create your draft order...</div>
+        <h1>🚢 SDL Instant Imports</h1>
+        
+        <div id="loadingSection">
+            <div class="spinner"></div>
+            <div class="message" id="status">Preparing your import order...</div>
+        </div>
+
+        <div id="customerFormSection" style="display: none;">
+            <h2>Complete Your Order</h2>
+            <div class="message">Please provide your contact information to finalize your import request.</div>
+            
+            <div id="orderSummary" class="order-details">
+                <h3>📦 Order Summary</h3>
+                <p id="summaryText">Loading...</p>
+            </div>
+            
+            <form id="customerForm" class="customer-form">
+                <div class="form-group">
+                    <label for="customerName">Full Name *</label>
+                    <input type="text" id="customerName" required placeholder="Enter your full name">
+                </div>
+                
+                <div class="form-group">
+                    <label for="customerEmail">Email Address *</label>
+                    <input type="email" id="customerEmail" required placeholder="Enter your email address">
+                </div>
+                
+                <div class="form-group">
+                    <label for="customerPhone">Phone Number (Optional)</label>
+                    <input type="tel" id="customerPhone" placeholder="Enter your phone number">
+                </div>
+                
+                <button type="submit" class="btn" id="submitOrderBtn">
+                    🚀 Create Import Order
+                </button>
+            </form>
+        </div>
+
+        <div id="resultSection" style="display: none;">
+            <div id="resultMessage"></div>
+            <a href="/" class="back-link">← Start New Import</a>
+        </div>
     </div>
 
     <script>
-        async function completeOrder() {
+        let orderData = null;
+
+        async function initializePage() {
             const params = new URLSearchParams(window.location.search);
-            const orderId = params.get('orderId');
+            const checkoutId = params.get('checkoutId');
             
-            if (!orderId) {
-                document.getElementById('status').innerHTML = '<span class="error">No order found. Please start over.</span>';
+            if (!checkoutId) {
+                showError('No order found. Please start over.');
                 return;
             }
             
             try {
-                // Get customer email from Shopify (if logged in)
-                const customerEmail = params.get('email') || prompt('Please enter your email address:');
-                const customerName = params.get('name') || prompt('Please enter your full name:');
+                // Get the checkout data from the backend
+                const response = await fetch(`/api/get-checkout/${checkoutId}`);
                 
-                if (!customerEmail || !customerName) {
-                    throw new Error('Customer information required');
+                if (!response.ok) {
+                    throw new Error('Order not found or expired');
                 }
                 
-                // Retrieve pending order
-                const orderResponse = await fetch(`/api/get-pending-order/${orderId}`);
-                if (!orderResponse.ok) throw new Error('Order not found');
+                const result = await response.json();
+                orderData = result.data;
                 
-                const orderData = await orderResponse.json();
-                orderData.customer = { email: customerEmail, name: customerName };
-                
-                // Create draft order
-                const draftResponse = await fetch('/apps/instant-import/create-draft-order', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(orderData)
-                });
-                
-                if (!draftResponse.ok) throw new Error('Failed to create draft order');
-                
-                const result = await draftResponse.json();
-                
-                document.getElementById('status').innerHTML = `
-                    <h2 style="color: #4caf50;">✓ Order Created Successfully!</h2>
-                    <p>Order #${result.draftOrderNumber}</p>
-                    <p>We'll review your order and contact you with final pricing.</p>
-                    <p>Thank you for using SDL Instant Imports!</p>
-                `;
+                displayOrderSummary();
+                showCustomerForm();
                 
             } catch (error) {
-                document.getElementById('status').innerHTML = `
-                    <span class="error">Error: ${error.message}</span><br>
-                    <a href="/" style="color: #7cb342; margin-top: 20px; display: inline-block;">Start Over</a>
-                `;
+                console.error('Error loading order:', error);
+                showError('Order not found or expired. Please start over.');
             }
         }
-        
-        // Start the process
-        completeOrder();
+
+        function displayOrderSummary() {
+            if (!orderData || !orderData.products) {
+                return;
+            }
+            
+            const productCount = orderData.products.length;
+            const totalItems = orderData.products.reduce((sum, p) => sum + (p.quantity || 1), 0);
+            const grandTotal = orderData.totals?.grandTotal || 0;
+            
+            const summaryElement = document.getElementById('summaryText');
+            summaryElement.innerHTML = `
+                <strong>${productCount} product${productCount !== 1 ? 's' : ''}</strong> 
+                (${totalItems} item${totalItems !== 1 ? 's' : ''} total)<br>
+                <strong>Estimated Total: $${grandTotal.toFixed(2)}</strong><br>
+                <small>Includes products, duty, shipping & handling</small>
+            `;
+        }
+
+        function showCustomerForm() {
+            document.getElementById('loadingSection').style.display = 'none';
+            document.getElementById('customerFormSection').style.display = 'block';
+        }
+
+        function showError(message) {
+            document.getElementById('loadingSection').style.display = 'none';
+            document.getElementById('customerFormSection').style.display = 'none';
+            document.getElementById('resultSection').style.display = 'block';
+            
+            document.getElementById('resultMessage').innerHTML = `
+                <div class="error">
+                    <h2>❌ Error</h2>
+                    <p>${message}</p>
+                </div>
+            `;
+        }
+
+        function showSuccess(orderInfo) {
+            document.getElementById('loadingSection').style.display = 'none';
+            document.getElementById('customerFormSection').style.display = 'none';
+            document.getElementById('resultSection').style.display = 'block';
+            
+            document.getElementById('resultMessage').innerHTML = `
+                <div class="success">
+                    <h2>✅ Order Created Successfully!</h2>
+                    <div class="order-details">
+                        <h3>📋 Order Details</h3>
+                        <p><strong>Order Number:</strong> ${orderInfo.draftOrderNumber}</p>
+                        <p><strong>Total Amount:</strong> $${(orderInfo.totalAmount || 0).toFixed(2)}</p>
+                        <p><strong>Estimated Delivery:</strong> 3-5 weeks</p>
+                    </div>
+                    <p><strong>What happens next:</strong></p>
+                    <ul style="text-align: left; margin: 15px 0; padding-left: 20px;">
+                        <li>We'll review your order and verify all product information</li>
+                        <li>If any adjustments are needed, we'll contact you within 24 hours</li>
+                        <li>Once confirmed, we'll place the orders with the US retailers</li>
+                        <li>Your items will be shipped to Bermuda via ocean freight</li>
+                        <li>We'll notify you when your order arrives and is ready for pickup</li>
+                    </ul>
+                    <p><strong>Questions?</strong> Contact us at info@spencerdeals.bm</p>
+                </div>
+            `;
+        }
+
+        // Handle form submission
+        document.getElementById('customerForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const submitBtn = document.getElementById('submitOrderBtn');
+            const originalText = submitBtn.textContent;
+            
+            // Disable form and show loading
+            submitBtn.disabled = true;
+            submitBtn.textContent = '⏳ Creating Order...';
+            
+            try {
+                // Get customer information
+                const customerInfo = {
+                    name: document.getElementById('customerName').value.trim(),
+                    email: document.getElementById('customerEmail').value.trim(),
+                    phone: document.getElementById('customerPhone').value.trim()
+                };
+                
+                if (!customerInfo.name || !customerInfo.email) {
+                    throw new Error('Please fill in all required fields');
+                }
+                
+                // Validate email
+                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                if (!emailRegex.test(customerInfo.email)) {
+                    throw new Error('Please enter a valid email address');
+                }
+                
+                // Create the draft order
+                const orderPayload = {
+                    ...orderData,
+                    customer: customerInfo
+                };
+                
+                const response = await fetch('/apps/instant-import/create-draft-order', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(orderPayload)
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'Failed to create order');
+                }
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showSuccess(result);
+                } else {
+                    throw new Error(result.error || 'Failed to create order');
+                }
+                
+            } catch (error) {
+                console.error('Error creating order:', error);
+                
+                // Show error message
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'error';
+                errorDiv.innerHTML = `<strong>Error:</strong> ${error.message}`;
+                
+                // Insert error before form
+                const form = document.getElementById('customerForm');
+                form.parentNode.insertBefore(errorDiv, form);
+                
+                // Remove error after 5 seconds
+                setTimeout(() => {
+                    if (errorDiv.parentNode) {
+                        errorDiv.parentNode.removeChild(errorDiv);
+                    }
+                }, 5000);
+                
+                // Re-enable form
+                submitBtn.disabled = false;
+                submitBtn.textContent = originalText;
+            }
+        });
+
+        // Auto-focus first input when form is shown
+        function focusFirstInput() {
+            setTimeout(() => {
+                const firstInput = document.getElementById('customerName');
+                if (firstInput) {
+                    firstInput.focus();
+                }
+            }, 100);
+        }
+
+        // Initialize the page
+        document.addEventListener('DOMContentLoaded', () => {
+            initializePage();
+        });
     </script>
 </body>
 </html>
