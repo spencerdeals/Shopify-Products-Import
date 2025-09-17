@@ -385,7 +385,7 @@ async function scrapeProduct(url) {
         productData.variant = cleanVariant(productData.variant);
         
         if (!isDataComplete(productData)) {
-          console.log('   ⚠️ Amazon-Crawler data incomplete, will try fallbacks');
+          console.log('   WARNING: Data still incomplete, will try more fallbacks');
         }
       }
     } catch (error) {
