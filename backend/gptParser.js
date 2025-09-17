@@ -54,7 +54,7 @@ async function fetchViaScrapingBee(url){
   for (const country of countries){
     try{
       const res = await axios.get('https://app.scrapingbee.com/api/v1', {
-        timeout: 15000, // Reduced timeout for speed
+        timeout: 30000, // Increased timeout to prevent socket hang up
         params: {
           api_key: key,
           url,
@@ -118,7 +118,7 @@ async function fetchViaAxios(url){
       }
       
       const res = await axios.get(url, {
-        timeout: 15000, // Reduced timeout
+        timeout: 30000, // Increased timeout to prevent socket hang up
         headers: {
           'User-Agent': `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${rnd(118,126)} Safari/537.36`,
           'Accept-Language': 'en-US,en;q=0.9',
