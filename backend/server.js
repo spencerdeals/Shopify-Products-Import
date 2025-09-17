@@ -599,6 +599,61 @@ async function scrapeProduct(url) {
   
   // STEP 2: For non-Amazon, try ProWebCrawler first (most accurate for Wayfair)
   if (USE_PRO_CRAWLER && !isAmazonUrl(url) && (!productData || !isDataComplete(productData))) {
+    const scrapingOrder = getOptimalScrapingOrder(retailer);
+    
+    for (const method of scrapingOrder) {
+      if (productData && isDataComplete(productData)) break;
+      
+      try {
+        let scraperData = null;
+        let methodName = '';
+        
+        if (method === 'prowebcrawler' && USE_PRO_CRAWLER) {
+          console.log('   🕸️ Attempting ProWebCrawler...');
+          const proWebPromise = proWebCrawler.scrapeProduct(url);
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('ProWebCrawler timeout')), 12000)
+          );
+          scraperData = await Promise.race([proWebPromise, timeoutPromise]);
+          methodName = 'prowebcrawler';
+        } else if (method === 'apify' && USE_APIFY) {
+          console.log('   🔄 Attempting Apify scrape...');
+          const apifyPromise = apifyScraper.scrapeProduct(url);
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Apify timeout')), 8000)
+          );
+          scraperData = await Promise.race([apifyPromise, timeoutPromise]);
+          methodName = 'apify';
+        } else if (method === 'scrapingbee' && USE_SCRAPINGBEE) {
+          console.log('   🐝 Attempting ScrapingBee...');
+          const scrapingBeePromise = scrapeWithScrapingBee(url);
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('ScrapingBee timeout')), 6000)
+          );
+          scraperData = await Promise.race([scrapingBeePromise, timeoutPromise]);
+          methodName = 'scrapingbee';
+        }
+        
+        if (scraperData) {
+          if (!productData) {
+            productData = scraperData;
+            scrapingMethod = methodName;
+            console.log(`   ✅ Using ${methodName} data`);
+          } else {
+            const mergedData = mergeProductData(productData, scraperData);
+            productData = mergedData;
+            scrapingMethod = scrapingMethod + '+' + methodName;
+          }
+        }
+      } catch (error) {
+        console.log(`   ❌ ${method} failed:`, error.message);
+      }
+    }
+  }
+  
+  // Skip the old individual scraper attempts since we handled them above
+  /*
+  if (USE_PRO_CRAWLER && !isAmazonUrl(url) && (!productData || !isDataComplete(productData))) {
     try {
       console.log('   🕸️ Attempting ProWebCrawler...');
       const proWebPromise = proWebCrawler.scrapeProduct(url);
@@ -678,6 +733,7 @@ async function scrapeProduct(url) {
       console.log('   ❌ ScrapingBee failed:', error.message);
     }
   }
+  */
   
   // STEP 5: Try GPT parser as fallback/validator
   if (parseProduct && (!productData || !productData.name || !productData.price)) {
