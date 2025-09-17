@@ -532,409 +532,18 @@ function calculateDetailedShippingCost(dimensions, weight, price, category, piec
     // No dimensions - use price-based estimate
     breakdown.customerPrice = Math.max(25, price * 0.15);
     breakdown.actualShippingCost = breakdown.customerPrice * 0.6; // 40% markup
-}
-
-// Enhanced shipping calculation with detailed breakdown for admin
-function calculateDetailedShippingCost(dimensions, weight, price, category, pieceCount = 1, isFlatPacked = false) {
-  const breakdown = {
-    // Dimension details
-    boxDimensions: dimensions,
-    cubicInches: 0,
-    cubicFeet: 0,
-    boxCount: pieceCount,
-    
-    // Cost breakdown
-    baseCost: 0,
-    oversizeFee: 0,
-    valueFee: 0,
-    handlingFee: 15,
-    fuelSurcharge: 0,
-    insuranceFee: 0,
-    
-    // Business costs (hidden from customer)
-    actualShippingCost: 0,  // What we actually pay
-    profitMargin: 0,        // Our markup
-    cardProcessingFee: 0,   // 2.9% + $0.30
-    
-    // Totals
-    subtotal: 0,
-    customerPrice: 0
-  };
-  
-  if (!dimensions) {
-    // No dimensions - use price-based estimate
-    breakdown.customerPrice = Math.max(25, price * 0.15);
-    breakdown.actualShippingCost = breakdown.customerPrice * 0.6; // 40% markup
-}
-
-// Enhanced shipping calculation with detailed breakdown for admin
-function calculateDetailedShippingCost(dimensions, weight, price, category, pieceCount = 1, isFlatPacked = false) {
-  const breakdown = {
-    // Dimension details
-    boxDimensions: dimensions,
-    cubicInches: 0,
-    cubicFeet: 0,
-    boxCount: pieceCount,
-    
-    // Cost breakdown
-    baseCost: 0,
-    oversizeFee: 0,
-    valueFee: 0,
-    handlingFee: 15,
-    fuelSurcharge: 0,
-    insuranceFee: 0,
-    
-    // Business costs (hidden from customer)
-    actualShippingCost: 0,  // What we actually pay
-    profitMargin: 0,        // Our markup
-    cardProcessingFee: 0,   // 2.9% + $0.30
-    
-    // Totals
-    subtotal: 0,
-    customerPrice: 0
-  };
-  
-  if (!dimensions) {
-    // No dimensions - use price-based estimate
-    breakdown.customerPrice = Math.max(25, price * 0.15);
-    breakdown.actualShippingCost = breakdown.customerPrice * 0.6; // 40% markup
-}
-
-// Enhanced shipping calculation with detailed breakdown for admin
-function calculateDetailedShippingCost(dimensions, weight, price, category, pieceCount = 1, isFlatPacked = false) {
-  const breakdown = {
-    // Dimension details
-    boxDimensions: dimensions,
-    cubicInches: 0,
-    cubicFeet: 0,
-    boxCount: pieceCount,
-    
-    // Cost breakdown
-    baseCost: 0,
-    oversizeFee: 0,
-    valueFee: 0,
-    handlingFee: 15,
-    fuelSurcharge: 0,
-    insuranceFee: 0,
-    
-    // Business costs (hidden from customer)
-    actualShippingCost: 0,  // What we actually pay
-    profitMargin: 0,        // Our markup
-    cardProcessingFee: 0,   // 2.9% + $0.30
-    
-    // Totals
-    subtotal: 0,
-    customerPrice: 0
-  };
-  
-  if (!dimensions) {
-    // No dimensions - use price-based estimate
-    breakdown.customerPrice = Math.max(25, price * 0.15);
-    breakdown.actualShippingCost = breakdown.customerPrice * 0.6; // 40% markup
-}
-
-// Enhanced shipping calculation with detailed breakdown for admin
-function calculateDetailedShippingCost(dimensions, weight, price, category, pieceCount = 1, isFlatPacked = false) {
-  const breakdown = {
-    // Dimension details
-    boxDimensions: dimensions,
-    cubicInches: 0,
-    cubicFeet: 0,
-    boxCount: pieceCount,
-    
-    // Cost breakdown
-    baseCost: 0,
-    oversizeFee: 0,
-    valueFee: 0,
-    handlingFee: 15,
-    fuelSurcharge: 0,
-    insuranceFee: 0,
-    
-    // Business costs (hidden from customer)
-    actualShippingCost: 0,  // What we actually pay
-    profitMargin: 0,        // Our markup
-    cardProcessingFee: 0,   // 2.9% + $0.30
-    
-    // Totals
-    subtotal: 0,
-    customerPrice: 0
-  };
-  
-  if (!dimensions) {
-    // No dimensions - use price-based estimate
-    breakdown.customerPrice = Math.max(25, price * 0.15);
-    breakdown.actualShippingCost = breakdown.customerPrice * 0.6; // 40% markup
-}
-
-// Enhanced shipping calculation with detailed breakdown for admin
-function calculateDetailedShippingCost(dimensions, weight, price, category, pieceCount = 1, isFlatPacked = false) {
-  const breakdown = {
-    // Dimension details
-    boxDimensions: dimensions,
-    cubicInches: 0,
-    cubicFeet: 0,
-    boxCount: pieceCount,
-    
-    // Cost breakdown
-    baseCost: 0,
-    oversizeFee: 0,
-    valueFee: 0,
-    handlingFee: 15,
-    fuelSurcharge: 0,
-    insuranceFee: 0,
-    
-    // Business costs (hidden from customer)
-    actualShippingCost: 0,  // What we actually pay
-    profitMargin: 0,        // Our markup
-    cardProcessingFee: 0,   // 2.9% + $0.30
-    
-    // Totals
-    subtotal: 0,
-    customerPrice: 0
-  };
-  
-  if (!dimensions) {
-    // No dimensions - use price-based estimate
-    breakdown.customerPrice = Math.max(25, price * 0.15);
-    breakdown.actualShippingCost = breakdown.customerPrice * 0.6; // 40% markup
-}
-
-// Enhanced shipping calculation with detailed breakdown for admin
-function calculateDetailedShippingCost(dimensions, weight, price, category, pieceCount = 1, isFlatPacked = false) {
-  const breakdown = {
-    // Dimension details
-    boxDimensions: dimensions,
-    cubicInches: 0,
-    cubicFeet: 0,
-    boxCount: pieceCount,
-    
-    // Cost breakdown
-    baseCost: 0,
-    oversizeFee: 0,
-    valueFee: 0,
-    handlingFee: 15,
-    fuelSurcharge: 0,
-    insuranceFee: 0,
-    
-    // Business costs (hidden from customer)
-    actualShippingCost: 0,  // What we actually pay
-    profitMargin: 0,        // Our markup
-    cardProcessingFee: 0,   // 2.9% + $0.30
-    
-    // Totals
-    subtotal: 0,
-    customerPrice: 0
-  };
-  
-  if (!dimensions) {
-    // No dimensions - use price-based estimate
-    breakdown.customerPrice = Math.max(25, price * 0.15);
-    breakdown.actualShippingCost = breakdown.customerPrice * 0.6; // 40% markup
+    return breakdown;
   }
-}
-
-// Enhanced shipping calculation with detailed breakdown for admin
-function calculateDetailedShippingCost(dimensions, weight, price, category, pieceCount = 1, isFlatPacked = false) {
-  const breakdown = {
-    // Dimension details
-    boxDimensions: dimensions,
-    cubicInches: 0,
-    cubicFeet: 0,
-    boxCount: pieceCount,
-    
-    // Cost breakdown
-    baseCost: 0,
-    oversizeFee: 0,
-    valueFee: 0,
-    handlingFee: 15,
-    fuelSurcharge: 0,
-    insuranceFee: 0,
-    
-    // Business costs (hidden from customer)
-    actualShippingCost: 0,  // What we actually pay
-    profitMargin: 0,        // Our markup
-    cardProcessingFee: 0,   // 2.9% + $0.30
-    
-    // Totals
-    subtotal: 0,
-    customerPrice: 0
-  };
   
-  if (!dimensions) {
-    // No dimensions - use price-based estimate
-    breakdown.customerPrice = Math.max(25, price * 0.15);
-    breakdown.actualShippingCost = breakdown.customerPrice * 0.6; // 40% markup
-  }
-}
-
-// Enhanced shipping calculation with detailed breakdown for admin
-function calculateDetailedShippingCost(dimensions, weight, price, category, pieceCount = 1, isFlatPacked = false) {
-  const breakdown = {
-    // Dimension details
-    boxDimensions: dimensions,
-    cubicInches: 0,
-    cubicFeet: 0,
-    boxCount: pieceCount,
-    
-    // Cost breakdown
-    baseCost: 0,
-    oversizeFee: 0,
-    valueFee: 0,
-    handlingFee: 15,
-    fuelSurcharge: 0,
-    insuranceFee: 0,
-    
-    // Business costs (hidden from customer)
-    actualShippingCost: 0,  // What we actually pay
-    profitMargin: 0,        // Our markup
-    cardProcessingFee: 0,   // 2.9% + $0.30
-    
-    // Totals
-    subtotal: 0,
-    customerPrice: 0
-  };
+  // Calculate volume
+  breakdown.cubicInches = dimensions.length * dimensions.width * dimensions.height;
+  breakdown.cubicFeet = breakdown.cubicInches / 1728;
   
-  if (!dimensions) {
-    // No dimensions - use price-based estimate
-    breakdown.customerPrice = Math.max(25, price * 0.15);
-    breakdown.actualShippingCost = breakdown.customerPrice * 0.6; // 40% markup
-  }
-}
-
-// Enhanced shipping calculation with detailed breakdown for admin
-function calculateDetailedShippingCost(dimensions, weight, price, category, pieceCount = 1, isFlatPacked = false) {
-  const breakdown = {
-    // Dimension details
-    boxDimensions: dimensions,
-    cubicInches: 0,
-    cubicFeet: 0,
-    boxCount: pieceCount,
-    
-    // Cost breakdown
-    baseCost: 0,
-    oversizeFee: 0,
-    valueFee: 0,
-    handlingFee: 15,
-    fuelSurcharge: 0,
-    insuranceFee: 0,
-    
-    // Business costs (hidden from customer)
-    actualShippingCost: 0,  // What we actually pay
-    profitMargin: 0,        // Our markup
-    cardProcessingFee: 0,   // 2.9% + $0.30
-    
-    // Totals
-    subtotal: 0,
-    customerPrice: 0
-  };
+  // Base cost calculation
+  breakdown.baseCost = Math.max(25, breakdown.cubicFeet * 8); // $8 per cubic foot
   
-  if (!dimensions) {
-    // No dimensions - use price-based estimate
-    breakdown.customerPrice = Math.max(25, price * 0.15);
-    breakdown.actualShippingCost = breakdown.customerPrice * 0.6; // 40% markup
-  }
-}
-
-// Enhanced shipping calculation with detailed breakdown for admin
-function calculateDetailedShippingCost(dimensions, weight, price, category, pieceCount = 1, isFlatPacked = false) {
-  const breakdown = {
-    // Dimension details
-    boxDimensions: dimensions,
-    cubicInches: 0,
-    cubicFeet: 0,
-    boxCount: pieceCount,
-    
-    // Cost breakdown
-    baseCost: 0,
-    oversizeFee: 0,
-    valueFee: 0,
-    handlingFee: 15,
-    fuelSurcharge: 0,
-    insuranceFee: 0,
-    
-    // Business costs (hidden from customer)
-    actualShippingCost: 0,  // What we actually pay
-    profitMargin: 0,        // Our markup
-    cardProcessingFee: 0,   // 2.9% + $0.30
-    
-    // Totals
-    subtotal: 0,
-    customerPrice: 0
-  };
-  
-  if (!dimensions) {
-    // No dimensions - use price-based estimate
-    breakdown.customerPrice = Math.max(25, price * 0.15);
-    breakdown.actualShippingCost = breakdown.customerPrice * 0.6; // 40% markup
-  }
-}
-
-// Enhanced shipping calculation with detailed breakdown for admin
-function calculateDetailedShippingCost(dimensions, weight, price, category, pieceCount = 1, isFlatPacked = false) {
-  const breakdown = {
-    // Dimension details
-    boxDimensions: dimensions,
-    cubicInches: 0,
-    cubicFeet: 0,
-    boxCount: pieceCount,
-    
-    // Cost breakdown
-    baseCost: 0,
-    oversizeFee: 0,
-    valueFee: 0,
-    handlingFee: 15,
-    fuelSurcharge: 0,
-    insuranceFee: 0,
-    
-    // Business costs (hidden from customer)
-    actualShippingCost: 0,  // What we actually pay
-    profitMargin: 0,        // Our markup
-    cardProcessingFee: 0,   // 2.9% + $0.30
-    
-    // Totals
-    subtotal: 0,
-    customerPrice: 0
-  };
-  
-  if (!dimensions) {
-    // No dimensions - use price-based estimate
-    breakdown.customerPrice = Math.max(25, price * 0.15);
-    breakdown.actualShippingCost = breakdown.customerPrice * 0.6; // 40% markup
-  }
-}
-
-// Enhanced shipping calculation with detailed breakdown for admin
-function calculateDetailedShippingCost(dimensions, weight, price, category, pieceCount = 1, isFlatPacked = false) {
-  const breakdown = {
-    // Dimension details
-    boxDimensions: dimensions,
-    cubicInches: 0,
-    cubicFeet: 0,
-    boxCount: pieceCount,
-    
-    // Cost breakdown
-    baseCost: 0,
-    oversizeFee: 0,
-    valueFee: 0,
-    handlingFee: 15,
-    fuelSurcharge: 0,
-    insuranceFee: 0,
-    
-    // Business costs (hidden from customer)
-    actualShippingCost: 0,  // What we actually pay
-    profitMargin: 0,        // Our markup
-    cardProcessingFee: 0,   // 2.9% + $0.30
-    
-    // Totals
-    subtotal: 0,
-    customerPrice: 0
-  };
-  
-  if (!dimensions) {
-    // No dimensions - use price-based estimate
-    breakdown.customerPrice = Math.max(25, price * 0.15);
-    breakdown.actualShippingCost = breakdown.customerPrice * 0.6; // 40% markup
-  }
+  // Oversize fee
+  breakdown.oversizeFee = Math.max(dimensions.length, dimensions.width, dimensions.height) > 48 ? 75 : 0;
   
   // Value-based insurance fee
   breakdown.valueFee = price > 500 ? price * 0.02 : 0;
@@ -962,40 +571,6 @@ function calculateDetailedShippingCost(dimensions, weight, price, category, piec
   breakdown.customerPrice = Math.round(breakdown.subtotal);
   
   return breakdown;
-}
-
-// Enhanced shipping calculation with detailed breakdown for admin
-function calculateDetailedShippingCost(dimensions, weight, price, category, pieceCount = 1, isFlatPacked = false) {
-  const breakdown = {
-    // Dimension details
-    boxDimensions: dimensions,
-    cubicInches: 0,
-    cubicFeet: 0,
-    boxCount: pieceCount,
-    
-    // Cost breakdown
-    baseCost: 0,
-    oversizeFee: 0,
-    valueFee: 0,
-    handlingFee: 15,
-    fuelSurcharge: 0,
-    insuranceFee: 0,
-    
-    // Business costs (hidden from customer)
-    actualShippingCost: 0,  // What we actually pay
-    profitMargin: 0,        // Our markup
-    cardProcessingFee: 0,   // 2.9% + $0.30
-    
-    // Totals
-    subtotal: 0,
-    customerPrice: 0
-  };
-  
-  if (!dimensions) {
-    // No dimensions - use price-based estimate
-    breakdown.customerPrice = Math.max(25, price * 0.15);
-    breakdown.actualShippingCost = breakdown.customerPrice * 0.6; // 40% markup
-  }
 }
 
 // Calculate total order with hidden profit margin and card fees
@@ -1030,6 +605,7 @@ function calculateOrderTotals(products, deliveryFees) {
     }
   };
 }
+
 // Helper function to check if essential data is complete
 function isDataComplete(productData) {
   return productData && 
@@ -1821,6 +1397,7 @@ function calculateAdminDetails(product, url) {
     category: product.category
   };
 }
+
 // Store pending orders temporarily (in memory for now, could use Redis later)
 const pendingOrders = new Map();
 
@@ -1970,13 +1547,6 @@ app.post('/apps/instant-import/create-draft-order', async (req, res) => {
   }
 });
 
-    
-  } catch (error) {
-    console.error('Manual status check error:', error);
-    res.status(500).json({ error: 'Failed to check status' });
-  }
-});
-
 // Start server
 app.listen(PORT, () => {
   console.log(`\n🚀 Server running on port ${PORT}`);
@@ -1986,7 +1556,6 @@ app.listen(PORT, () => {
   // Cleanup tracking on server shutdown
   process.on('SIGTERM', () => {
     console.log('🛑 Server shutting down...');
-    orderTracking.cleanup();
     process.exit(0);
   });
 });
