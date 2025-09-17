@@ -50,7 +50,7 @@ console.log(`Shopify Domain: ${SHOPIFY_DOMAIN}`);
 console.log('');
 console.log('🔍 SCRAPING CONFIGURATION:');
 console.log(`1. Amazon Specialist: Amazon-Crawler - ${USE_AMAZON_CRAWLER ? '✅ ENABLED' : '❌ DISABLED'}`);
-console.log(`2. Primary: Oxylabs - ${USE_OXYLABS ? '✅ ENABLED' : '❌ DISABLED'}`);
+console.log(`2. Primary: Oxylabs - ${USE_OXYLABS ? '✅ ENABLED' : '❌ DISABLED'} (${OXYLABS_USERNAME ? 'has username' : 'no username'}, ${OXYLABS_PASSWORD ? 'has password' : 'no password'})`);
 console.log(`3. Secondary: Apify - ${USE_APIFY ? '✅ ENABLED' : '❌ DISABLED'}`);
 console.log(`4. Tertiary: ProWebCrawler - ${USE_PROWEB ? '✅ ENABLED' : '❌ DISABLED'}`);
 console.log(`5. Quaternary: ScrapingBee - ✅ ENABLED`);
@@ -388,17 +388,19 @@ async function scrapeProduct(url) {
   // STEP 1: Always try Oxylabs first (fastest and most reliable)
   if (USE_OXYLABS) {
     try {
-      console.log('   🌐 Attempting Oxylabs scrape (primary)...');
+      console.log('   🌐 Attempting Oxylabs scrape...');
       const oxylabsData = await oxylabsScraper.scrapeProduct(url);
       
       if (oxylabsData) {
         productData = oxylabsData;
         scrapingMethod = 'oxylabs';
-        console.log('   ✅ Oxylabs returned data');
+        console.log('   ✅ Oxylabs success');
         
         if (!isDataComplete(productData)) {
-          console.log('   ⚠️ Oxylabs data incomplete, will try fallbacks');
+          console.log('   ⚠️ Data incomplete, trying fallbacks');
         }
+      } else {
+        console.log('   ❌ Oxylabs returned null data');
       }
     } catch (error) {
       console.log('   ❌ Oxylabs failed:', error.message);
@@ -409,19 +411,19 @@ async function scrapeProduct(url) {
   // STEP 2: Try Amazon-Crawler for Amazon URLs if Oxylabs failed
   if (retailer === 'Amazon' && USE_AMAZON_CRAWLER && (!productData || !isDataComplete(productData))) {
     try {
-      console.log('   🛒 Attempting Amazon-Crawler (Amazon fallback)...');
+      console.log('   🛒 Attempting Amazon-Crawler...');
       const amazonData = await amazonCrawler.scrapeProduct(url);
       
       if (amazonData) {
         if (!productData) {
           productData = amazonData;
           scrapingMethod = 'amazon-crawler';
-          console.log('   ✅ Amazon-Crawler returned data');
+          console.log('   ✅ Amazon-Crawler success');
         } else {
           const mergedData = mergeProductData(productData, amazonData);
           productData = mergedData;
           scrapingMethod = scrapingMethod + '+amazon-crawler';
-          console.log('   ✅ Enhanced with Amazon-Crawler data');
+          console.log('   ✅ Enhanced with Amazon-Crawler');
         }
       }
     } catch (error) {

@@ -195,7 +195,11 @@ class OxylabsScraper {
       });
 
       console.log(`   📥 Oxylabs response status:`, response.status);
-      console.log(`   📥 Oxylabs response data:`, JSON.stringify(response.data, null, 2));
+      
+      // Only log response structure, not full content
+      if (response.data && response.data.results) {
+        console.log(`   📥 Oxylabs returned ${response.data.results.length} results`);
+      }
 
       if (response.data && response.data.results && response.data.results[0]) {
         const result = response.data.results[0];
