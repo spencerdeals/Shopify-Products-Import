@@ -468,33 +468,57 @@ async function scrapeWithScrapingBee(url) {
     // Extract variant information (color, size, style, etc.)
     const variantPatterns = [
       // Wayfair specific patterns
-      // Look for selected options in Wayfair's structure
-      /class="[^"]*SelectedOption[^"]*"[^>]*>([^<]+)</i,
-      /class="[^"]*selected[^"]*option[^"]*"[^>]*>([^<]+)</i,
-      /data-testid="[^"]*selected[^"]*"[^>]*>([^<]+)</i,
-      /aria-selected="true"[^>]*>([^<]+)</i,
-      // JSON data patterns for Wayfair
-      /"selectedOptionName":\s*"([^"]+)"/i,
-      /"optionName":\s*"([^"]+)"/i,
-      /"selectedOption":\s*"([^"]+)"/i,
-      /"currentOption":\s*"([^"]+)"/i,
-      // Generic patterns for variants
-      /class="[^"]*color[^"]*selected[^"]*"[^>]*>([^<]+)</i,
-      /class="[^"]*size[^"]*selected[^"]*"[^>]*>([^<]+)</i,
-      // Look for variant in structured data
-      /"variant":\s*"([^"]+)"/i,
-      /"color":\s*"([^"]+)"/i,
-      /"size":\s*"([^"]+)"/i
+      // More comprehensive Wayfair variant patterns
+      /class="[^"]*SelectedOption[^"]*"[^>]*>([^<]+)<\/[^>]*>/i,
+      /class="[^"]*selected[^"]*option[^"]*"[^>]*>([^<]+)<\/[^>]*>/i,
+      /data-testid="[^"]*selected[^"]*"[^>]*>([^<]+)<\/[^>]*>/i,
+      /aria-selected="true"[^>]*>([^<]+)<\/[^>]*>/i,
+      // JSON data patterns - more specific
+      /"selectedOptionName":\s*"([^"]{2,50})"/i,
+      /"optionName":\s*"([^"]{2,50})"/i,
+      /"selectedOption":\s*"([^"]{2,50})"/i,
+      /"currentOption":\s*"([^"]{2,50})"/i,
+      // Look for color/size in URL parameters
+      /piid=(\d+)/i,
+      // Generic variant patterns
+      /class="[^"]*color[^"]*selected[^"]*"[^>]*>([^<]+)<\/[^>]*>/i,
+      /class="[^"]*size[^"]*selected[^"]*"[^>]*>([^<]+)<\/[^>]*>/i,
+      // Structured data variants
+      /"variant":\s*"([^"]{2,50})"/i,
+      /"color":\s*"([^"]{2,50})"/i,
+      /"size":\s*"([^"]{2,50})"/i,
+      // Look for variant in meta tags
+      /property="product:color"[^>]+content="([^"]+)"/i,
+      /property="product:size"[^>]+content="([^"]+)"/i
     ];
     
     for (const pattern of variantPatterns) {
       const match = html.match(pattern);
-      if (match && match[1].trim() && match[1].trim().length > 0 && match[1].trim().length < 50) {
+      if (match && match[1] && match[1].trim().length > 1 && match[1].trim().length < 50) {
         productData.variant = match[1].trim().replace(/&[^;]+;/g, '');
-        console.log('   🎨 Found variant:', productData.variant);
-        break;
+        // Skip generic/unhelpful variants
+        if (!productData.variant.match(/^(select|choose|option|default|none|n\/a)$/i)) {
+          console.log('   🎨 Found variant:', productData.variant);
+          break;
+        }
       }
     }
+    
+    // If no variant found, try extracting from URL parameters (Wayfair specific)
+    if (!productData.variant) {
+      try {
+        const urlObj = new URL(url);
+        const piid = urlObj.searchParams.get('piid');
+        if (piid) {
+          // This is a Wayfair product variant ID - we could potentially map this
+          console.log('   🎨 Found Wayfair variant ID:', piid);
+          productData.variant = `Variant ${piid}`;
+        }
+      } catch (e) {
+        // URL parsing failed, continue
+      }
+    }
+    
     // Extract price
     const pricePatterns = [
       // More specific price patterns for better accuracy
@@ -674,6 +698,90 @@ async function scrapeProduct(url) {
     }
   }
   
+  // Skip the old individual scraper attempts since we handled them above
+  /*
+  if (USE_PRO_CRAWLER && !isAmazonUrl(url) && (!productData || !isDataComplete(productData))) {
+    try {
+      console.log('   🕸️ Attempting ProWebCrawler...');
+      const proWebPromise = proWebCrawler.scrapeProduct(url);
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('ProWebCrawler timeout')), 12000) // 12s for ProWeb
+      );
+      
+      const proWebData = await Promise.race([proWebPromise, timeoutPromise]);
+      
+      if (proWebData) {
+        if (!productData) {
+          productData = proWebData;
+          scrapingMethod = 'prowebcrawler';
+          console.log('   ✅ Using ProWebCrawler data');
+        } else {
+          const mergedData = mergeProductData(productData, proWebData);
+          productData = mergedData;
+          scrapingMethod = scrapingMethod + '+prowebcrawler';
+        }
+      }
+    } catch (error) {
+      console.log('   ❌ ProWebCrawler failed:', error.message);
+    }
+  }
+  
+  // STEP 3: Try Apify as fallback
+  if (USE_APIFY && (!productData || !isDataComplete(productData))) {
+    try {
+      console.log('   🔄 Attempting Apify scrape...');
+      
+      const apifyPromise = apifyScraper.scrapeProduct(url);
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Apify timeout')), 8000) // 8s for Apify
+      );
+      
+      const apifyData = await Promise.race([apifyPromise, timeoutPromise]);
+      
+      if (apifyData) {
+        if (!productData) {
+          productData = apifyData;
+          scrapingMethod = 'apify';
+          console.log('   ✅ Apify returned data');
+        } else {
+          const mergedData = mergeProductData(productData, apifyData);
+          productData = mergedData;
+          scrapingMethod = scrapingMethod + '+apify';
+        }
+      }
+    } catch (error) {
+      console.log('   ❌ Apify failed:', error.message);
+    }
+  }
+  
+  // STEP 4: Try ScrapingBee if still needed
+  if (USE_SCRAPINGBEE && (!productData || !isDataComplete(productData))) {
+    try {
+      console.log('   🐝 Attempting ScrapingBee...');
+      const scrapingBeePromise = scrapeWithScrapingBee(url);
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('ScrapingBee timeout')), 6000) // 6s for ScrapingBee
+      );
+      
+      const scrapingBeeData = await Promise.race([scrapingBeePromise, timeoutPromise]);
+      
+      if (scrapingBeeData) {
+        if (!productData) {
+          productData = scrapingBeeData;
+          scrapingMethod = 'scrapingbee';
+          console.log('   ✅ Using ScrapingBee data');
+        } else {
+          const mergedData = mergeProductData(productData, scrapingBeeData);
+          productData = mergedData;
+          scrapingMethod = scrapingMethod + '+scrapingbee';
+        }
+      }
+    } catch (error) {
+      console.log('   ❌ ScrapingBee failed:', error.message);
+    }
+  }
+  */
+  
   // STEP 5: Try GPT parser as fallback/validator
   if (parseProduct && (!productData || !productData.name || !productData.price)) {
     try {
@@ -790,9 +898,27 @@ async function scrapeProduct(url) {
 async function processBatch(urls, batchSize = MAX_CONCURRENT_SCRAPES) {
   const results = [];
   for (let i = 0; i < urls.length; i += batchSize) {
+  extractPrice(product) {
+    if (product.price && typeof product.price === 'object') {
+      // Try different price fields
+      return product.price.current_price || 
+             product.price.discounted_price || 
+             product.price.price || 
+             null;
+    }
+    
+    if (typeof product.price === 'string') {
+      const priceMatch = product.price.match(/\$?(\d+(?:,\d{3})*(?:\.\d{2})?)/);
+      return priceMatch ? parseFloat(priceMatch[1].replace(/,/g, '')) : null;
+    }
+    
+    return typeof product.price === 'number' ? product.price : null;
+  }
+
     const batch = urls.slice(i, i + batchSize);
-    const batchResults = await Promise.all(
-      batch.map(url => scrapeProduct(url).catch(error => {
+    const dimensionText = product.dimensions || product.description || '';
+    if (dimensionText) {
+      const dimMatch = dimensionText.match(/(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)/i);
         console.error(`Failed to process ${url}:`, error);
         return {
           id: generateProductId(),
@@ -1014,11 +1140,12 @@ app.get('/api/get-pending-order/:orderId', (req, res) => {
 // FIXED: Shopify Draft Order Creation with better error handling
 app.post('/apps/instant-import/create-draft-order', async (req, res) => {
   try {
-    let orderData = req.body;
-    
+    const weightText = product.weight || product.description || '';
+    if (weightText) {
+      const weightMatch = weightText.match(/(\d+(?:\.\d+)?)\s*(?:pounds?|lbs?|kg)/i);
     // If this comes from the checkout flow, get the stored data
     if (req.body.checkoutId) {
-      const storedData = pendingOrders.get(req.body.checkoutId);
+        if (weightText.toLowerCase().includes('kg')) {
       if (storedData) {
         orderData = { ...storedData.data, ...req.body };
         pendingOrders.delete(req.body.checkoutId);
