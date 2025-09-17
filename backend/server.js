@@ -347,8 +347,7 @@ function estimateDimensions(category, name = '') {
   
   // Apply flat-pack reduction if detected
   if (category === 'furniture' && detectFlatPacked(name, category)) {
-    dimensions = applyFlatPackReduction(dimensions);
-    console.log(`   📦 Applied flat-pack reduction: ${dimensions.length}" × ${dimensions.width}" × ${dimensions.height}"`);
+    dimensions = applyFlatPackReduction(dimensions, name);
   }
   
   return {
