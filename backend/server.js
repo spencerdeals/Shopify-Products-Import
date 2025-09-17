@@ -8,6 +8,7 @@ const ApifyScraper = require('./apifyScraper');
 const OrderTracker = require('./orderTracking');
 const UPCItemDB = require('./upcitemdb');
 const ProWebCrawler = require('./proWebCrawler');
+const AmazonCrawler = require('./amazonCrawler');
 require('dotenv').config();
 
 // Import GPT parser if available, with fallback
@@ -38,11 +39,13 @@ const apifyScraper = new ApifyScraper(APIFY_API_KEY);
 const upcItemDB = new UPCItemDB(UPCITEMDB_API_KEY);
 const orderTracker = new OrderTracker();
 const proWebCrawler = new ProWebCrawler();
+const amazonCrawler = new AmazonCrawler();
 
 const USE_APIFY = apifyScraper.isAvailable();
 const USE_SCRAPINGBEE = !!SCRAPINGBEE_API_KEY;
 const USE_UPCITEMDB = !!UPCITEMDB_API_KEY;
 const USE_PRO_CRAWLER = proWebCrawler.isAvailable();
+const USE_AMAZON_CRAWLER = amazonCrawler.isAvailable();
 
 // FAST timeouts for speed
 const SCRAPING_TIMEOUT = 30000;  // 30 seconds max
@@ -53,11 +56,12 @@ console.log(`Port: ${PORT}`);
 console.log(`Shopify Domain: ${SHOPIFY_DOMAIN}`);
 console.log('');
 console.log('🔍 SCRAPING CONFIGURATION:');
-console.log(`1. Primary: Apify - ${USE_APIFY ? '✅ ENABLED' : '❌ DISABLED'}`);
-console.log(`2. Secondary: ProWebCrawler - ${USE_PRO_CRAWLER ? '✅ ENABLED' : '❌ DISABLED'}`);
-console.log(`3. Tertiary: ScrapingBee - ${USE_SCRAPINGBEE ? '✅ ENABLED' : '❌ DISABLED'}`);
-console.log(`4. Fallback: GPT Parser - ${parseProduct ? '✅ ENABLED' : '❌ DISABLED'}`);
-console.log(`5. Enhancement: UPCitemdb - ${USE_UPCITEMDB ? '✅ ENABLED' : '❌ DISABLED'}`);
+console.log(`1. Amazon Specialist: Amazon-Crawler - ${USE_AMAZON_CRAWLER ? '✅ ENABLED' : '❌ DISABLED'}`);
+console.log(`2. Primary: Apify - ${USE_APIFY ? '✅ ENABLED' : '❌ DISABLED'}`);
+console.log(`3. Secondary: ProWebCrawler - ${USE_PRO_CRAWLER ? '✅ ENABLED' : '❌ DISABLED'}`);
+console.log(`4. Tertiary: ScrapingBee - ${USE_SCRAPINGBEE ? '✅ ENABLED' : '❌ DISABLED'}`);
+console.log(`5. Fallback: GPT Parser - ${parseProduct ? '✅ ENABLED' : '❌ DISABLED'}`);
+console.log(`6. Enhancement: UPCitemdb - ${USE_UPCITEMDB ? '✅ ENABLED' : '❌ DISABLED'}`);
 console.log('=====================');
 
 // Middleware
@@ -79,7 +83,8 @@ app.get('/health', (req, res) => {
       proWebCrawler: USE_PRO_CRAWLER,
       scrapingbee: USE_SCRAPINGBEE,
       gpt: !!parseProduct,
-      upcitemdb: USE_UPCITEMDB
+      upcitemdb: USE_UPCITEMDB,
+      amazonCrawler: USE_AMAZON_CRAWLER
     },
     shopifyConfigured: !!SHOPIFY_ACCESS_TOKEN
   });
@@ -152,6 +157,15 @@ function detectRetailer(url) {
     return 'Unknown Retailer';
   } catch (e) {
     return 'Unknown Retailer';
+  }
+}
+
+function isAmazonUrl(url) {
+  try {
+    const domain = new URL(url).hostname.toLowerCase();
+    return domain.includes('amazon.com') || domain.includes('amazon.');
+  } catch (e) {
+    return false;
   }
 }
 
@@ -541,7 +555,33 @@ async function scrapeProduct(url) {
   console.log(`\n📦 Processing: ${url}`);
   console.log(`   Retailer: ${retailer}`);
   
-  // STEP 1: Try Apify first (fastest)
+  // STEP 1: For Amazon URLs, try specialized Amazon crawler first
+  if (USE_AMAZON_CRAWLER && isAmazonUrl(url)) {
+    try {
+      console.log('   🛒 Attempting Amazon specialist crawler...');
+      
+      const amazonPromise = amazonCrawler.scrapeProduct(url);
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Amazon crawler timeout')), SCRAPING_TIMEOUT)
+      );
+      
+      productData = await Promise.race([amazonPromise, timeoutPromise]);
+      
+      if (productData) {
+        scrapingMethod = 'amazon-crawler';
+        console.log('   ✅ Amazon crawler returned data');
+        
+        if (!isDataComplete(productData)) {
+          console.log('   ⚠️ Amazon crawler data incomplete, will try other methods');
+        }
+      }
+    } catch (error) {
+      console.log('   ❌ Amazon crawler failed:', error.message);
+      productData = null;
+    }
+  }
+  
+  // STEP 2: Try Apify if Amazon crawler didn't work or for non-Amazon URLs
   if (USE_APIFY) {
     try {
       console.log('   🔄 Attempting Apify scrape...');
@@ -551,11 +591,18 @@ async function scrapeProduct(url) {
         setTimeout(() => reject(new Error('Apify timeout')), SCRAPING_TIMEOUT)
       );
       
-      productData = await Promise.race([apifyPromise, timeoutPromise]);
+      const apifyData = await Promise.race([apifyPromise, timeoutPromise]);
       
-      if (productData) {
-        scrapingMethod = 'apify';
-        console.log('   ✅ Apify returned data');
+      if (apifyData) {
+        if (!productData) {
+          productData = apifyData;
+          scrapingMethod = 'apify';
+          console.log('   ✅ Apify returned data');
+        } else {
+          const mergedData = mergeProductData(productData, apifyData);
+          productData = mergedData;
+          scrapingMethod = scrapingMethod + '+apify';
+        }
         
         if (!isDataComplete(productData)) {
           console.log('   ⚠️ Apify data incomplete, will try ScrapingBee');
@@ -563,11 +610,10 @@ async function scrapeProduct(url) {
       }
     } catch (error) {
       console.log('   ❌ Apify failed:', error.message);
-      productData = null;
     }
   }
   
-  // STEP 2: Try ProWebCrawler if needed (most comprehensive)
+  // STEP 3: Try ProWebCrawler if needed (most comprehensive)
   if (USE_PRO_CRAWLER && (!productData || !isDataComplete(productData))) {
     try {
       console.log('   🕸️ Attempting ProWebCrawler...');
@@ -589,7 +635,7 @@ async function scrapeProduct(url) {
     }
   }
   
-  // STEP 3: Try ScrapingBee if still needed
+  // STEP 4: Try ScrapingBee if still needed
   if (USE_SCRAPINGBEE && (!productData || !isDataComplete(productData))) {
     try {
       console.log('   🐝 Attempting ScrapingBee...');
@@ -611,7 +657,7 @@ async function scrapeProduct(url) {
     }
   }
   
-  // STEP 4: Try GPT parser as fallback/validator
+  // STEP 5: Try GPT parser as fallback/validator
   if (parseProduct && (!productData || !productData.name || !productData.price)) {
     try {
       console.log('   🧠 Falling back to GPT parser...');
@@ -632,7 +678,7 @@ async function scrapeProduct(url) {
     }
   }
   
-  // STEP 5: Try UPCitemdb for missing dimensions
+  // STEP 6: Try UPCitemdb for missing dimensions
   if (USE_UPCITEMDB && productData && productData.name && (!productData.dimensions || !productData.weight)) {
     try {
       console.log('   📦 Attempting UPCitemdb lookup...');
@@ -655,7 +701,7 @@ async function scrapeProduct(url) {
     }
   }
   
-  // STEP 5: Use estimation for missing data
+  // STEP 7: Use estimation for missing data
   if (!productData) {
     productData = {
       name: 'Product from ' + retailer,
@@ -785,6 +831,7 @@ app.post('/api/scrape', async (req, res) => {
     const products = await processBatch(urls);
     
     // Log summary
+    const amazonCount = products.filter(p => p.scrapingMethod?.includes('amazon-crawler')).length;
     const apifyCount = products.filter(p => p.scrapingMethod?.includes('apify')).length;
     const proWebCount = products.filter(p => p.scrapingMethod?.includes('prowebcrawler')).length;
     const scrapingBeeCount = products.filter(p => p.scrapingMethod?.includes('scrapingbee')).length;
@@ -794,6 +841,7 @@ app.post('/api/scrape', async (req, res) => {
     
     console.log('\n📊 SCRAPING SUMMARY:');
     console.log(`   Total products: ${products.length}`);
+    console.log(`   Amazon-Crawler used: ${amazonCount}`);
     console.log(`   Apify used: ${apifyCount}`);
     console.log(`   ProWebCrawler used: ${proWebCount}`);
     console.log(`   ScrapingBee used: ${scrapingBeeCount}`);
@@ -809,6 +857,7 @@ app.post('/api/scrape', async (req, res) => {
         scraped: products.length - estimatedCount,
         estimated: estimatedCount,
         scrapingMethods: {
+          amazonCrawler: amazonCount,
           apify: apifyCount,
           proWebCrawler: proWebCount,
           scrapingBee: scrapingBeeCount,
