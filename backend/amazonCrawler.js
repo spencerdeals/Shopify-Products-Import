@@ -124,20 +124,68 @@ class AmazonCrawler {
           }
         }
 
-        // If still no image, try to get from JSON data
+        // If still no image, try multiple fallback methods
+        if (!data.image) {
+          // Method 1: Try data-src attribute
+          for (const selector of imageSelectors) {
+            const element = document.querySelector(selector);
+            if (element) {
+              let imgSrc = element.getAttribute('data-src');
+              if (imgSrc && imgSrc.startsWith('http')) {
+                data.image = imgSrc;
+                break;
+              }
+            }
+          }
+        }
+        
+        // Method 2: Try to get from JSON data in scripts
         if (!data.image) {
           const scriptTags = document.querySelectorAll('script');
           for (const script of scriptTags) {
-            if (script.textContent.includes('ImageBlockATF')) {
+            if (script.textContent.includes('ImageBlockATF') || script.textContent.includes('colorImages')) {
               try {
-                const match = script.textContent.match(/"hiRes":"([^"]+)"/);
+                // Try hiRes first
+                let match = script.textContent.match(/"hiRes":"([^"]+)"/);
+                if (!match) {
+                  // Try large image
+                  match = script.textContent.match(/"large":"([^"]+)"/);
+                }
+                if (!match) {
+                  // Try main image
+                  match = script.textContent.match(/"main":\{"([^"]+)"/);
+                }
                 if (match && match[1]) {
-                  data.image = match[1].replace(/\\u[\dA-F]{4}/gi, '');
+                  let imgUrl = match[1].replace(/\\u[\dA-F]{4}/gi, '').replace(/\\/g, '');
+                  if (imgUrl.startsWith('http')) {
+                    data.image = imgUrl;
+                  }
                   break;
                 }
               } catch (e) {
                 // Continue searching
               }
+            }
+          }
+        }
+        
+        // Method 3: Try og:image meta tag
+        if (!data.image) {
+          const ogImage = document.querySelector('meta[property="og:image"]');
+          if (ogImage && ogImage.content && ogImage.content.startsWith('http')) {
+            data.image = ogImage.content;
+          }
+        }
+        
+        // Method 4: Try any Amazon image with specific patterns
+        if (!data.image) {
+          const allImages = document.querySelectorAll('img');
+          for (const img of allImages) {
+            const src = img.src || img.getAttribute('data-src') || img.getAttribute('data-old-hires');
+            if (src && src.includes('images-na.ssl-images-amazon.com') && 
+                (src.includes('_AC_') || src.includes('_SL') || src.includes('_UL'))) {
+              data.image = src;
+              break;
             }
           }
         }
