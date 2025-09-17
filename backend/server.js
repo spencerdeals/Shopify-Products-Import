@@ -501,6 +501,165 @@ function calculateShippingCost(dimensions, weight, price) {
   return Math.round(totalCost);
 }
 
+// Enhanced shipping calculation with detailed breakdown for admin
+function calculateDetailedShippingCost(dimensions, weight, price, category, pieceCount = 1, isFlatPacked = false) {
+  const breakdown = {
+    // Dimension details
+    boxDimensions: dimensions,
+    cubicInches: 0,
+    cubicFeet: 0,
+    boxCount: pieceCount,
+    
+    // Cost breakdown
+    baseCost: 0,
+    oversizeFee: 0,
+    valueFee: 0,
+    handlingFee: 15,
+    fuelSurcharge: 0,
+    insuranceFee: 0,
+    
+    // Business costs (hidden from customer)
+    actualShippingCost: 0,  // What we actually pay
+    profitMargin: 0,        // Our markup
+    cardProcessingFee: 0,   // 2.9% + $0.30
+    
+    // Totals
+    subtotal: 0,
+    customerPrice: 0
+  };
+  
+  if (!dimensions) {
+    // No dimensions - use price-based estimate
+    breakdown.customerPrice = Math.max(25, price * 0.15);
+    breakdown.actualShippingCost = breakdown.customerPrice * 0.6; // 40% markup
+}
+
+// Enhanced shipping calculation with detailed breakdown for admin
+function calculateDetailedShippingCost(dimensions, weight, price, category, pieceCount = 1, isFlatPacked = false) {
+  const breakdown = {
+    // Dimension details
+    boxDimensions: dimensions,
+    cubicInches: 0,
+    cubicFeet: 0,
+    boxCount: pieceCount,
+    
+    // Cost breakdown
+    baseCost: 0,
+    oversizeFee: 0,
+    valueFee: 0,
+    handlingFee: 15,
+    fuelSurcharge: 0,
+    insuranceFee: 0,
+    
+    // Business costs (hidden from customer)
+    actualShippingCost: 0,  // What we actually pay
+    profitMargin: 0,        // Our markup
+    cardProcessingFee: 0,   // 2.9% + $0.30
+    
+    // Totals
+    subtotal: 0,
+    customerPrice: 0
+  };
+  
+  if (!dimensions) {
+    // No dimensions - use price-based estimate
+    breakdown.customerPrice = Math.max(25, price * 0.15);
+    breakdown.actualShippingCost = breakdown.customerPrice * 0.6; // 40% markup
+}
+
+// Enhanced shipping calculation with detailed breakdown for admin
+function calculateDetailedShippingCost(dimensions, weight, price, category, pieceCount = 1, isFlatPacked = false) {
+  const breakdown = {
+    // Dimension details
+    boxDimensions: dimensions,
+    cubicInches: 0,
+    cubicFeet: 0,
+    boxCount: pieceCount,
+    
+    // Cost breakdown
+    baseCost: 0,
+    oversizeFee: 0,
+    valueFee: 0,
+    handlingFee: 15,
+    fuelSurcharge: 0,
+    insuranceFee: 0,
+    
+    // Business costs (hidden from customer)
+    actualShippingCost: 0,  // What we actually pay
+    profitMargin: 0,        // Our markup
+    cardProcessingFee: 0,   // 2.9% + $0.30
+    
+    // Totals
+    subtotal: 0,
+    customerPrice: 0
+  };
+  
+  if (!dimensions) {
+    // No dimensions - use price-based estimate
+    breakdown.customerPrice = Math.max(25, price * 0.15);
+    breakdown.actualShippingCost = breakdown.customerPrice * 0.6; // 40% markup
+  
+  // Value-based insurance fee
+  breakdown.valueFee = price > 500 ? price * 0.02 : 0;
+  
+  // Fuel surcharge (12% of base cost)
+  breakdown.fuelSurcharge = Math.round(breakdown.baseCost * 0.12);
+  
+  // Insurance fee for high-value items
+  breakdown.insuranceFee = price > 1000 ? Math.round(price * 0.005) : 0;
+  
+  // Calculate subtotal (what customer sees as "shipping")
+  breakdown.subtotal = breakdown.baseCost + breakdown.oversizeFee + breakdown.valueFee + 
+                      breakdown.handlingFee + breakdown.fuelSurcharge + breakdown.insuranceFee;
+  
+  // Our actual shipping cost (what we pay - typically 60% of what we charge)
+  breakdown.actualShippingCost = Math.round(breakdown.subtotal * 0.6);
+  
+  // Our profit margin
+  breakdown.profitMargin = breakdown.subtotal - breakdown.actualShippingCost;
+  
+  // Card processing fee (2.9% + $0.30 on the shipping amount)
+  breakdown.cardProcessingFee = Math.round((breakdown.subtotal * 0.029) + 0.30);
+  
+  // Final customer price
+  breakdown.customerPrice = Math.round(breakdown.subtotal);
+  
+  return breakdown;
+}
+
+// Enhanced shipping calculation with detailed breakdown for admin
+function calculateDetailedShippingCost(dimensions, weight, price, category, pieceCount = 1, isFlatPacked = false) {
+  const breakdown = {
+    // Dimension details
+    boxDimensions: dimensions,
+    cubicInches: 0,
+    cubicFeet: 0,
+    boxCount: pieceCount,
+    
+    // Cost breakdown
+    baseCost: 0,
+    oversizeFee: 0,
+    valueFee: 0,
+    handlingFee: 15,
+    fuelSurcharge: 0,
+    insuranceFee: 0,
+    
+    // Business costs (hidden from customer)
+    actualShippingCost: 0,  // What we actually pay
+    profitMargin: 0,        // Our markup
+    cardProcessingFee: 0,   // 2.9% + $0.30
+    
+    // Totals
+    subtotal: 0,
+    customerPrice: 0
+  };
+  
+  if (!dimensions) {
+    // No dimensions - use price-based estimate
+    breakdown.customerPrice = Math.max(25, price * 0.15);
+    breakdown.actualShippingCost = breakdown.customerPrice * 0.6; // 40% markup
+}
+
 // Calculate total order with hidden profit margin and card fees
 function calculateOrderTotals(products, deliveryFees) {
   const totalProductCost = products.reduce((sum, product) => sum + (product.price || 0), 0);
