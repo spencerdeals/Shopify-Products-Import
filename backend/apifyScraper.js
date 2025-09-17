@@ -42,11 +42,9 @@ class ApifyScraper {
     let result = null;
 
     try {
-      // For Wayfair, use the paid mscraper/wayfair-scraper
       if (retailer === 'Wayfair') {
         result = await this.scrapeWayfair(url);
       } else {
-        // For other retailers, use generic web scraper
         result = await this.scrapeGeneric(url);
       }
     } catch (error) {
@@ -54,7 +52,7 @@ class ApifyScraper {
       result = null;
     }
 
-    // === NEW: Safe GPT fallback ===
+    // === GPT fallback ===
     if (!result && USE_GPT_FALLBACK && gptParser) {
       try {
         console.log('🧠 Falling back to GPT parser...');
@@ -69,18 +67,18 @@ class ApifyScraper {
       }
     }
 
-    return result; // may be null (same behavior as before)
+    return result;
   }
 
   async scrapeWayfair(url) {
     try {
-      console.log('🏠 Scraping Wayfair with paid mscraper/wayfair-scraper...');
+      console.log('🏠 Scraping Wayfair with 123webdata/wayfair-scraper...');
       
       const input = {
         urls: [url]
       };
 
-      const run = await this.client.actor('mscraper/wayfair-scraper').call(input, {
+      const run = await this.client.actor('123webdata/wayfair-scraper').call(input, {
         timeout: 120000,
         memory: 2048
       });
@@ -89,11 +87,10 @@ class ApifyScraper {
       
       if (items && items.length > 0) {
         const item = items[0];
-        console.log('✅ Wayfair mscraper successful');
+        console.log('✅ Wayfair scraper successful');
         console.log('   📝 Name:', (item.name || item.title || 'Not found').substring(0, 50) + '...');
         console.log('   💰 Price:', item.price || item.currentPrice || 'Not found');
         
-        // Parse dimensions if available
         let dimensions = null;
         if (item.dimensions) {
           const dimMatch = item.dimensions.match(/(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)/);
@@ -110,7 +107,7 @@ class ApifyScraper {
           name: item.name || item.title || null,
           price: item.price || item.currentPrice || null,
           image: item.image || item.imageUrl || null,
-          dimensions: dimensions,
+          dimensions,
           weight: item.weight || null,
           brand: item.brand || null,
           category: item.category || null,
@@ -118,11 +115,11 @@ class ApifyScraper {
         };
       }
       
-      console.log('❌ Wayfair mscraper returned no data');
+      console.log('❌ Wayfair scraper returned no data');
       return null;
       
     } catch (error) {
-      console.error('❌ Wayfair mscraper failed:', error.message);
+      console.error('❌ Wayfair scraper failed:', error.message);
       return null;
     }
   }
@@ -139,7 +136,6 @@ class ApifyScraper {
             await page.waitForTimeout(2000);
             
             return await page.evaluate(() => {
-              // Generic selectors for common e-commerce sites
               const nameSelectors = ['h1', '.product-title', '.product-name', '[data-testid*="title"]'];
               const priceSelectors = ['.price', '[data-testid*="price"]', '[class*="price"]'];
               const imageSelectors = ['.product-image img', '.main-image img', 'img[data-testid*="image"]'];
