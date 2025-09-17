@@ -510,12 +510,6 @@ async function scrapeProduct(url) {
   try {
     const results = await Promise.allSettled([...scrapingPromises, timeoutPromise]);
     
-    // Process successful results, sorted by priority
-  }
-  // Fill in missing data with estimations
-  const productName = productData.name || `Product from ${retailer}`;
-  const category = productData.category || categorizeProduct(productName, url);
-  
   if (!productData.dimensions) {
     productData.dimensions = estimateDimensions(category, productName);
     console.log('   📐 Estimated dimensions based on category:', category);
