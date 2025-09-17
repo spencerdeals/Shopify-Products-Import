@@ -13,12 +13,13 @@
 
         html, body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            background: transparent;
+            background: white;
             width: 100%;
             height: 100%;
             margin: 0;
             padding: 0;
-            overflow-x: hidden;
+            overflow-x: hidden !important;
+            max-width: 100vw;
         }
 
         /* INTRO PAGE STYLES - COMPLETELY SEAMLESS */
@@ -28,10 +29,12 @@
             align-items: center;
             justify-content: center;
             text-align: center;
-            background: transparent;
+            background: white;
             min-height: 100vh;
             padding: 20px;
-            overflow: hidden;
+            overflow-x: hidden !important;
+            width: 100%;
+            max-width: 100vw;
         }
 
         .intro-page.hidden {
@@ -131,11 +134,12 @@
         /* CALCULATOR STYLES - COMPLETELY SEAMLESS */
         .calculator-page {
             display: none;
-            background: transparent;
+            background: white;
             width: 100%;
-            max-width: 100vw;
-            overflow-x: hidden;
+            max-width: 100vw !important;
+            overflow-x: hidden !important;
             padding: 0;
+            margin: 0;
             animation: fadeIn 0.5s ease;
         }
 
@@ -145,10 +149,11 @@
 
         .calculator-content {
             width: 100%;
-            max-width: 100%;
+            max-width: 100vw;
             margin: 0 auto;
-            padding: 30px 20px;
-            overflow-x: hidden;
+            padding: 20px 15px;
+            overflow-x: hidden !important;
+            box-sizing: border-box;
         }
 
         @keyframes fadeIn {
@@ -219,8 +224,10 @@
             justify-content: center;
             margin-bottom: 30px;
             padding: 20px 0;
-            background: transparent;
+            background: white;
             border: none;
+            width: 100%;
+            overflow-x: hidden;
         }
 
         .progress-step {
@@ -268,12 +275,14 @@
         }
 
         .warning-box {
-            background: linear-gradient(to right, #fff8e1 0%, transparent 100%);
+            background: linear-gradient(to right, #fff8e1 0%, #fff8e1 50%, white 100%);
             border-left: 4px solid #ffa726;
             border-radius: 0;
             padding: 15px;
             margin-bottom: 25px;
             position: relative;
+            width: 100%;
+            box-sizing: border-box;
         }
 
         .warning-header {
@@ -298,11 +307,13 @@
         }
 
         .critical-warning {
-            background: linear-gradient(to right, #ffebee 0%, transparent 100%);
+            background: linear-gradient(to right, #ffebee 0%, #ffebee 50%, white 100%);
             border-left: 4px solid #f44336;
             border-radius: 0;
             padding: 20px;
             margin-bottom: 25px;
+            width: 100%;
+            box-sizing: border-box;
         }
 
         .critical-warning .warning-header {
@@ -316,12 +327,14 @@
         }
 
         .forwarder-address {
-            background: linear-gradient(to right, #e8f5e9 0%, transparent 100%);
+            background: linear-gradient(to right, #e8f5e9 0%, #e8f5e9 50%, white 100%);
             border-left: 4px solid #66bb6a;
             border-radius: 0;
             padding: 20px;
             margin-bottom: 25px;
             position: relative;
+            width: 100%;
+            box-sizing: border-box;
         }
 
         .forwarder-header {
@@ -392,6 +405,8 @@
             transition: all 0.3s;
             background-color: white;
             font-family: inherit;
+            box-sizing: border-box;
+            max-width: 100%;
         }
 
         textarea {
@@ -445,6 +460,9 @@
             padding: 20px;
             margin-bottom: 20px;
             transition: all 0.3s ease;
+            width: 100%;
+            box-sizing: border-box;
+            overflow-x: hidden;
         }
 
         .vendor-group:hover {
@@ -453,27 +471,27 @@
         }
 
         .vendor-group.amazon {
-            background: linear-gradient(to right, rgba(255, 243, 224, 0.5) 0%, transparent 100%);
+            background: linear-gradient(to right, rgba(255, 243, 224, 0.5) 0%, rgba(255, 243, 224, 0.3) 50%, white 100%);
             border-left-color: #ff9800;
         }
 
         .vendor-group.wayfair {
-            background: linear-gradient(to right, rgba(243, 229, 245, 0.5) 0%, transparent 100%);
+            background: linear-gradient(to right, rgba(243, 229, 245, 0.5) 0%, rgba(243, 229, 245, 0.3) 50%, white 100%);
             border-left-color: #ba68c8;
         }
 
         .vendor-group.walmart {
-            background: linear-gradient(to right, rgba(227, 242, 253, 0.5) 0%, transparent 100%);
+            background: linear-gradient(to right, rgba(227, 242, 253, 0.5) 0%, rgba(227, 242, 253, 0.3) 50%, white 100%);
             border-left-color: #2196f3;
         }
 
         .vendor-group.target {
-            background: linear-gradient(to right, rgba(255, 235, 238, 0.5) 0%, transparent 100%);
+            background: linear-gradient(to right, rgba(255, 235, 238, 0.5) 0%, rgba(255, 235, 238, 0.3) 50%, white 100%);
             border-left-color: #f44336;
         }
 
         .vendor-group.default {
-            background: linear-gradient(to right, rgba(245, 245, 245, 0.5) 0%, transparent 100%);
+            background: linear-gradient(to right, rgba(245, 245, 245, 0.5) 0%, rgba(245, 245, 245, 0.3) 50%, white 100%);
             border-left-color: #9e9e9e;
         }
 
@@ -508,6 +526,9 @@
             gap: 15px;
             transition: all 0.3s ease;
             position: relative;
+            width: 100%;
+            box-sizing: border-box;
+            overflow-x: hidden;
         }
 
         .product-item:hover {
@@ -874,10 +895,12 @@
         }
 
         .cost-breakdown {
-            background: transparent;
+            background: white;
             border-left: 4px solid #7cb342;
             padding: 25px;
             margin-bottom: 25px;
+            width: 100%;
+            box-sizing: border-box;
         }
 
         .cost-breakdown h3 {
@@ -959,11 +982,13 @@
         }
 
         .confirmation-checkbox {
-            background: linear-gradient(to right, rgba(255, 243, 224, 0.5) 0%, transparent 100%);
+            background: linear-gradient(to right, rgba(255, 243, 224, 0.5) 0%, rgba(255, 243, 224, 0.3) 50%, white 100%);
             border-left: 4px solid #ff9800;
             border-radius: 0;
             padding: 20px;
             margin-bottom: 25px;
+            width: 100%;
+            box-sizing: border-box;
         }
 
         .checkbox-container {
@@ -1046,18 +1071,21 @@
             margin-top: 40px;
             line-height: 1.5;
             padding: 0;
-            background: transparent;
+            background: white;
             border: none;
-            max-width: 100%;
+            width: 100%;
+            max-width: 100vw;
             margin-left: auto;
             margin-right: auto;
+            box-sizing: border-box;
         }
 
         @media (max-width: 768px) {
             /* Prevent horizontal scroll */
             html, body {
-                overflow-x: hidden;
+                overflow-x: hidden !important;
                 width: 100%;
+                max-width: 100vw;
             }
             
             /* Intro page mobile */
@@ -1068,6 +1096,9 @@
                 flex-direction: column;
                 justify-content: center;
                 align-items: center;
+                width: 100%;
+                max-width: 100vw;
+                overflow-x: hidden !important;
             }
             
             .intro-hero {
@@ -1127,12 +1158,16 @@
             .calculator-page {
                 padding: 0;
                 width: 100%;
+                max-width: 100vw !important;
+                overflow-x: hidden !important;
             }
             
             .calculator-content {
                 padding: 20px 15px;
                 width: 100%;
-                max-width: 100%;
+                max-width: 100vw;
+                overflow-x: hidden !important;
+                box-sizing: border-box;
             }
             
             h1 {
@@ -1198,6 +1233,9 @@
                 margin-bottom: 15px;
                 border-radius: 4px;
                 width: 100%;
+                max-width: 100vw;
+                box-sizing: border-box;
+                overflow-x: hidden;
             }
             
             .warning-header {
@@ -1225,6 +1263,8 @@
             /* Form elements mobile */
             .input-group {
                 margin-bottom: 20px;
+                width: 100%;
+                box-sizing: border-box;
             }
             
             label {
@@ -1236,6 +1276,8 @@
                 font-size: 16px; /* Prevents zoom on iOS */
                 padding: 10px;
                 width: 100%;
+                max-width: 100%;
+                box-sizing: border-box;
             }
             
             textarea {
@@ -1267,6 +1309,9 @@
                 border-radius: 0;
                 margin-bottom: 15px;
                 width: 100%;
+                max-width: 100vw;
+                box-sizing: border-box;
+                overflow-x: hidden;
             }
             
             .vendor-header {
@@ -1280,6 +1325,9 @@
                 padding: 10px;
                 margin-bottom: 10px;
                 width: 100%;
+                max-width: 100vw;
+                box-sizing: border-box;
+                overflow-x: hidden;
             }
             
             .product-image {
@@ -1426,6 +1474,8 @@
                 padding: 15px;
                 margin-bottom: 15px;
                 width: 100%;
+                max-width: 100vw;
+                box-sizing: border-box;
             }
             
             .cost-breakdown h3 {
@@ -1472,6 +1522,8 @@
                 padding: 12px;
                 margin-bottom: 15px;
                 width: 100%;
+                max-width: 100vw;
+                box-sizing: border-box;
             }
             
             .checkbox-container {
@@ -1511,6 +1563,8 @@
                 margin: 12px 0;
                 font-size: 13px;
                 width: 100%;
+                max-width: 100vw;
+                box-sizing: border-box;
             }
             
             /* Info text mobile */
@@ -1519,6 +1573,9 @@
                 margin-top: 25px;
                 padding: 0 5px;
                 line-height: 1.4;
+                width: 100%;
+                max-width: 100vw;
+                box-sizing: border-box;
             }
         }
     </style>
