@@ -4,13 +4,11 @@ const rateLimit = require('express-rate-limit');
 const axios = require('axios');
 const path = require('path');
 const { URL } = require('url');
-const ApifyScraper = require('./apifyScraper');
 const OrderTracker = require('./orderTracking');
 const UPCItemDB = require('./upcitemdb');
 const ProWebCrawler = require('./proWebCrawler');
 const AmazonCrawler = require('./amazonCrawler');
 require('dotenv').config();
-
 // Import GPT parser if available, with fallback
 let parseProduct;
 try {

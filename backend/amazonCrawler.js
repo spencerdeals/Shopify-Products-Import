@@ -3,12 +3,10 @@ const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const axios = require('axios');
 const path = require('path');
-const { URL } = require('url');
 const ApifyScraper = require('./apifyScraper');
 const OrderTracker = require('./orderTracking');
 const UPCItemDB = require('./upcitemdb');
 const ProWebCrawler = require('./proWebCrawler');
-const AmazonCrawler = require('./amazonCrawler');
 require('dotenv').config();
 
 // Import GPT parser if available, with fallback
@@ -164,9 +162,159 @@ function detectRetailer(url) {
     if (domain.includes('anthropologie.com')) return 'Anthropologie';
     if (domain.includes('urbanoutfitters.com')) return 'Urban Outfitters';
     if (domain.includes('nordstrom.com')) return 'Nordstrom';
-    return 'Unknown Retailer';
+    
+    // Extended retailer detection - never return "Unknown"
+    if (domain.includes('ashleyfurniture') || domain.includes('ashley.com')) return 'Ashley Furniture';
+    if (domain.includes('roomstogo.com')) return 'Rooms To Go';
+    if (domain.includes('livingspaces.com')) return 'Living Spaces';
+    if (domain.includes('bobsfurniture.com') || domain.includes('bobdiscount.com')) return 'Bob\'s Furniture';
+    if (domain.includes('valuecityfurniture.com')) return 'Value City Furniture';
+    if (domain.includes('raymourflanigan.com')) return 'Raymour & Flanigan';
+    if (domain.includes('havertys.com')) return 'Havertys';
+    if (domain.includes('ethanallen.com')) return 'Ethan Allen';
+    if (domain.includes('bassettfurniture.com')) return 'Bassett Furniture';
+    if (domain.includes('lazyboy.com')) return 'La-Z-Boy';
+    if (domain.includes('rh.com') || domain.includes('restorationhardware.com')) return 'Restoration Hardware';
+    if (domain.includes('article.com')) return 'Article';
+    if (domain.includes('allmodern.com')) return 'AllModern';
+    if (domain.includes('jossandmain.com')) return 'Joss & Main';
+    if (domain.includes('birchlane.com')) return 'Birch Lane';
+    if (domain.includes('perigold.com')) return 'Perigold';
+    if (domain.includes('build.com')) return 'Build.com';
+    if (domain.includes('houzz.com')) return 'Houzz';
+    if (domain.includes('1stdibs.com')) return '1stDibs';
+    if (domain.includes('chairish.com')) return 'Chairish';
+    if (domain.includes('apt2b.com')) return 'Apt2B';
+    if (domain.includes('burrow.com')) return 'Burrow';
+    if (domain.includes('floyd.com')) return 'Floyd';
+    if (domain.includes('interior-define.com')) return 'Interior Define';
+    if (domain.includes('lovesac.com')) return 'Lovesac';
+    if (domain.includes('medleywest.com')) return 'Medley West';
+    if (domain.includes('modsy.com')) return 'Modsy';
+    if (domain.includes('sixpenny.com')) return 'Sixpenny';
+    if (domain.includes('thuma.co')) return 'Thuma';
+    if (domain.includes('tuftandneedle.com')) return 'Tuft & Needle';
+    if (domain.includes('westwing.com')) return 'Westwing';
+    if (domain.includes('world-market.com') || domain.includes('worldmarket.com')) return 'World Market';
+    if (domain.includes('pier1.com')) return 'Pier 1';
+    if (domain.includes('zgallerie.com')) return 'Z Gallerie';
+    if (domain.includes('arhaus.com')) return 'Arhaus';
+    if (domain.includes('ballarddesigns.com')) return 'Ballard Designs';
+    if (domain.includes('serenaandlily.com')) return 'Serena & Lily';
+    if (domain.includes('onekingslane.com')) return 'One Kings Lane';
+    if (domain.includes('grandinroad.com')) return 'Grandin Road';
+    if (domain.includes('frontgate.com')) return 'Frontgate';
+    if (domain.includes('horchow.com')) return 'Horchow';
+    if (domain.includes('neimanmarcus.com')) return 'Neiman Marcus';
+    if (domain.includes('saksfifthavenue.com')) return 'Saks Fifth Avenue';
+    if (domain.includes('bloomingdales.com')) return 'Bloomingdales';
+    if (domain.includes('dillards.com')) return 'Dillards';
+    if (domain.includes('jcpenney.com')) return 'JCPenney';
+    if (domain.includes('kohls.com')) return 'Kohl\'s';
+    if (domain.includes('tjmaxx.com')) return 'TJ Maxx';
+    if (domain.includes('marshalls.com')) return 'Marshalls';
+    if (domain.includes('homegoods.com')) return 'HomeGoods';
+    if (domain.includes('tuesday-morning.com')) return 'Tuesday Morning';
+    if (domain.includes('big-lots.com') || domain.includes('biglots.com')) return 'Big Lots';
+    if (domain.includes('at-home.com') || domain.includes('athome.com')) return 'At Home';
+    if (domain.includes('homedecorators.com')) return 'Home Decorators Collection';
+    if (domain.includes('menards.com')) return 'Menards';
+    if (domain.includes('acehardware.com')) return 'Ace Hardware';
+    if (domain.includes('tractorsupply.com')) return 'Tractor Supply Co.';
+    if (domain.includes('ruralking.com')) return 'Rural King';
+    if (domain.includes('fleetfarm.com')) return 'Fleet Farm';
+    if (domain.includes('orschelnfarmhome.com')) return 'Orscheln Farm & Home';
+    if (domain.includes('sportsmans.com')) return 'Sportsman\'s Warehouse';
+    if (domain.includes('cabelas.com')) return 'Cabela\'s';
+    if (domain.includes('basspro.com')) return 'Bass Pro Shops';
+    if (domain.includes('rei.com')) return 'REI';
+    if (domain.includes('dicks.com')) return 'Dick\'s Sporting Goods';
+    if (domain.includes('academy.com')) return 'Academy Sports + Outdoors';
+    if (domain.includes('modells.com')) return 'Modell\'s';
+    if (domain.includes('bigfive.com')) return 'Big 5 Sporting Goods';
+    if (domain.includes('hibbett.com')) return 'Hibbett Sports';
+    if (domain.includes('footlocker.com')) return 'Foot Locker';
+    if (domain.includes('finishline.com')) return 'Finish Line';
+    if (domain.includes('champssports.com')) return 'Champs Sports';
+    if (domain.includes('eastbay.com')) return 'Eastbay';
+    if (domain.includes('nike.com')) return 'Nike';
+    if (domain.includes('adidas.com')) return 'Adidas';
+    if (domain.includes('underarmour.com')) return 'Under Armour';
+    if (domain.includes('puma.com')) return 'Puma';
+    if (domain.includes('newbalance.com')) return 'New Balance';
+    if (domain.includes('converse.com')) return 'Converse';
+    if (domain.includes('vans.com')) return 'Vans';
+    if (domain.includes('sketchers.com')) return 'Sketchers';
+    if (domain.includes('crocs.com')) return 'Crocs';
+    if (domain.includes('timberland.com')) return 'Timberland';
+    if (domain.includes('ugg.com')) return 'UGG';
+    if (domain.includes('clarks.com')) return 'Clarks';
+    if (domain.includes('ecco.com')) return 'ECCO';
+    if (domain.includes('birkenstock.com')) return 'Birkenstock';
+    if (domain.includes('drmartens.com')) return 'Dr. Martens';
+    if (domain.includes('redwing.com')) return 'Red Wing';
+    if (domain.includes('wolverine.com')) return 'Wolverine';
+    if (domain.includes('caterpillar.com')) return 'Caterpillar';
+    if (domain.includes('carhartt.com')) return 'Carhartt';
+    if (domain.includes('dickies.com')) return 'Dickies';
+    if (domain.includes('wrangler.com')) return 'Wrangler';
+    if (domain.includes('levis.com')) return 'Levi\'s';
+    if (domain.includes('gap.com')) return 'Gap';
+    if (domain.includes('oldnavy.com')) return 'Old Navy';
+    if (domain.includes('bananarepublic.com')) return 'Banana Republic';
+    if (domain.includes('jcrew.com')) return 'J.Crew';
+    if (domain.includes('abercrombie.com')) return 'Abercrombie & Fitch';
+    if (domain.includes('hollister.com')) return 'Hollister';
+    if (domain.includes('americaneagle.com')) return 'American Eagle';
+    if (domain.includes('aeropostale.com')) return 'Aeropostale';
+    if (domain.includes('forever21.com')) return 'Forever 21';
+    if (domain.includes('hm.com')) return 'H&M';
+    if (domain.includes('zara.com')) return 'Zara';
+    if (domain.includes('uniqlo.com')) return 'Uniqlo';
+    if (domain.includes('express.com')) return 'Express';
+    if (domain.includes('anntaylor.com')) return 'Ann Taylor';
+    if (domain.includes('loft.com')) return 'LOFT';
+    if (domain.includes('whitehouseblackmarket.com')) return 'White House Black Market';
+    if (domain.includes('talbots.com')) return 'Talbots';
+    if (domain.includes('chicos.com')) return 'Chico\'s';
+    if (domain.includes('dressbarn.com')) return 'Dressbarn';
+    if (domain.includes('lanebryant.com')) return 'Lane Bryant';
+    if (domain.includes('torrid.com')) return 'Torrid';
+    if (domain.includes('maurices.com')) return 'Maurices';
+    if (domain.includes('catherines.com')) return 'Catherines';
+    if (domain.includes('avenue.com')) return 'Avenue';
+    if (domain.includes('ashro.com')) return 'Ashro';
+    if (domain.includes('roamans.com')) return 'Roaman\'s';
+    if (domain.includes('womanwithin.com')) return 'Woman Within';
+    if (domain.includes('jessicalondon.com')) return 'Jessica London';
+    if (domain.includes('fullbeauty.com')) return 'FullBeauty';
+    if (domain.includes('kingsize.com')) return 'KingSize';
+    if (domain.includes('destinationxl.com')) return 'Destination XL';
+    if (domain.includes('casualmale.com')) return 'Casual Male XL';
+    if (domain.includes('bigandtall.com')) return 'Big and Tall';
+    
+    // Fallback: Extract retailer name from domain
+    const domainParts = domain.replace('www.', '').split('.');
+    const mainDomain = domainParts[0];
+    
+    // Clean up and format the domain name
+    const retailerName = mainDomain
+      .replace(/[-_]/g, ' ')
+      .split(' ')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+    
+    return retailerName;
   } catch (e) {
-    return 'Unknown Retailer';
+    // Even if URL parsing fails, try to extract from the string
+    const urlLower = url.toLowerCase();
+    if (urlLower.includes('amazon')) return 'Amazon';
+    if (urlLower.includes('wayfair')) return 'Wayfair';
+    if (urlLower.includes('target')) return 'Target';
+    if (urlLower.includes('walmart')) return 'Walmart';
+    
+    // Last resort fallback
+    return 'Online Retailer';
   }
 }
 
