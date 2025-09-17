@@ -769,6 +769,9 @@ async function scrapeProduct(url) {
   
   console.log(`   💰 Shipping cost: $${shippingCost}`);
   console.log(`   📊 Data source: ${scrapingMethod}`);
+  if (productData.variant) {
+    console.log(`   🎨 Variant detected: ${productData.variant}`);
+  }
   console.log(`   ✅ Product processed successfully\n`);
   
   return product;
