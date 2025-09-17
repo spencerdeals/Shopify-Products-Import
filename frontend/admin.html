@@ -235,7 +235,13 @@
             <p>Detailed shipping calculation analysis</p>
         </div>
 
-        <div class="input-section">
+        <div id="loginSection" class="input-section">
+            <h2>Admin Access</h2>
+            <input type="password" id="passwordInput" class="url-input" placeholder="Enter admin password..." style="margin-bottom: 15px;">
+            <button id="loginBtn" class="calculate-btn">Access Admin Dashboard</button>
+        </div>
+
+        <div id="mainSection" class="input-section" style="display: none;">
             <h2>Product Analysis</h2>
             <textarea id="urlInput" class="url-input" rows="4" placeholder="Enter product URLs (one per line)..."></textarea>
             <button id="calculateBtn" class="calculate-btn">Analyze Products</button>
@@ -260,6 +266,31 @@
     </div>
 
     <script>
+        // Password protection
+        document.getElementById('loginBtn').addEventListener('click', checkPassword);
+        document.getElementById('passwordInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                checkPassword();
+            }
+        });
+
+        function checkPassword() {
+            const password = document.getElementById('passwordInput').value;
+            if (password === '1064') {
+                document.getElementById('loginSection').style.display = 'none';
+                document.getElementById('mainSection').style.display = 'block';
+                // Focus on URL input
+                document.getElementById('urlInput').focus();
+            } else {
+                alert('Incorrect password');
+                document.getElementById('passwordInput').value = '';
+                document.getElementById('passwordInput').focus();
+            }
+        }
+
+        // Auto-focus password input on page load
+        document.getElementById('passwordInput').focus();
+
         document.getElementById('calculateBtn').addEventListener('click', analyzeProducts);
 
         async function analyzeProducts() {
