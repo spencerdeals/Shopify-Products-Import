@@ -7,14 +7,10 @@ const { URL } = require('url');
 const ApifyScraper = require('./apifyScraper');
 require('dotenv').config();
 const UPCItemDB = require('./upcitemdb');
-const OrderTracker = require('./orderTracking');
 // const learningSystem = require('./learningSystem');  // TODO: Re-enable with PostgreSQL later
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-
-// Initialize order tracker
-const orderTracker = new OrderTracker();
 
 // Configuration
 const SHOPIFY_DOMAIN = process.env.SHOPIFY_DOMAIN || 'spencer-deals-ltd.myshopify.com';
@@ -50,18 +46,20 @@ console.log(`Port: ${PORT}`);
 console.log(`Shopify Domain: ${SHOPIFY_DOMAIN}`);
 console.log('');
 console.log('🔍 SCRAPING CONFIGURATION:');
-console.log(`1. Primary: Apify - ${USE_APIFY ? '✅ ENABLED (All Retailers)' : '❌ DISABLED (Missing API Key)'}`);
+console.log(`1. Primary: Apify - ${USE_APIFY ? '✅ ENABLED (Specialized Actors)' : '❌ DISABLED (Missing API Key)'}`);
 console.log(`2. Fallback: ScrapingBee - ${USE_SCRAPINGBEE ? '✅ ENABLED' : '❌ DISABLED (Missing API Key)'}`);
 console.log(`3. Basic Scraper - ✅ ENABLED (Always Available)`);
 console.log(`4. Dimension Data: UPCitemdb - ${USE_UPCITEMDB ? '✅ ENABLED (Key: ' + UPCITEMDB_API_KEY.substring(0, 8) + '...)' : '❌ DISABLED (Missing API Key)'}`);
 console.log('');
 console.log('📊 SCRAPING STRATEGY:');
 if (USE_APIFY && USE_SCRAPINGBEE && USE_UPCITEMDB) {
+  console.log('✅ OPTIMAL: Specialized Apify Actors → ScrapingBee → UPCitemdb → AI Estimation');
+} else if (USE_APIFY && USE_SCRAPINGBEE) {
   console.log('✅ OPTIMAL: Apify → ScrapingBee → Basic → UPCitemdb → AI Estimation');
 } else if (USE_APIFY && USE_SCRAPINGBEE) {
-  console.log('⚠️  GOOD: Apify → ScrapingBee → Basic → AI Estimation (No UPCitemdb)');
+  console.log('⚠️  GOOD: Specialized Apify Actors → ScrapingBee → AI Estimation (No UPCitemdb)');
 } else if (USE_APIFY && !USE_SCRAPINGBEE) {
-  console.log('⚠️  LIMITED: Apify → Basic → AI Estimation (No ScrapingBee fallback)');
+  console.log('⚠️  LIMITED: Specialized Apify Actors → AI Estimation (No ScrapingBee fallback)');
 } else if (!USE_APIFY && USE_SCRAPINGBEE) {
   console.log('⚠️  LIMITED: ScrapingBee → Basic → AI Estimation (No Apify primary)');
 } else {
@@ -87,11 +85,11 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     port: PORT,
     scraping: {
-      primary: USE_APIFY ? 'Specialized Apify Actors' : 'None',
+      primary: USE_APIFY ? 'Apify' : 'None',
       fallback: USE_SCRAPINGBEE ? 'ScrapingBee' : 'None',
       basic: 'Always Available',
       dimensions: USE_UPCITEMDB ? 'UPCitemdb' : 'None',
-      strategy: USE_APIFY && USE_SCRAPINGBEE && USE_UPCITEMDB ? 'Optimal (Specialized)' : 
+      strategy: USE_APIFY && USE_SCRAPINGBEE && USE_UPCITEMDB ? 'Optimal' : 
                 USE_APIFY && USE_SCRAPINGBEE ? 'Good' :
                 USE_APIFY || USE_SCRAPINGBEE ? 'Limited' : 'Minimal'
     },
@@ -170,37 +168,6 @@ app.get('/complete-order.html', (req, res) => {
     if (err) {
       console.error('Error serving complete-order page:', err);
       res.redirect('/');
-    }
-  });
-});
-
-// Serve admin page at multiple routes
-app.get('/admin', (req, res) => {
-  const adminPath = path.join(__dirname, '../frontend', 'admin.html');
-  res.sendFile(adminPath, (err) => {
-    if (err) {
-      console.error('Error serving admin page:', err);
-      res.status(404).send('Admin page not found');
-    }
-  });
-});
-
-app.get('/pages/imports/admin', (req, res) => {
-  const adminPath = path.join(__dirname, '../frontend', 'admin.html');
-  res.sendFile(adminPath, (err) => {
-    if (err) {
-      console.error('Error serving admin page:', err);
-      res.status(404).send('Admin page not found');
-    }
-  });
-});
-
-app.get('/admin.html', (req, res) => {
-  const adminPath = path.join(__dirname, '../frontend', 'admin.html');
-  res.sendFile(adminPath, (err) => {
-    if (err) {
-      console.error('Error serving admin page:', err);
-      res.status(404).send('Admin page not found');
     }
   });
 });
@@ -782,7 +749,7 @@ async function scrapeWithBasicScraper(url) {
       const match = html.match(pattern);
       if (match && match[1]) {
         title = match[1].trim().replace(/&[^;]+;/g, '').substring(0, 100);
-        console.log('✅ Found title with selector:', selector, 'Title:', title.substring(0, 50));
+        console.log('✅ Found title with pattern:', title.substring(0, 50));
         break;
       }
     }
@@ -1621,63 +1588,6 @@ app.post('/api/check-status', async (req, res) => {
   } catch (error) {
     console.error('Manual status check error:', error);
     res.status(500).json({ error: 'Failed to check status' });
-  }
-});
-
-// Order tracking API endpoints
-app.post('/api/orders/:orderId/start-tracking', async (req, res) => {
-  try {
-    const { orderId } = req.params;
-    const { retailerOrders } = req.body;
-    
-    if (!retailerOrders || !Array.isArray(retailerOrders)) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Retailer orders required' 
-      });
-    }
-    
-    const result = await orderTracker.startTracking(orderId, retailerOrders);
-    res.json(result);
-    
-  } catch (error) {
-    console.error('Start tracking error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Failed to start tracking' 
-    });
-  }
-});
-
-app.post('/api/orders/:orderId/stop-tracking', async (req, res) => {
-  try {
-    const { orderId } = req.params;
-    const result = await orderTracker.stopTracking(orderId);
-    res.json(result);
-    
-  } catch (error) {
-    console.error('Stop tracking error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Failed to stop tracking' 
-    });
-  }
-});
-
-app.get('/api/orders/:orderId/tracking-status', async (req, res) => {
-  try {
-    const { orderId } = req.params;
-    const status = await orderTracker.getTrackingStatus(orderId);
-    res.json(status);
-    
-  } catch (error) {
-    console.error('Get tracking status error:', error);
-    res.status(500).json({ 
-      isTracking: false, 
-      lastUpdate: null, 
-      retailerStatuses: {},
-      error: error.message 
-    });
   }
 });
 
