@@ -310,21 +310,19 @@ class ApifyScraper {
               }
             }
             
-            // Enhanced Wayfair price selectors - updated for current Wayfair structure
+            // Updated Wayfair price selectors for 2025 structure
             const priceSelectors = [
-              '[data-enzyme-id="PriceBlock"] .NotStriked',
-              '[data-enzyme-id="PriceBlock"] .BasePriceBlock',
-              '.SFPrice .NotStriked',
-              '.SFPrice',
+              '[data-testid="PriceBlock"] [data-testid="PriceDisplay"]',
+              '[data-testid="PriceDisplay"]',
+              '.BasePriceBlock span:not([class*="strike"])',
+              '.PriceBlock span:not([class*="strike"])',
+              '[class*="PriceDisplay"] span',
+              '.ProductPrice span:first-child',
+              '[data-enzyme-id="PriceBlock"] span:not([class*="strike"]):not([class*="was"])',
               '[data-testid="product-price"]',
-              '.ProductDetailInfoBlock .price',
-              '.PriceBlock .price',
-              '.BasePriceBlock',
-              '.price-range .price',
-              '.ProductPrice .price',
-              '.price.current',
-              '[class*="price"]:not([class*="strike"]):not([class*="was"])',
-              '.ProductDetailInfoBlock [class*="Price"]:not([class*="Strike"])'
+              '.ProductDetailInfoBlock [class*="Price"]:not([class*="Strike"]):not([class*="Was"])',
+              '.price:not(.strike):not(.was-price)',
+              'span[class*="price"]:not([class*="strike"]):not([class*="was"])'
             ];
             
             let price = '';
@@ -332,11 +330,44 @@ class ApifyScraper {
               const element = $(selector).first();
               if (element.length) {
                 const priceText = element.text().trim();
-                // Look for price pattern in the text
-                const priceMatch = priceText.match(/\$[\d,]+\.?\d*/);
+                console.log('Checking selector:', selector, 'Text:', priceText);
+                
+                // Multiple price patterns to match
+                const pricePatterns = [
+                  /\$\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/,
+                  /(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s*\$/,
+                  /(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/
+                ];
+                
+                for (const pattern of pricePatterns) {
+                  const priceMatch = priceText.match(pattern);
+                  if (priceMatch) {
+                    const extractedPrice = priceMatch[1] || priceMatch[0];
+                    const numericPrice = parseFloat(extractedPrice.replace(/[,$]/g, ''));
+                    
+                    // Validate price range
+                    if (numericPrice >= 1 && numericPrice <= 50000) {
+                      price = '$' + numericPrice.toFixed(2);
+                      console.log('Found valid price:', price);
+                      break;
+                    }
+                  }
+                }
+                
                 if (priceMatch) {
-                  price = priceMatch[0];
                   break;
+                }
+              }
+            }
+            
+            // If no price found, try searching in all text content
+            if (!price) {
+              const allText = $('body').text();
+              const priceMatch = allText.match(/\$\s*(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/);
+              if (priceMatch) {
+                const numericPrice = parseFloat(priceMatch[1].replace(/,/g, ''));
+                if (numericPrice >= 1 && numericPrice <= 50000) {
+                  price = '$' + numericPrice.toFixed(2);
                 }
               }
             }
@@ -383,8 +414,8 @@ class ApifyScraper {
           useApifyProxy: true
         },
         maxRequestsPerCrawl: 5,
-        maxRequestRetries: 3,
-        requestHandlerTimeoutSecs: 90
+        maxRequestRetries: 5,
+        requestHandlerTimeoutSecs: 120
       });
 
       await this.client.run(run.id).waitForFinish({ waitSecs: 60 });
