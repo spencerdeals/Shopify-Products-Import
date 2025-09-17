@@ -1675,8 +1675,5 @@ app.listen(PORT, () => {
   console.log(`📍 API Health: http://localhost:${PORT}/health\n`);
   
   // Cleanup tracking on server shutdown
-  process.on('SIGTERM', () => {
-    console.log('🛑 Server shutting down...');
-    process.exit(0);
   });
 });
