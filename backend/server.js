@@ -6,9 +6,19 @@ const path = require('path');
 const { URL } = require('url');
 const ApifyScraper = require('./apifyScraper');
 const OrderTracker = require('./orderTracking');
-const { parseProduct } = require('./gptParser');
-require('dotenv').config();
 const UPCItemDB = require('./upcitemdb');
+require('dotenv').config();
+
+// Import GPT parser if available, with fallback
+let parseProduct;
+try {
+  const gptParser = require('./gptParser');
+  parseProduct = gptParser.parseProduct;
+  console.log('✅ GPT Parser loaded successfully');
+} catch (error) {
+  console.log('⚠️ GPT Parser not available:', error.message);
+  parseProduct = null;
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -18,23 +28,22 @@ const SHOPIFY_DOMAIN = process.env.SHOPIFY_DOMAIN || 'spencer-deals-ltd.myshopif
 const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN || '';
 const SCRAPINGBEE_API_KEY = process.env.SCRAPINGBEE_API_KEY || '';
 const UPCITEMDB_API_KEY = process.env.UPCITEMDB_API_KEY || '';
-const upcItemDB = new UPCItemDB(UPCITEMDB_API_KEY);
-const USE_UPCITEMDB = !!UPCITEMDB_API_KEY;
 const APIFY_API_KEY = process.env.APIFY_API_KEY || '';
 const BERMUDA_DUTY_RATE = 0.265;
-const USE_SCRAPINGBEE = !!SCRAPINGBEE_API_KEY;
-const SHIPPING_RATE_PER_CUBIC_FOOT = 8;
-
-// FAST timeouts for speed
-const APIFY_TIMEOUT = 45000;        // 45 seconds max
-const SCRAPINGBEE_TIMEOUT = 20000;  // 20 seconds max
-const BASIC_TIMEOUT = 8000;         // 8 seconds max
-const MAX_CONCURRENT_SCRAPES = 3;
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'sdl2024admin';
 
 // Initialize services
 const apifyScraper = new ApifyScraper(APIFY_API_KEY);
-const USE_APIFY = apifyScraper.isAvailable();
+const upcItemDB = new UPCItemDB(UPCITEMDB_API_KEY);
 const orderTracker = new OrderTracker();
+
+const USE_APIFY = apifyScraper.isAvailable();
+const USE_SCRAPINGBEE = !!SCRAPINGBEE_API_KEY;
+const USE_UPCITEMDB = !!UPCITEMDB_API_KEY;
+
+// FAST timeouts for speed
+const SCRAPING_TIMEOUT = 30000;  // 30 seconds max
+const MAX_CONCURRENT_SCRAPES = 3;
 
 console.log('=== SERVER STARTUP ===');
 console.log(`Port: ${PORT}`);
@@ -43,13 +52,8 @@ console.log('');
 console.log('🔍 SCRAPING CONFIGURATION:');
 console.log(`1. Primary: Apify - ${USE_APIFY ? '✅ ENABLED' : '❌ DISABLED'}`);
 console.log(`2. Secondary: ScrapingBee - ${USE_SCRAPINGBEE ? '✅ ENABLED' : '❌ DISABLED'}`);
-console.log(`3. Fallback: GPT Parser - ✅ ENABLED`);
+console.log(`3. Fallback: GPT Parser - ${parseProduct ? '✅ ENABLED' : '❌ DISABLED'}`);
 console.log(`4. Enhancement: UPCitemdb - ${USE_UPCITEMDB ? '✅ ENABLED' : '❌ DISABLED'}`);
-console.log('');
-console.log('⚡ SPEED SETTINGS:');
-console.log(`   Apify timeout: ${APIFY_TIMEOUT/1000}s`);
-console.log(`   ScrapingBee timeout: ${SCRAPINGBEE_TIMEOUT/1000}s`);
-console.log(`   Basic timeout: ${BASIC_TIMEOUT/1000}s`);
 console.log('=====================');
 
 // Middleware
@@ -69,10 +73,48 @@ app.get('/health', (req, res) => {
     scraping: {
       apify: USE_APIFY,
       scrapingbee: USE_SCRAPINGBEE,
-      gpt: true,
+      gpt: !!parseProduct,
       upcitemdb: USE_UPCITEMDB
+    },
+    shopifyConfigured: !!SHOPIFY_ACCESS_TOKEN
+  });
+});
+
+// Admin authentication middleware
+function requireAuth(req, res, next) {
+  const auth = req.headers.authorization;
+  
+  if (!auth || !auth.startsWith('Basic ')) {
+    res.setHeader('WWW-Authenticate', 'Basic realm="SDL Admin"');
+    return res.status(401).send('Authentication required');
+  }
+  
+  const credentials = Buffer.from(auth.slice(6), 'base64').toString().split(':');
+  const username = credentials[0];
+  const password = credentials[1];
+  
+  if (username === 'admin' && password === ADMIN_PASSWORD) {
+    next();
+  } else {
+    res.setHeader('WWW-Authenticate', 'Basic realm="SDL Admin"');
+    res.status(401).send('Invalid credentials');
+  }
+}
+
+// Admin routes - BEFORE rate limiter
+app.get('/admin', requireAuth, (req, res) => {
+  const adminPath = path.join(__dirname, '../frontend', 'admin.html');
+  res.sendFile(adminPath, (err) => {
+    if (err) {
+      console.error('Error serving admin page:', err);
+      res.status(404).send('Admin page not found');
     }
   });
+});
+
+app.get('/admin.html', requireAuth, (req, res) => {
+  const adminPath = path.join(__dirname, '../frontend', 'admin.html');
+  res.sendFile(adminPath);
 });
 
 // Rate limiter
@@ -264,13 +306,13 @@ function estimateBoxDimensions(productDimensions, category) {
 
 function calculateShippingCost(dimensions, weight, price) {
   if (!dimensions) {
-    return Math.max(25, price * 0.15);
+    return Math.max(25, (price || 100) * 0.15);
   }
   
   const cubicInches = dimensions.length * dimensions.width * dimensions.height;
   const cubicFeet = cubicInches / 1728;
   
-  const baseCost = Math.max(15, cubicFeet * SHIPPING_RATE_PER_CUBIC_FOOT);
+  const baseCost = Math.max(15, cubicFeet * 8); // $8 per cubic foot
   const oversizeFee = Math.max(dimensions.length, dimensions.width, dimensions.height) > 48 ? 50 : 0;
   const valueFee = price > 500 ? price * 0.02 : 0;
   const handlingFee = 15;
@@ -306,14 +348,14 @@ function mergeProductData(primary, secondary) {
   };
 }
 
-// FAST ScrapingBee scraper with Wayfair-specific patterns
+// ScrapingBee scraper with better error handling
 async function scrapeWithScrapingBee(url) {
   if (!USE_SCRAPINGBEE) {
     throw new Error('ScrapingBee not configured');
   }
 
   try {
-    console.log('🐝 Starting FAST ScrapingBee extraction...');
+    console.log('🐝 Starting ScrapingBee extraction...');
     const startTime = Date.now();
     
     const response = await Promise.race([
@@ -323,16 +365,16 @@ async function scrapeWithScrapingBee(url) {
         params: {
           api_key: SCRAPINGBEE_API_KEY,
           url: url,
-          premium_proxy: 'false',  // Disable for speed
+          premium_proxy: 'false',
           country_code: 'us',
-          render_js: 'false',      // Disable for speed
-          block_resources: 'true', // Block images/css for speed
-          wait: '1000'             // Minimal wait
+          render_js: 'false',
+          block_resources: 'true',
+          wait: '2000'
         },
-        timeout: SCRAPINGBEE_TIMEOUT
+        timeout: SCRAPING_TIMEOUT
       }),
       new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('ScrapingBee timeout')), SCRAPINGBEE_TIMEOUT)
+        setTimeout(() => reject(new Error('ScrapingBee timeout')), SCRAPING_TIMEOUT)
       )
     ]);
 
@@ -353,15 +395,14 @@ async function scrapeWithScrapingBee(url) {
       inStock: true
     };
 
-    // Wayfair-specific title extraction
-    const wayfairTitlePatterns = [
-      /<h1[^>]*data-enzyme-id="ProductTitle"[^>]*>([^<]+)<\/h1>/i,
-      /<h1[^>]*class="[^"]*ProductDetailInfoBlock-productTitle[^"]*"[^>]*>([^<]+)<\/h1>/i,
-      /<title[^>]*>([^|]+)\s*\|/i,
-      /<h1[^>]*>([^<]+)<\/h1>/i
+    // Extract title
+    const titlePatterns = [
+      /<h1[^>]*data-testid="[^"]*title[^"]*"[^>]*>([^<]+)<\/h1>/i,
+      /<h1[^>]*>([^<]+)<\/h1>/i,
+      /<title[^>]*>([^|<]+)/i
     ];
     
-    for (const pattern of wayfairTitlePatterns) {
+    for (const pattern of titlePatterns) {
       const match = html.match(pattern);
       if (match && match[1].trim()) {
         productData.name = match[1].trim().replace(/&[^;]+;/g, '').substring(0, 200);
@@ -370,20 +411,19 @@ async function scrapeWithScrapingBee(url) {
       }
     }
 
-    // Wayfair-specific price extraction
-    const wayfairPricePatterns = [
-      /data-enzyme-id="PriceBlock"[^>]*>[\s\S]*?\$(\d+(?:,\d{3})*(?:\.\d{2})?)/i,
-      /class="[^"]*MoneyPrice[^"]*"[^>]*>[\s\S]*?\$(\d+(?:,\d{3})*(?:\.\d{2})?)/i,
-      /"currentPrice":\s*"?\$?(\d+(?:,\d{3})*(?:\.\d{2})?)"?/i,
-      /\$(\d+(?:,\d{3})*(?:\.\d{2})?)/g
+    // Extract price
+    const pricePatterns = [
+      /\$(\d+(?:,\d{3})*(?:\.\d{2})?)/g,
+      /price[^>]*>[\s\S]*?\$(\d+(?:,\d{3})*(?:\.\d{2})?)/i,
+      /"price":\s*"?\$?(\d+(?:,\d{3})*(?:\.\d{2})?)"?/i
     ];
     
-    for (const pattern of wayfairPricePatterns) {
+    for (const pattern of pricePatterns) {
       if (pattern.global) {
         const matches = [...html.matchAll(pattern)];
         for (const match of matches) {
           const price = parseFloat(match[1].replace(/,/g, ''));
-          if (price > 10 && price < 50000) {
+          if (price > 0 && price < 100000) {
             productData.price = price;
             console.log('   💰 Found price: $' + price);
             break;
@@ -393,7 +433,7 @@ async function scrapeWithScrapingBee(url) {
         const match = html.match(pattern);
         if (match) {
           const price = parseFloat(match[1].replace(/,/g, ''));
-          if (price > 10 && price < 50000) {
+          if (price > 0 && price < 100000) {
             productData.price = price;
             console.log('   💰 Found price: $' + price);
             break;
@@ -403,41 +443,35 @@ async function scrapeWithScrapingBee(url) {
       if (productData.price) break;
     }
 
-    // Wayfair dimensions extraction
-    const wayfairDimPatterns = [
-      /Overall:\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)/i,
-      /Dimensions[^:]*:\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)/i,
-      /(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*(?:inches?|in\.?|")/i
+    // Extract dimensions
+    const dimPatterns = [
+      /(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*(?:inches?|in\.?|")/i,
+      /dimensions?[^>]*>[\s\S]*?(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)/i
     ];
     
-    for (const pattern of wayfairDimPatterns) {
+    for (const pattern of dimPatterns) {
       const match = html.match(pattern);
       if (match) {
-        const dims = {
+        productData.dimensions = {
           length: parseFloat(match[1]),
           width: parseFloat(match[2]),
           height: parseFloat(match[3])
         };
-        if (dims.length > 0 && dims.width > 0 && dims.height > 0) {
-          productData.dimensions = dims;
-          console.log('   📏 Found dimensions');
-          break;
-        }
+        console.log('   📏 Found dimensions');
+        break;
       }
     }
 
-    // Extract main product image
-    const wayfairImagePatterns = [
-      /data-hb="MediaGallery"[^>]*>[\s\S]*?src="([^"]+)"/i,
-      /class="[^"]*MediaGallery[^"]*"[^>]*>[\s\S]*?src="([^"]+)"/i,
+    // Extract image URL
+    const imagePatterns = [
+      /src="([^"]+)"[^>]*(?:class="[^"]*product[^"]*image|data-testid="[^"]*image)/i,
       /property="og:image"[^>]+content="([^"]+)"/i
     ];
     
-    for (const pattern of wayfairImagePatterns) {
+    for (const pattern of imagePatterns) {
       const match = html.match(pattern);
       if (match && match[1].startsWith('http')) {
         productData.image = match[1];
-        console.log('   🖼️ Found image');
         break;
       }
     }
@@ -450,7 +484,7 @@ async function scrapeWithScrapingBee(url) {
   }
 }
 
-// Main product scraping function with FAST timeouts
+// Main product scraping function
 async function scrapeProduct(url) {
   const productId = generateProductId();
   const retailer = detectRetailer(url);
@@ -461,14 +495,14 @@ async function scrapeProduct(url) {
   console.log(`\n📦 Processing: ${url}`);
   console.log(`   Retailer: ${retailer}`);
   
-  // STEP 1: Try Apify first (45 second timeout)
+  // STEP 1: Try Apify first
   if (USE_APIFY) {
     try {
       console.log('   🔄 Attempting Apify scrape...');
       
       const apifyPromise = apifyScraper.scrapeProduct(url);
       const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Apify timeout')), APIFY_TIMEOUT)
+        setTimeout(() => reject(new Error('Apify timeout')), SCRAPING_TIMEOUT)
       );
       
       productData = await Promise.race([apifyPromise, timeoutPromise]);
@@ -487,7 +521,7 @@ async function scrapeProduct(url) {
     }
   }
   
-  // STEP 2: Try ScrapingBee if needed (20 second timeout)
+  // STEP 2: Try ScrapingBee if needed
   if (USE_SCRAPINGBEE && (!productData || !isDataComplete(productData))) {
     try {
       console.log('   🐝 Attempting ScrapingBee...');
@@ -510,7 +544,7 @@ async function scrapeProduct(url) {
   }
   
   // STEP 3: Try GPT parser as fallback
-  if (!productData || !productData.name || !productData.price) {
+  if (parseProduct && (!productData || !productData.name || !productData.price)) {
     try {
       console.log('   🧠 Falling back to GPT parser...');
       const gptData = await parseProduct(url);
@@ -641,6 +675,9 @@ async function processBatch(urls, batchSize = MAX_CONCURRENT_SCRAPES) {
   return results;
 }
 
+// Store pending orders temporarily
+const pendingOrders = new Map();
+
 // Root route
 app.get('/', (req, res) => {
   const frontendPath = path.join(__dirname, '../frontend', 'index.html');
@@ -658,7 +695,7 @@ app.get('/', (req, res) => {
   });
 });
 
-// API endpoint for scraping
+// MISSING ENDPOINT: API endpoint for scraping
 app.post('/api/scrape', async (req, res) => {
   try {
     const { urls } = req.body;
@@ -675,8 +712,7 @@ app.post('/api/scrape', async (req, res) => {
       });
     }
     
-    console.log(`\n🚀 Starting FAST batch scrape for ${urls.length} products...`);
-    console.log('   Strategy: Apify → ScrapingBee → GPT → UPCitemdb → Estimation\n');
+    console.log(`\n🚀 Starting batch scrape for ${urls.length} products...`);
     
     const products = await processBatch(urls);
     
@@ -718,6 +754,64 @@ app.post('/api/scrape', async (req, res) => {
   }
 });
 
+// MISSING ENDPOINT: Prepare Shopify checkout - CRITICAL FOR FRONTEND
+app.post('/api/prepare-shopify-checkout', async (req, res) => {
+  try {
+    const orderData = req.body;
+    
+    // Generate a unique checkout ID
+    const checkoutId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
+    
+    // Store the order data temporarily
+    pendingOrders.set(checkoutId, {
+      data: orderData,
+      timestamp: Date.now()
+    });
+    
+    // Clean up old orders after 1 hour
+    setTimeout(() => pendingOrders.delete(checkoutId), 3600000);
+    
+    // Create the redirect URL - this should redirect to a page that will complete the order
+    const redirectUrl = `/complete-order.html?checkoutId=${checkoutId}`;
+    
+    console.log(`🛒 Prepared checkout ${checkoutId} for ${orderData.products?.length || 0} products`);
+    
+    res.json({
+      success: true,
+      checkoutId: checkoutId,
+      redirectUrl: redirectUrl
+    });
+    
+  } catch (error) {
+    console.error('❌ Failed to prepare checkout:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to prepare checkout',
+      message: error.message
+    });
+  }
+});
+
+// MISSING ENDPOINT: Get checkout data
+app.get('/api/get-checkout/:checkoutId', (req, res) => {
+  const { checkoutId } = req.params;
+  const orderData = pendingOrders.get(checkoutId);
+  
+  if (orderData) {
+    console.log(`✅ Retrieved checkout data for ${checkoutId}`);
+    res.json({
+      success: true,
+      data: orderData.data
+    });
+  } else {
+    console.log(`❌ Checkout ${checkoutId} not found or expired`);
+    res.status(404).json({
+      success: false,
+      error: 'Checkout not found or expired'
+    });
+  }
+});
+
 // Order tracking endpoints
 app.post('/api/orders/:orderId/start-tracking', async (req, res) => {
   try {
@@ -751,9 +845,6 @@ app.get('/api/orders/:orderId/tracking-status', async (req, res) => {
   }
 });
 
-// Store pending orders temporarily
-const pendingOrders = new Map();
-
 app.post('/api/store-pending-order', (req, res) => {
   const orderId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
   pendingOrders.set(orderId, {
@@ -779,27 +870,54 @@ app.get('/api/get-pending-order/:orderId', (req, res) => {
   }
 });
 
-// Shopify Draft Order Creation
+// FIXED: Shopify Draft Order Creation with better error handling
 app.post('/apps/instant-import/create-draft-order', async (req, res) => {
   try {
-    const { products, deliveryFees, totals, customer, originalUrls } = req.body;
+    let orderData = req.body;
+    
+    // If this comes from the checkout flow, get the stored data
+    if (req.body.checkoutId) {
+      const storedData = pendingOrders.get(req.body.checkoutId);
+      if (storedData) {
+        orderData = { ...storedData.data, ...req.body };
+        pendingOrders.delete(req.body.checkoutId);
+      }
+    }
+    
+    const { products, deliveryFees, totals, customer, originalUrls } = orderData;
     
     if (!SHOPIFY_ACCESS_TOKEN) {
-      return res.status(500).json({ error: 'Shopify not configured. Please check API credentials.' });
+      return res.status(500).json({ 
+        error: 'Shopify not configured. Please check API credentials.' 
+      });
     }
     
-    if (!customer || !customer.email || !customer.name) {
-      return res.status(400).json({ error: 'Customer information required' });
+    if (!products || !Array.isArray(products) || products.length === 0) {
+      return res.status(400).json({ error: 'Products array is required' });
     }
+    
+    // Get customer info - for now require in request
+    let customerInfo = customer;
+    if (!customerInfo?.email || !customerInfo?.name) {
+      return res.status(400).json({ error: 'Customer information (email and name) required' });
+    }
+    
+    console.log(`📝 Creating draft order for ${customerInfo.email} with ${products.length} products`);
     
     const lineItems = [];
     
+    // Add products with quantity support
     products.forEach(product => {
       if (product.price && product.price > 0) {
+        const quantity = product.quantity || 1;
+        const unitPrice = product.price;
+        
         lineItems.push({
-          title: product.name,
-          price: product.price.toFixed(2),
-          quantity: 1,
+          title: `${product.name}${product.variant ? ` - ${product.variant}` : ''}`,
+          price: unitPrice.toFixed(2),
+          quantity: quantity,
+          requires_shipping: true,
+          taxable: false,
           properties: [
             { name: 'Source URL', value: product.url },
             { name: 'Retailer', value: product.retailer },
@@ -809,31 +927,39 @@ app.post('/apps/instant-import/create-draft-order', async (req, res) => {
       }
     });
     
-    if (totals.dutyAmount > 0) {
+    // Add duty
+    if (totals && totals.dutyAmount > 0) {
       lineItems.push({
         title: 'Bermuda Import Duty (26.5%)',
         price: totals.dutyAmount.toFixed(2),
         quantity: 1,
+        requires_shipping: false,
         taxable: false
       });
     }
     
-    Object.entries(deliveryFees).forEach(([vendor, fee]) => {
-      if (fee > 0) {
-        lineItems.push({
-          title: `${vendor} US Delivery Fee`,
-          price: fee.toFixed(2),
-          quantity: 1,
-          taxable: false
-        });
-      }
-    });
+    // Add delivery fees
+    if (deliveryFees && Object.keys(deliveryFees).length > 0) {
+      Object.entries(deliveryFees).forEach(([vendor, fee]) => {
+        if (fee > 0) {
+          lineItems.push({
+            title: `${vendor} US Delivery Fee`,
+            price: fee.toFixed(2),
+            quantity: 1,
+            requires_shipping: false,
+            taxable: false
+          });
+        }
+      });
+    }
     
-    if (totals.totalShippingCost > 0) {
+    // Add shipping & handling
+    if (totals && totals.totalShippingAndHandling > 0) {
       lineItems.push({
         title: 'Ocean Freight & Handling to Bermuda',
-        price: totals.totalShippingCost.toFixed(2),
+        price: totals.totalShippingAndHandling.toFixed(2),
         quantity: 1,
+        requires_shipping: false,
         taxable: false
       });
     }
@@ -842,20 +968,18 @@ app.post('/apps/instant-import/create-draft-order', async (req, res) => {
       draft_order: {
         line_items: lineItems,
         customer: {
-          email: customer.email,
-          first_name: customer.name.split(' ')[0],
-          last_name: customer.name.split(' ').slice(1).join(' ') || ''
+          email: customerInfo.email,
+          first_name: customerInfo.firstName || customerInfo.name?.split(' ')[0] || '',
+          last_name: customerInfo.lastName || customerInfo.name?.split(' ').slice(1).join(' ') || ''
         },
-        email: customer.email,
-        note: `Import Calculator Order\n\nOriginal URLs:\n${originalUrls}`,
-        tags: 'import-calculator, ocean-freight',
+        email: customerInfo.email,
+        note: `Import Calculator Order\n\nOriginal URLs:\n${originalUrls || 'N/A'}`,
+        tags: 'instant-import, ocean-freight',
         tax_exempt: true,
         send_receipt: false,
         send_fulfillment_receipt: false
       }
     };
-    
-    console.log(`📝 Creating draft order for ${customer.email}...`);
     
     const shopifyResponse = await axios.post(
       `https://${SHOPIFY_DOMAIN}/admin/api/2023-10/draft_orders.json`,
@@ -877,7 +1001,7 @@ app.post('/apps/instant-import/create-draft-order', async (req, res) => {
       draftOrderNumber: draftOrder.name,
       invoiceUrl: draftOrder.invoice_url,
       checkoutUrl: `https://${SHOPIFY_DOMAIN}/admin/draft_orders/${draftOrder.id}`,
-      totalAmount: totals.grandTotal
+      totalAmount: totals?.grandTotal || 0
     });
     
   } catch (error) {
@@ -913,17 +1037,6 @@ app.get('/test-upc', async (req, res) => {
   }
 });
 
-// Admin page
-app.get('/admin.html', (req, res) => {
-  const adminPath = path.join(__dirname, '../frontend', 'admin.html');
-  res.sendFile(adminPath, (err) => {
-    if (err) {
-      console.error('Error serving admin page:', err);
-      res.redirect('/');
-    }
-  });
-});
-
 // Complete order page
 app.get('/complete-order.html', (req, res) => {
   const completePath = path.join(__dirname, '../frontend', 'complete-order.html');
@@ -935,10 +1048,26 @@ app.get('/complete-order.html', (req, res) => {
   });
 });
 
+// Catch-all route for frontend
+app.get('*', (req, res) => {
+  const frontendPath = path.join(__dirname, '../frontend', 'index.html');
+  res.sendFile(frontendPath, (err) => {
+    if (err) {
+      res.status(404).send('Page not found');
+    }
+  });
+});
+
 // Start server
 app.listen(PORT, () => {
   console.log(`\n🚀 Server running on port ${PORT}`);
   console.log(`📍 Frontend: http://localhost:${PORT}`);
   console.log(`📍 API Health: http://localhost:${PORT}/health`);
-  console.log(`📍 Admin Panel: http://localhost:${PORT}/admin.html\n`);
+  console.log(`📍 Admin Panel: http://localhost:${PORT}/admin (admin:${ADMIN_PASSWORD})\n`);
+  
+  // Cleanup on shutdown
+  process.on('SIGTERM', () => {
+    console.log('🛑 Server shutting down...');
+    process.exit(0);
+  });
 });
