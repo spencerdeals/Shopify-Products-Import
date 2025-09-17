@@ -467,35 +467,102 @@ async function scrapeWithScrapingBee(url) {
 
     // Extract variant information (color, size, style, etc.)
     const variantPatterns = [
-      // Wayfair specific patterns
-      // More comprehensive Wayfair variant patterns
-      /class="[^"]*SelectedOption[^"]*"[^>]*>([^<]+)<\/[^>]*>/i,
-      /class="[^"]*selected[^"]*option[^"]*"[^>]*>([^<]+)<\/[^>]*>/i,
-      /data-testid="[^"]*selected[^"]*"[^>]*>([^<]+)<\/[^>]*>/i,
-      /aria-selected="true"[^>]*>([^<]+)<\/[^>]*>/i,
-      // JSON data patterns - more specific
-      /"selectedOptionName":\s*"([^"]{2,50})"/i,
-      /"optionName":\s*"([^"]{2,50})"/i,
-      /"selectedOption":\s*"([^"]{2,50})"/i,
-      /"currentOption":\s*"([^"]{2,50})"/i,
-      // Look for color/size in URL parameters
-      /piid=(\d+)/i,
-      // Generic variant patterns
-      /class="[^"]*color[^"]*selected[^"]*"[^>]*>([^<]+)<\/[^>]*>/i,
-      /class="[^"]*size[^"]*selected[^"]*"[^>]*>([^<]+)<\/[^>]*>/i,
-      // Structured data variants
-      /"variant":\s*"([^"]{2,50})"/i,
-      /"color":\s*"([^"]{2,50})"/i,
-      /"size":\s*"([^"]{2,50})"/i,
-      // Look for variant in meta tags
-      /property="product:color"[^>]+content="([^"]+)"/i,
-      /property="product:size"[^>]+content="([^"]+)"/i
+      // Enhanced variant patterns for better detection
+      
+      // 1. Selected option patterns (most reliable)
+      /class="[^"]*SelectedOption[^"]*"[^>]*>([^<]{2,40})<\/[^>]*>/i,
+      /class="[^"]*selected[^"]*option[^"]*"[^>]*>([^<]{2,40})<\/[^>]*>/i,
+      /data-testid="[^"]*selected[^"]*"[^>]*>([^<]{2,40})<\/[^>]*>/i,
+      /aria-selected="true"[^>]*>([^<]{2,40})<\/[^>]*>/i,
+      
+      // 2. JSON data patterns - more specific and reliable
+      /"selectedOptionName":\s*"([^"]{2,40})"/i,
+      /"optionName":\s*"([^"]{2,40})"/i,
+      /"selectedOption":\s*"([^"]{2,40})"/i,
+      /"currentOption":\s*"([^"]{2,40})"/i,
+      /"selectedVariant":\s*"([^"]{2,40})"/i,
+      
+      // 3. Specific attribute patterns
+      /class="[^"]*color[^"]*selected[^"]*"[^>]*>([^<]{2,30})<\/[^>]*>/i,
+      /class="[^"]*size[^"]*selected[^"]*"[^>]*>([^<]{2,20})<\/[^>]*>/i,
+      /class="[^"]*style[^"]*selected[^"]*"[^>]*>([^<]{2,30})<\/[^>]*>/i,
+      
+      // 4. Structured data variants
+      /"variant":\s*"([^"]{2,40})"/i,
+      /"color":\s*"([^"]{2,30})"/i,
+      /"size":\s*"([^"]{2,20})"/i,
+      /"style":\s*"([^"]{2,30})"/i,
+      
+      // 5. Meta tag variants
+      /property="product:color"[^>]+content="([^"]{2,30})"/i,
+      /property="product:size"[^>]+content="([^"]{2,20})"/i,
+      /property="product:style"[^>]+content="([^"]{2,30})"/i,
+      
+      // 6. Form input selected values
+      /<select[^>]*name="[^"]*(?:color|size|style)[^"]*"[^>]*>[\s\S]*?<option[^>]*selected[^>]*>([^<]{2,30})<\/option>/i,
+      
+      // 7. Button/swatch selected states
+      /class="[^"]*swatch[^"]*selected[^"]*"[^>]*(?:title="([^"]{2,30})"|>([^<]{2,30})<)/i,
+      
+      // 8. Wayfair specific - look for piid and try to extract meaningful variant
+      /piid=(\d+)/i
     ];
     
     for (const pattern of variantPatterns) {
       const match = html.match(pattern);
-      if (match && match[1] && match[1].trim().length > 1 && match[1].trim().length < 50) {
-        productData.variant = match[1].trim().replace(/&[^;]+;/g, '');
+      if (match) {
+        // Handle multiple capture groups (for swatch pattern)
+        const variantText = match[1] || match[2];
+        if (variantText && variantText.trim().length > 1 && variantText.trim().length < 50) {
+          const cleanVariant = variantText.trim().replace(/&[^;]+;/g, '').replace(/[^\w\s\-]/g, '');
+          
+          // Skip generic/unhelpful variants
+          if (!cleanVariant.match(/^(select|choose|option|default|none|n\/a|null|undefined|\d+)$/i)) {
+            productData.variant = cleanVariant;
+            console.log('   🎨 Found variant:', cleanVariant);
+            break;
+          }
+        }
+      }
+    }
+    
+    // Additional variant extraction from URL for Wayfair
+    if (!productData.variant) {
+      try {
+        const urlObj = new URL(url);
+        const piid = urlObj.searchParams.get('piid');
+        if (piid) {
+          // For Wayfair, we could potentially decode the piid to get variant info
+          // For now, just indicate it's a specific variant
+          console.log('   🎨 Found Wayfair variant ID:', piid);
+          // Don't set a generic variant ID - better to have none than confusing info
+        }
+      } catch (e) {
+        // URL parsing failed, continue
+      }
+    }
+    
+    // Try to extract variant from page title as last resort
+    if (!productData.variant && productData.name) {
+      const titleVariantPatterns = [
+        // Look for patterns like "Product Name - Color" or "Product Name, Size"
+        /^(.+?)\s*[-,]\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s*$/,
+        // Look for patterns like "Product Name (Color/Size)"
+        /^(.+?)\s*\(([^)]{2,30})\)\s*$/,
+        // Look for color/size words in title
+        /\b(Red|Blue|Green|Yellow|Black|White|Gray|Grey|Brown|Pink|Purple|Orange|Small|Medium|Large|XL|XXL|[A-Z][a-z]+\s+[A-Z][a-z]+)\b/
+      ];
+      
+      for (const pattern of titleVariantPatterns) {
+        const match = productData.name.match(pattern);
+        if (match && match[2] && match[2].length > 1 && match[2].length < 40) {
+          const variant = match[2].trim();
+          if (!variant.match(/^(select|choose|option|default|none|n\/a|and|or|with|the|for|in|on|at)$/i)) {
+            productData.variant = variant;
+            console.log('   🎨 Extracted variant from title:', variant);
+            break;
+          }
+        }
         // Skip generic/unhelpful variants
         if (!productData.variant.match(/^(select|choose|option|default|none|n\/a)$/i)) {
           console.log('   🎨 Found variant:', productData.variant);
