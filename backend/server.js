@@ -378,6 +378,29 @@ function mergeProductData(primary, secondary) {
   };
 }
 
+// Get optimal scraping order based on retailer
+function getOptimalScrapingOrder(retailer) {
+  // ScrapingBee works best for these retailers
+  const scrapingBeeFirst = ['Target', 'Best Buy', 'Walmart', 'Home Depot', 'Lowes', 'Costco'];
+  
+  // ProWebCrawler works best for these retailers  
+  const proWebFirst = ['IKEA', 'CB2', 'Crate & Barrel', 'West Elm', 'Pottery Barn', 'Anthropologie', 'Urban Outfitters'];
+  
+  // Apify works best for these retailers
+  const apifyFirst = ['Macys', 'Nordstrom', 'Overstock', 'Bed Bath & Beyond'];
+  
+  if (scrapingBeeFirst.includes(retailer)) {
+    return ['scrapingbee', 'apify', 'prowebcrawler'];
+  } else if (proWebFirst.includes(retailer)) {
+    return ['prowebcrawler', 'scrapingbee', 'apify'];
+  } else if (apifyFirst.includes(retailer)) {
+    return ['apify', 'prowebcrawler', 'scrapingbee'];
+  } else {
+    // Default order for unknown retailers
+    return ['prowebcrawler', 'apify', 'scrapingbee'];
+  }
+}
+
 // ScrapingBee scraper with better error handling
 async function scrapeWithScrapingBee(url) {
   if (!USE_SCRAPINGBEE) {
@@ -598,7 +621,7 @@ async function scrapeProduct(url) {
   }
   
   // STEP 2: For non-Amazon, try ProWebCrawler first (most accurate for Wayfair)
-  if (USE_PRO_CRAWLER && !isAmazonUrl(url) && (!productData || !isDataComplete(productData))) {
+  if (!isAmazonUrl(url) && (!productData || !isDataComplete(productData))) {
     const scrapingOrder = getOptimalScrapingOrder(retailer);
     
     for (const method of scrapingOrder) {
