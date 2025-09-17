@@ -1509,29 +1509,6 @@ app.get('/api/get-pending-order/:orderId', (req, res) => {
   }
 });
 
-// Order tracking API endpoints
-app.post('/api/orders/:orderId/start-tracking', requireAuth, async (req, res) => {
-  const { orderId } = req.params;
-  const { retailerOrders } = req.body;
-  
-  const result = await orderTracker.startTracking(orderId, retailerOrders);
-  res.json(result);
-});
-
-app.post('/api/orders/:orderId/stop-tracking', requireAuth, async (req, res) => {
-  const { orderId } = req.params;
-  
-  const result = await orderTracker.stopTracking(orderId);
-  res.json(result);
-});
-
-app.get('/api/orders/:orderId/tracking-status', requireAuth, async (req, res) => {
-  const { orderId } = req.params;
-  
-  const status = await orderTracker.getTrackingStatus(orderId);
-  res.json(status);
-});
-
 // Shopify Draft Order Creation
 app.post('/apps/instant-import/create-draft-order', async (req, res) => {
   try {
@@ -1698,8 +1675,4 @@ app.listen(PORT, () => {
   console.log(`📍 API Health: http://localhost:${PORT}/health\n`);
   
   // Cleanup tracking on server shutdown
-  process.on('SIGTERM', () => {
-    console.log('🛑 Server shutting down...');
-    process.exit(0);
-  });
 });
