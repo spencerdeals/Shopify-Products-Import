@@ -45,20 +45,19 @@ class OxylabsScraper {
     console.log(`🌐 Oxylabs scraping ${retailer}: ${url.substring(0, 60)}...`);
 
     try {
-      // Oxylabs Web Scraping API payload
+      // Oxylabs Universal API payload - works with any URL
       const payload = {
-        source: retailer === 'amazon' ? 'amazon_product' : 'universal_ecommerce',
+        source: 'universal',
         url: url,
         user_agent_type: 'desktop',
         render: 'html',
-        callback_url: null,
         parse: true,
         parsing_instructions: {
           title: {
             _fns: [
               {
                 _fn: 'xpath',
-                _args: ['//h1[@id="productTitle"]//text() | //h1[contains(@class,"product")]//text() | //h1//text()']
+                _args: ['//h1[@id="productTitle"]//text() | //h1[contains(@class,"product") or contains(@class,"title")]//text() | //h1//text()']
               }
             ]
           },
@@ -66,7 +65,7 @@ class OxylabsScraper {
             _fns: [
               {
                 _fn: 'xpath', 
-                _args: ['//span[contains(@class,"a-price-whole")]//text() | //span[contains(@class,"price")]//text() | //*[contains(@class,"price")]//*[contains(text(),"$")]//text()']
+                _args: ['//span[contains(@class,"a-price-whole")]//text() | //span[contains(@class,"price") or contains(@class,"MoneyPrice")]//text() | //*[contains(@class,"price")]//*[contains(text(),"$")]//text()']
               }
             ]
           },
@@ -74,7 +73,7 @@ class OxylabsScraper {
             _fns: [
               {
                 _fn: 'xpath',
-                _args: ['//img[@id="landingImage"]/@src | //img[contains(@class,"product")]/@src | //img[contains(@data-testid,"image")]/@src']
+                _args: ['//img[@id="landingImage"]/@src | //img[contains(@class,"product") or contains(@data-testid,"image")]/@src | //img[contains(@alt,"product") or contains(@alt,"main")]/@src']
               }
             ]
           },
@@ -82,7 +81,7 @@ class OxylabsScraper {
             _fns: [
               {
                 _fn: 'xpath',
-                _args: ['//*[contains(text(),"in stock") or contains(text(),"available")]//text() | //*[contains(text(),"out of stock")]//text()']
+                _args: ['//*[contains(text(),"in stock") or contains(text(),"available") or contains(text(),"Add to Cart")]//text() | //*[contains(text(),"out of stock") or contains(text(),"unavailable")]//text()']
               }
             ]
           },
@@ -90,7 +89,7 @@ class OxylabsScraper {
             _fns: [
               {
                 _fn: 'xpath',
-                _args: ['//span[contains(@class,"selection")]//text() | //*[@aria-selected="true"]//text() | //*[contains(@class,"selected")]//text()']
+                _args: ['//span[contains(@class,"selection") or contains(@class,"selected")]//text() | //*[@aria-selected="true"]//text() | //*[contains(@class,"variant") or contains(@class,"option")]//text()']
               }
             ]
           },
@@ -98,7 +97,7 @@ class OxylabsScraper {
             _fns: [
               {
                 _fn: 'xpath',
-                _args: ['//*[contains(text(),"dimensions") or contains(text(),"Dimensions")]//following::text()[contains(.,"x") and contains(.,"inch")]']
+                _args: ['//*[contains(text(),"dimensions") or contains(text(),"Dimensions") or contains(text(),"Size")]//following::text()[contains(.,"x") and (contains(.,"inch") or contains(.,"in") or contains(.,"\""))]']
               }
             ]
           },
@@ -106,7 +105,7 @@ class OxylabsScraper {
             _fns: [
               {
                 _fn: 'xpath',
-                _args: ['//*[contains(text(),"weight") or contains(text(),"Weight")]//following::text()[contains(.,"lb") or contains(.,"pound")]']
+                _args: ['//*[contains(text(),"weight") or contains(text(),"Weight") or contains(text(),"Shipping")]//following::text()[contains(.,"lb") or contains(.,"pound") or contains(.,"lbs")]']
               }
             ]
           }
