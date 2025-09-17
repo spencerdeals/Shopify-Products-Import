@@ -51,6 +51,10 @@ const USE_AMAZON_CRAWLER = amazonCrawler.isAvailable();
 const SCRAPING_TIMEOUT = 15000;  // 15 seconds max for speed
 const MAX_CONCURRENT_SCRAPES = 3;
 
+// FAST timeouts for speed
+const SCRAPING_TIMEOUT = 15000;  // 15 seconds max for speed
+const MAX_CONCURRENT_SCRAPES = 3;
+
 console.log('=== SERVER STARTUP ===');
 console.log(`Port: ${PORT}`);
 console.log(`Shopify Domain: ${SHOPIFY_DOMAIN}`);
