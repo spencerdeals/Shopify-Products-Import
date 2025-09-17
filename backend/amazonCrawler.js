@@ -47,8 +47,7 @@ const USE_UPCITEMDB = !!UPCITEMDB_API_KEY;
 const USE_PRO_CRAWLER = proWebCrawler.isAvailable();
 const USE_AMAZON_CRAWLER = amazonCrawler.isAvailable();
 
-  process.on('SIGTERM', () => {
-    console.log('🛑 Server shutting down...');
-    process.exit(0);
-  });
+process.on('SIGTERM', () => {
+  console.log('🛑 Server shutting down...');
+  process.exit(0);
 });
