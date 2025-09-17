@@ -291,17 +291,81 @@ class ApifyScraper {
           async function pageFunction(context) {
             const { $, request } = context;
             
-            const title = $('h1.pl-Heading').text().trim() || 
-                         $('[data-testid="product-title"]').text().trim();
+            // Enhanced Wayfair title selectors
+            const titleSelectors = [
+              'h1[data-enzyme-id="ProductTitle"]',
+              'h1.pl-Heading',
+              'h1[data-testid="product-title"]',
+              '.ProductDetailInfoBlock h1',
+              '.ProductTitle h1',
+              'h1.ProductTitle'
+            ];
             
-            const price = $('.SFPrice').text().trim() || 
-                         $('[data-testid="product-price"]').text().trim();
+            let title = '';
+            for (const selector of titleSelectors) {
+              const element = $(selector).first();
+              if (element.length && element.text().trim()) {
+                title = element.text().trim();
+                break;
+              }
+            }
             
-            const image = $('.ProductDetailImageThumbnail img').attr('src') ||
-                         $('.ImageComponent img').first().attr('src');
+            // Enhanced Wayfair price selectors - updated for current Wayfair structure
+            const priceSelectors = [
+              '[data-enzyme-id="PriceBlock"] .NotStriked',
+              '[data-enzyme-id="PriceBlock"] .BasePriceBlock',
+              '.SFPrice .NotStriked',
+              '.SFPrice',
+              '[data-testid="product-price"]',
+              '.ProductDetailInfoBlock .price',
+              '.PriceBlock .price',
+              '.BasePriceBlock',
+              '.price-range .price',
+              '.ProductPrice .price',
+              '.price.current',
+              '[class*="price"]:not([class*="strike"]):not([class*="was"])',
+              '.ProductDetailInfoBlock [class*="Price"]:not([class*="Strike"])'
+            ];
+            
+            let price = '';
+            for (const selector of priceSelectors) {
+              const element = $(selector).first();
+              if (element.length) {
+                const priceText = element.text().trim();
+                // Look for price pattern in the text
+                const priceMatch = priceText.match(/\$[\d,]+\.?\d*/);
+                if (priceMatch) {
+                  price = priceMatch[0];
+                  break;
+                }
+              }
+            }
+            
+            // Enhanced image selectors
+            const imageSelectors = [
+              '[data-enzyme-id="ProductImageCarousel"] img',
+              '.ProductDetailImageThumbnail img',
+              '.ImageComponent img',
+              '.ProductImageCarousel img',
+              '.product-image img',
+              '.ProductDetailImages img'
+            ];
+            
+            let image = '';
+            for (const selector of imageSelectors) {
+              const element = $(selector).first();
+              if (element.length && element.attr('src')) {
+                image = element.attr('src');
+                if (!image.includes('placeholder') && !image.includes('loading')) {
+                  break;
+                }
+              }
+            }
             
             // Look for dimensions in specifications
-            const dimensions = $('.Specifications').text() || '';
+            const dimensions = $('.Specifications').text() || 
+                             $('.ProductSpecs').text() || 
+                             $('.product-specs').text() || '';
             
             return {
               url: request.url,
@@ -309,13 +373,18 @@ class ApifyScraper {
               price: price,
               image: image,
               dimensions: dimensions,
-              brand: $('[data-testid="product-brand"]').text().trim()
+              brand: $('[data-testid="product-brand"]').text().trim() ||
+                     $('.brand-name').text().trim() ||
+                     $('.ProductBrand').text().trim()
             };
           }
         `,
         proxyConfiguration: {
           useApifyProxy: true
-        }
+        },
+        maxRequestsPerCrawl: 5,
+        maxRequestRetries: 3,
+        requestHandlerTimeoutSecs: 90
       });
 
       await this.client.run(run.id).waitForFinish({ waitSecs: 60 });
