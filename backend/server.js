@@ -262,6 +262,10 @@ function applyFlatPackReduction(assembledDimensions) {
 function estimateDimensions(category, name = '') {
   const text = name.toLowerCase();
   
+  // Detect multi-piece sets first
+  const pieceMatch = text.match(/(\d+)\s*[-\s]*piece/i);
+  const pieceCount = pieceMatch ? parseInt(pieceMatch[1]) : 1;
+  
   // Check if dimensions are in the name
   const dimMatch = text.match(/(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)/);
   if (dimMatch) {
@@ -272,6 +276,11 @@ function estimateDimensions(category, name = '') {
     };
     
     if (dims.length <= 120 && dims.width <= 120 && dims.height <= 120) {
+      // If multi-piece, multiply total volume by piece count
+      if (pieceCount > 1) {
+        const volumeMultiplier = Math.sqrt(pieceCount); // Not linear - some efficiency in packing
+        dims.length *= volumeMultiplier;
+      }
       return dims;
     }
   }
@@ -281,9 +290,9 @@ function estimateDimensions(category, name = '') {
   
   const baseEstimates = {
     'furniture': { 
-      length: 60 + Math.random() * 40,  // 60-100" for furniture sets
-      width: 35 + Math.random() * 25,   // 35-60" for furniture sets  
-      height: 35 + Math.random() * 30   // 35-65" for furniture sets
+      length: 48 + Math.random() * 30,  // Base furniture size
+      width: 30 + Math.random() * 20,   
+      height: 36 + Math.random() * 24
     },
     'electronics': { 
       length: 18 + Math.random() * 15,
@@ -344,6 +353,22 @@ function estimateDimensions(category, name = '') {
     width: Math.round(estimate.width * 10) / 10,
     height: Math.round(estimate.height * 10) / 10
   };
+  
+  // Apply multi-piece multiplier for furniture
+  if (category === 'furniture' && pieceCount > 1) {
+    console.log(`   📦 Detected ${pieceCount}-piece furniture set`);
+    
+    // Multi-piece sets need more space - not linear scaling
+    const volumeMultiplier = Math.min(pieceCount * 0.7, 4); // Cap at 4x for very large sets
+    
+    // Distribute the extra volume across all dimensions
+    const linearMultiplier = Math.pow(volumeMultiplier, 1/3);
+    dimensions.length *= linearMultiplier;
+    dimensions.width *= linearMultiplier;
+    dimensions.height *= linearMultiplier;
+    
+    console.log(`   📏 Applied ${pieceCount}-piece multiplier: ${volumeMultiplier.toFixed(2)}x volume`);
+  }
   
   // Apply flat-pack reduction if detected
   if (category === 'furniture' && detectFlatPacked(name, category)) {
