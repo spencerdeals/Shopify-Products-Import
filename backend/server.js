@@ -542,8 +542,9 @@ function calculateDetailedShippingCost(dimensions, weight, price, category, piec
   // Base cost calculation
   breakdown.baseCost = Math.max(25, breakdown.cubicFeet * 8); // $8 per cubic foot
   
-  // Oversize fee
-  breakdown.oversizeFee = Math.max(dimensions.length, dimensions.width, dimensions.height) > 48 ? 75 : 0;
+  // Oversize fee for large items
+  const maxDimension = Math.max(dimensions.length, dimensions.width, dimensions.height);
+  breakdown.oversizeFee = maxDimension > 48 ? 75 : 0;
   
   // Value-based insurance fee
   breakdown.valueFee = price > 500 ? price * 0.02 : 0;
@@ -605,7 +606,6 @@ function calculateOrderTotals(products, deliveryFees) {
     }
   };
 }
-
 // Helper function to check if essential data is complete
 function isDataComplete(productData) {
   return productData && 
@@ -1397,7 +1397,6 @@ function calculateAdminDetails(product, url) {
     category: product.category
   };
 }
-
 // Store pending orders temporarily (in memory for now, could use Redis later)
 const pendingOrders = new Map();
 
