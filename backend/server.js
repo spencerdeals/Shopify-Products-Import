@@ -929,6 +929,7 @@ async function scrapeProduct(url) {
     image: productData.image || 'https://placehold.co/400x400/7CB342/FFFFFF/png?text=SDL',
     category: category,
     retailer: retailer,
+    variant: productData.variant,
     dimensions: productData.dimensions,
     weight: productData.weight,
     shippingCost: shippingCost,

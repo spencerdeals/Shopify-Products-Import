@@ -1065,6 +1065,34 @@ class ApifyScraper {
 
     return null;
   }
+  
+  extractVariantFromTitle(title) {
+    if (!title) return null;
+    
+    // Common variant patterns
+    const variantPatterns = [
+      // Colors
+      /\b(Black|White|Red|Blue|Green|Yellow|Orange|Purple|Pink|Brown|Gray|Grey|Silver|Gold|Navy|Beige|Cream|Ivory)\b/i,
+      // Sizes  
+      /\b(Small|Medium|Large|XL|XXL|XS|Twin|Full|Queen|King|Cal King)\b/i,
+      // Specific measurements
+      /\b(\d+['"]\s*x\s*\d+['"]\s*x\s*\d+['"']|\d+['"]\s*x\s*\d+['"']|\d+\s*x\s*\d+)\b/i,
+      // Material/Style
+      /\b(Wood|Metal|Plastic|Fabric|Leather|Cotton|Polyester|Velvet|Linen)\b/i,
+      // Amazon specific variants in parentheses or after dash
+      /[-–]\s*([^,\n\r]+?)(?:\s*[-–]|$)/,
+      /\(([^)]+)\)$/
+    ];
+    
+    for (const pattern of variantPatterns) {
+      const match = title.match(pattern);
+      if (match && match[1] && match[1].length < 50) {
+        return match[1].trim();
+      }
+    }
+    
+    return null;
+  }
 }
 
 module.exports = ApifyScraper;
