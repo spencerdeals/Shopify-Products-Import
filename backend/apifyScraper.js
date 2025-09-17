@@ -179,6 +179,7 @@ class ApifyScraper {
       name: item.name || null,
       price: item.price || null,
       image: item.image || null,
+      variant: item.variant || null,
       dimensions: item.dimensions || null,
       weight: item.weight || null,
       brand: item.brand || null,

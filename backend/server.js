@@ -165,45 +165,6 @@ function isSDLDomain(url) {
   }
 }
 
-function isObviouslyWrongPrice(price, productName) {
-  if (!price || !productName) return false;
-  
-  const name = productName.toLowerCase();
-  
-  // Furniture should generally be > $50
-  if (/\b(sofa|sectional|loveseat|couch|chair|recliner|ottoman|table|desk|dresser|nightstand|bookshelf|cabinet|wardrobe|armoire|bed|frame|headboard|mattress|dining|kitchen|office|furniture|piece|set)\b/.test(name)) {
-    if (price < 50) {
-      console.log(`   🤔 Price $${price} seems too low for furniture: "${productName.substring(0, 50)}..."`);
-      return true;
-    }
-  }
-  
-  // Electronics should generally be > $20
-  if (/\b(tv|television|monitor|laptop|computer|tablet|phone|smartphone|camera|speaker|headphone|earbuds|router|gaming|console|xbox|playstation|nintendo)\b/.test(name)) {
-    if (price < 20) {
-      console.log(`   🤔 Price $${price} seems too low for electronics: "${productName.substring(0, 50)}..."`);
-      return true;
-    }
-  }
-  
-  // Appliances should generally be > $100
-  if (/\b(refrigerator|fridge|washer|dryer|dishwasher|microwave|oven|stove|range|freezer|ac|air.conditioner|heater|vacuum)\b/.test(name)) {
-    if (price < 100) {
-      console.log(`   🤔 Price $${price} seems too low for appliances: "${productName.substring(0, 50)}..."`);
-      return true;
-    }
-  }
-  
-  // Multi-piece sets should generally be > $100
-  if (/\b(\d+[\s-]piece|set|collection|group)\b/.test(name)) {
-    if (price < 100) {
-      console.log(`   🤔 Price $${price} seems too low for a set: "${productName.substring(0, 50)}..."`);
-      return true;
-    }
-  }
-  
-  return false;
-}
 function categorizeProduct(name, url) {
   const text = (name + ' ' + url).toLowerCase();
   
@@ -624,7 +585,7 @@ async function scrapeProduct(url) {
   }
   
   // STEP 3: Try GPT parser as fallback
-  if (parseProduct && (!productData || !productData.name || !productData.price || isObviouslyWrongPrice(productData.price, productData.name))) {
+  if (parseProduct && (!productData || !productData.name || !productData.price)) {
     try {
       console.log('   🧠 Falling back to GPT parser...');
       const gptData = await parseProduct(url);
