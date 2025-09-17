@@ -747,6 +747,7 @@ async function scrapeWithBasicScraper(url) {
       const match = html.match(pattern);
       if (match && match[1]) {
         title = match[1].trim().replace(/&[^;]+;/g, '').substring(0, 100);
+        console.log('✅ Found title with selector:', selector, 'Title:', title.substring(0, 50));
         break;
       }
     }
@@ -1074,11 +1075,11 @@ async function scrapeProduct(url) {
         scrapingMethod += '+upcitemdb';
       }
     } catch (error) {
-      console.log('   ❌ UPCitemdb enhancement failed:', error.message);
+      console.log('   ⚠️ UPCitemdb enhancement failed:', error.message);
     }
   }
   
-  // Use intelligent estimation for any missing data
+  // STEP 3: If previous methods failed or returned incomplete data, try ScrapingBee with AI
   if (!productData) {
     productData = {
       name: 'Product from ' + retailer,
@@ -1191,7 +1192,6 @@ app.post('/api/scrape', async (req, res) => {
     const products = await processBatch(urls);
     
     // Log summary
-    const retailerApiCount = products.filter(p => p.scrapingMethod?.includes('retailer-api')).length;
     const apifyCount = products.filter(p => p.scrapingMethod?.includes('apify')).length;
     const scrapingBeeCount = products.filter(p => p.scrapingMethod?.includes('scrapingbee')).length;
     const basicCount = products.filter(p => p.scrapingMethod?.includes('basic')).length;
@@ -1201,7 +1201,6 @@ app.post('/api/scrape', async (req, res) => {
     
     console.log('\n📊 SCRAPING SUMMARY:');
     console.log(`   Total products: ${products.length}`);
-    console.log(`   Retailer APIs used: ${retailerApiCount}`);
     console.log(`   Apify used: ${apifyCount}`);
     console.log(`   ScrapingBee AI used: ${scrapingBeeCount}`);
     console.log(`   Basic scraper used: ${basicCount}`);
@@ -1248,7 +1247,6 @@ app.post('/api/scrape', async (req, res) => {
         scraped: products.length - estimatedCount,
         estimated: estimatedCount,
         scrapingMethods: {
-          retailerApi: retailerApiCount,
           apify: apifyCount,
           scrapingBee: scrapingBeeCount,
           basic: basicCount,
