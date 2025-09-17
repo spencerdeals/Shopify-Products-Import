@@ -23,58 +23,246 @@ class ApifyScraper {
       throw new Error('Apify not configured');
     }
 
+    const retailer = this.detectRetailer(url);
+    console.log(`🔄 Apify scraping ${retailer} product...`);
+
     try {
-      console.log('🏠 Scraping Wayfair with multiple methods...');
-      
-      // Try the specialized Wayfair scraper first
-      try {
-        const input = {
-          startUrls: [{ url }],
-          maxRequestsPerCrawl: 1,
-          proxyConfiguration: { useApifyProxy: true }
-        };
-
-      const actorId = 'apify/web-scraper';
-
-      // Run the actor
-        const run = await this.client.actor('123webdata/wayfair-scraper').call(input, {
-          timeout: 45000,
-          memory: 512
-        });
-
-      // Get results
-        const { items } = await this.client.dataset(run.defaultDatasetId).listItems();
-        
-        if (items && items.length > 0) {
-          const item = items[0];
-          console.log('✅ Wayfair specialized scraper successful');
-          
-          const productData = {
-            name: item.productName || item.title || item.name || null,
-            price: this.extractPrice(item),
-            image: item.productImage || item.imageUrl || item.image || null,
-            dimensions: this.extractDimensions(item),
-            weight: this.extractWeight(item),
-            brand: item.brand || item.manufacturer || null,
-            category: null,
-            inStock: item.availability !== 'out of stock' && item.inStock !== false
-          };
-          
-          // If we got good data, return it
-          if (productData.name && productData.name !== 'null' && productData.price) {
-            return productData;
-          }
-        }
-      } catch (error) {
-        console.log('❌ Wayfair specialized scraper failed:', error.message);
+      // For Wayfair, use the Web Scraper with custom selectors
+      if (retailer === 'Wayfair') {
+        return await this.scrapeWayfair(url);
       }
       
-      // Fallback to Pro Web Content Crawler for Wayfair
-      console.log('🔄 Falling back to Pro Web Content Crawler for Wayfair...');
-      return await this.scrapeWithProCrawler(url);
+      // For other retailers, use generic web scraper
+      return await this.scrapeGeneric(url);
       
     } catch (error) {
-      console.error('❌ All Wayfair scraping methods failed:', error.message);
+      console.error(`❌ Apify ${retailer} scraping failed:`, error.message);
+      return null;
+    }
+  }
+
+  async scrapeWayfair(url) {
+    try {
+      console.log('🏠 Scraping Wayfair with Web Scraper...');
+      
+      const input = {
+        startUrls: [{ url }],
+        pageFunction: `
+          async function pageFunction(context) {
+            const { page, request } = context;
+            
+            // Wait for page to load
+            await page.waitForTimeout(3000);
+            
+            // Extract product data
+            const result = await page.evaluate(() => {
+              // Product name
+              const nameSelectors = [
+                'h1[data-enzyme-id="ProductTitle"]',
+                'h1.ProductDetailInfoBlock-productTitle',
+                'h1[data-testid="product-title"]',
+                '.ProductDetailInfoBlock h1',
+                'h1'
+              ];
+              
+              let name = null;
+              for (const selector of nameSelectors) {
+                const element = document.querySelector(selector);
+                if (element && element.textContent.trim()) {
+                  name = element.textContent.trim();
+                  break;
+                }
+              }
+              
+              // Price
+              const priceSelectors = [
+                '[data-enzyme-id="PriceBlock"] .BaseFontStyles',
+                '.ProductDetailInfoBlock-price',
+                '[data-testid="price"]',
+                '.price',
+                '[class*="price"]'
+              ];
+              
+              let price = null;
+              for (const selector of priceSelectors) {
+                const element = document.querySelector(selector);
+                if (element) {
+                  const priceText = element.textContent;
+                  const match = priceText.match(/\\$([\\d,]+(?:\\.\\d{2})?)/);
+                  if (match) {
+                    price = parseFloat(match[1].replace(/,/g, ''));
+                    break;
+                  }
+                }
+              }
+              
+              // Image
+              const imageSelectors = [
+                '[data-enzyme-id="ProductImageCarousel"] img',
+                '.ProductImageCarousel img',
+                '.product-image img',
+                'img[data-testid="product-image"]'
+              ];
+              
+              let image = null;
+              for (const selector of imageSelectors) {
+                const element = document.querySelector(selector);
+                if (element && element.src) {
+                  image = element.src;
+                  break;
+                }
+              }
+              
+              // Dimensions from specifications
+              let dimensions = null;
+              const specElements = document.querySelectorAll('[data-testid="specifications"] tr, .specifications tr, .product-specs tr');
+              for (const row of specElements) {
+                const text = row.textContent.toLowerCase();
+                if (text.includes('dimension') || text.includes('size')) {
+                  const match = text.match(/(\\d+(?:\\.\\d+)?)\\s*[x×]\\s*(\\d+(?:\\.\\d+)?)\\s*[x×]\\s*(\\d+(?:\\.\\d+)?)/);
+                  if (match) {
+                    dimensions = {
+                      length: parseFloat(match[1]),
+                      width: parseFloat(match[2]),
+                      height: parseFloat(match[3])
+                    };
+                    break;
+                  }
+                }
+              }
+              
+              return {
+                name,
+                price,
+                image,
+                dimensions,
+                url: window.location.href
+              };
+            });
+            
+            return result;
+          }
+        `,
+        maxRequestsPerCrawl: 1,
+        proxyConfiguration: { useApifyProxy: true }
+      };
+
+      const run = await this.client.actor('apify/web-scraper').call(input, {
+        timeout: 60000,
+        memory: 1024
+      });
+
+      const { items } = await this.client.dataset(run.defaultDatasetId).listItems();
+      
+      if (items && items.length > 0) {
+        const item = items[0];
+        console.log('✅ Wayfair Web Scraper successful');
+        console.log('   📝 Name:', item.name?.substring(0, 50) + '...');
+        console.log('   💰 Price:', item.price ? `$${item.price}` : 'Not found');
+        
+        return {
+          name: item.name || null,
+          price: item.price || null,
+          image: item.image || null,
+          dimensions: item.dimensions || null,
+          weight: null,
+          brand: null,
+          category: null,
+          inStock: true
+        };
+      }
+      
+      console.log('❌ Wayfair Web Scraper returned no data');
+      return null;
+      
+    } catch (error) {
+      console.error('❌ Wayfair Web Scraper failed:', error.message);
+      return null;
+    }
+  }
+
+  async scrapeGeneric(url) {
+    try {
+      console.log('🔄 Using generic web scraper...');
+      
+      const input = {
+        startUrls: [{ url }],
+        pageFunction: `
+          async function pageFunction(context) {
+            const { page } = context;
+            await page.waitForTimeout(2000);
+            
+            return await page.evaluate(() => {
+              // Generic selectors for common e-commerce sites
+              const nameSelectors = ['h1', '.product-title', '.product-name', '[data-testid*="title"]'];
+              const priceSelectors = ['.price', '[data-testid*="price"]', '[class*="price"]'];
+              const imageSelectors = ['.product-image img', '.main-image img', 'img[data-testid*="image"]'];
+              
+              let name = null;
+              for (const selector of nameSelectors) {
+                const el = document.querySelector(selector);
+                if (el && el.textContent.trim()) {
+                  name = el.textContent.trim();
+                  break;
+                }
+              }
+              
+              let price = null;
+              for (const selector of priceSelectors) {
+                const el = document.querySelector(selector);
+                if (el) {
+                  const match = el.textContent.match(/\\$([\\d,]+(?:\\.\\d{2})?)/);
+                  if (match) {
+                    price = parseFloat(match[1].replace(/,/g, ''));
+                    break;
+                  }
+                }
+              }
+              
+              let image = null;
+              for (const selector of imageSelectors) {
+                const el = document.querySelector(selector);
+                if (el && el.src) {
+                  image = el.src;
+                  break;
+                }
+              }
+              
+              return { name, price, image };
+            });
+          }
+        `,
+        maxRequestsPerCrawl: 1,
+        proxyConfiguration: { useApifyProxy: true }
+      };
+
+      const run = await this.client.actor('apify/web-scraper').call(input, {
+        timeout: 45000,
+        memory: 512
+      });
+
+      const { items } = await this.client.dataset(run.defaultDatasetId).listItems();
+      
+      if (items && items.length > 0) {
+        const item = items[0];
+        console.log('✅ Generic scraper successful');
+        
+        return {
+          name: item.name || null,
+          price: item.price || null,
+          image: item.image || null,
+          dimensions: null,
+          weight: null,
+          brand: null,
+          category: null,
+          inStock: true
+        };
+      }
+      
+      return null;
+      
+    } catch (error) {
+      console.error('❌ Generic scraper failed:', error.message);
       return null;
     }
   }
@@ -86,106 +274,13 @@ class ApifyScraper {
       if (domain.includes('wayfair.com')) return 'Wayfair';
       if (domain.includes('target.com')) return 'Target';
       if (domain.includes('walmart.com')) return 'Walmart';
+      if (domain.includes('bestbuy.com')) return 'Best Buy';
+      if (domain.includes('homedepot.com')) return 'Home Depot';
+      if (domain.includes('lowes.com')) return 'Lowes';
       return 'Unknown';
     } catch (e) {
       return 'Unknown';
     }
-  }
-
-  extractPrice(item) {
-    // Try various price fields
-    const priceFields = [
-      'price', 'currentPrice', 'salePrice', 'regularPrice', 
-      'productPrice', 'listPrice', 'retailPrice', 'finalPrice',
-      'priceRange', 'minPrice', 'maxPrice'
-    ];
-    
-    for (const field of priceFields) {
-      if (item[field]) {
-        let priceValue = item[field];
-        
-        // Handle price ranges - take the first/lower price
-        if (typeof priceValue === 'string' && priceValue.includes('-')) {
-          priceValue = priceValue.split('-')[0];
-        }
-        
-        const price = typeof priceValue === 'string' ? 
-          parseFloat(priceValue.replace(/[^0-9.]/g, '')) : 
-          parseFloat(priceValue);
-        
-        if (price > 0 && price < 50000) {
-          console.log(`   💰 Extracted price from ${field}: $${price}`);
-          return price;
-        }
-      }
-    }
-    
-    // Try to extract from any text field that might contain price
-    const allFields = Object.keys(item);
-    for (const field of allFields) {
-      if (typeof item[field] === 'string' && item[field].includes('$')) {
-        const match = item[field].match(/\$(\d+(?:,\d{3})*(?:\.\d{2})?)/);
-        if (match) {
-          const price = parseFloat(match[1].replace(/,/g, ''));
-          if (price > 0 && price < 50000) {
-            console.log(`   💰 Extracted price from ${field} text: $${price}`);
-            return price;
-          }
-        }
-      }
-    }
-    
-    console.log('   ❌ No valid price found in item data');
-    return null;
-  }
-
-  extractDimensions(item) {
-    // Try to find dimensions in various fields
-    const dimensionFields = ['dimensions', 'size', 'specs', 'details'];
-    
-    for (const field of dimensionFields) {
-      if (item[field]) {
-        const dimText = typeof item[field] === 'string' ? item[field] : JSON.stringify(item[field]);
-        const match = dimText.match(/(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)/i);
-        
-        if (match) {
-          return {
-            length: parseFloat(match[1]),
-            width: parseFloat(match[2]),
-            height: parseFloat(match[3])
-          };
-        }
-      }
-    }
-    
-    return null;
-  }
-
-  extractWeight(item) {
-    // Try to find weight in various fields
-    const weightFields = ['weight', 'shippingWeight', 'itemWeight'];
-    
-    for (const field of weightFields) {
-      if (item[field]) {
-        const weightText = typeof item[field] === 'string' ? item[field] : String(item[field]);
-        const match = weightText.match(/(\d+\.?\d*)\s*(lb|pound|kg|g|oz)?/i);
-        
-        if (match) {
-          let weight = parseFloat(match[1]);
-          const unit = (match[2] || 'lb').toLowerCase();
-          
-          // Convert to pounds
-          switch(unit) {
-            case 'kg': return weight * 2.205;
-            case 'g': return weight * 0.00220462;
-            case 'oz': return weight * 0.0625;
-            default: return weight; // assume pounds
-          }
-        }
-      }
-    }
-    
-    return null;
   }
 }
 
