@@ -340,8 +340,8 @@ function estimateBoxDimensions(productDimensions, category) {
 
 function calculateShippingCost(dimensions, weight, price) {
   if (!dimensions) {
-    // No dimensions available, use a default based on price
-    return Math.max(25, price * 0.15);
+    // No dimensions available, use 2x the item price
+    return Math.max(50, (price || 100) * 2);
   }
   
   // Calculate volume in cubic feet
@@ -352,11 +352,10 @@ function calculateShippingCost(dimensions, weight, price) {
   const baseCost = Math.max(15, cubicFeet * SHIPPING_RATE_PER_CUBIC_FOOT);
   
   // Add surcharges
-  const oversizeFee = Math.max(dimensions.length, dimensions.width, dimensions.height) > 48 ? 50 : 0;
   const valueFee = price > 500 ? price * 0.02 : 0;
   const handlingFee = 15;
   
-  const totalCost = baseCost + oversizeFee + valueFee + handlingFee;
+  const totalCost = baseCost + valueFee + handlingFee;
   return Math.round(totalCost);
 }
 
