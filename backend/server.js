@@ -340,8 +340,8 @@ function estimateBoxDimensions(productDimensions, category) {
 
 function calculateShippingCost(dimensions, weight, price) {
   if (!dimensions) {
-    // No dimensions available, use 2x the item price
-    return Math.max(50, (price || 100) * 2);
+    // No dimensions available, use 0.98x the item price
+    return Math.max(25, (price || 100) * 0.98);
   }
   
   // Calculate volume in cubic feet
