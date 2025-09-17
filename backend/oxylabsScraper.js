@@ -24,16 +24,141 @@ class OxylabsScraper {
     try {
       const domain = new URL(url).hostname.toLowerCase();
       if (domain.includes('amazon.com')) return 'amazon';
-      if (domain.includes('wayfair.com')) return 'wayfair';
-      if (domain.includes('target.com')) return 'target';
       if (domain.includes('walmart.com')) return 'walmart';
+      if (domain.includes('target.com')) return 'target';
       if (domain.includes('bestbuy.com')) return 'bestbuy';
-      if (domain.includes('homedepot.com')) return 'homedepot';
       if (domain.includes('lowes.com')) return 'lowes';
+      if (domain.includes('costco.com')) return 'costco';
+      if (domain.includes('kroger.com')) return 'kroger';
+      if (domain.includes('etsy.com')) return 'etsy';
+      if (domain.includes('ebay.com')) return 'ebay';
       return 'universal';
     } catch (e) {
       return 'universal';
     }
+  }
+
+  getOxylabsSource(retailer, url) {
+    // Use dedicated sources when available for better results
+    switch (retailer) {
+      case 'amazon':
+        return 'amazon';
+      case 'walmart':
+        return 'universal'; // Walmart has walmart_product but needs product ID
+      case 'target':
+        return 'universal'; // Target has target_product but needs product ID
+      case 'bestbuy':
+        return 'universal'; // Best Buy has bestbuy_product but needs product ID
+      case 'lowes':
+        return 'lowes';
+      case 'kroger':
+        return 'kroger';
+      case 'costco':
+        return 'universal'; // Costco only has search, not product
+      case 'etsy':
+        return 'universal'; // Etsy has etsy_product but needs product ID
+      case 'ebay':
+        return 'universal'; // eBay has ebay_search but we need product pages
+      default:
+        return 'universal';
+    }
+  }
+
+  getParsingInstructions(retailer) {
+    // Retailer-specific parsing instructions for better accuracy
+    const baseInstructions = {
+      title: {
+        _fns: [
+          {
+            _fn: 'xpath',
+            _args: ['//h1[@id="productTitle"]//text() | //h1[contains(@class,"product") or contains(@class,"title")]//text() | //h1//text()']
+          }
+        ]
+      },
+      price: {
+        _fns: [
+          {
+            _fn: 'xpath', 
+            _args: ['//span[contains(@class,"a-price-whole")]//text() | //span[contains(@class,"price") or contains(@class,"MoneyPrice")]//text() | //*[contains(@class,"price")]//*[contains(text(),"$")]//text()']
+          }
+        ]
+      },
+      image: {
+        _fns: [
+          {
+            _fn: 'xpath',
+            _args: ['//img[@id="landingImage"]/@src | //img[contains(@class,"product") or contains(@data-testid,"image")]/@src | //img[contains(@alt,"product") or contains(@alt,"main")]/@src']
+          }
+        ]
+      },
+      availability: {
+        _fns: [
+          {
+            _fn: 'xpath',
+            _args: ['//*[contains(text(),"in stock") or contains(text(),"available") or contains(text(),"Add to Cart")]//text() | //*[contains(text(),"out of stock") or contains(text(),"unavailable")]//text()']
+          }
+        ]
+      },
+      variant: {
+        _fns: [
+          {
+            _fn: 'xpath',
+            _args: ['//span[contains(@class,"selection") or contains(@class,"selected")]//text() | //*[@aria-selected="true"]//text() | //*[contains(@class,"variant") or contains(@class,"option")]//text()']
+          }
+        ]
+      },
+      dimensions: {
+        _fns: [
+          {
+            _fn: 'xpath',
+            _args: ['//*[contains(text(),"dimensions") or contains(text(),"Dimensions") or contains(text(),"Size")]//following::text()[contains(.,"x") and (contains(.,"inch") or contains(.,"in") or contains(.,"\""))]']
+          }
+        ]
+      },
+      weight: {
+        _fns: [
+          {
+            _fn: 'xpath',
+            _args: ['//*[contains(text(),"weight") or contains(text(),"Weight") or contains(text(),"Shipping")]//following::text()[contains(.,"lb") or contains(.,"pound") or contains(.,"lbs")]']
+          }
+        ]
+      }
+    };
+
+    // Retailer-specific optimizations
+    switch (retailer) {
+      case 'amazon':
+        baseInstructions.price._fns[0]._args = [
+          '//span[contains(@class,"a-price-whole")]//text() | //span[@class="a-price-range"]//span[@class="a-offscreen"]//text() | //span[@class="a-price"]//span[@class="a-offscreen"]//text()'
+        ];
+        baseInstructions.image._fns[0]._args = [
+          '//img[@id="landingImage"]/@src | //img[@id="landingImage"]/@data-old-hires | //div[@id="imgTagWrapperId"]//img/@src'
+        ];
+        break;
+        
+      case 'walmart':
+        baseInstructions.price._fns[0]._args = [
+          '//*[@data-automation-id="product-price"]//text() | //*[contains(@class,"price")]//text()[contains(.,"$")]'
+        ];
+        baseInstructions.image._fns[0]._args = [
+          '//img[@data-automation-id="product-image"]/@src | //img[contains(@class,"product")]/@src'
+        ];
+        break;
+        
+      case 'target':
+        baseInstructions.price._fns[0]._args = [
+          '//*[@data-test="product-price"]//text() | //*[contains(@class,"Price")]//text()'
+        ];
+        break;
+        
+      case 'bestbuy':
+        baseInstructions.price._fns[0]._args = [
+          '//*[contains(@class,"pricing-price__value")]//text() | //*[contains(@class,"sr-only") and contains(text(),"current price")]//text()'
+        ];
+        break;
+    }
+
+    return baseInstructions;
   }
 
   async scrapeProduct(url) {
@@ -42,74 +167,18 @@ class OxylabsScraper {
     }
 
     const retailer = this.detectRetailer(url);
+    const source = this.getOxylabsSource(retailer, url);
     console.log(`🌐 Oxylabs scraping ${retailer}: ${url.substring(0, 60)}...`);
 
     try {
-      // Oxylabs Universal API payload - works with any URL
+      // Oxylabs API payload with optimized source and parsing
       const payload = {
-        source: 'universal',
+        source: source,
         url: url,
         user_agent_type: 'desktop',
         render: 'html',
         parse: true,
-        parsing_instructions: {
-          title: {
-            _fns: [
-              {
-                _fn: 'xpath',
-                _args: ['//h1[@id="productTitle"]//text() | //h1[contains(@class,"product") or contains(@class,"title")]//text() | //h1//text()']
-              }
-            ]
-          },
-          price: {
-            _fns: [
-              {
-                _fn: 'xpath', 
-                _args: ['//span[contains(@class,"a-price-whole")]//text() | //span[contains(@class,"price") or contains(@class,"MoneyPrice")]//text() | //*[contains(@class,"price")]//*[contains(text(),"$")]//text()']
-              }
-            ]
-          },
-          image: {
-            _fns: [
-              {
-                _fn: 'xpath',
-                _args: ['//img[@id="landingImage"]/@src | //img[contains(@class,"product") or contains(@data-testid,"image")]/@src | //img[contains(@alt,"product") or contains(@alt,"main")]/@src']
-              }
-            ]
-          },
-          availability: {
-            _fns: [
-              {
-                _fn: 'xpath',
-                _args: ['//*[contains(text(),"in stock") or contains(text(),"available") or contains(text(),"Add to Cart")]//text() | //*[contains(text(),"out of stock") or contains(text(),"unavailable")]//text()']
-              }
-            ]
-          },
-          variant: {
-            _fns: [
-              {
-                _fn: 'xpath',
-                _args: ['//span[contains(@class,"selection") or contains(@class,"selected")]//text() | //*[@aria-selected="true"]//text() | //*[contains(@class,"variant") or contains(@class,"option")]//text()']
-              }
-            ]
-          },
-          dimensions: {
-            _fns: [
-              {
-                _fn: 'xpath',
-                _args: ['//*[contains(text(),"dimensions") or contains(text(),"Dimensions") or contains(text(),"Size")]//following::text()[contains(.,"x") and (contains(.,"inch") or contains(.,"in") or contains(.,"\""))]']
-              }
-            ]
-          },
-          weight: {
-            _fns: [
-              {
-                _fn: 'xpath',
-                _args: ['//*[contains(text(),"weight") or contains(text(),"Weight") or contains(text(),"Shipping")]//following::text()[contains(.,"lb") or contains(.,"pound") or contains(.,"lbs")]']
-              }
-            ]
-          }
-        }
+        parsing_instructions: this.getParsingInstructions(retailer)
       };
 
       // Make request to Oxylabs
