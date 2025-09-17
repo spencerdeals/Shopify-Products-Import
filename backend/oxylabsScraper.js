@@ -176,10 +176,11 @@ class OxylabsScraper {
         source: source,
         url: url,
         user_agent_type: 'desktop',
-        render: 'html',
-        parse: true,
-        parsing_instructions: this.getParsingInstructions(retailer)
+        render: 'html'
+        // Temporarily disable parsing to see raw HTML first
       };
+
+      console.log(`   📤 Oxylabs payload:`, JSON.stringify(payload, null, 2));
 
       // Make request to Oxylabs
       const response = await axios.post(this.baseURL, payload, {
@@ -193,16 +194,18 @@ class OxylabsScraper {
         timeout: 60000 // 60 seconds for Oxylabs
       });
 
+      console.log(`   📥 Oxylabs response status:`, response.status);
+      console.log(`   📥 Oxylabs response data:`, JSON.stringify(response.data, null, 2));
+
       if (response.data && response.data.results && response.data.results[0]) {
         const result = response.data.results[0];
         
-        if (result.content && result.content.results) {
-          console.log(`✅ Oxylabs scraping succeeded for ${retailer}`);
-          return this.parseOxylabsResult(result.content.results, url);
-        } else if (result.content && result.content.html) {
+        if (result.content && result.content.html) {
           // Fallback: parse HTML manually if structured parsing failed
-          console.log(`⚠️ Oxylabs structured parsing failed, trying HTML extraction`);
+          console.log(`✅ Oxylabs returned HTML, parsing manually`);
           return this.parseHtmlContent(result.content.html, url);
+        } else {
+          console.log(`❌ Oxylabs result structure:`, JSON.stringify(result, null, 2));
         }
       }
       
@@ -212,7 +215,11 @@ class OxylabsScraper {
       console.error(`❌ Oxylabs scraping failed: ${error.message}`);
       if (error.response) {
         console.error(`   Status: ${error.response.status}`);
-        console.error(`   Data:`, error.response.data);
+        console.error(`   Response headers:`, error.response.headers);
+        console.error(`   Response data:`, JSON.stringify(error.response.data, null, 2));
+      }
+      if (error.code) {
+        console.error(`   Error code:`, error.code);
       }
       throw error;
     }

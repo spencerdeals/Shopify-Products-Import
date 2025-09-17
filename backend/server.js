@@ -385,50 +385,47 @@ async function scrapeProduct(url) {
   console.log(`\n📦 Processing: ${url}`);
   console.log(`   Retailer: ${retailer}`);
   
-  // STEP 1: Try Amazon-Crawler first for Amazon URLs
-  if (retailer === 'Amazon' && USE_AMAZON_CRAWLER) {
+  // STEP 1: Always try Oxylabs first (fastest and most reliable)
+  if (USE_OXYLABS) {
     try {
-      console.log('   🛒 Attempting Amazon-Crawler (primary for Amazon)...');
-      productData = await amazonCrawler.scrapeProduct(url);
-      
-      if (productData) {
-        scrapingMethod = 'amazon-crawler';
-        console.log('   ✅ Amazon-Crawler returned data');
-        
-        if (!isDataComplete(productData)) {
-          console.log('   WARNING Amazon-Crawler data incomplete, will try fallbacks');
-        }
-      }
-    } catch (error) {
-      console.log('   ❌ Amazon-Crawler failed:', error.message);
-      productData = null;
-    }
-  }
-  
-  // STEP 2: Try Oxylabs if Amazon-Crawler failed or for non-Amazon URLs
-  if (USE_OXYLABS && (!productData || !isDataComplete(productData))) {
-    try {
-      console.log('   🌐 Attempting Oxylabs scrape...');
+      console.log('   🌐 Attempting Oxylabs scrape (primary)...');
       const oxylabsData = await oxylabsScraper.scrapeProduct(url);
       
       if (oxylabsData) {
-        if (!productData) {
-          productData = oxylabsData;
-          scrapingMethod = 'oxylabs';
-          console.log('   ✅ Oxylabs returned data');
-        } else {
-          const mergedData = mergeProductData(productData, oxylabsData);
-          productData = mergedData;
-          scrapingMethod = scrapingMethod + '+oxylabs';
-          console.log('   ✅ Enhanced with Oxylabs data');
-        }
+        productData = oxylabsData;
+        scrapingMethod = 'oxylabs';
+        console.log('   ✅ Oxylabs returned data');
         
         if (!isDataComplete(productData)) {
-          console.log('   WARNING Data still incomplete, will try more fallbacks');
+          console.log('   ⚠️ Oxylabs data incomplete, will try fallbacks');
         }
       }
     } catch (error) {
       console.log('   ❌ Oxylabs failed:', error.message);
+      productData = null;
+    }
+  }
+  
+  // STEP 2: Try Amazon-Crawler for Amazon URLs if Oxylabs failed
+  if (retailer === 'Amazon' && USE_AMAZON_CRAWLER && (!productData || !isDataComplete(productData))) {
+    try {
+      console.log('   🛒 Attempting Amazon-Crawler (Amazon fallback)...');
+      const amazonData = await amazonCrawler.scrapeProduct(url);
+      
+      if (amazonData) {
+        if (!productData) {
+          productData = amazonData;
+          scrapingMethod = 'amazon-crawler';
+          console.log('   ✅ Amazon-Crawler returned data');
+        } else {
+          const mergedData = mergeProductData(productData, amazonData);
+          productData = mergedData;
+          scrapingMethod = scrapingMethod + '+amazon-crawler';
+          console.log('   ✅ Enhanced with Amazon-Crawler data');
+        }
+      }
+    } catch (error) {
+      console.log('   ❌ Amazon-Crawler failed:', error.message);
     }
   }
   
