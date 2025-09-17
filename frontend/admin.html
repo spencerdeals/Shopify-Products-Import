@@ -306,7 +306,7 @@
             document.getElementById('results').style.display = 'none';
 
             try {
-                const response = await fetch('/api/scrape-admin', {
+                const response = await fetch('/api/scrape', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -363,28 +363,29 @@
                 `;
             });
 
-            // Add totals
+            // Calculate totals (simplified for customer view)
+            const subtotal = data.products.reduce((sum, p) => sum + (p.price || 0), 0);
+            const totalShipping = data.products.reduce((sum, p) => sum + p.shippingCost, 0);
+            const dutyAmount = subtotal * 0.265;
+            const grandTotal = subtotal + dutyAmount + totalShipping;
+
             html += `
                 <div class="totals">
                     <div class="total-line">
                         <span>Subtotal:</span>
-                        <span>$${data.totals.subtotal.toFixed(2)}</span>
+                        <span>$${subtotal.toFixed(2)}</span>
                     </div>
                     <div class="total-line">
                         <span>Bermuda Duty (26.5%):</span>
-                        <span>$${data.totals.dutyAmount.toFixed(2)}</span>
+                        <span>$${dutyAmount.toFixed(2)}</span>
                     </div>
                     <div class="total-line">
                         <span>Shipping & Handling:</span>
-                        <span>$${data.totals.totalShippingCost}</span>
-                    </div>
-                    <div class="total-line">
-                        <span>Delivery Fees:</span>
-                        <span>$${data.totals.totalDeliveryFees}</span>
+                        <span>$${totalShipping}</span>
                     </div>
                     <div class="total-line grand-total">
                         <span>Grand Total:</span>
-                        <span>$${data.totals.grandTotal}</span>
+                        <span>$${grandTotal.toFixed(2)}</span>
                     </div>
                 </div>
             `;
@@ -447,18 +448,6 @@
                     <div class="total-line">
                         <span>Data Sources:</span>
                         <span>${Object.keys(data.summary.scrapingMethods).filter(k => data.summary.scrapingMethods[k] > 0).join(', ')}</span>
-                    </div>
-                    <div class="total-line">
-                        <span>Hidden Profit Margin:</span>
-                        <span>$${data.totals._hiddenFees?.profitMargin || 0}</span>
-                    </div>
-                    <div class="total-line">
-                        <span>Hidden Card Fee:</span>
-                        <span>$${data.totals._hiddenFees?.cardFee || 0}</span>
-                    </div>
-                    <div class="total-line grand-total">
-                        <span>Total Hidden Fees:</span>
-                        <span>$${data.totals._hiddenFees?.total || 0}</span>
                     </div>
                 </div>
             `;
