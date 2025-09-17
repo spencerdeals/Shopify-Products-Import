@@ -340,6 +340,7 @@ function mergeProductData(primary, secondary) {
     name: primary.name || secondary.name,
     price: primary.price || secondary.price,
     image: primary.image || secondary.image,
+    variant: primary.variant || secondary.variant,
     dimensions: primary.dimensions || secondary.dimensions,
     weight: primary.weight || secondary.weight,
     brand: primary.brand || secondary.brand,
@@ -389,6 +390,7 @@ async function scrapeWithScrapingBee(url) {
       name: null,
       price: null,
       image: null,
+      variant: null,
       dimensions: null,
       weight: null,
       brand: null,
@@ -411,36 +413,75 @@ async function scrapeWithScrapingBee(url) {
       }
     }
 
-    // Extract price
-    const pricePatterns = [
-      /\$(\d+(?:,\d{3})*(?:\.\d{2})?)/g,
-      /price[^>]*>[\s\S]*?\$(\d+(?:,\d{3})*(?:\.\d{2})?)/i,
-      /"price":\s*"?\$?(\d+(?:,\d{3})*(?:\.\d{2})?)"?/i
+    // Extract variant information (color, size, style, etc.)
+    const variantPatterns = [
+      // Wayfair specific patterns
+      /selected[^>]*option[^>]*>([^<]+)</i,
+      /data-selected[^>]*>([^<]+)</i,
+      /"selectedOption"[^>]*>([^<]+)</i,
+      // Generic patterns for variants
+      /color[^>]*selected[^>]*>([^<]+)</i,
+      /size[^>]*selected[^>]*>([^<]+)</i,
+      /style[^>]*selected[^>]*>([^<]+)</i,
+      // Look for variant in structured data
+      /"variant":\s*"([^"]+)"/i,
+      /"color":\s*"([^"]+)"/i,
+      /"size":\s*"([^"]+)"/i
     ];
     
-    for (const pattern of pricePatterns) {
+    for (const pattern of variantPatterns) {
+      const match = html.match(pattern);
+      if (match && match[1].trim() && match[1].trim().length > 0 && match[1].trim().length < 50) {
+        productData.variant = match[1].trim().replace(/&[^;]+;/g, '');
+        console.log('   🎨 Found variant:', productData.variant);
+        break;
+      }
+    }
+    // Extract price
+    const pricePatterns = [
+      // More specific price patterns for better accuracy
+      /class="[^"]*price[^"]*"[^>]*>[\s\S]*?\$(\d+(?:,\d{3})*(?:\.\d{2})?)/i,
+      /data-testid="[^"]*price[^"]*"[^>]*>[\s\S]*?\$(\d+(?:,\d{3})*(?:\.\d{2})?)/i,
+      /id="[^"]*price[^"]*"[^>]*>[\s\S]*?\$(\d+(?:,\d{3})*(?:\.\d{2})?)/i,
+      // Wayfair specific
+      /MoneyPrice[^>]*>[\s\S]*?\$(\d+(?:,\d{3})*(?:\.\d{2})?)/i,
+      /PriceBlock[^>]*>[\s\S]*?\$(\d+(?:,\d{3})*(?:\.\d{2})?)/i,
+      // JSON-LD structured data
+      /"price":\s*"?(\d+(?:\.\d{2})?)"?/i,
+      /"amount":\s*"?(\d+(?:\.\d{2})?)"?/i,
+      // Generic fallback - but more restrictive
+      /\$(\d{2,4}(?:,\d{3})*(?:\.\d{2})?)/g
+    ];
+    
+    // Try patterns in order of specificity
+    for (let i = 0; i < pricePatterns.length; i++) {
+      const pattern = pricePatterns[i];
+      
       if (pattern.global) {
+        // For global patterns, find all matches and pick the most reasonable one
         const matches = [...html.matchAll(pattern)];
-        for (const match of matches) {
-          const price = parseFloat(match[1].replace(/,/g, ''));
-          if (price > 0 && price < 100000) {
-            productData.price = price;
-            console.log('   💰 Found price: $' + price);
-            break;
-          }
+        const prices = matches.map(match => parseFloat(match[1].replace(/,/g, '')))
+          .filter(price => price >= 10 && price <= 50000) // Reasonable price range
+          .sort((a, b) => b - a); // Sort descending
+        
+        if (prices.length > 0) {
+          // For furniture, prefer higher prices as they're more likely to be correct
+          productData.price = prices[0];
+          console.log('   💰 Found price: $' + productData.price + ` (from ${prices.length} candidates)`);
+          break;
         }
       } else {
+        // For non-global patterns, take first match
         const match = html.match(pattern);
         if (match) {
           const price = parseFloat(match[1].replace(/,/g, ''));
-          if (price > 0 && price < 100000) {
+          if (price >= 10 && price <= 50000) {
             productData.price = price;
             console.log('   💰 Found price: $' + price);
             break;
           }
         }
       }
-      if (productData.price) break;
     }
 
     // Extract dimensions
