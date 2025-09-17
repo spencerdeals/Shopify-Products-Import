@@ -351,10 +351,6 @@ function estimateBoxDimensions(productDimensions, category) {
   
   const factor = paddingFactors[category] || 1.25;
   
-  console.log(`   📦 BOX DIMENSION CALCULATION:`);
-  console.log(`      Product dimensions: ${productDimensions.length}" x ${productDimensions.width}" x ${productDimensions.height}"`);
-  console.log(`      Category: ${category} (padding factor: ${factor}x)`);
-  
   return {
     length: Math.round(productDimensions.length * factor * 10) / 10,
     width: Math.round(productDimensions.width * factor * 10) / 10,
@@ -366,10 +362,6 @@ function calculateShippingCost(dimensions, weight, price) {
   if (!dimensions) {
     // No dimensions available, use 0.98x the item price
     const fallbackCost = Math.max(25, (price || 100) * 0.98);
-    console.log(`   📦 SHIPPING CALCULATION (No Dimensions):`);
-    console.log(`      Fallback rate: 98% of item price`);
-    console.log(`      Item price: $${price || 100}`);
-    console.log(`      Calculated: $${fallbackCost}`);
     return fallbackCost;
   }
   
@@ -385,14 +377,6 @@ function calculateShippingCost(dimensions, weight, price) {
   const handlingFee = 15;
   
   const totalCost = baseCost + valueFee + handlingFee;
-  
-  console.log(`   📦 SHIPPING CALCULATION BREAKDOWN:`);
-  console.log(`      Dimensions: ${dimensions.length}" x ${dimensions.width}" x ${dimensions.height}"`);
-  console.log(`      Volume: ${cubicInches.toFixed(0)} cubic inches = ${cubicFeet.toFixed(2)} cubic feet`);
-  console.log(`      Base cost: ${cubicFeet.toFixed(2)} ft³ × $${SHIPPING_RATE_PER_CUBIC_FOOT} = $${baseCost.toFixed(2)}`);
-  console.log(`      Value fee (2% if >$500): $${valueFee.toFixed(2)}`);
-  console.log(`      Handling fee: $${handlingFee}`);
-  console.log(`      TOTAL SHIPPING: $${totalCost.toFixed(2)}`);
   
   return Math.round(totalCost);
 }
