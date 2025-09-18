@@ -12,10 +12,13 @@ class OxylabsScraper {
     console.log('🚀 OxylabsScraper Constructor:');
     console.log(`   Username: ${this.username ? '✅ SET' : '❌ MISSING'}`);
     console.log(`   Password: ${this.password ? '✅ SET' : '❌ MISSING'}`);
+    console.log(`   Endpoint: ${this.proxyEndpoint}`);
     console.log(`   Status: ${this.enabled ? '✅ ENABLED' : '❌ DISABLED'}`);
     
     if (!this.enabled) {
       console.log('   ⚠️ Set OXYLABS_USERNAME and OXYLABS_PASSWORD environment variables');
+    } else {
+      console.log('   🎯 Ready to use Oxylabs proxy endpoint');
     }
   }
 
@@ -28,29 +31,10 @@ class OxylabsScraper {
     console.log(`🚀 Oxylabs scraping ${retailer}: ${url.substring(0, 60)}...`);
 
     try {
-      // Use Oxylabs proxy endpoint with proper headers
-      const response = await axios.get(url, {
-        proxy: false, // Disable default proxy
-        httpsAgent: new (require('https').Agent)({
-          rejectUnauthorized: false // Equivalent to curl -k
-        }),
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-          'Accept-Language': 'en-US,en;q=0.5',
-          'Accept-Encoding': 'gzip, deflate',
-          'Connection': 'keep-alive',
-          'Upgrade-Insecure-Requests': '1',
-          // Oxylabs specific headers
-          'x-oxylabs-user-agent-type': 'desktop_chrome',
-          'x-oxylabs-geo-location': 'United States',
-          'x-oxylabs-render': 'html'
-        },
-        auth: {
-          username: this.username,
-          password: this.password
-        },
-        // Use Oxylabs proxy
+      // Use Oxylabs proxy endpoint exactly as documented
+      const response = await axios({
+        method: 'GET',
+        url: url,
         proxy: {
           protocol: 'https',
           host: 'realtime.oxylabs.io',
@@ -60,8 +44,25 @@ class OxylabsScraper {
             password: this.password
           }
         },
+        httpsAgent: new (require('https').Agent)({
+          rejectUnauthorized: false // Equivalent to curl -k --insecure
+        }),
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.5',
+          'Connection': 'keep-alive',
+          'Upgrade-Insecure-Requests': '1',
+          // Oxylabs specific headers
+          'x-oxylabs-user-agent-type': 'desktop_chrome',
+          'x-oxylabs-geo-location': 'United States',
+          'x-oxylabs-render': 'html'
+        },
         timeout: 30000,
-        maxRedirects: 5
+        maxRedirects: 5,
+        validateStatus: function (status) {
+          return status >= 200 && status < 300; // Only accept 2xx responses
+        }
       });
 
       console.log('✅ Oxylabs request completed successfully');
@@ -88,15 +89,20 @@ class OxylabsScraper {
       
       if (error.response) {
         console.error('Response status:', error.response.status);
-        console.error('Response headers:', error.response.headers);
         
         if (error.response.status === 401) {
           console.error('❌ Authentication failed - check Oxylabs credentials');
         } else if (error.response.status === 403) {
           console.error('❌ Access forbidden - check Oxylabs subscription');
+        } else if (error.response.status === 407) {
+          console.error('❌ Proxy authentication required - check credentials');
         } else if (error.response.status >= 500) {
           console.error('❌ Oxylabs server error - try again later');
         }
+      } else if (error.code === 'ECONNREFUSED') {
+        console.error('❌ Connection refused - check Oxylabs endpoint');
+      } else if (error.code === 'ETIMEDOUT') {
+        console.error('❌ Request timeout - Oxylabs may be slow');
       }
       
       throw error;
