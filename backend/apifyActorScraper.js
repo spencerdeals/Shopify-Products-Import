@@ -143,8 +143,10 @@ class ApifyActorScraper {
       } else {
         console.log(`   ❌ No items in dataset - checking run logs...`);
         try {
-          const logs = await this.client.log(run.defaultDatasetId).get();
-          console.log(`   📋 Actor logs (last 1000 chars):`, logs.substring(-1000));
+          const logs = await this.client.log(run.id).get();
+          if (logs) {
+            console.log(`   📋 Actor logs (last 1000 chars):`, logs.substring(-1000));
+          }
         } catch (logError) {
           console.log(`   ❌ Could not fetch logs: ${logError.message}`);
         }
@@ -305,6 +307,44 @@ class ApifyActorScraper {
     if (cleanedData.variant && (cleanedData.variant.length < 2 || cleanedData.variant.length > 50)) {
       cleanedData.variant = null;
     }
+
+          id: run.id,
+          status: run.status,
+          statusMessage: run.statusMessage,
+          startedAt: run.startedAt,
+          finishedAt: run.finishedAt,
+          stats: run.stats
+        });
+        
+        // For Luna Furniture specifically, let's check if it's a Shopify site issue
+        if (retailerType === 'generic' && url.includes('lunafurn.com')) {
+          console.log(`   🏪 Luna Furniture detected - this is a Shopify store`);
+          console.log(`   💡 Shopify sites often require special handling for product data`);
+          console.log(`   🔄 Will fall back to GPT Parser for better Shopify extraction`);
+        }
+        
+
+      if (item.variantAttributes && item.variantAttributes.length > 0) {
+        const variants = item.variantAttributes.map(attr => `${attr.name}: ${attr.value}`);
+        cleanedData.variant = variants.join(', ');
+      } else if (item.selectedVariant) {
+        cleanedData.variant = item.selectedVariant;
+      }
+    } else if (retailerType === 'wayfair') {
+      // Wayfair variants from attributes or selected options
+      if (item.attributes && item.attributes.color) {
+        cleanedData.variant = `Color: ${item.attributes.color}`;
+      } else if (item.selectedOptions) {
+        cleanedData.variant = Object.entries(item.selectedOptions)
+          .map(([key, value]) => `${key}: ${value}`)
+          .join(', ');
+      }
+    } else {
+      // Generic variant extraction
+      cleanedData.variant = item.variant || item.selectedVariant || item.color || item.size || item.style || null;
+    }
+    
+    // Clean up variant text
 
     // Check availability - handle different formats
    if (item.inStock !== undefined) {
