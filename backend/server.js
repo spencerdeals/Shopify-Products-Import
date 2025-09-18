@@ -4,52 +4,28 @@ const rateLimit = require('express-rate-limit');
 const path = require('path');
 const { URL } = require('url');
 const axios = require('axios');
+const FastScraper = require('./fastScraper');
 const UPCItemDB = require('./upcitemdb');
 const OrderTracker = require('./orderTracking');
 const { parseProduct } = require('./gptParser');
-require('dotenv').config();
-
-const app = express();
+const FastScraper = require('./fastScraper');
 const PORT = process.env.PORT || 3000;
 
 // Configuration
 const SHOPIFY_DOMAIN = process.env.SHOPIFY_DOMAIN || 'spencer-deals-ltd.myshopify.com';
 const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN || '';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '1064';
-const UPCITEMDB_API_KEY = process.env.UPCITEMDB_API_KEY || '';
-const SCRAPING_TIMEOUT = 30000;
-const BERMUDA_DUTY_RATE = 0.265;
-const SHIPPING_RATE_PER_CUBIC_FOOT = 8;
-const USE_UPCITEMDB = !!UPCITEMDB_API_KEY;
-const USE_FAST_SCRAPER = true;
-const MAX_CONCURRENT_SCRAPES = 5;
-
 // Initialize services
-console.log('✅ GPT Parser loaded successfully');
 const fastScraper = new FastScraper();
-const upcItemDB = new UPCItemDB(UPCITEMDB_API_KEY);
-const orderTracker = new OrderTracker();
-
-// Feature flags
 const USE_FAST_SCRAPER = fastScraper.enabled;
-const USE_UPCITEMDB = !!UPCITEMDB_API_KEY;
-
 console.log('=== SERVER STARTUP ===');
-console.log(`Port: ${PORT}`);
-console.log(`Shopify Domain: ${SHOPIFY_DOMAIN}`);
-console.log('');
 console.log('🔍 SCRAPING CONFIGURATION:');
 console.log(`1. Primary: FastScraper (ScrapingBee + Direct) - ${USE_FAST_SCRAPER ? '✅ ENABLED' : '❌ DISABLED'}`);
 console.log(`2. Intelligence: GPT Parser - ✅ ENABLED`);
 console.log(`3. Enhancement: UPCitemdb - ${USE_UPCITEMDB ? '✅ ENABLED' : '❌ DISABLED'}`);
 console.log('');
 console.log('⚡ STRATEGY: Fast scraping → GPT intelligence → Smart estimation');
-console.log('=====================');
-
-// Middleware
-app.use(cors());
 app.use(express.json({ limit: '5mb' }));
-app.set('trust proxy', true);
 
 // Serve static files
 app.use(express.static(path.join(__dirname, '../frontend')));
