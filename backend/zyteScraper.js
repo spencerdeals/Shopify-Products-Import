@@ -310,13 +310,15 @@ class ZyteScraper {
 
     // Extract price from HTML
     const priceSelectors = this.getPriceSelectors(retailer);
+    const pricePatterns = [
       // Amazon specific patterns
-      /data-price[^>]*=["']?\$?(\d+(?:,\d{3})*(?:\.\d{2})?)/g
+      /data-price[^>]*=["']?\$?(\d+(?:,\d{3})*(?:\.\d{2})?)/g,
       /"price":\s*"?\$?(\d+(?:,\d{3})*(?:\.\d{2})?)"?/g,
       /"currentPrice":\s*"?\$?(\d+(?:,\d{3})*(?:\.\d{2})?)"?/g,
       /"salePrice":\s*"?\$?(\d+(?:,\d{3})*(?:\.\d{2})?)"?/g,
-      /"regularPrice":\s*"?\$?(\d+(?:,\d{3})*(?:\.\d{2})?)"?/g,
+      /"regularPrice":\s*"?\$?(\d+(?:,\d{3})*(?:\.\d{2})?)"?/g
       // Generic patterns
+    ];
     for (const selector of priceSelectors) {
       const element = $(selector).first();
       if (element.length) {
@@ -440,190 +442,6 @@ class ZyteScraper {
         '.a-price .a-offscreen',
         '.a-price-range .a-price .a-offscreen',
         '.a-price.a-text-price .a-offscreen',
-        '.a-price-current .a-offscreen'
-      ],
-      'Wayfair': [
-        '.MoneyPrice',
-        '[data-testid="price"]'
-      ],
-      'Target': [
-        '[data-test="product-price"]',
-        '.h-text-red'
-      ],
-      'Walmart': [
-        '[data-automation-id="product-price"]',
-        '.price-current'
-      ],
-      'Best Buy': [
-        '.pricing-price__value',
-        '.sr-only:contains("current price")'
-     ],
-     'Crate & Barrel': [
-       '.price-current',
-       '.product-price .price',
-       '.pdp-price .price-current',
-       '.price-sale',
-       '[data-testid="price"]'
-     ],
-     'IKEA': [
-       '.notranslate .range-revamp-price',
-       '.pip-price-module__current-price',
-       '.range-revamp-price__integer',
-       '.range-revamp-price-package__price'
-     ],
-     'Luna Furniture': [
-       '.price',
-       '.product__price',
-       '.money',
-       '.price--on-sale'
-      ]
-    };
-
-    return [...(specific[retailer] || []), ...common];
-  }
-
-  getImageSelectors(retailer) {
-    const common = [
-      '.product-image img',
-      'img[class*="product"]',
-      '.hero-image img',
-      'img[data-testid*="image"]'
-    ];
-
-    const specific = {
-      'Amazon': [
-        '#landingImage',
-        '.a-dynamic-image',
-        'img[data-old-hires]',
-        '.imgTagWrapper img'
-      ],
-      'Wayfair': [
-        'img[data-testid="product-image"]',
-        '.ProductImages img'
-      ],
-      'Target': [
-        '.ProductImages img',
-        'img[data-test="product-image"]'
-      ],
-      'Walmart': [
-        'img[data-automation-id="product-image"]',
-        '.prod-hero-image img'
-      ],
-      'Best Buy': [
-        '.product-image img',
-        '.hero-image img'
-      ]
-    };
-
-    return [...(specific[retailer] || []), ...common];
-  }
-
-  getVariantSelectors(retailer) {
-    const common = [
-      '.selected',
-      '.selected-option',
-      '.selected-variant',
-      '[aria-selected="true"]',
-      '.variant-selected'
-    ];
-
-    const specific = {
-      'Amazon': [
-        '.a-button-selected .a-button-text',
-        '.a-dropdown-prompt',
-        '#variation_color_name .selection',
-        '#variation_size_name .selection',
-        '#variation_style_name .selection',
-        '.swatches .a-button-selected span'
-      ],
-      'Wayfair': [
-        '.SelectedOption',
-        '.option-selected',
-        '.selected-swatch',
-        '[data-testid="selected-option"]',
-        '.ProductOptionPills .selected',
-        '.OptionPill.selected'
-      ],
-      'Target': [
-        '.selected-variant',
-        '.h-text-bold',
-        '[data-test="selected-variant"]',
-        '.swatch--selected'
-      ],
-      'Walmart': [
-        '.selected-variant-value',
-        '[data-selected="true"]',
-        '.variant-pill--selected'
-      ],
-      'Best Buy': [
-        '.selected-variation',
-        '.variation-selected'
-      ],
-      'IKEA': [
-        '.range-revamp-pip-selected',
-        '.pip-selected',
-        '.range-revamp-color-image.selected',
-        '.range-revamp-size-option.selected',
-        '[aria-pressed="true"]'
-      ],
-      'Crate & Barrel': [
-        '.selected-swatch',
-        '.swatch.selected',
-        '.option-selected',
-        '.variant-selected',
-        '[data-selected="true"]',
-        '.color-swatch.selected',
-        '.size-option.selected'
-      ],
-      'Luna Furniture': [
-        '.product-form__input:checked + label',
-        '.variant-input:checked + label',
-        '.swatch.selected',
-        '.option-value.selected',
-        '.variant-option.selected',
-        '.product-option.selected'
-      ]
-    };
-
-    return [...(specific[retailer] || []), ...common];
-  }
-
-  detectRetailer(url) {
-    try {
-      const domain = new URL(url).hostname.toLowerCase();
-      if (domain.includes('amazon.com')) return 'Amazon';
-      if (domain.includes('wayfair.com')) return 'Wayfair';
-      if (domain.includes('target.com')) return 'Target';
-      if (domain.includes('walmart.com')) return 'Walmart';
-      if (domain.includes('bestbuy.com')) return 'Best Buy';
-      if (domain.includes('homedepot.com')) return 'Home Depot';
-      if (domain.includes('lowes.com')) return 'Lowes';
-      if (domain.includes('costco.com')) return 'Costco';
-      if (domain.includes('macys.com')) return 'Macys';
-      if (domain.includes('ikea.com')) return 'IKEA';
-      if (domain.includes('lunafurn.com')) return 'Luna Furniture';
-      if (domain.includes('overstock.com')) return 'Overstock';
-      if (domain.includes('cb2.com')) return 'CB2';
-      if (domain.includes('crateandbarrel.com')) return 'Crate & Barrel';
-      if (domain.includes('westelm.com')) return 'West Elm';
-      if (domain.includes('potterybarn.com')) return 'Pottery Barn';
-      if (domain.includes('ashleyfurniture.com')) return 'Ashley Furniture';
-      if (domain.includes('roomstogo.com')) return 'Rooms To Go';
-      if (domain.includes('livingspaces.com')) return 'Living Spaces';
-      return 'Unknown';
-    } catch (e) {
-      return 'Unknown';
-    }
-  }
-}
-
-module.exports = ZyteScraper;
-
-    const specific = {
-      'Amazon': [
-        '.a-price .a-offscreen',
-        '.a-price-range .a-price .a-offscreen',
-        '.a-price.a-text-price.a-size-medium.apexPriceToPay .a-offscreen',
         '.a-price-current .a-offscreen'
       ],
       'Wayfair': [
