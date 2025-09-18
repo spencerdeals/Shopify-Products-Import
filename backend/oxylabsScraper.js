@@ -193,7 +193,7 @@ class OxylabsScraper {
         headers: {
           'Content-Type': 'application/json'
         },
-        timeout: 60000 // Increased timeout to prevent socket hang up
+        timeout: 30000
       });
 
       console.log(`   📥 Oxylabs UPGRADED response: ${response.status} (${response.data?.results?.length || 0} results)`);

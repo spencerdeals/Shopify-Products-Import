@@ -7,7 +7,7 @@ const OpenAI = require('openai');
 const { ApifyClient } = require('apify-client');
 
 const MODEL = process.env.GPT_PARSER_MODEL || 'gpt-4o-mini';
-const TIMEOUT_MS = 60000;
+const TIMEOUT_MS = 30000;
 const MAX_AXIOS_RETRIES = 3;
 const DEFAULT_CURRENCY = (process.env.DEFAULT_CURRENCY || 'USD').toUpperCase();
 const ALLOWED_CURRENCIES = ['USD','BMD','CAD','GBP','EUR'];
