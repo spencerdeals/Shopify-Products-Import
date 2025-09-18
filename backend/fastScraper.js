@@ -4,235 +4,24 @@ const rateLimit = require('express-rate-limit');
 const path = require('path');
 const { URL } = require('url');
 const axios = require('axios');
+const FastScraper = require('./fastScraper');
 const UPCItemDB = require('./upcitemdb');
 const OrderTracker = require('./orderTracking');
 const { parseProduct } = require('./gptParser');
-require('dotenv').config();
-
-// Ultra-fast, reliable scraping with Oxylabs proxy + GPT intelligence
-
-const { parseProduct } = require('./gptParser');
-
-class FastScraper {
-  constructor() {
-    // Oxylabs Proxy Endpoint credentials
-    this.oxylabsUsername = process.env.OXYLABS_USERNAME;
-    this.oxylabsPassword = process.env.OXYLABS_PASSWORD;
-    this.oxylabsEnabled = !!(this.oxylabsUsername && this.oxylabsPassword);
-    
-    this.scrapingBeeKey = process.env.SCRAPINGBEE_API_KEY;
-    this.scrapingBeeEnabled = !!this.scrapingBeeKey;
-    
-    this.enabled = this.oxylabsEnabled || this.scrapingBeeEnabled;
-    
-    console.log('⚡ FastScraper initialized');
-    console.log(`   Oxylabs Proxy: ${this.oxylabsEnabled ? '✅ ENABLED' : '❌ DISABLED'}`);
-    console.log(`   ScrapingBee: ${this.scrapingBeeEnabled ? '✅ ENABLED' : '❌ DISABLED'}`);
-  }
-
-  async scrapeProduct(url) {
-    console.log(`⚡ FastScraper processing: ${url.substring(0, 60)}...`);
-    
-    // Step 1: Try Oxylabs Proxy first (premium anti-bot protection)
-    let html = null;
-    let method = 'none';
-    
-    if (this.oxylabsEnabled) {
-      try {
-        console.log('   🔥 Trying Oxylabs Proxy...');
-        html = await this.fetchWithOxylabs(url);
-        if (html) {
-          method = 'oxylabs';
-          console.log('   ✅ Oxylabs success');
-        }
-      } catch (error) {
-        console.log('   ❌ Oxylabs failed:', error.message);
-      }
-    }
-    
-    // Step 2: Try ScrapingBee if Oxylabs fails
-    if (!html && this.scrapingBeeEnabled) {
-      try {
-        console.log('   🐝 Trying ScrapingBee...');
-        html = await this.fetchWithScrapingBee(url);
-        if (html) {
-          method = 'scrapingbee';
-          console.log('   ✅ ScrapingBee success');
-        }
-      } catch (error) {
-        console.log('   ❌ ScrapingBee failed:', error.message);
-      }
-    }
-    
-    // Step 3: Fallback to direct fetch if both premium services fail
-    if (!html) {
-      try {
-        console.log('   🌐 Trying direct fetch...');
-        html = await this.fetchDirect(url);
-        if (html) {
-          method = 'direct';
-          console.log('   ✅ Direct fetch success');
-        }
-      } catch (error) {
-        console.log('   ❌ Direct fetch failed:', error.message);
-      }
-    }
-    
-    // Step 4: Use GPT to parse the HTML intelligently
-    if (html) {
-      try {
-        console.log('   🤖 Using GPT to parse content...');
-        const productData = await parseProduct(url, { html });
-        
-        if (productData) {
-          console.log('   ✅ GPT parsing successful');
-          return {
-            ...productData,
-            scrapingMethod: method + '+gpt',
-            dataQuality: 'high'
-          };
-        }
-      } catch (error) {
-        console.log('   ❌ GPT parsing failed:', error.message);
-      }
-    }
-    
-    // Step 5: If all else fails, use GPT with just the URL
-    try {
-      console.log('   🤖 GPT fallback with URL only...');
-      const productData = await parseProduct(url);
-      return {
-        ...productData,
-        scrapingMethod: 'gpt-only',
-        dataQuality: 'medium'
-      };
-    } catch (error) {
-      console.log('   ❌ All methods failed');
-      throw new Error('Failed to scrape product: ' + error.message);
-    }
-  }
-
-  async fetchWithOxylabs(url) {
-    const response = await axios.get(url, {
-      proxy: {
-        protocol: 'https',
-        host: 'realtime.oxylabs.io',
-        port: 60000,
-        auth: {
-          username: this.oxylabsUsername,
-          password: this.oxylabsPassword
-        }
-      },
-      headers: {
-        'x-oxylabs-user-agent-type': 'desktop_chrome',
-        'x-oxylabs-geo-location': 'United States',
-        'x-oxylabs-render': 'html' // Get rendered HTML for JS-heavy sites
-      },
-      timeout: 30000, // 30 seconds for premium service
-      httpsAgent: new (require('https').Agent)({
-        rejectUnauthorized: false // Equivalent to curl -k
-      }),
-      validateStatus: () => true
-    });
-
-    if (response.status === 200 && response.data) {
-      return typeof response.data === 'string' ? response.data : response.data.toString();
-    }
-    
-    throw new Error(`Oxylabs returned status ${response.status}`);
-  }
-
-  async fetchWithScrapingBee(url) {
-    const response = await axios.get('https://app.scrapingbee.com/api/v1/', {
-      params: {
-        api_key: this.scrapingBeeKey,
-        url: url,
-        render_js: 'false',  // Faster without JS
-        country_code: 'us',
-        block_resources: 'true',  // Block images/css for speed
-        premium_proxy: 'false',   // Faster without premium
-        wait: 1000  // Minimal wait
-      },
-      timeout: 15000,  // 15 second timeout
-      validateStatus: () => true
-    });
-
-    if (response.status === 200 && response.data) {
-      return typeof response.data === 'string' ? response.data : response.data.toString();
-    }
-    
-    throw new Error(`ScrapingBee returned status ${response.status}`);
-  }
-
-  async fetchDirect(url) {
-    const response = await axios.get(url, {
-      timeout: 10000,  // 10 second timeout
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5',
-        'Accept-Encoding': 'gzip, deflate',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1'
-      },
-      validateStatus: () => true
-    });
-
-    if (response.status === 200 && response.data) {
-      return typeof response.data === 'string' ? response.data : response.data.toString();
-    }
-    
-    throw new Error(`Direct fetch returned status ${response.status}`);
-  }
-}
-
-const app = express();
-const PORT = process.env.PORT || 3000;
-
+const FastScraper = require('./fastScraper');
 // Configuration
 const SHOPIFY_DOMAIN = process.env.SHOPIFY_DOMAIN || 'spencer-deals-ltd.myshopify.com';
 const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN || '';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '1064';
-const UPCITEMDB_API_KEY = process.env.UPCITEMDB_API_KEY || '';
-const SCRAPING_TIMEOUT = 30000;
-const BERMUDA_DUTY_RATE = 0.265;
-const SHIPPING_RATE_PER_CUBIC_FOOT = 8;
-const USE_UPCITEMDB = !!UPCITEMDB_API_KEY;
-const USE_FAST_SCRAPER = true;
-const MAX_CONCURRENT_SCRAPES = 5;
-
 // Initialize services
-console.log('✅ GPT Parser loaded successfully');
-const fastScraper = new FastScraper();
-const upcItemDB = new UPCItemDB(UPCITEMDB_API_KEY);
-const orderTracker = new OrderTracker();
-
-// Feature flags
-const USE_FAST_SCRAPER = fastScraper.enabled;
-const USE_UPCITEMDB = !!UPCITEMDB_API_KEY;
-
-console.log('=== SERVER STARTUP ===');
-console.log(`Port: ${PORT}`);
-console.log(`Shopify Domain: ${SHOPIFY_DOMAIN}`);
-console.log('');
-console.log('🔍 SCRAPING CONFIGURATION:');
-console.log(`1. Primary: FastScraper (ScrapingBee + Direct) - ${USE_FAST_SCRAPER ? '✅ ENABLED' : '❌ DISABLED'}`);
-console.log(`2. Intelligence: GPT Parser - ✅ ENABLED`);
 console.log(`3. Enhancement: UPCitemdb - ${USE_UPCITEMDB ? '✅ ENABLED' : '❌ DISABLED'}`);
 console.log('');
 console.log('⚡ STRATEGY: Fast scraping → GPT intelligence → Smart estimation');
-console.log('=====================');
-
-// Middleware
-app.use(cors());
 app.use(express.json({ limit: '5mb' }));
-app.set('trust proxy', true);
-
-// Serve static files
+const fastScraper = new FastScraper();
 app.use(express.static(path.join(__dirname, '../frontend')));
 
-// Health check
-app.get('/health', (req, res) => {
+const fastScraper = new FastScraper();
   res.json({ 
     status: 'OK', 
     timestamp: new Date().toISOString(),
@@ -948,4 +737,8 @@ app.post('/apps/instant-import/create-draft-order', async (req, res) => {
 
 // Start server
 app.listen(PORT, () => {
-  console.
+  console.log(`\n🚀 Server running on port ${PORT}`);
+  console.log(`📍 Frontend: http://localhost:${PORT}`);
+  console.log(`📍 API Health: http://localhost:${PORT}/health`);
+  console.log(`📍 Admin Panel: http://localhost:${PORT}/admin (admin:${ADMIN_PASSWORD})\n`);
+});
