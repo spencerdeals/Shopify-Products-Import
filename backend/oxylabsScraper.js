@@ -43,7 +43,7 @@ class OxylabsScraper {
         method: 'GET',
         url: url,
         proxy: {
-          protocol: 'https',
+          protocol: 'http',
           host: 'realtime.oxylabs.io',
           port: 60000,
           auth: {
@@ -61,6 +61,9 @@ class OxylabsScraper {
         maxRedirects: 5,
         httpsAgent: new (require('https').Agent)({
           rejectUnauthorized: false // Equivalent to curl -k --insecure
+        }),
+        httpAgent: new (require('http').Agent)({
+          keepAlive: true
         }),
         validateStatus: function (status) {
           return status >= 200 && status < 300;
