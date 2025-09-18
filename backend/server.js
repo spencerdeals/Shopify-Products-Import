@@ -5,11 +5,9 @@ const path = require('path');
 const { URL } = require('url');
 const axios = require('axios');
 
-// Add error handling for missing modules
-let UPCItemDB, OrderTracker, parseProduct;
+// Import modules with error handling
+let UPCItemDB, OrderTracker, parseProduct, OxylabsScraper;
 
-// Import Oxylabs - it doesn't use Playwright!
-let OxylabsScraper;
 try {
   OxylabsScraper = require('./oxylabsScraper');
 } catch (error) {
@@ -80,9 +78,6 @@ try {
 }
 
 console.log('=== SERVER STARTUP ===');
-console.log(`Node version: ${process.version}`);
-console.log(`Platform: ${process.platform}`);
-console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
 console.log(`Port: ${PORT}`);
 console.log('🔍 SCRAPING CONFIGURATION:');
 console.log(`1. Primary: Oxylabs Proxy - ${oxylabsScraper?.enabled ? '✅ ENABLED' : '❌ DISABLED'}`);
@@ -143,30 +138,12 @@ app.get('/pages/imports/admin', requireAdmin, (req, res) => {
 
 // Root route
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, '../frontend/index.html'), (err) => {
-    if (err) {
-      console.error('Error serving index.html:', err);
-      res.send(`
-        <!DOCTYPE html>
-        <html><head><title>SDL Import Calculator</title></head>
-        <body>
-          <h1>SDL Import Calculator</h1>
-          <p>Service is starting up...</p>
-          <p><a href="/health">Health Check</a></p>
-        </body></html>
-      `);
-    }
-  });
+  res.sendFile(path.join(__dirname, '../frontend/index.html'));
 });
 
 // Complete order page
 app.get('/complete-order.html', (req, res) => {
-  res.sendFile(path.join(__dirname, '../frontend/complete-order.html'), (err) => {
-    if (err) {
-      console.error('Error serving complete-order.html:', err);
-      res.redirect('/');
-    }
-  });
+  res.sendFile(path.join(__dirname, '../frontend/complete-order.html'));
 });
 
 // Rate limiter
@@ -434,7 +411,6 @@ async function scrapeProduct(url) {
   console.log(`   Retailer: ${retailer}`);
   
   // STEP 1: Try Oxylabs first
-  // STEP 1: Try Oxylabs first (our best scraper!)
   if (oxylabsScraper?.enabled) {
     try {
       console.log('   🚀 Attempting Oxylabs...');
