@@ -85,141 +85,12 @@ class ApifyActorScraper {
         console.log(`   📦 Wayfair input:`, JSON.stringify(input, null, 2));
       } else {
         console.log(`   🌐 Generic/Wayfair input preparation...`);
-        // Generic actor
+        // Generic Python Crawlee actor - uses startUrls array
         input = {
-          startUrls: [{ url }],
-          maxRequestsPerCrawl: 1,
-          proxyConfiguration: { useApifyProxy: true },
-          pageFunction: `
-            async function pageFunction(context) {
-              const { page, request } = context;
-              
-              // Wait for content to load
-              await page.waitForTimeout(3000);
-              
-              const result = await page.evaluate(() => {
-                const data = {
-                  name: null,
-                  price: null,
-                  image: null,
-                  dimensions: null,
-                  weight: null,
-                  brand: null,
-                  category: null,
-                  inStock: true,
-                  variant: null
-                };
-                
-                // Extract title
-                const titleSelectors = [
-                  'h1[data-testid="product-title"]',
-                  '#productTitle',
-                  'h1.ProductTitle',
-                  'h1[data-automation-id="product-title"]',
-                  'h1.sr-only',
-                  'h1',
-                  '.product-title h1',
-                  '.product-name h1'
-                ];
-                
-                for (const selector of titleSelectors) {
-                  const titleEl = document.querySelector(selector);
-                  if (titleEl && titleEl.textContent.trim()) {
-                    data.name = titleEl.textContent.trim();
-                    break;
-                  }
-                }
-                
-                // Extract price
-                const priceSelectors = [
-                  '.MoneyPrice',
-                  '.a-price-whole',
-                  '[data-test="product-price"]',
-                  '[data-automation-id="product-price"]',
-                  '.pricing-price__value',
-                  '.price',
-                  '[class*="price"]'
-                ];
-                
-                for (const selector of priceSelectors) {
-                  const priceEl = document.querySelector(selector);
-                  if (priceEl) {
-                    const priceText = priceEl.textContent.replace(/[^0-9.]/g, '');
-                    const price = parseFloat(priceText);
-                    if (price > 0 && price < 100000) {
-                      data.price = price;
-                      break;
-                    }
-                  }
-                }
-                
-                // Extract main image
-                const imageSelectors = [
-                  'img[data-testid="product-image"]',
-                  '#landingImage',
-                  '.ProductImages img',
-                  'img[data-automation-id="product-image"]',
-                  '.product-image img',
-                  'img[class*="product"]'
-                ];
-                
-                for (const selector of imageSelectors) {
-                  const imgEl = document.querySelector(selector);
-                  if (imgEl && imgEl.src && imgEl.src.startsWith('http')) {
-                    data.image = imgEl.src;
-                    break;
-                  }
-                }
-                
-                // Extract dimensions from text
-                const bodyText = document.body.textContent;
-                const dimMatch = bodyText.match(/(\\d+(?:\\.\\d+)?)\\s*[x×]\\s*(\\d+(?:\\.\\d+)?)\\s*[x×]\\s*(\\d+(?:\\.\\d+)?)\\s*(?:inches?|in\\.?|")/i);
-                if (dimMatch) {
-                  data.dimensions = {
-                    length: parseFloat(dimMatch[1]),
-                    width: parseFloat(dimMatch[2]),
-                    height: parseFloat(dimMatch[3])
-                  };
-                }
-                
-                // Extract weight
-                const weightMatch = bodyText.match(/(\\d+(?:\\.\\d+)?)\\s*(?:pounds?|lbs?)/i);
-                if (weightMatch) {
-                  data.weight = parseFloat(weightMatch[1]);
-                }
-                
-                // Extract variant (color, size, etc.)
-                const variantSelectors = [
-                  '.a-button-selected .a-button-text',
-                  '.SelectedOption',
-                  '.selected-variant',
-                  '.swatch.selected',
-                  '.selected'
-                ];
-                
-                for (const selector of variantSelectors) {
-                  const variantEl = document.querySelector(selector);
-                  if (variantEl && variantEl.textContent.trim()) {
-                    const variantText = variantEl.textContent.trim();
-                    if (variantText.length > 2 && variantText.length < 50) {
-                      data.variant = variantText;
-                      break;
-                    }
-                  }
-                }
-                
-                return data;
-              });
-              
-              return {
-                url: request.url,
-                ...result,
-                scrapedAt: new Date().toISOString()
-              };
-            }
-          `
+          startUrls: [url],  // Python Crawlee expects simple array of URLs
+          maxRequestsPerCrawl: 1
         };
-        console.log(`   📦 Generic input prepared (pageFunction length: ${input.pageFunction.length})`);
+        console.log(`   📦 Generic Python input:`, JSON.stringify(input, null, 2));
       }
 
       console.log(`   ⏱️ Running actor with ${actorConfig.timeout/1000}s timeout...`);
@@ -294,17 +165,19 @@ class ApifyActorScraper {
       variant: null
     };
 
-    // Extract name
+    // Extract name - handle different formats
    cleanedData.name = item.name || item.title || item.productName || null;
     if (cleanedData.name) {
       cleanedData.name = cleanedData.name.trim().substring(0, 200);
     }
 
-    // Extract price
+    // Extract price - handle Amazon vs Wayfair vs Generic formats
     if (item.price) {
      if (typeof item.price === 'object' && item.price.value) {
+        // Amazon format: { value: 145.5, currency: "$" }
        cleanedData.price = parseFloat(item.price.value);
       } else {
+        // Wayfair/Generic format: direct number or string
         const priceStr = String(item.price).replace(/[^0-9.]/g, '');
         cleanedData.price = parseFloat(priceStr) || null;
       }
@@ -315,12 +188,15 @@ class ApifyActorScraper {
       cleanedData.price = null;
     }
 
-    // Extract image
+    // Extract image - handle different formats
    if (item.thumbnailImage) {
+      // Amazon format
      cleanedData.image = item.thumbnailImage;
    } else if (item.main_image) {
+      // Wayfair format
      cleanedData.image = item.main_image;
    } else if (item.image) {
+      // Generic format
       cleanedData.image = Array.isArray(item.image) ? item.image[0] : item.image;
     } else if (item.images && Array.isArray(item.images) && item.images.length > 0) {
       cleanedData.image = item.images[0];
@@ -331,7 +207,7 @@ class ApifyActorScraper {
       cleanedData.image = null;
     }
 
-    // Extract dimensions
+    // Extract dimensions - handle Wayfair vs Generic formats
     if (item.attributes && item.attributes.overall) {
       // Parse Wayfair dimensions like "31'' H X 51'' W X 16'' D"
       const dimMatch = item.attributes.overall.match(/(\d+(?:\.\d+)?)''\s*H\s*X\s*(\d+(?:\.\d+)?)''\s*W\s*X\s*(\d+(?:\.\d+)?)''\s*D/i);
@@ -343,6 +219,7 @@ class ApifyActorScraper {
         };
       }
     } else if (item.dimensions) {
+      // Generic format
       if (typeof item.dimensions === 'object' && item.dimensions.length && item.dimensions.width && item.dimensions.height) {
         cleanedData.dimensions = {
           length: parseFloat(item.dimensions.length),
@@ -352,7 +229,7 @@ class ApifyActorScraper {
       }
     }
 
-    // Extract weight
+    // Extract weight - handle different formats
     if (item.weight) {
       // Handle Wayfair weight format like "75.85 pound"
       const weightStr = String(item.weight).replace(/[^0-9.]/g, '');
@@ -362,10 +239,10 @@ class ApifyActorScraper {
       cleanedData.weight = parseFloat(weightStr) || null;
     }
 
-    // Extract brand
+    // Extract brand - handle different formats
    cleanedData.brand = item.brand || item.manufacturer || null;
 
-    // Extract category
+    // Extract category - handle different formats
    if (item.breadCrumbs) {
      // Amazon uses breadCrumbs string like "Electronics › Computers & Accessories › Memory Cards"
      const breadcrumbArray = item.breadCrumbs.split(' › ');
@@ -374,23 +251,29 @@ class ApifyActorScraper {
      // Wayfair uses breadcrumbs array
      cleanedData.category = item.breadcrumbs[item.breadcrumbs.length - 2] || item.breadcrumbs[item.breadcrumbs.length - 1]; // Skip SKU
    } else if (item.category) {
+      // Generic format
       cleanedData.category = Array.isArray(item.category) ? item.category[item.category.length - 1] : item.category;
     }
 
-    // Extract variant
+    // Extract variant - handle different formats
     cleanedData.variant = item.variant || item.selectedVariant || item.color || item.size || item.style || null;
     if (cleanedData.variant && (cleanedData.variant.length < 2 || cleanedData.variant.length > 50)) {
       cleanedData.variant = null;
     }
 
-    // Check availability
+    // Check availability - handle different formats
    if (item.inStock !== undefined) {
+      // Amazon format
      cleanedData.inStock = !!item.inStock;
    } else if (item.in_stock !== undefined) {
+      // Wayfair format
      cleanedData.inStock = !!item.in_stock;
    } else if (item.availability) {
+      // Generic format
      cleanedData.inStock = !item.availability.toLowerCase().includes('out of stock');
-   }
+   } else {
+      cleanedData.inStock = true;
+    }
 
     console.log(`   📊 Cleaned data:`, {
       hasName: !!cleanedData.name,
