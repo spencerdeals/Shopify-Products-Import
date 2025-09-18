@@ -385,79 +385,20 @@ async function scrapeProduct(url) {
   const productId = generateProductId();
   const retailer = detectRetailer(url);
   
-  // Initialize with safe defaults to prevent crashes
-  let productData = {
-    name: null,
-    price: null,
-    image: null,
-    dimensions: null,
-    weight: null,
-    brand: null,
-    category: null,
-    inStock: true,
-    variant: null
-  };
-  let scrapingMethod = 'none';
+  let productData = null;
+  let scrapingMethod = 'zyte';
   
   console.log(`\n📦 Processing: ${url}`);
   console.log(`   Retailer: ${retailer}`);
   
-  // Try GPT Parser first - it's most reliable
-  if (process.env.OPENAI_API_KEY) {
-    try {
-      console.log('   🤖 Attempting GPT Parser...');
-      const gptData = await parseProduct(url);
-      
-      if (gptData && gptData.name && gptData.price) {
-        productData = mergeProductData(productData, gptData);
-        scrapingMethod = 'gpt';
-        console.log('   ✅ GPT Parser success');
-      }
-    } catch (error) {
-      console.log('   ❌ GPT Parser failed:', error.message);
-    }
-  }
-  
-  // If GPT failed or incomplete, try Zyte
-  if (USE_ZYTE && (!productData || !productData.name || !productData.price)) {
-    try {
-      console.log('   🕷️ Attempting Zyte API scrape...');
-      const zyteData = await zyteScraper.scrapeProduct(url);
-      
-      if (zyteData && (zyteData.name || zyteData.price)) {
-        if (!productData || !productData.name || !productData.price) {
-          productData = mergeProductData(productData, zyteData);
-          scrapingMethod = scrapingMethod === 'gpt' ? 'gpt+zyte' : 'zyte';
-          console.log('   ✅ Zyte API success');
-        } else {
-          productData = mergeProductData(productData, zyteData);
-          scrapingMethod = scrapingMethod + '+zyte';
-        }
-      }
-    } catch (error) {
-      console.log('   ❌ Zyte API failed:', error.message);
-    }
-  }
-  
-  // If still missing data, try Apify as last resort
-  if (USE_APIFY_ACTORS && (!productData || !productData.name || !productData.price)) {
-    try {
-      console.log('   🎭 Attempting Apify Actor scrape...');
-      const apifyData = await apifyActorScraper.scrapeProduct(url);
-      
-      if (apifyData && (apifyData.name || apifyData.price)) {
-        if (!productData || !productData.name || !productData.price) {
-          productData = mergeProductData(productData, apifyData);
-          scrapingMethod = scrapingMethod === 'none' ? 'apify' : scrapingMethod + '+apify';
-          console.log('   ✅ Apify Actor success');
-        } else {
-          productData = mergeProductData(productData, apifyData);
-          scrapingMethod = scrapingMethod + '+apify';
-        }
-      }
-    } catch (error) {
-      console.log('   ❌ Apify Actor failed:', error.message);
-    }
+  // ONLY use Zyte
+  try {
+    console.log('   🕷️ Using Zyte API...');
+    productData = await zyteScraper.scrapeProduct(url);
+    console.log('   ✅ Zyte API success');
+  } catch (error) {
+    console.log('   ❌ Zyte API failed:', error.message);
+    scrapingMethod = 'estimation';
   }
   
   // Ensure we always have valid productData

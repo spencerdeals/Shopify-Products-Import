@@ -180,8 +180,11 @@ class ZyteScraper {
       }
 
       // Category from breadcrumbs
-      if (product.breadcrumbs) {
+      if (product.breadcrumbs && typeof product.breadcrumbs === 'string') {
         productData.category = product.breadcrumbs.split(' / ').pop() || null;
+        console.log('   📂 Category:', productData.category);
+      } else if (product.breadcrumbs && Array.isArray(product.breadcrumbs)) {
+        productData.category = product.breadcrumbs[product.breadcrumbs.length - 1] || null;
         console.log('   📂 Category:', productData.category);
       }
 
