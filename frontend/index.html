@@ -1539,11 +1539,12 @@
                                 </div>
                                 <div class="manual-entry-form">
                                     <textarea 
+                                        id="manualContent_${product.id}"
                                         class="manual-content-input" 
                                         placeholder="Paste the complete webpage content here..."
                                         rows="8"
                                     ></textarea>
-                                    <button class="btn-manual-process" onclick="processManualContent('${product.url}', this)">
+                                    <button class="btn-manual-process" onclick="processManualContent('${product.url}', '${product.id}')">
                                         🔄 Process Manual Content
                                     </button>
                                 </div>
@@ -1667,21 +1668,20 @@
         }
 
         // Process manual content function
-        async function processManualContent(url) {
-            const textarea = document.getElementById('manualContentTextarea');
-            const content = textarea.value.trim();
-            
-            if (!content) {
-                alert('Please paste the webpage content first');
-                return;
-            }
-            
-            const button = event.target;
-            const originalText = button.textContent;
-            button.disabled = true;
-            button.textContent = '⏳ Processing...';
-            
+        async function processManualContent(url, productId) {
             try {
+                const content = document.getElementById(`manualContent_${productId}`).value;
+                if (!content.trim()) {
+                    alert('Please paste the webpage content first');
+                    return;
+                }
+                
+                // Show loading state
+                const button = document.querySelector(`button[onclick*="${productId}"]`);
+                const originalText = button.textContent;
+                button.disabled = true;
+                button.textContent = '⏳ Processing...';
+                
                 const response = await fetch('/api/process-manual-content', {
                     method: 'POST',
                     headers: {
@@ -1701,9 +1701,16 @@
                 const result = await response.json();
                 
                 if (result.success && result.product) {
-                    // Replace the manual entry form with the processed product
-                    displayProducts([result.product]);
-                    showSuccessMessage('✅ Product processed successfully from manual content!');
+                    // Update the product in our products array
+                    const productIndex = products.findIndex(p => p.id === productId);
+                    if (productIndex !== -1) {
+                        products[productIndex] = { ...products[productIndex], ...result.product };
+                    }
+                    
+                    // Refresh the display
+                    displayProducts();
+                    
+                    alert('✅ Product processed successfully from manual content!');
                 } else {
                     throw new Error('Failed to extract product data');
                 }
@@ -1713,8 +1720,11 @@
                 alert('Error: ' + error.message);
                 
                 // Re-enable button
-                button.disabled = false;
-                button.textContent = originalText;
+                const button = document.querySelector(`button[onclick*="${productId}"]`);
+                if (button) {
+                    button.disabled = false;
+                    button.textContent = '🔄 Process Manual Content';
+                }
             }
         }
 
