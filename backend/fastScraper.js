@@ -9,6 +9,7 @@ const axios = require('axios');
 const UPCItemDB = require('./upcitemdb');
 const OrderTracker = require('./orderTracking');
 const { parseProduct } = require('./gptParser');
+const ZyteScraper = require('./zyteScraper');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -25,14 +26,17 @@ const SHIPPING_RATE_PER_CUBIC_FOOT = 8;
 // Initialize services
 const upcItemDB = new UPCItemDB(UPCITEMDB_API_KEY);
 const orderTracker = new OrderTracker();
+const zyteScraper = new ZyteScraper();
 const USE_UPCITEMDB = !!UPCITEMDB_API_KEY;
+const USE_ZYTE = zyteScraper.enabled;
 
 console.log('=== SERVER STARTUP ===');
 console.log('🔍 SCRAPING CONFIGURATION:');
-console.log(`1. Primary: GPT Parser - ✅ ENABLED`);
-console.log(`2. Enhancement: UPCitemdb - ${USE_UPCITEMDB ? '✅ ENABLED' : '❌ DISABLED'}`);
+console.log(`1. Primary: Zyte API - ${USE_ZYTE ? '✅ ENABLED' : '❌ DISABLED (Missing API Key)'}`);
+console.log(`2. Fallback: GPT Parser - ✅ ENABLED`);
+console.log(`3. Enhancement: UPCitemdb - ${USE_UPCITEMDB ? '✅ ENABLED' : '❌ DISABLED'}`);
 console.log('');
-console.log('⚡ STRATEGY: GPT intelligence → Smart estimation');
+console.log('⚡ STRATEGY: Zyte professional scraping → GPT intelligence → Smart estimation');
 
 // Middleware
 app.use(cors());
@@ -48,7 +52,8 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     port: PORT,
     scraping: {
-      gptParser: true,
+      primary: USE_ZYTE ? 'Zyte' : 'GPT Parser',
+      fallback: USE_ZYTE ? 'GPT Parser' : 'None',
       upcitemdb: USE_UPCITEMDB
     },
     shopifyConfigured: !!SHOPIFY_ACCESS_TOKEN
@@ -357,28 +362,74 @@ async function scrapeProduct(url) {
   console.log(`\n📦 Processing: ${url}`);
   console.log(`   Retailer: ${retailer}`);
   
-  // Try GPT Parser
+  // STEP 1: Try Zyte API first (primary scraper)
+  if (USE_ZYTE) {
+    try {
+      console.log('   🕷️ Attempting Zyte API scrape...');
+      productData = await zyteScraper.scrapeProduct(url);
+      
+      if (productData) {
+        scrapingMethod = 'zyte';
+        console.log('   ✅ Zyte API returned data');
+        
+        // Check if data is complete
+        if (!isDataComplete(productData)) {
+          console.log('   ⚠️ Zyte data incomplete, will try GPT Parser for missing fields');
+        }
+      }
+    } catch (error) {
+      console.log('   ❌ Zyte API failed:', error.message);
+      productData = null;
+    }
+  }
+  
+  // STEP 2: Try GPT Parser as fallback if Zyte failed or returned incomplete data
+  if (!productData || !isDataComplete(productData)) {
+    try {
+      console.log('   🤖 Attempting GPT Parser fallback...');
+      const gptData = await parseProduct(url);
+      
+      if (gptData) {
+        if (!productData) {
+          // Zyte failed completely, use GPT data
+          productData = gptData;
+          scrapingMethod = 'gpt';
+          console.log('   ✅ Using GPT Parser data (Zyte failed)');
+        } else {
+          // Merge data - keep Zyte data but fill in missing fields from GPT
+          const mergedData = mergeProductData(productData, gptData);
+          
+          // Log what was supplemented
+          if (!productData.name && gptData.name) {
+            console.log('   ✅ GPT Parser provided missing name');
+          }
+          if (!productData.price && gptData.price) {
+            console.log('   ✅ GPT Parser provided missing price');
+          }
+          if (!productData.image && gptData.image) {
+            console.log('   ✅ GPT Parser provided missing image');
+          }
+          if (!productData.dimensions && gptData.dimensions) {
+            console.log('   ✅ GPT Parser provided missing dimensions');
+          }
+          
+          productData = mergedData;
+          scrapingMethod = 'zyte+gpt';
+        }
+      }
+    } catch (error) {
+      console.log('   ❌ GPT Parser fallback failed:', error.message);
+    }
+  }
+  
+  // STEP 3: Try UPCitemdb if we have a product name but missing dimensions
   try {
     console.log('   🤖 Attempting GPT Parser...');
     const gptData = await parseProduct(url);
     
     if (gptData) {
       productData = gptData;
-      scrapingMethod = 'gpt';
-      console.log('   ✅ GPT Parser returned data');
-    }
-  } catch (error) {
-    console.log('   ❌ GPT Parser failed:', error.message);
-  }
-  
-  // Clean variant
-  if (productData) {
-    productData.variant = cleanVariant(productData.variant);
-  }
-  
-  // Try UPCitemdb for missing dimensions
   if (USE_UPCITEMDB && productData && productData.name && (!productData.dimensions || !productData.weight)) {
-    try {
       console.log('   📦 Attempting UPCitemdb lookup...');
       await new Promise(resolve => setTimeout(resolve, 1000));
       const upcData = await upcItemDB.searchByName(productData.name);
@@ -399,12 +450,11 @@ async function scrapeProduct(url) {
         }
         scrapingMethod = scrapingMethod === 'estimation' ? 'upcitemdb' : scrapingMethod + '+upcitemdb';
       }
-    } catch (error) {
+  } catch (error) {
       console.log('   ❌ UPCitemdb lookup failed:', error.message);
-    }
   }
   
-  // Use estimation for missing data
+  // STEP 4: Use estimation for missing data
   if (!productData) {
     productData = {
       name: 'Product from ' + retailer,
@@ -520,18 +570,15 @@ app.post('/api/scrape', async (req, res) => {
     console.log(`\n🚀 Starting batch scrape for ${urls.length} products...`);
     
     const products = await processBatch(urls);
-    
+    const zyteCount = products.filter(p => p.scrapingMethod?.includes('zyte')).length;
     const gptCount = products.filter(p => p.scrapingMethod?.includes('gpt')).length;
     const upcitemdbCount = products.filter(p => p.scrapingMethod?.includes('upcitemdb')).length;
     const estimatedCount = products.filter(p => p.scrapingMethod === 'estimation').length;
     
     console.log('\n📊 SCRAPING SUMMARY:');
     console.log(`   Total products: ${products.length}`);
+    console.log(`   Zyte API used: ${zyteCount}`);
     console.log(`   GPT Parser used: ${gptCount}`);
-    console.log(`   UPCitemdb used: ${upcitemdbCount}`);
-    console.log(`   Fully estimated: ${estimatedCount}`);
-    console.log(`   Success rate: ${((products.length - estimatedCount) / products.length * 100).toFixed(1)}%\n`);
-    
     res.json({ 
       products,
       summary: {
@@ -539,8 +586,8 @@ app.post('/api/scrape', async (req, res) => {
         scraped: products.length - estimatedCount,
         estimated: estimatedCount,
         scrapingMethods: {
+          zyte: zyteCount,
           gpt: gptCount,
-          upcitemdb: upcitemdbCount,
           estimation: estimatedCount
         }
       }
