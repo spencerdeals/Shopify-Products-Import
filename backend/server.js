@@ -346,6 +346,7 @@ class ApifyActorScraper {
     }
 
     console.log(`   📊 Cleaned data:`, {
+      hasName: !!cleanedData.name,
       hasPrice: !!cleanedData.price,
       hasImage: !!cleanedData.image,
       hasDimensions: !!cleanedData.dimensions,
