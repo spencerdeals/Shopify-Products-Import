@@ -9,7 +9,6 @@ const axios = require('axios');
 const UPCItemDB = require('./upcitemdb');
 const OrderTracker = require('./orderTracking');
 const { parseProduct } = require('./gptParser');
-const ZyteScraper = require('./zyteScraper');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -26,17 +25,14 @@ const SHIPPING_RATE_PER_CUBIC_FOOT = 8;
 // Initialize services
 const upcItemDB = new UPCItemDB(UPCITEMDB_API_KEY);
 const orderTracker = new OrderTracker();
-const zyteScraper = new ZyteScraper();
 const USE_UPCITEMDB = !!UPCITEMDB_API_KEY;
-const USE_ZYTE = zyteScraper.enabled;
 
 console.log('=== SERVER STARTUP ===');
 console.log('🔍 SCRAPING CONFIGURATION:');
-console.log(`1. Primary: Zyte API - ${USE_ZYTE ? '✅ ENABLED' : '❌ DISABLED (Missing API Key)'}`);
-console.log(`2. Fallback: GPT Parser - ✅ ENABLED`);
-console.log(`3. Enhancement: UPCitemdb - ${USE_UPCITEMDB ? '✅ ENABLED' : '❌ DISABLED'}`);
+console.log(`1. Primary: GPT Parser - ✅ ENABLED`);
+console.log(`2. Enhancement: UPCitemdb - ${USE_UPCITEMDB ? '✅ ENABLED' : '❌ DISABLED'}`);
 console.log('');
-console.log('⚡ STRATEGY: Zyte professional scraping → GPT intelligence → Smart estimation');
+console.log('⚡ STRATEGY: GPT intelligence → UPCitemdb enhancement → Smart estimation');
 
 // Middleware
 app.use(cors());
@@ -52,8 +48,8 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     port: PORT,
     scraping: {
-      primary: USE_ZYTE ? 'Zyte' : 'GPT Parser',
-      fallback: USE_ZYTE ? 'GPT Parser' : 'None',
+      primary: 'GPT Parser',
+      fallback: 'None',
       upcitemdb: USE_UPCITEMDB
     },
     shopifyConfigured: !!SHOPIFY_ACCESS_TOKEN
@@ -362,9 +358,6 @@ async function scrapeProduct(url) {
   console.log(`\n📦 Processing: ${url}`);
   console.log(`   Retailer: ${retailer}`);
   
-  // STEP 1: Try Zyte API first (primary scraper)
-  if (USE_ZYTE) {
-    try {
       console.log('   🕷️ Attempting Zyte API scrape...');
       productData = await zyteScraper.scrapeProduct(url);
       
