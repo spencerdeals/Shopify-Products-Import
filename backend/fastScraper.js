@@ -498,6 +498,7 @@ async function scrapeProduct(url) {
     };
     scrapingMethod = 'estimation';
     console.log('   ⚠️ All methods failed, using estimation');
+   failureReasons.push('complete_failure');
   }
   
   // Fill in missing data with estimations
@@ -507,6 +508,9 @@ async function scrapeProduct(url) {
   if (!productData.dimensions) {
     productData.dimensions = estimateDimensions(category, productName);
     console.log('   📐 Estimated dimensions based on category:', category);
+   if (scrapingMethod !== 'estimation') {
+     failureReasons.push('no_dimensions');
+   }
   }
   
   if (!productData.weight) {
@@ -549,6 +553,13 @@ async function scrapeProduct(url) {
   console.log(`   📊 Data source: ${scrapingMethod}`);
   console.log(`   ✅ Product processed successfully\n`);
   
+ // Record scraping attempt for learning
+ if (adaptiveScraper) {
+   const success = scrapingMethod !== 'estimation' && productData.name && productData.name !== `Product from ${retailer}`;
+   adaptiveScraper.recordScrapingAttempt(url, retailer, success, productData, failureReasons)
+     .catch(error => console.log('   ⚠️ Learning system error:', error.message));
+ }
+ 
   return product;
 }
 

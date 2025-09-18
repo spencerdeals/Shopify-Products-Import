@@ -416,6 +416,25 @@ class ZyteScraper {
       'Best Buy': [
         '.pricing-price__value',
         '.sr-only:contains("current price")'
+     ],
+     'Crate & Barrel': [
+       '.price-current',
+       '.product-price .price',
+       '.pdp-price .price-current',
+       '.price-sale',
+       '[data-testid="price"]'
+     ],
+     'IKEA': [
+       '.notranslate .range-revamp-price',
+       '.pip-price-module__current-price',
+       '.range-revamp-price__integer',
+       '.range-revamp-price-package__price'
+     ],
+     'Luna Furniture': [
+       '.price',
+       '.product__price',
+       '.money',
+       '.price--on-sale'
       ]
     };
 
