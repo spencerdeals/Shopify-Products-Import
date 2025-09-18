@@ -242,7 +242,8 @@ class ZyteScraper {
       productData.image = productData.image || htmlData.image;
       productData.dimensions = productData.dimensions || htmlData.dimensions;
       productData.weight = productData.weight || htmlData.weight;
-      productData.variant = productData.variant || htmlData.variant;
+      // For variants, prefer HTML parsing as it's more accurate
+      productData.variant = htmlData.variant || productData.variant;
     }
 
     return productData;
