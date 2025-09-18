@@ -1,12 +1,10 @@
 const express = require('express');
-const cors = require('cors');
-const rateLimit = require('express-rate-limit');
 const path = require('path');
 const { URL } = require('url');
-const FastScraper = require('./fastScraper');
 const { parseProduct } = require('./gptParser');
 const UPCItemDB = require('./upcitemdb');
 const OrderTracker = require('./orderTracking');
+const OxylabsScraper = require('./oxylabsScraper');
 const axios = require('axios');
 require('dotenv').config();
 
@@ -14,28 +12,10 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Configuration
-const SHOPIFY_DOMAIN = process.env.SHOPIFY_DOMAIN || 'spencer-deals-ltd.myshopify.com';
-const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN || '';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '1064';
 const UPCITEMDB_API_KEY = process.env.UPCITEMDB_API_KEY || '';
-const SCRAPING_TIMEOUT = 30000;
-const MAX_CONCURRENT_SCRAPES = 3;
-const BERMUDA_DUTY_RATE = 0.265;
-const SHIPPING_RATE_PER_CUBIC_FOOT = 8;
-
-// Initialize services
-console.log('✅ GPT Parser loaded successfully');
-const fastScraper = new FastScraper();
-const upcItemDB = new UPCItemDB(UPCITEMDB_API_KEY);
-const orderTracker = new OrderTracker();
-
-// Feature flags
 const USE_FAST_SCRAPER = fastScraper.enabled;
-const USE_UPCITEMDB = !!UPCITEMDB_API_KEY;
-
 console.log('=== SERVER STARTUP ===');
-console.log(`Port: ${PORT}`);
-console.log(`Shopify Domain: ${SHOPIFY_DOMAIN}`);
 console.log('');
 console.log('🔍 SCRAPING CONFIGURATION:');
 console.log(`1. Primary: FastScraper (ScrapingBee + Direct) - ${USE_FAST_SCRAPER ? '✅ ENABLED' : '❌ DISABLED'}`);
@@ -43,11 +23,6 @@ console.log(`2. Intelligence: GPT Parser - ✅ ENABLED`);
 console.log(`3. Enhancement: UPCitemdb - ${USE_UPCITEMDB ? '✅ ENABLED' : '❌ DISABLED'}`);
 console.log('');
 console.log('⚡ STRATEGY: Fast scraping → GPT intelligence → Smart estimation');
-console.log('=====================');
-
-// Middleware
-app.use(cors());
-app.use(express.json({ limit: '5mb' }));
 app.set('trust proxy', true);
 
 // Serve static files
@@ -370,26 +345,26 @@ async function scrapeProduct(url) {
   console.log(`\n📦 Processing: ${url}`);
   console.log(`   Retailer: ${retailer}`);
   
-  // STEP 1: Try FastScraper first (ScrapingBee + Direct + GPT)
-  if (USE_FAST_SCRAPER) {
+  // STEP 1: Try Oxylabs first (primary scraper)
+  if (USE_OXYLABS) {
     try {
-      console.log('   ⚡ Attempting FastScraper...');
-      const fastData = await fastScraper.scrapeProduct(url);
+      console.log('   🌐 Attempting Oxylabs scrape...');
+      const oxylabsData = await oxylabsScraper.scrapeProduct(url);
       
-      if (fastData) {
-        productData = fastData;
-        scrapingMethod = fastData.scrapingMethod || 'fastscraper';
-        console.log('   ✅ FastScraper success');
+      if (oxylabsData) {
+        productData = oxylabsData;
+        scrapingMethod = 'oxylabs';
+        console.log('   ✅ Oxylabs success');
       } else {
-        console.log('   ❌ FastScraper returned null data');
+        console.log('   ❌ Oxylabs returned null data');
       }
     } catch (error) {
-      console.log('   ❌ FastScraper failed:', error.message);
+      console.log('   ❌ Oxylabs failed:', error.message);
       productData = null;
     }
   }
   
-  // STEP 2: Try GPT Parser as fallback if FastScraper failed
+  // STEP 2: Try GPT Parser as fallback if Oxylabs failed
   if (!productData) {
     try {
       console.log('   🤖 Attempting GPT Parser...');
@@ -451,7 +426,7 @@ async function scrapeProduct(url) {
       variant: null
     };
     scrapingMethod = 'estimation';
-    console.log('   ⚠️ All methods failed, using estimation');
+    console.log('   WARNING All methods failed, using estimation');
   }
   
   const productName = productData.name || 'Product from ' + retailer;
@@ -560,14 +535,14 @@ app.post('/api/scrape', async (req, res) => {
     
     const products = await processBatch(urls);
     
-    const fastScraperCount = products.filter(p => p.scrapingMethod?.includes('fastscraper') || p.scrapingMethod?.includes('scrapingbee') || p.scrapingMethod?.includes('direct')).length;
+    const oxylabsCount = products.filter(p => p.scrapingMethod?.includes('oxylabs')).length;
     const gptCount = products.filter(p => p.scrapingMethod?.includes('gpt')).length;
     const upcitemdbCount = products.filter(p => p.scrapingMethod?.includes('upcitemdb')).length;
     const estimatedCount = products.filter(p => p.scrapingMethod === 'estimation').length;
     
     console.log('\n📊 SCRAPING SUMMARY:');
     console.log(`   Total products: ${products.length}`);
-    console.log(`   FastScraper used: ${fastScraperCount}`);
+    console.log(`   Oxylabs used: ${oxylabsCount}`);
     console.log(`   GPT Parser used: ${gptCount}`);
     console.log(`   UPCitemdb used: ${upcitemdbCount}`);
     console.log(`   Fully estimated: ${estimatedCount}`);
@@ -580,7 +555,7 @@ app.post('/api/scrape', async (req, res) => {
         scraped: products.length - estimatedCount,
         estimated: estimatedCount,
         scrapingMethods: {
-          fastScraper: fastScraperCount,
+          oxylabs: oxylabsCount,
           gpt: gptCount,
           upcitemdb: upcitemdbCount,
           estimation: estimatedCount
