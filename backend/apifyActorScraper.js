@@ -174,6 +174,7 @@ class ZyteScraper {
           // Smart variant detection - check what the value actually represents
           if (selectedVariant.color) {
             const colorValue = selectedVariant.color.toLowerCase();
+          }
           // Collect ALL variant properties from selected variant
           this.extractVariantProperties(selectedVariant, variantParts);
           
@@ -212,6 +213,11 @@ class ZyteScraper {
     return productData;
   }
 
+  extractVariantProperties(obj, variantParts) {
+    for (const prop in obj) {
+      if (obj.hasOwnProperty(prop)) {
+        const value = obj[prop];
+        if (value && typeof value === 'string' && value.trim()) {
           // Smart categorization based on actual content
           const lowerValue = value.toLowerCase();
           
