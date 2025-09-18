@@ -49,10 +49,15 @@ class OxylabsScraper {
         }),
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
           'Accept-Language': 'en-US,en;q=0.5',
+          'Accept-Encoding': 'gzip, deflate, br',
           'Connection': 'keep-alive',
           'Upgrade-Insecure-Requests': '1',
+          'Sec-Fetch-Dest': 'document',
+          'Sec-Fetch-Mode': 'navigate',
+          'Sec-Fetch-Site': 'none',
+          'Cache-Control': 'max-age=0',
           // Oxylabs specific headers
           'x-oxylabs-user-agent-type': 'desktop_chrome',
           'x-oxylabs-geo-location': 'United States',
@@ -122,8 +127,20 @@ class OxylabsScraper {
       variant: null
     };
 
-    // Extract product name - retailer-specific selectors
-    const titleSelectors = this.getTitleSelectors(retailer);
+    // AGGRESSIVE product name extraction
+    const titleSelectors = [
+      // Wayfair specific
+      'h1[data-testid="product-title"]', 'h1.ProductTitle', '.ProductTitle h1',
+      // Amazon specific  
+      '#productTitle', 'h1.a-size-large', 'h1[data-automation-id="product-title"]',
+      // Target specific
+      'h1[data-test="product-title"]', 'h1.ProductTitle',
+      // Walmart specific
+      'h1[data-automation-id="product-title"]', 'h1.prod-ProductTitle',
+      // Generic fallbacks
+      'h1', '.product-title', '.product-name', '[class*="title"]', '[class*="Title"]'
+    ];
+    
     for (const selector of titleSelectors) {
       const element = $(selector).first();
       if (element.length && element.text().trim()) {
@@ -133,8 +150,21 @@ class OxylabsScraper {
       }
     }
 
-    // Extract price - retailer-specific selectors
-    const priceSelectors = this.getPriceSelectors(retailer);
+    // AGGRESSIVE price extraction - try multiple methods
+    const priceSelectors = [
+      // Wayfair specific
+      '.MoneyPrice', '[data-testid="price"]', '.price-current',
+      // Amazon specific
+      '.a-price-whole', '.a-price .a-offscreen', '.a-price-range .a-price .a-offscreen',
+      // Target specific
+      '[data-test="product-price"]', '.h-text-red',
+      // Walmart specific
+      '[data-automation-id="product-price"]', '.price-current',
+      // Generic fallbacks
+      '.price', '[class*="price"]', '.current-price', '.sale-price'
+    ];
+    
+    // Method 1: Try selectors
     for (const selector of priceSelectors) {
       const element = $(selector).first();
       if (element.length) {
@@ -142,18 +172,50 @@ class OxylabsScraper {
         const price = parseFloat(priceText);
         if (price > 0 && price < 100000) {
           productData.price = price;
-          console.log('   💰 Price: $' + productData.price);
+          console.log('   💰 Price (selector): $' + productData.price);
           break;
         }
       }
     }
+    
+    // Method 2: Regex search in HTML if selectors failed
+    if (!productData.price) {
+      const pricePatterns = [
+        /\$(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)/g,
+        /"price":\s*"?\$?(\d+(?:,\d{3})*(?:\.\d{2})?)"?/g,
+        /price[^>]*>[\s\S]*?\$(\d+(?:,\d{3})*(?:\.\d{2})?)/gi
+      ];
+      
+      for (const pattern of pricePatterns) {
+        const matches = [...html.matchAll(pattern)];
+        for (const match of matches) {
+          const price = parseFloat(match[1].replace(/,/g, ''));
+          if (price > 10 && price < 100000) { // Reasonable price range
+            productData.price = price;
+            console.log('   💰 Price (regex): $' + productData.price);
+            break;
+          }
+        }
+        if (productData.price) break;
+      }
+    }
 
-    // Extract main image - retailer-specific selectors
-    const imageSelectors = this.getImageSelectors(retailer);
+    // AGGRESSIVE image extraction
+    const imageSelectors = [
+      // Wayfair specific
+      'img[data-testid="product-image"]', '.ProductImages img', '.hero-image img',
+      // Amazon specific
+      '#landingImage', '.a-dynamic-image', 'img[data-old-hires]', '.imgTagWrapper img',
+      // Target specific
+      '.ProductImages img', 'img[data-test="product-image"]',
+      // Generic fallbacks
+      '.product-image img', 'img[class*="product"]', 'img[class*="hero"]'
+    ];
+    
     for (const selector of imageSelectors) {
       const element = $(selector).first();
       if (element.length) {
-        let imgSrc = element.attr('src') || element.attr('data-src') || element.attr('data-original');
+        let imgSrc = element.attr('src') || element.attr('data-src') || element.attr('data-original') || element.attr('data-lazy');
         if (imgSrc) {
           // Handle relative URLs
           if (imgSrc.startsWith('//')) {
@@ -163,7 +225,7 @@ class OxylabsScraper {
             imgSrc = urlObj.protocol + '//' + urlObj.host + imgSrc;
           }
           
-          if (imgSrc.startsWith('http')) {
+          if (imgSrc.startsWith('http') && !imgSrc.includes('placeholder') && !imgSrc.includes('loading')) {
             productData.image = imgSrc;
             console.log('   🖼️ Image: Found');
             break;
@@ -172,8 +234,19 @@ class OxylabsScraper {
       }
     }
 
-    // Extract variant/color/size - PRIORITY FIELD
-    const variantSelectors = this.getVariantSelectors(retailer);
+    // AGGRESSIVE variant extraction
+    const variantSelectors = [
+      // Amazon specific
+      '.a-button-selected .a-button-text', '.a-dropdown-prompt', '#variation_color_name .selection',
+      '#variation_size_name .selection', '.swatches .a-button-selected span',
+      // Wayfair specific  
+      '.SelectedOption', '.option-selected', '.selected-swatch', '[data-testid="selected-option"]',
+      // Target specific
+      '.selected-variant', '.h-text-bold', '[data-test="selected-variant"]', '.swatch--selected',
+      // Generic fallbacks
+      '.selected', '.selected-option', '[aria-selected="true"]', '.variant-selected'
+    ];
+    
     for (const selector of variantSelectors) {
       const element = $(selector).first();
       if (element.length && element.text().trim()) {
@@ -191,12 +264,14 @@ class OxylabsScraper {
     // Extract dimensions from text
     const bodyText = $.text();
     
-    // Try multiple dimension patterns
+    // AGGRESSIVE dimension patterns
     const dimPatterns = [
       /(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*(?:inches?|in\.?|")/i,
       /dimensions?[^:]*:\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)/i,
       /L:\s*(\d+(?:\.\d+)?)[^0-9]*W:\s*(\d+(?:\.\d+)?)[^0-9]*H:\s*(\d+(?:\.\d+)?)/i,
-      /length[^:]*:\s*(\d+(?:\.\d+)?)[^0-9]*width[^:]*:\s*(\d+(?:\.\d+)?)[^0-9]*height[^:]*:\s*(\d+(?:\.\d+)?)/i
+      /length[^:]*:\s*(\d+(?:\.\d+)?)[^0-9]*width[^:]*:\s*(\d+(?:\.\d+)?)[^0-9]*height[^:]*:\s*(\d+(?:\.\d+)?)/i,
+      /(\d+(?:\.\d+)?)\s*w\s*x\s*(\d+(?:\.\d+)?)\s*d\s*x\s*(\d+(?:\.\d+)?)\s*h/i,
+      /(\d+(?:\.\d+)?)\s*"\s*x\s*(\d+(?:\.\d+)?)\s*"\s*x\s*(\d+(?:\.\d+)?)\s*"/i
     ];
     
     for (const pattern of dimPatterns) {
