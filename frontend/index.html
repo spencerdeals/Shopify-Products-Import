@@ -1499,6 +1499,32 @@
                                 </button>
                             </div>
                         </div>
+                        
+                        ${product.manualEntryRequired ? `
+                            <div class="manual-entry-section">
+                                <div class="manual-entry-notice">
+                                    <h4>📋 Manual Entry Required</h4>
+                                    <p>${product.message}</p>
+                                    <p><strong>Please follow these steps:</strong></p>
+                                    <ol>
+                                        <li>Open the product page in a new tab: <a href="${product.url}" target="_blank">Click here</a></li>
+                                        <li>Select all content (Ctrl+A or Cmd+A)</li>
+                                        <li>Copy the content (Ctrl+C or Cmd+C)</li>
+                                        <li>Paste it in the box below and click "Process"</li>
+                                    </ol>
+                                </div>
+                                <div class="manual-entry-form">
+                                    <textarea 
+                                        class="manual-content-input" 
+                                        placeholder="Paste the complete webpage content here..."
+                                        rows="8"
+                                    ></textarea>
+                                    <button class="btn-manual-process" onclick="processManualContent('${product.url}', this)">
+                                        🔄 Process Manual Content
+                                    </button>
+                                </div>
+                            </div>
+                        ` : ''}
                     `;
                 });
                 
