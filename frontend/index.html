@@ -3,1001 +3,415 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SDL Instant Imports - Ocean Freight Calculator</title>
+    <title>SDL Instant Import Calculator - Ship to Bermuda</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <style>
+        :root {
+            --sdl-green-light: #7CB342;
+            --sdl-green-medium: #4CAF50;
+            --sdl-green-dark: #2E7D32;
+            --sdl-gradient: linear-gradient(135deg, #7CB342 0%, #4CAF50 50%, #2E7D32 100%);
+            --sdl-gradient-light: linear-gradient(135deg, #A5D6A7 0%, #7CB342 100%);
+            --text-primary: #1A1A1A;
+            --text-secondary: #666666;
+            --text-light: #999999;
+            --bg-light: #F8FDF9;
+            --bg-white: #FFFFFF;
+            --border-light: #E8F5E8;
+            --shadow-soft: 0 4px 20px rgba(76, 175, 80, 0.1);
+            --shadow-medium: 0 8px 30px rgba(76, 175, 80, 0.15);
+            --shadow-strong: 0 12px 40px rgba(76, 175, 80, 0.2);
+            --radius-small: 8px;
+            --radius-medium: 12px;
+            --radius-large: 20px;
+        }
+
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
 
-        html, body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            background: white;
-            width: 100%;
-            height: 100%;
-            margin: 0;
-            padding: 0;
-            overflow-x: hidden !important;
-            max-width: 100vw;
-        }
-
-        /* INTRO PAGE STYLES */
-        .intro-page {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            text-align: center;
-            background: white;
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #F8FDF9 0%, #E8F5E8 100%);
+            color: var(--text-primary);
+            line-height: 1.6;
             min-height: 100vh;
-            padding: 20px;
-            overflow-x: hidden !important;
-            width: 100%;
-            max-width: 100vw;
-            box-sizing: border-box;
         }
 
-        .intro-page.hidden {
-            display: none;
+        /* Header */
+        .header {
+            background: var(--bg-white);
+            box-shadow: var(--shadow-soft);
+            position: sticky;
+            top: 0;
+            z-index: 100;
         }
 
-        .intro-hero {
-            background: linear-gradient(135deg, #7cb342 0%, #2e7d32 100%);
-            color: white;
-            padding: 40px 30px;
-            border-radius: 12px;
-            margin-bottom: 30px;
-            width: 100%;
-            max-width: 600px;
-            box-shadow: 0 10px 30px rgba(124, 179, 66, 0.3);
-            box-sizing: border-box;
-        }
-
-        .intro-hero h1 {
-            font-size: 32px;
-            font-weight: 700;
-            margin-bottom: 15px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 15px;
-        }
-
-        .ship-icon {
-            font-size: 36px;
-        }
-
-        .intro-subtitle {
-            font-size: 16px;
-            opacity: 0.95;
-            line-height: 1.4;
-            margin-bottom: 0;
-        }
-
-        .steps-container {
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
-            margin-bottom: 30px;
-            width: 100%;
-            max-width: 600px;
-        }
-
-        .step-card {
-            background: white;
-            border: 2px solid rgba(124, 179, 66, 0.2);
-            border-radius: 8px;
-            padding: 20px;
-            transition: all 0.3s ease;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            box-sizing: border-box;
-        }
-
-        .step-card:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 5px 15px rgba(124, 179, 66, 0.2);
-            border-color: #7cb342;
-        }
-
-        .step-icon {
-            font-size: 40px;
-            margin-bottom: 10px;
-        }
-
-        .step-title {
-            font-size: 16px;
-            font-weight: 600;
-            color: #2e7d32;
-            margin: 0;
-        }
-
-        .start-button {
-            background: linear-gradient(135deg, #7cb342 0%, #2e7d32 100%);
-            color: white;
-            padding: 18px 40px;
-            border: none;
-            border-radius: 8px;
-            font-size: 18px;
-            font-weight: 700;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            box-shadow: 0 5px 20px rgba(124, 179, 66, 0.3);
-            width: 100%;
-            max-width: 300px;
-        }
-
-        .start-button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(124, 179, 66, 0.4);
-        }
-
-        /* CALCULATOR STYLES */
-        .calculator-page {
-            display: none;
-            background: white;
-            width: 100%;
-            overflow-x: hidden !important;
-            padding: 0;
-            margin: 0;
-            animation: fadeIn 0.5s ease;
-            max-width: 100vw;
-            box-sizing: border-box;
-        }
-
-        .calculator-page.active {
-            display: block;
-        }
-
-        .calculator-content {
-            width: 100%;
+        .header-content {
             max-width: 1200px;
             margin: 0 auto;
-            padding: 20px 15px;
-            overflow-x: hidden !important;
-            box-sizing: border-box;
-        }
-
-        @keyframes fadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(20px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        h1 {
-            color: #333;
-            margin-bottom: 10px;
-            font-size: 32px;
-            text-align: center;
-            font-weight: 700;
-        }
-
-        .new-badge {
-            display: inline-block;
-            background: linear-gradient(135deg, #ff4444 0%, #cc0000 100%);
-            color: white;
-            font-size: 14px;
-            padding: 4px 10px;
-            border-radius: 12px;
-            font-weight: 600;
-            margin-left: 10px;
-            animation: pulse-new 2s infinite;
-            box-shadow: 0 2px 10px rgba(255, 0, 0, 0.3);
-            vertical-align: super;
-            letter-spacing: 1px;
-        }
-
-        @keyframes pulse-new {
-            0% {
-                transform: scale(1);
-                box-shadow: 0 2px 10px rgba(255, 0, 0, 0.3);
-            }
-            50% {
-                transform: scale(1.05);
-                box-shadow: 0 2px 20px rgba(255, 0, 0, 0.6);
-            }
-            100% {
-                transform: scale(1);
-                box-shadow: 0 2px 10px rgba(255, 0, 0, 0.3);
-            }
-        }
-
-        h2 {
-            color: #333;
-            margin-bottom: 20px;
-            font-size: 24px;
-            font-weight: 600;
-        }
-
-        .subtitle {
-            color: #666;
-            text-align: center;
-            margin-bottom: 25px;
-            font-size: 15px;
-        }
-
-        .progress-bar {
-            display: flex;
-            justify-content: center;
-            margin-bottom: 30px;
-            padding: 20px 0;
-            background: white;
-            border: none;
-            width: 100%;
-            overflow-x: hidden !important;
-            box-sizing: border-box;
-        }
-
-        .progress-step {
+            padding: 1rem 2rem;
             display: flex;
             align-items: center;
-            margin: 0 10px;
+            justify-content: space-between;
         }
 
-        .progress-circle {
-            width: 35px;
-            height: 35px;
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .logo-circles {
+            display: flex;
+            gap: -2px;
+        }
+
+        .logo-circle {
+            width: 40px;
+            height: 40px;
             border-radius: 50%;
-            background-color: #e0e0e0;
-            color: #666;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-weight: 600;
-            font-size: 14px;
-            margin-right: 8px;
-            transition: all 0.3s ease;
-        }
-
-        .progress-circle.active {
-            background-color: #7cb342;
             color: white;
-            transform: scale(1.1);
+            font-weight: 700;
+            font-size: 1.1rem;
+            margin-left: -2px;
         }
 
-        .progress-circle.completed {
-            background-color: #4caf50;
-            color: white;
-        }
+        .logo-circle:nth-child(1) { background: #7CB342; }
+        .logo-circle:nth-child(2) { background: #4CAF50; }
+        .logo-circle:nth-child(3) { background: #2E7D32; }
 
-        .progress-line {
-            width: 50px;
-            height: 3px;
-            background-color: #e0e0e0;
-            margin: 0 5px;
-            transition: all 0.3s ease;
-        }
-
-        .progress-line.completed {
-            background-color: #4caf50;
-        }
-
-        .warning-box {
-            background: white;
-            border-left: 4px solid #ffa726;
-            border-radius: 0;
-            padding: 15px;
-            margin-bottom: 25px;
-            position: relative;
-            width: 100%;
-            box-sizing: border-box;
-        }
-
-        .warning-header {
-            display: flex;
-            align-items: center;
-            margin-bottom: 8px;
-            color: #e65100;
+        .logo-text {
+            font-size: 1.5rem;
             font-weight: 600;
-            font-size: 15px;
+            color: var(--text-primary);
         }
 
-        .warning-header::before {
-            content: '⚠️';
-            margin-right: 8px;
-            font-size: 18px;
-        }
-
-        .warning-text {
-            color: #bf360c;
-            line-height: 1.5;
-            font-size: 14px;
-        }
-
-        .critical-warning {
-            background: white;
-            border-left: 4px solid #f44336;
-            border-radius: 0;
-            padding: 20px;
-            margin-bottom: 25px;
-            width: 100%;
-            box-sizing: border-box;
-        }
-
-        .critical-warning .warning-header {
-            color: #c62828;
-            font-size: 16px;
-        }
-
-        .critical-warning .warning-text {
-            color: #c62828;
+        .header-subtitle {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
             font-weight: 500;
         }
 
-        .forwarder-address {
-            background: white;
-            border-left: 4px solid #66bb6a;
-            border-radius: 0;
-            padding: 20px;
-            margin-bottom: 25px;
-            position: relative;
-            width: 100%;
-            box-sizing: border-box;
+        /* Main Container */
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
         }
 
-        .forwarder-header {
+        /* Hero Section */
+        .hero {
+            text-align: center;
+            margin-bottom: 3rem;
+        }
+
+        .hero h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            background: var(--sdl-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 1rem;
+        }
+
+        .hero p {
+            font-size: 1.2rem;
+            color: var(--text-secondary);
+            max-width: 600px;
+            margin: 0 auto 2rem;
+        }
+
+        .hero-stats {
+            display: flex;
+            justify-content: center;
+            gap: 2rem;
+            margin-top: 2rem;
+        }
+
+        .stat {
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--sdl-green-medium);
+        }
+
+        .stat-label {
+            font-size: 0.9rem;
+            color: var(--text-light);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* Steps Navigation */
+        .steps-nav {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 3rem;
+            background: var(--bg-white);
+            border-radius: var(--radius-large);
+            padding: 1rem;
+            box-shadow: var(--shadow-soft);
+        }
+
+        .step-indicator {
             display: flex;
             align-items: center;
-            margin-bottom: 12px;
-            color: #2e7d32;
+            gap: 0.5rem;
+            padding: 0.75rem 1.5rem;
+            border-radius: var(--radius-medium);
+            font-weight: 500;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .step-indicator.active {
+            background: var(--sdl-gradient);
+            color: white;
+            box-shadow: var(--shadow-medium);
+        }
+
+        .step-indicator.completed {
+            background: var(--sdl-gradient-light);
+            color: var(--sdl-green-dark);
+        }
+
+        .step-number {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8rem;
             font-weight: 600;
-            font-size: 16px;
         }
 
-        .forwarder-header::before {
-            content: '🚚';
-            margin-right: 8px;
-            font-size: 20px;
+        .step-indicator:not(.active) .step-number {
+            background: var(--border-light);
+            color: var(--text-light);
         }
 
-        .forwarder-name {
-            color: #2e7d32;
-            font-weight: 700;
-            font-size: 20px;
-            margin-bottom: 8px;
-        }
-
-        .forwarder-details {
-            color: #555;
-            line-height: 1.6;
-            margin-bottom: 10px;
-            font-size: 15px;
-        }
-
-        .forwarder-note {
-            color: #2e7d32;
-            font-weight: 700;
-            font-size: 15px;
-            margin-top: 15px;
-            padding: 12px 0 0 0;
-            border-top: 1px solid rgba(76, 175, 80, 0.3);
-        }
-
+        /* Page Sections */
         .page {
             display: none;
+            animation: fadeIn 0.5s ease-in-out;
         }
 
         .page.active {
             display: block;
-            animation: fadeIn 0.5s;
         }
 
-        .input-group {
-            margin-bottom: 25px;
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
         }
 
-        label {
-            display: block;
-            color: #555;
-            margin-bottom: 8px;
-            font-weight: 500;
-            font-size: 14px;
+        /* Cards */
+        .card {
+            background: var(--bg-white);
+            border-radius: var(--radius-large);
+            padding: 2rem;
+            box-shadow: var(--shadow-soft);
+            border: 1px solid var(--border-light);
+            transition: all 0.3s ease;
         }
 
-        input, textarea {
-            width: 100%;
-            padding: 12px 15px;
-            border: 1px solid #e0e0e0;
-            border-radius: 4px;
-            font-size: 16px;
-            transition: all 0.3s;
-            background-color: white;
-            font-family: inherit;
-            box-sizing: border-box;
-            max-width: 100%;
-        }
-
-        textarea {
-            min-height: 150px;
-            resize: vertical;
-        }
-
-        input:focus, textarea:focus {
-            outline: none;
-            border-color: #7cb342;
-            background-color: white;
-            box-shadow: 0 0 0 2px rgba(124, 179, 66, 0.1);
-        }
-
-        button {
-            padding: 15px 30px;
-            background: linear-gradient(135deg, #7cb342 0%, #2e7d32 100%);
-            color: white;
-            border: none;
-            border-radius: 4px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s;
-            margin: 10px 5px;
-        }
-
-        button:hover {
+        .card:hover {
+            box-shadow: var(--shadow-medium);
             transform: translateY(-2px);
-            box-shadow: 0 10px 20px rgba(124, 179, 66, 0.3);
         }
 
-        button:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-            transform: none;
-        }
-
-        .button-group {
-            display: flex;
-            justify-content: space-between;
-            margin-top: 30px;
-        }
-
-        .secondary-btn {
-            background: linear-gradient(135deg, #90a4ae 0%, #607d8b 100%);
-        }
-
-        .vendor-group {
-            border-left: 4px solid;
-            padding: 20px;
-            margin-bottom: 20px;
-            transition: all 0.3s ease;
-            width: 100%;
-            box-sizing: border-box;
-            overflow-x: hidden !important;
-        }
-
-        .vendor-group:hover {
-            transform: translateX(5px);
-            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-        }
-
-        .vendor-group.amazon {
-            background: white;
-            border-left-color: #ff9800;
-        }
-
-        .vendor-group.wayfair {
-            background: white;
-            border-left-color: #ba68c8;
-        }
-
-        .vendor-group.walmart {
-            background: white;
-            border-left-color: #2196f3;
-        }
-
-        .vendor-group.target {
-            background: white;
-            border-left-color: #f44336;
-        }
-
-        .vendor-group.default {
-            background: white;
-            border-left-color: #9e9e9e;
-        }
-
-        .vendor-header {
-            font-weight: 700;
-            font-size: 20px;
-            margin-bottom: 15px;
+        .card-header {
             display: flex;
             align-items: center;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
         }
 
-        .vendor-header.amazon { color: #e65100; }
-        .vendor-header.wayfair { color: #6a1b9a; }
-        .vendor-header.walmart { color: #1565c0; }
-        .vendor-header.target { color: #c62828; }
-        .vendor-header.default { color: #616161; }
-
-        .vendor-header::before {
-            content: '🏪';
-            margin-right: 10px;
-            font-size: 24px;
-        }
-
-        .product-item {
-            background: rgba(255, 255, 255, 0.5);
-            border-radius: 4px;
-            padding: 15px;
-            margin-bottom: 15px;
-            border-left: 4px solid;
-            display: flex;
-            align-items: flex-start;
-            gap: 15px;
-            transition: all 0.3s ease;
-            position: relative;
-            width: 100%;
-            box-sizing: border-box;
-            overflow-x: hidden !important;
-        }
-
-        .product-item:hover {
-            background: rgba(255, 255, 255, 0.8);
-            box-shadow: 0 3px 10px rgba(0,0,0,0.1);
-        }
-
-        .product-item.amazon { border-left-color: #ff9800; }
-        .product-item.wayfair { border-left-color: #ba68c8; }
-        .product-item.walmart { border-left-color: #2196f3; }
-        .product-item.target { border-left-color: #f44336; }
-        .product-item.default { border-left-color: #9e9e9e; }
-
-        .product-item.confirmed {
-            background: rgba(200, 255, 200, 0.2);
-            border-left-color: #4caf50;
-        }
-
-        .product-item.deleted {
-            opacity: 0.3;
-            pointer-events: none;
-            text-decoration: line-through;
-            transform: scale(0.95);
-        }
-
-        .product-cost-summary {
-            background: white;
-            border-left: 3px solid #4caf50;
-            border-radius: 2px;
-            padding: 15px;
-            margin-top: 15px;
-            display: none;
-            box-shadow: 0 1px 5px rgba(76, 175, 80, 0.1);
-        }
-
-        .product-cost-summary.visible {
-            display: block;
-            animation: slideDown 0.3s ease;
-        }
-
-        @keyframes slideDown {
-            from {
-                opacity: 0;
-                transform: translateY(-10px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        .cost-summary-row {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 8px;
-            font-size: 14px;
-            padding: 4px 0;
-        }
-
-        .cost-summary-total {
-            font-weight: 700;
-            font-size: 17px;
-            color: #2e7d32;
-            border-top: 2px solid #4caf50;
-            padding-top: 10px;
-            margin-top: 10px;
-        }
-
-        .delete-product-btn {
-            background: linear-gradient(135deg, #f44336 0%, #c62828 100%);
-            padding: 10px 20px;
-            margin-top: 12px;
-            font-size: 14px;
-            width: 100%;
-            border-radius: 2px;
-        }
-
-        .delete-product-btn:hover {
-            background: linear-gradient(135deg, #e53935 0%, #b71c1c 100%);
-            transform: scale(1.02);
-        }
-
-        .product-image {
-            width: 100px;
-            height: 100px;
-            object-fit: cover;
-            border-radius: 4px;
-            border: 1px solid #e0e0e0;
-            flex-shrink: 0;
-            transition: all 0.3s ease;
-        }
-
-        .product-image:hover {
-            transform: scale(1.05);
-            border-color: #7cb342;
-        }
-
-        .product-details {
-            flex-grow: 1;
-        }
-
-        .product-name {
-            font-weight: 600;
-            color: #333;
-            margin-bottom: 8px;
-            font-size: 15px;
-            line-height: 1.4;
-        }
-
-        .product-name a {
-            color: inherit;
-            text-decoration: none;
-            border-bottom: 1px dashed #666;
-            transition: all 0.3s ease;
-        }
-
-        .product-name a:hover {
-            color: #2196f3;
-            border-bottom-color: #2196f3;
-        }
-
-        .product-variant {
-            display: block;
-            background: linear-gradient(135deg, #ff5722 0%, #d84315 100%);
-            color: white;
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-size: 12px;
-            font-weight: 600;
-            margin-top: 5px;
-            box-shadow: 0 2px 5px rgba(255, 87, 34, 0.3);
-            width: fit-content;
-        }
-
-        .product-info {
-            font-size: 13px;
-            color: #666;
-            margin-bottom: 10px;
-        }
-
-        .product-info span {
-            display: inline-block;
-            margin-right: 15px;
-        }
-
-        .quantity-selector {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin-bottom: 10px;
-            padding: 10px;
-            background: rgba(124, 179, 66, 0.05);
-            border-radius: 4px;
-        }
-
-        .quantity-label {
-            font-size: 14px;
-            font-weight: 600;
-            color: #555;
-        }
-
-        .quantity-controls {
-            display: flex;
-            align-items: center;
-            gap: 5px;
-        }
-
-        .qty-btn {
-            width: 30px;
-            height: 30px;
-            border: 1px solid #7cb342;
-            background: white;
-            color: #7cb342;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 18px;
-            font-weight: 600;
+        .card-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: var(--radius-medium);
+            background: var(--sdl-gradient);
             display: flex;
             align-items: center;
             justify-content: center;
-            transition: all 0.2s;
-            padding: 0;
-            margin: 0;
-        }
-
-        .qty-btn:hover {
-            background: #7cb342;
             color: white;
-            transform: scale(1.1);
+            font-size: 1.2rem;
         }
 
-        .qty-display {
-            width: 50px;
-            text-align: center;
-            font-size: 16px;
-            font-weight: 700;
-            color: #333;
-            padding: 5px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            background: white;
+        .card-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--text-primary);
         }
 
-        .price-input-section {
-            background: white;
-            border-radius: 2px;
-            padding: 12px;
-            margin-top: 10px;
-            border-left: 2px solid #e0e0e0;
+        .card-subtitle {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
         }
 
-        .price-input-label {
-            font-size: 13px;
-            color: #666;
-            margin-bottom: 8px;
+        /* Form Elements */
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        .form-label {
             display: block;
             font-weight: 500;
+            color: var(--text-primary);
+            margin-bottom: 0.5rem;
         }
 
-        .price-found {
-            color: #2e7d32;
-            font-weight: 600;
-        }
-
-        .price-missing {
-            color: #f44336;
-            font-weight: 600;
-        }
-
-        .price-input-container {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin-bottom: 10px;
-        }
-
-        .price-input {
-            display: flex;
-            align-items: center;
-            gap: 5px;
-            flex: 1;
-        }
-
-        .price-input span {
-            font-size: 18px;
-            color: #666;
-            font-weight: 500;
-        }
-
-        .price-input input {
-            width: 120px;
-            padding: 10px;
-            border: 1px solid #ddd;
-            border-radius: 2px;
-            font-size: 18px;
-            font-weight: 600;
+        .form-input {
+            width: 100%;
+            padding: 0.875rem 1rem;
+            border: 2px solid var(--border-light);
+            border-radius: var(--radius-medium);
+            font-size: 1rem;
             transition: all 0.3s ease;
+            background: var(--bg-white);
         }
 
-        .price-input input.has-value {
-            background: #f0f9ff;
-            border-color: #2196f3;
+        .form-input:focus {
+            outline: none;
+            border-color: var(--sdl-green-medium);
+            box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.1);
         }
 
-        .price-input input.confirmed {
-            background: #e8f5e9;
-            border-color: #4caf50;
+        .form-textarea {
+            min-height: 120px;
+            resize: vertical;
+            font-family: inherit;
+        }
+
+        .form-help {
+            font-size: 0.85rem;
+            color: var(--text-light);
+            margin-top: 0.5rem;
+        }
+
+        /* URL Input Section */
+        .url-input-section {
+            margin-bottom: 2rem;
+        }
+
+        .url-input-container {
             position: relative;
         }
 
-        .price-input input:disabled {
-            background: #f5f5f5;
-            cursor: not-allowed;
-            opacity: 0.8;
+        .url-input {
+            padding-left: 3rem;
         }
 
-        .price-buttons {
-            display: flex;
-            gap: 8px;
+        .url-icon {
+            position: absolute;
+            left: 1rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-light);
         }
 
-        .price-btn {
-            padding: 8px 16px;
-            font-size: 14px;
-            border-radius: 2px;
-            margin: 0;
+        .url-examples {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-top: 1rem;
         }
 
-        .check-price-btn {
-            background: linear-gradient(135deg, #2196f3 0%, #1976d2 100%);
-        }
-
-        .confirm-price-btn {
-            background: linear-gradient(135deg, #4caf50 0%, #388e3c 100%);
-        }
-        
-        .manual-result .success {
-            background: #e8f5e9;
-            color: #2e7d32;
-            padding: 15px;
-            border-radius: 8px;
-            border-left: 4px solid #4caf50;
-        }
-        
-        .manual-result .error {
-            background: #ffebee;
-            color: #c62828;
-            padding: 15px;
-            border-radius: 8px;
-            border-left: 4px solid #f44336;
-        }
-        
-        .manual-result .loading {
-            background: #fff3e0;
-            color: #e65100;
-            padding: 15px;
-            border-radius: 8px;
-            border-left: 4px solid #ff9800;
-        }
-
-        .delivery-fee-section {
-            background: linear-gradient(135deg, rgba(33, 150, 243, 0.05) 0%, rgba(21, 101, 192, 0.05) 100%);
-            border-left: 4px solid #2196f3;
-            margin: 20px 0;
-            padding: 20px;
-            border-radius: 8px;
-        }
-        
-        .delivery-fee-header h4 {
-            color: #1976d2;
-            margin: 0 0 8px 0;
-            font-size: 16px;
-        }
-        
-        .delivery-fee-header p {
-            color: #666;
-            margin: 0 0 15px 0;
-            font-size: 14px;
-        }
-        
-        .usa-address {
-            background: white;
-            border: 1px solid #e3f2fd;
-            border-radius: 6px;
-            padding: 15px;
-            margin-bottom: 15px;
-        }
-        
-        .address-header {
-            color: #1976d2;
-            font-weight: 600;
-            margin-bottom: 8px;
-            font-size: 14px;
-        }
-        
-        .address-details {
-            color: #333;
-            line-height: 1.4;
-            margin-bottom: 10px;
-            font-size: 14px;
-        }
-        
-        .address-note {
-            color: #1976d2;
-            font-size: 12px;
-            font-weight: 500;
-            padding-top: 8px;
-            border-top: 1px solid #e3f2fd;
-        }
-        
-        .delivery-fee-input label {
-            display: block;
-            color: #333;
-            font-weight: 600;
-            margin-bottom: 8px;
-            font-size: 14px;
-        }
-        
-        .fee-input-group {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            margin-bottom: 8px;
-        }
-        
-        .fee-input-group .currency {
-            font-size: 18px;
-            font-weight: 600;
-            color: #666;
-        }
-        
-        .fee-input-group input {
-            flex: 1;
-            padding: 10px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            font-size: 16px;
-        }
-        
-        .btn-confirm-fee {
-            background: #2196f3;
-            color: white;
-            border: none;
-            padding: 10px 16px;
-            border-radius: 4px;
-            font-size: 14px;
-            font-weight: 600;
+        .url-example {
+            padding: 0.75rem;
+            background: var(--bg-light);
+            border-radius: var(--radius-small);
+            font-size: 0.85rem;
+            color: var(--text-secondary);
             cursor: pointer;
-            transition: all 0.3s;
-            white-space: nowrap;
-        }
-        
-        .btn-confirm-fee:hover {
-            background: #1976d2;
-            transform: translateY(-1px);
-        }
-        
-        .btn-confirm-fee.confirmed {
-            background: #4caf50;
-            cursor: default;
-        }
-        
-        .delivery-fee-input small {
-            color: #666;
-            font-size: 12px;
-            font-style: italic;
-        }
-        
-        .delivery-fees-summary {
-            background: linear-gradient(135deg, rgba(33, 150, 243, 0.05) 0%, rgba(21, 101, 192, 0.05) 100%);
-            border-left: 4px solid #2196f3;
-            padding: 20px;
-            margin-bottom: 20px;
-            border-radius: 8px;
-        }
-        
-        .delivery-fees-summary h3 {
-            color: #1976d2;
-            margin: 0 0 15px 0;
-            font-size: 16px;
-        }
-        
-        .fee-breakdown-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 8px 0;
-            border-bottom: 1px solid rgba(33, 150, 243, 0.1);
-            font-size: 14px;
-        }
-        
-        .fee-breakdown-item:last-child {
-            border-bottom: none;
+            transition: all 0.3s ease;
         }
 
-        .loading-spinner {
-            display: inline-block;
-            width: 20px;
-            height: 20px;
-            border: 3px solid #f3f3f3;
-            border-top: 3px solid #7cb342;
+        .url-example:hover {
+            background: var(--sdl-gradient-light);
+            color: var(--sdl-green-dark);
+        }
+
+        /* Buttons */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.875rem 1.5rem;
+            border: none;
+            border-radius: var(--radius-medium);
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            justify-content: center;
+        }
+
+        .btn-primary {
+            background: var(--sdl-gradient);
+            color: white;
+            box-shadow: var(--shadow-soft);
+        }
+
+        .btn-primary:hover {
+            box-shadow: var(--shadow-medium);
+            transform: translateY(-2px);
+        }
+
+        .btn-secondary {
+            background: var(--bg-white);
+            color: var(--sdl-green-medium);
+            border: 2px solid var(--sdl-green-medium);
+        }
+
+        .btn-secondary:hover {
+            background: var(--sdl-green-medium);
+            color: white;
+        }
+
+        .btn-large {
+            padding: 1.125rem 2rem;
+            font-size: 1.1rem;
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        /* Loading States */
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 1rem;
+            padding: 3rem;
+            color: var(--text-secondary);
+        }
+
+        .spinner {
+            width: 32px;
+            height: 32px;
+            border: 3px solid var(--border-light);
+            border-top: 3px solid var(--sdl-green-medium);
             border-radius: 50%;
             animation: spin 1s linear infinite;
-            margin-right: 10px;
         }
 
         @keyframes spin {
@@ -1005,369 +419,657 @@
             100% { transform: rotate(360deg); }
         }
 
-        .loading-message {
-            text-align: center;
-            padding: 40px 20px;
-            color: #666;
-            font-size: 16px;
+        /* Product Grid */
+        .products-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 1.5rem;
+            margin-top: 2rem;
         }
 
-        .loading-message h3 {
-            color: #7cb342;
-            margin-bottom: 15px;
-            font-size: 20px;
+        .product-card {
+            background: var(--bg-white);
+            border-radius: var(--radius-large);
+            overflow: hidden;
+            box-shadow: var(--shadow-soft);
+            transition: all 0.3s ease;
         }
 
-        .loading-message p {
-            margin-bottom: 10px;
-            line-height: 1.5;
+        .product-card:hover {
+            box-shadow: var(--shadow-medium);
+            transform: translateY(-4px);
         }
 
-        .summary-section {
-            background: white;
-            border-left: 4px solid #4caf50;
-            padding: 25px;
-            margin: 30px 0;
-            border-radius: 0;
-            box-sizing: border-box;
+        .product-image {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+            background: var(--bg-light);
         }
 
-        .summary-header {
-            color: #2e7d32;
-            font-size: 24px;
+        .product-content {
+            padding: 1.5rem;
+        }
+
+        .product-name {
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 0.5rem;
+            line-height: 1.4;
+        }
+
+        .product-retailer {
+            display: inline-block;
+            background: var(--sdl-gradient-light);
+            color: var(--sdl-green-dark);
+            padding: 0.25rem 0.75rem;
+            border-radius: var(--radius-small);
+            font-size: 0.8rem;
+            font-weight: 500;
+            margin-bottom: 1rem;
+        }
+
+        .product-price {
+            font-size: 1.5rem;
             font-weight: 700;
-            margin-bottom: 20px;
+            color: var(--sdl-green-medium);
+            margin-bottom: 1rem;
+        }
+
+        .product-details {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.5rem;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        /* Manual Entry Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            backdrop-filter: blur(4px);
+        }
+
+        .modal.active {
             display: flex;
             align-items: center;
+            justify-content: center;
+            animation: fadeIn 0.3s ease;
         }
 
-        .summary-header::before {
-            content: '📊';
-            margin-right: 10px;
-            font-size: 28px;
+        .modal-content {
+            background: var(--bg-white);
+            border-radius: var(--radius-large);
+            padding: 2rem;
+            max-width: 600px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: var(--shadow-strong);
         }
 
-        .summary-row {
+        .modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 1.5rem;
+        }
+
+        .modal-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            color: var(--text-light);
+            cursor: pointer;
+            padding: 0.5rem;
+            border-radius: var(--radius-small);
+            transition: all 0.3s ease;
+        }
+
+        .modal-close:hover {
+            background: var(--bg-light);
+            color: var(--text-primary);
+        }
+
+        /* Cost Breakdown */
+        .cost-breakdown {
+            background: var(--bg-light);
+            border-radius: var(--radius-medium);
+            padding: 1.5rem;
+            margin-top: 2rem;
+        }
+
+        .cost-item {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 12px 0;
-            border-bottom: 1px solid #e0e0e0;
-            font-size: 16px;
+            padding: 0.75rem 0;
+            border-bottom: 1px solid var(--border-light);
         }
 
-        .summary-row:last-child {
+        .cost-item:last-child {
             border-bottom: none;
-            font-weight: 700;
-            font-size: 20px;
-            color: #2e7d32;
-            border-top: 2px solid #4caf50;
-            padding-top: 15px;
-            margin-top: 10px;
-        }
-
-        .summary-label {
-            color: #555;
-        }
-
-        .summary-value {
-            color: #333;
             font-weight: 600;
+            font-size: 1.1rem;
+            color: var(--sdl-green-dark);
         }
 
-        .checkout-section {
-            text-align: center;
-            margin-top: 40px;
+        .cost-label {
+            color: var(--text-secondary);
         }
 
-        .checkout-btn {
-            background: linear-gradient(135deg, #ff5722 0%, #d84315 100%);
-            color: white;
-            padding: 20px 40px;
-            font-size: 20px;
-            font-weight: 700;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            box-shadow: 0 5px 20px rgba(255, 87, 34, 0.3);
+        .cost-value {
+            font-weight: 500;
+            color: var(--text-primary);
         }
 
-        .checkout-btn:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 8px 25px rgba(255, 87, 34, 0.4);
+        /* Delivery Fee Section */
+        .delivery-fees {
+            background: var(--bg-white);
+            border-radius: var(--radius-large);
+            padding: 2rem;
+            margin-top: 2rem;
+            box-shadow: var(--shadow-soft);
         }
 
+        .delivery-fee-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 1rem;
+            background: var(--bg-light);
+            border-radius: var(--radius-medium);
+            margin-bottom: 1rem;
+        }
+
+        .delivery-fee-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .delivery-fee-label {
+            font-weight: 500;
+            color: var(--text-primary);
+        }
+
+        .delivery-fee-input {
+            width: 120px;
+            text-align: right;
+        }
+
+        /* Responsive Design */
         @media (max-width: 768px) {
-            .calculator-content {
-                padding: 15px 10px;
+            .container {
+                padding: 1rem;
             }
-            
-            .intro-hero {
-                padding: 30px 20px;
+
+            .hero h1 {
+                font-size: 2rem;
             }
-            
-            .intro-hero h1 {
-                font-size: 24px;
+
+            .hero p {
+                font-size: 1rem;
             }
-            
-            .product-item {
+
+            .hero-stats {
                 flex-direction: column;
-                align-items: stretch;
+                gap: 1rem;
             }
-            
-            .product-image {
-                width: 100%;
-                height: 200px;
-                margin-bottom: 15px;
-            }
-            
-            .button-group {
+
+            .steps-nav {
                 flex-direction: column;
+                gap: 0.5rem;
             }
-            
-            .button-group button {
-                margin: 5px 0;
-            }
-            
-            .progress-bar {
-                flex-wrap: wrap;
+
+            .step-indicator {
                 justify-content: center;
             }
-            
-            .progress-step {
-                margin: 5px;
+
+            .products-grid {
+                grid-template-columns: 1fr;
             }
-            
-            .summary-row {
-                flex-direction: column;
-                align-items: flex-start;
-                gap: 5px;
+
+            .modal-content {
+                margin: 1rem;
+                width: calc(100% - 2rem);
+            }
+
+            .header-content {
+                padding: 1rem;
+            }
+
+            .logo-text {
+                font-size: 1.2rem;
+            }
+        }
+
+        /* Success/Error Messages */
+        .alert {
+            padding: 1rem 1.5rem;
+            border-radius: var(--radius-medium);
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .alert-success {
+            background: #E8F5E9;
+            color: #2E7D32;
+            border: 1px solid #C8E6C9;
+        }
+
+        .alert-error {
+            background: #FFEBEE;
+            color: #C62828;
+            border: 1px solid #FFCDD2;
+        }
+
+        .alert-warning {
+            background: #FFF3E0;
+            color: #F57C00;
+            border: 1px solid #FFE0B2;
+        }
+
+        /* Animations */
+        .fade-in {
+            animation: fadeIn 0.5s ease-in-out;
+        }
+
+        .slide-up {
+            animation: slideUp 0.5s ease-out;
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
             }
         }
     </style>
 </head>
 <body>
-    <!-- INTRO PAGE -->
-    <div class="intro-page" id="introPage">
-        <div class="intro-hero">
-            <h1>
-                <span class="ship-icon">🚢</span>
-                SDL Instant Imports
-            </h1>
-            <p class="intro-subtitle">
-                Calculate accurate ocean freight costs from US retailers to Bermuda.<br>
-                Get instant estimates including duty, shipping, and handling fees.
-            </p>
-        </div>
-        
-        <div class="steps-container">
-            <div class="step-card">
-                <div class="step-icon">🔗</div>
-                <h3 class="step-title">Paste Product URLs</h3>
-            </div>
-            <div class="step-card">
-                <div class="step-icon">🤖</div>
-                <h3 class="step-title">AI Extracts Product Data</h3>
-            </div>
-            <div class="step-card">
-                <div class="step-icon">💰</div>
-                <h3 class="step-title">Get Total Import Cost</h3>
+    <!-- Header -->
+    <header class="header">
+        <div class="header-content">
+            <div class="logo">
+                <div class="logo-circles">
+                    <div class="logo-circle">$</div>
+                    <div class="logo-circle">D</div>
+                    <div class="logo-circle">L</div>
+                </div>
+                <div>
+                    <div class="logo-text">Spencer Deals Ltd</div>
+                    <div class="header-subtitle">Instant Import Calculator</div>
+                </div>
             </div>
         </div>
-        
-        <button class="start-button" onclick="startCalculator()">
-            🚀 Start Import Calculator
-        </button>
-    </div>
+    </header>
 
-    <!-- CALCULATOR PAGE -->
-    <div class="calculator-page" id="calculatorPage">
-        <div class="calculator-content">
-            <h1>🚢 SDL Instant Imports<span class="new-badge">NEW</span></h1>
-            <p class="subtitle">Calculate accurate ocean freight costs from US retailers to Bermuda</p>
-
-            <!-- Progress Bar -->
-            <div class="progress-bar">
-                <div class="progress-step">
-                    <div class="progress-circle active" id="step1Circle">1</div>
-                    <span>Products</span>
+    <div class="container">
+        <!-- Hero Section -->
+        <section class="hero">
+            <h1>Ship to Bermuda with Confidence</h1>
+            <p>Get instant, accurate import cost estimates for any product from US retailers. No surprises, no hidden fees.</p>
+            
+            <div class="hero-stats">
+                <div class="stat">
+                    <div class="stat-number">26.5%</div>
+                    <div class="stat-label">Duty Rate</div>
                 </div>
-                <div class="progress-line" id="line1"></div>
-                <div class="progress-step">
-                    <div class="progress-circle" id="step2Circle">2</div>
-                    <span>Review</span>
+                <div class="stat">
+                    <div class="stat-number">3-5</div>
+                    <div class="stat-label">Weeks Delivery</div>
                 </div>
-                <div class="progress-line" id="line2"></div>
-                <div class="progress-step">
-                    <div class="progress-circle" id="step3Circle">3</div>
-                    <span>Total</span>
+                <div class="stat">
+                    <div class="stat-number">$8</div>
+                    <div class="stat-label">Per Cubic Foot</div>
                 </div>
             </div>
+        </section>
 
-            <!-- Page 1: Product URLs -->
-            <div class="page active" id="page1">
-                <div class="critical-warning">
-                    <div class="warning-header">Important: Use US Retailer Shipping Address</div>
-                    <div class="warning-text">
-                        When shopping, make sure to use a US shipping address in your cart to get accurate product pricing. 
-                        Many retailers show different prices or restrict products when they detect international locations.
-                    </div>
-                </div>
-
-                <div class="forwarder-address">
-                    <div class="forwarder-header">Recommended US Shipping Address</div>
-                    <div class="forwarder-name">SDL Freight Forwarder</div>
-                    <div class="forwarder-details">
-                        1234 Shipping Lane<br>
-                        Miami, FL 33101<br>
-                        United States<br>
-                        Phone: (305) 555-0123
-                    </div>
-                    <div class="forwarder-note">
-                        💡 Pro Tip: Use this address when calculating shipping costs from US retailers to get accurate delivery totals.
-                    </div>
-                </div>
-
-                <h2>Step 1: Enter Product URLs</h2>
-                <div class="input-group">
-                    <label for="productUrls">Paste product URLs from US retailers (one per line):</label>
-                    <textarea 
-                        id="productUrls" 
-                        placeholder="https://www.amazon.com/product-link&#10;https://www.wayfair.com/product-link&#10;https://www.target.com/product-link"
-                        rows="8"
-                    ></textarea>
-                </div>
-
-                <div class="warning-box">
-                    <div class="warning-header">Supported Retailers</div>
-                    <div class="warning-text">
-                        Amazon, Wayfair, Target, Walmart, Best Buy, Home Depot, Lowes, Costco, Macys, IKEA, and most major US retailers.
-                    </div>
-                </div>
-
-                <div class="button-group">
-                    <button class="secondary-btn" onclick="goBack()">← Back to Home</button>
-                    <button onclick="processProducts()">Analyze Products →</button>
-                </div>
+        <!-- Steps Navigation -->
+        <nav class="steps-nav">
+            <div class="step-indicator active" data-step="1">
+                <div class="step-number">1</div>
+                <span>Add Products</span>
             </div>
-
-            <!-- Page 2: Product Review -->
-            <div class="page" id="page2">
-                <h2>Step 2: Review & Confirm Products</h2>
-                <div id="loadingMessage" class="loading-message" style="display: none;">
-                    <div class="loading-spinner"></div>
-                    <h3>🔍 Searching for product information...</h3>
-                    <p>This may take 1-2 minutes as we check multiple sources for the best data.</p>
-                    <p>Please don't refresh the page.</p>
-                </div>
-                
-                <div id="productsContainer"></div>
-                
-                <div class="button-group">
-                    <button class="secondary-btn" onclick="goToPage(1)">← Back to Products</button>
-                    <button onclick="calculateTotal()">Calculate Total →</button>
-                </div>
+            <div class="step-indicator" data-step="2">
+                <div class="step-number">2</div>
+                <span>Review Costs</span>
             </div>
+            <div class="step-indicator" data-step="3">
+                <div class="step-number">3</div>
+                <span>Place Order</span>
+            </div>
+        </nav>
 
-            <!-- Page 3: Final Calculation -->
-            <div class="page" id="page3">
-                <h2>Step 3: Import Cost Summary</h2>
-                <div id="finalSummary"></div>
-                
-                <div class="checkout-section">
-                    <button class="checkout-btn" id="checkoutBtn" onclick="proceedToCheckout()">
-                        🛒 Create Import Order
+        <!-- Page 1: Add Products -->
+        <section id="page1" class="page active">
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon">
+                        <i class="fas fa-link"></i>
+                    </div>
+                    <div>
+                        <h2 class="card-title">Add Products to Import</h2>
+                        <p class="card-subtitle">Paste product URLs from US retailers to get started</p>
+                    </div>
+                </div>
+
+                <div class="url-input-section">
+                    <div class="form-group">
+                        <label class="form-label">Product URLs (one per line)</label>
+                        <div class="url-input-container">
+                            <i class="fas fa-globe url-icon"></i>
+                            <textarea 
+                                id="productUrls" 
+                                class="form-input form-textarea url-input" 
+                                placeholder="https://www.wayfair.com/furniture/pdp/...&#10;https://www.amazon.com/dp/...&#10;https://www.target.com/p/..."
+                                rows="6"
+                            ></textarea>
+                        </div>
+                        <div class="form-help">
+                            <i class="fas fa-info-circle"></i>
+                            Supported retailers: Amazon, Wayfair, Target, Walmart, Best Buy, Home Depot, Crate & Barrel, IKEA, and more
+                        </div>
+                    </div>
+
+                    <div class="url-examples">
+                        <div class="url-example" onclick="addExampleUrl('wayfair')">
+                            <i class="fas fa-home"></i> Wayfair Example
+                        </div>
+                        <div class="url-example" onclick="addExampleUrl('amazon')">
+                            <i class="fab fa-amazon"></i> Amazon Example
+                        </div>
+                        <div class="url-example" onclick="addExampleUrl('target')">
+                            <i class="fas fa-bullseye"></i> Target Example
+                        </div>
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+                    <button class="btn btn-primary btn-large" onclick="scrapeProducts()">
+                        <i class="fas fa-search"></i>
+                        Analyze Products
+                    </button>
+                    <button class="btn btn-secondary" onclick="openManualEntry()">
+                        <i class="fas fa-edit"></i>
+                        Manual Entry
                     </button>
                 </div>
-                
-                <div class="button-group">
-                    <button class="secondary-btn" onclick="goToPage(2)">← Back to Review</button>
-                    <button class="secondary-btn" onclick="startOver()">Start Over</button>
+            </div>
+
+            <!-- Loading State -->
+            <div id="loadingSection" style="display: none;">
+                <div class="card">
+                    <div class="loading">
+                        <div class="spinner"></div>
+                        <div>
+                            <h3>Analyzing your products...</h3>
+                            <p>This may take a few moments while we gather product information</p>
+                        </div>
+                    </div>
                 </div>
+            </div>
+
+            <!-- Products Display -->
+            <div id="productsSection" style="display: none;">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-icon">
+                            <i class="fas fa-boxes"></i>
+                        </div>
+                        <div>
+                            <h2 class="card-title">Your Products</h2>
+                            <p class="card-subtitle" id="productsCount">0 products found</p>
+                        </div>
+                    </div>
+                    
+                    <div id="productsGrid" class="products-grid">
+                        <!-- Products will be inserted here -->
+                    </div>
+
+                    <div style="margin-top: 2rem; text-align: center;">
+                        <button class="btn btn-primary btn-large" onclick="goToPage(2)">
+                            <i class="fas fa-calculator"></i>
+                            Calculate Import Costs
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Page 2: Review Costs -->
+        <section id="page2" class="page">
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon">
+                        <i class="fas fa-calculator"></i>
+                    </div>
+                    <div>
+                        <h2 class="card-title">Import Cost Breakdown</h2>
+                        <p class="card-subtitle">Review all costs before placing your order</p>
+                    </div>
+                </div>
+
+                <div id="costBreakdown">
+                    <!-- Cost breakdown will be inserted here -->
+                </div>
+
+                <!-- Delivery Fees Section -->
+                <div class="delivery-fees">
+                    <h3 style="margin-bottom: 1rem; color: var(--text-primary);">
+                        <i class="fas fa-truck"></i>
+                        US Delivery Fees
+                    </h3>
+                    <p style="color: var(--text-secondary); margin-bottom: 1.5rem;">
+                        Enter the delivery fee charged by each retailer to ship to our US warehouse
+                    </p>
+                    <div id="deliveryFeesSection">
+                        <!-- Delivery fees will be inserted here -->
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 1rem; justify-content: space-between; margin-top: 2rem; flex-wrap: wrap;">
+                    <button class="btn btn-secondary" onclick="goToPage(1)">
+                        <i class="fas fa-arrow-left"></i>
+                        Back to Products
+                    </button>
+                    <button class="btn btn-primary btn-large" onclick="goToPage(3)">
+                        <i class="fas fa-ship"></i>
+                        Place Import Order
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Page 3: Place Order -->
+        <section id="page3" class="page">
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon">
+                        <i class="fas fa-ship"></i>
+                    </div>
+                    <div>
+                        <h2 class="card-title">Complete Your Import Order</h2>
+                        <p class="card-subtitle">We'll handle everything from purchase to delivery in Bermuda</p>
+                    </div>
+                </div>
+
+                <div id="orderSummary">
+                    <!-- Order summary will be inserted here -->
+                </div>
+
+                <div class="card" style="margin-top: 2rem;">
+                    <h3 style="margin-bottom: 1rem;">Contact Information</h3>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                        <div class="form-group">
+                            <label class="form-label">Full Name</label>
+                            <input type="text" id="customerName" class="form-input" placeholder="Enter your full name" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Email Address</label>
+                            <input type="email" id="customerEmail" class="form-input" placeholder="Enter your email" required>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Phone Number (Optional)</label>
+                        <input type="tel" id="customerPhone" class="form-input" placeholder="Enter your phone number">
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 1rem; justify-content: space-between; margin-top: 2rem; flex-wrap: wrap;">
+                    <button class="btn btn-secondary" onclick="goToPage(2)">
+                        <i class="fas fa-arrow-left"></i>
+                        Back to Costs
+                    </button>
+                    <button class="btn btn-primary btn-large" onclick="submitOrder()">
+                        <i class="fas fa-check"></i>
+                        Submit Import Order
+                    </button>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Manual Entry Modal -->
+    <div id="manualEntryModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">
+                    <i class="fas fa-edit"></i>
+                    Manual Product Entry
+                </h3>
+                <button class="modal-close" onclick="closeManualEntry()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+
+            <div class="alert alert-warning">
+                <i class="fas fa-info-circle"></i>
+                <div>
+                    <strong>Some retailers block automated scraping.</strong><br>
+                    Copy and paste the entire webpage content below for manual processing.
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Product URL</label>
+                <input type="url" id="manualUrl" class="form-input" placeholder="https://www.crateandbarrel.com/...">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Webpage Content</label>
+                <textarea 
+                    id="manualContent" 
+                    class="form-input form-textarea" 
+                    rows="12" 
+                    placeholder="1. Go to the product page&#10;2. Press Ctrl+A (or Cmd+A on Mac) to select all&#10;3. Press Ctrl+C (or Cmd+C on Mac) to copy&#10;4. Paste the content here"
+                ></textarea>
+                <div class="form-help">
+                    <i class="fas fa-lightbulb"></i>
+                    Make sure to copy the entire webpage including product name, price, and dimensions
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 1rem; justify-content: flex-end;">
+                <button class="btn btn-secondary" onclick="closeManualEntry()">
+                    Cancel
+                </button>
+                <button class="btn btn-primary" onclick="processManualContent()">
+                    <i class="fas fa-magic"></i>
+                    Process Content
+                </button>
             </div>
         </div>
     </div>
 
     <script>
+        // Global variables
         let currentPage = 1;
         let products = [];
-        let originalUrls = '';
+        let deliveryFees = {};
+        let totals = {};
 
-        function startCalculator() {
-            document.getElementById('introPage').classList.add('hidden');
-            document.getElementById('calculatorPage').classList.add('active');
-        }
-
-        function goBack() {
-            document.getElementById('introPage').classList.remove('hidden');
-            document.getElementById('calculatorPage').classList.remove('active');
-        }
-
-        function goToPage(pageNum) {
+        // Page navigation
+        function goToPage(pageNumber) {
             // Hide all pages
             document.querySelectorAll('.page').forEach(page => {
                 page.classList.remove('active');
             });
             
             // Show target page
-            document.getElementById(`page${pageNum}`).classList.add('active');
+            document.getElementById(`page${pageNumber}`).classList.add('active');
             
-            // Update progress
-            updateProgress(pageNum);
-            currentPage = pageNum;
-        }
-
-        function updateProgress(activeStep) {
-            // Reset all steps
-            for (let i = 1; i <= 3; i++) {
-                const circle = document.getElementById(`step${i}Circle`);
-                circle.classList.remove('active', 'completed');
-                
-                if (i < activeStep) {
-                    circle.classList.add('completed');
-                } else if (i === activeStep) {
-                    circle.classList.add('active');
+            // Update step indicators
+            document.querySelectorAll('.step-indicator').forEach((step, index) => {
+                step.classList.remove('active', 'completed');
+                if (index + 1 === pageNumber) {
+                    step.classList.add('active');
+                } else if (index + 1 < pageNumber) {
+                    step.classList.add('completed');
                 }
-            }
+            });
             
-            // Update lines
-            for (let i = 1; i <= 2; i++) {
-                const line = document.getElementById(`line${i}`);
-                if (i < activeStep) {
-                    line.classList.add('completed');
-                } else {
-                    line.classList.remove('completed');
-                }
+            currentPage = pageNumber;
+            
+            // Update page-specific content
+            if (pageNumber === 2) {
+                updateCostBreakdown();
+            } else if (pageNumber === 3) {
+                updateOrderSummary();
             }
         }
 
-        async function processProducts() {
+        // Add example URLs
+        function addExampleUrl(retailer) {
+            const examples = {
+                wayfair: 'https://www.wayfair.com/furniture/pdp/andover-mills-beachcrest-84-wide-reversible-sofa-chaise-w005282825.html',
+                amazon: 'https://www.amazon.com/dp/B08N5WRWNW',
+                target: 'https://www.target.com/p/brightroom-essentials-made-by-design/-/A-54643032'
+            };
+            
+            const textarea = document.getElementById('productUrls');
+            const currentValue = textarea.value.trim();
+            const newValue = currentValue ? currentValue + '\n' + examples[retailer] : examples[retailer];
+            textarea.value = newValue;
+        }
+
+        // Scrape products
+        async function scrapeProducts() {
             const urls = document.getElementById('productUrls').value.trim();
             if (!urls) {
-                alert('Please enter at least one product URL');
+                showAlert('Please enter at least one product URL', 'error');
                 return;
             }
 
-            originalUrls = urls;
             const urlList = urls.split('\n').filter(url => url.trim());
             
-            if (urlList.length === 0) {
-                alert('Please enter valid product URLs');
-                return;
-            }
-
-            // Go to page 2 and show loading
-            goToPage(2);
-            document.getElementById('loadingMessage').style.display = 'block';
-            document.getElementById('productsContainer').innerHTML = '';
+            // Show loading
+            document.getElementById('loadingSection').style.display = 'block';
+            document.getElementById('productsSection').style.display = 'none';
 
             try {
                 const response = await fetch('/api/scrape', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ urls: urlList })
                 });
 
@@ -1378,512 +1080,302 @@
                 const data = await response.json();
                 products = data.products || [];
                 
-                document.getElementById('loadingMessage').style.display = 'none';
                 displayProducts();
-
+                
             } catch (error) {
-                console.error('Error processing products:', error);
-                document.getElementById('loadingMessage').style.display = 'none';
-                document.getElementById('productsContainer').innerHTML = `
-                    <div class="critical-warning">
-                        <div class="warning-header">Error Processing Products</div>
-                        <div class="warning-text">
-                            Failed to analyze products: ${error.message}<br>
-                            Please try again or contact support if the problem persists.
-                        </div>
-                    </div>
-                `;
+                console.error('Error scraping products:', error);
+                showAlert('Failed to analyze products. Please try again.', 'error');
+            } finally {
+                document.getElementById('loadingSection').style.display = 'none';
             }
         }
 
+        // Display products
         function displayProducts() {
-            const container = document.getElementById('productsContainer');
+            const grid = document.getElementById('productsGrid');
+            const count = document.getElementById('productsCount');
             
             if (!products || products.length === 0) {
-                container.innerHTML = `
-                    <div class="critical-warning">
-                        <div class="warning-header">No Products Found</div>
-                        <div class="warning-text">
-                            Unable to process any products from the provided URLs. 
-                            Please check the URLs and try again.
-                        </div>
-                    </div>
-                `;
+                grid.innerHTML = '<div class="alert alert-warning"><i class="fas fa-exclamation-triangle"></i>No products found. Please check your URLs and try again.</div>';
+                count.textContent = '0 products found';
                 return;
             }
 
-            // Group products by retailer
-            const groupedProducts = {};
-            products.forEach(product => {
-                const retailer = product.retailer || 'Unknown';
-                if (!groupedProducts[retailer]) {
-                    groupedProducts[retailer] = [];
-                }
-                groupedProducts[retailer].push(product);
-            });
-
-            let html = '';
+            count.textContent = `${products.length} product${products.length !== 1 ? 's' : ''} found`;
             
-            Object.entries(groupedProducts).forEach(([retailer, retailerProducts]) => {
-                const retailerClass = retailer.toLowerCase().replace(/\s+/g, '');
-                
-                html += `
-                    <div class="vendor-group ${retailerClass}">
-                        <div class="vendor-header ${retailerClass}">${retailer} Products</div>
-                `;
-                
-                retailerProducts.forEach(product => {
-                    const completenessScore = calculateCompletenessScore(product);
-                    const hasPrice = product.price && product.price > 0;
-                    
-                    html += `
-                        <div class="product-item ${retailerClass}" data-product-id="${product.id}">
-                            <img src="${product.image}" alt="${product.name}" class="product-image" 
-                                 onerror="this.src='https://placehold.co/400x400/7CB342/FFFFFF/png?text=SDL'">
-                            
-                            <div class="product-details">
-                                <div class="product-name">
-                                    <a href="${product.url}" target="_blank">${product.name}</a>
-                                    ${product.variant ? `<div class="product-variant">${product.variant}</div>` : ''}
-                                </div>
-                                
-                                <div class="product-info">
-                                    <span>📦 ${product.category}</span>
-                                    <span>🚢 Est. shipping: $${product.shippingCost}</span>
-                                    <span>📊 Data: ${completenessScore}/5</span>
-                                </div>
-
-                                <div class="quantity-selector">
-                                    <span class="quantity-label">Quantity:</span>
-                                    <div class="quantity-controls">
-                                        <button class="qty-btn" onclick="updateQuantity('${product.id}', -1)">−</button>
-                                        <div class="qty-display" id="qty-${product.id}">1</div>
-                                        <button class="qty-btn" onclick="updateQuantity('${product.id}', 1)">+</button>
-                                    </div>
-                                </div>
-
-                                <div class="price-input-section">
-                                    <label class="price-input-label ${hasPrice ? 'price-found' : 'price-missing'}">
-                                        Unit Price: ${hasPrice ? '✓ Found: $' + product.price.toFixed(2) + ' (verify & update if different)' : '❌ Price not found - please enter manually'}
-                                    </label>
-                                    
-                                    <div class="price-input-container">
-                                        <div class="price-input">
-                                            <span>$</span>
-                                            <input type="number" 
-                                                   id="price-${product.id}" 
-                                                   value="${hasPrice ? product.price.toFixed(2) : ''}"
-                                                   placeholder="0.00" 
-                                                   step="0.01" 
-                                                   min="0"
-                                                   class="${hasPrice ? 'has-value' : ''}"
-                                                   onchange="updateProductPrice('${product.id}', this.value)">
-                                        </div>
-                                        
-                                        <div class="price-buttons">
-                                            <button class="price-btn check-price-btn" onclick="checkPrice('${product.id}')">
-                                                🔍 Check Price
-                                            </button>
-                                            <button class="price-btn confirm-price-btn" onclick="confirmPrice('${product.id}')">
-                                                ✓ Confirm
-                                            </button>
-                                        </div>
-                                    </div>
-                                    
-                                    <div style="font-size: 12px; color: #666; margin-top: 8px;">
-                                        ⏳ Please verify and confirm price
-                                    </div>
-                                </div>
-
-                                <div class="product-cost-summary" id="cost-summary-${product.id}">
-                                    <div class="cost-summary-row">
-                                        <span>Unit Price:</span>
-                                        <span id="unit-price-${product.id}">$${hasPrice ? product.price.toFixed(2) : '0.00'}</span>
-                                    </div>
-                                    <div class="cost-summary-row">
-                                        <span>Quantity:</span>
-                                        <span id="quantity-display-${product.id}">1</span>
-                                    </div>
-                                    <div class="cost-summary-row">
-                                        <span>Subtotal:</span>
-                                        <span id="subtotal-${product.id}">$${hasPrice ? product.price.toFixed(2) : '0.00'}</span>
-                                    </div>
-                                    <div class="cost-summary-row">
-                                        <span>Shipping:</span>
-                                        <span>$${product.shippingCost}</span>
-                                    </div>
-                                    <div class="cost-summary-row cost-summary-total">
-                                        <span>Product Total:</span>
-                                        <span id="product-total-${product.id}">$${hasPrice ? (product.price + product.shippingCost).toFixed(2) : product.shippingCost.toFixed(2)}</span>
-                                    </div>
-                                </div>
-
-                                <button class="delete-product-btn" onclick="deleteProduct('${product.id}')">
-                                    🗑️ Remove Product
-                                </button>
-                            </div>
+            grid.innerHTML = products.map(product => `
+                <div class="product-card">
+                    <img src="${product.image || 'https://placehold.co/300x200/E8F5E8/7CB342/png?text=SDL'}" 
+                         alt="${product.name}" 
+                         class="product-image"
+                         onerror="this.src='https://placehold.co/300x200/E8F5E8/7CB342/png?text=SDL'">
+                    <div class="product-content">
+                        <div class="product-retailer">${product.retailer}</div>
+                        <h3 class="product-name">${product.name}</h3>
+                        <div class="product-price">$${(product.price || 0).toFixed(2)}</div>
+                        <div class="product-details">
+                            <div><i class="fas fa-cube"></i> ${product.dimensions ? `${product.dimensions.length}" × ${product.dimensions.width}" × ${product.dimensions.height}"` : 'Estimated'}</div>
+                            <div><i class="fas fa-weight"></i> ${product.weight ? `${product.weight} lbs` : 'Estimated'}</div>
+                            <div><i class="fas fa-ship"></i> $${product.shippingCost || 0}</div>
+                            <div><i class="fas fa-tag"></i> ${product.category}</div>
                         </div>
-                        
                         ${product.manualEntryRequired ? `
-                            <div class="manual-entry-section">
-                                <div class="manual-entry-notice">
-                                    <h4>📋 Manual Entry Required</h4>
-                                    <p>${product.message}</p>
-                                    <p><strong>Please follow these steps:</strong></p>
-                                    <ol>
-                                        <li>Open the product page in a new tab: <a href="${product.url}" target="_blank">Click here</a></li>
-                                        <li>Select all content (Ctrl+A or Cmd+A)</li>
-                                        <li>Copy the content (Ctrl+C or Cmd+C)</li>
-                                        <li>Paste it in the box below and click "Process"</li>
-                                    </ol>
-                                </div>
-                                <div class="manual-entry-form">
-                                    <textarea 
-                                        id="manualContent_${product.id}"
-                                        class="manual-content-input" 
-                                        placeholder="Paste the complete webpage content here..."
-                                        rows="8"
-                                    ></textarea>
-                                    <button class="btn-manual-process" onclick="processManualContent('${product.url}', '${product.id}')">
-                                        🔄 Process Manual Content
-                                    </button>
-                                </div>
+                            <div class="alert alert-warning" style="margin-top: 1rem; font-size: 0.8rem;">
+                                <i class="fas fa-exclamation-triangle"></i>
+                                Manual entry required
                             </div>
                         ` : ''}
-                    `;
-                });
-                
-                html += '</div>';
-            });
-            
-            container.innerHTML = html;
-            
-            // Initialize quantities
-            products.forEach(product => {
-                if (!product.quantity) product.quantity = 1;
-            });
+                    </div>
+                </div>
+            `).join('');
+
+            document.getElementById('productsSection').style.display = 'block';
         }
 
-        function calculateCompletenessScore(product) {
-            let score = 0;
-            if (product.name && product.name !== 'Unknown Product') score++;
-            if (product.price && product.price > 0) score++;
-            if (product.image && !product.image.includes('placehold')) score++;
-            if (product.dimensions) score++;
-            if (product.weight) score++;
-            return score;
+        // Manual entry functions
+        function openManualEntry() {
+            document.getElementById('manualEntryModal').classList.add('active');
         }
 
-        function updateQuantity(productId, change) {
-            const product = products.find(p => p.id === productId);
-            if (!product) return;
-            
-            const newQuantity = Math.max(1, (product.quantity || 1) + change);
-            product.quantity = newQuantity;
-            
-            // Update display
-            document.getElementById(`qty-${productId}`).textContent = newQuantity;
-            document.getElementById(`quantity-display-${productId}`).textContent = newQuantity;
-            
-            // Update costs
-            updateProductCosts(productId);
+        function closeManualEntry() {
+            document.getElementById('manualEntryModal').classList.remove('active');
+            document.getElementById('manualUrl').value = '';
+            document.getElementById('manualContent').value = '';
         }
 
-        function updateProductPrice(productId, newPrice) {
-            const product = products.find(p => p.id === productId);
-            if (!product) return;
-            
-            const price = parseFloat(newPrice) || 0;
-            product.price = price;
-            
-            // Update input styling
-            const input = document.getElementById(`price-${productId}`);
-            input.classList.toggle('has-value', price > 0);
-            
-            // Update costs
-            updateProductCosts(productId);
-        }
+        async function processManualContent() {
+            const url = document.getElementById('manualUrl').value.trim();
+            const content = document.getElementById('manualContent').value.trim();
 
-        function updateProductCosts(productId) {
-            const product = products.find(p => p.id === productId);
-            if (!product) return;
-            
-            const unitPrice = product.price || 0;
-            const quantity = product.quantity || 1;
-            const subtotal = unitPrice * quantity;
-            const total = subtotal + product.shippingCost;
-            
-            // Update displays
-            document.getElementById(`unit-price-${productId}`).textContent = `$${unitPrice.toFixed(2)}`;
-            document.getElementById(`subtotal-${productId}`).textContent = `$${subtotal.toFixed(2)}`;
-            document.getElementById(`product-total-${productId}`).textContent = `$${total.toFixed(2)}`;
-        }
-
-        function checkPrice(productId) {
-            const product = products.find(p => p.id === productId);
-            if (!product) return;
-            
-            // Open product URL in new tab for manual price checking
-            window.open(product.url, '_blank');
-        }
-
-        function confirmPrice(productId) {
-            const input = document.getElementById(`price-${productId}`);
-            const costSummary = document.getElementById(`cost-summary-${productId}`);
-            
-            input.classList.add('confirmed');
-            input.disabled = true;
-            costSummary.classList.add('visible');
-            
-            // Mark product as confirmed
-            const productItem = document.querySelector(`[data-product-id="${productId}"]`);
-            productItem.classList.add('confirmed');
-        }
-
-        function deleteProduct(productId) {
-            if (confirm('Are you sure you want to remove this product?')) {
-                // Remove from products array
-                products = products.filter(p => p.id !== productId);
-                
-                // Remove from display
-                const productItem = document.querySelector(`[data-product-id="${productId}"]`);
-                productItem.classList.add('deleted');
-                
-                setTimeout(() => {
-                    productItem.remove();
-                    
-                    // If no products left, show message
-                    if (products.length === 0) {
-                        document.getElementById('productsContainer').innerHTML = `
-                            <div class="warning-box">
-                                <div class="warning-header">No Products Remaining</div>
-                                <div class="warning-text">
-                                    All products have been removed. Please go back and add some products.
-                                </div>
-                            </div>
-                        `;
-                    }
-                }, 300);
+            if (!url || !content) {
+                showAlert('Please enter both URL and webpage content', 'error');
+                return;
             }
-        }
 
-        // Process manual content function
-        async function processManualContent(url, productId) {
             try {
-                const content = document.getElementById(`manualContent_${productId}`).value;
-                if (!content.trim()) {
-                    alert('Please paste the webpage content first');
-                    return;
-                }
-                
-                // Show loading state
-                const button = document.querySelector(`button[onclick*="${productId}"]`);
-                const originalText = button.textContent;
-                button.disabled = true;
-                button.textContent = '⏳ Processing...';
-                
                 const response = await fetch('/api/process-manual-content', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        url: url,
-                        htmlContent: content
-                    })
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url, htmlContent: content })
                 });
-                
+
                 if (!response.ok) {
                     const errorData = await response.json();
                     throw new Error(errorData.error || 'Failed to process content');
                 }
+
+                const data = await response.json();
                 
-                const result = await response.json();
-                
-                if (result.success && result.product) {
-                    // Update the product in our products array
-                    const productIndex = products.findIndex(p => p.id === productId);
-                    if (productIndex !== -1) {
-                        products[productIndex] = { ...products[productIndex], ...result.product };
-                    }
-                    
-                    // Refresh the display
+                if (data.success && data.product) {
+                    products.push(data.product);
                     displayProducts();
-                    
-                    alert('✅ Product processed successfully from manual content!');
+                    closeManualEntry();
+                    showAlert('✅ Product processed successfully from manual content!', 'success');
                 } else {
                     throw new Error('Failed to extract product data');
                 }
-                
+
             } catch (error) {
                 console.error('Manual content processing error:', error);
-                alert('Error: ' + error.message);
-                
-                // Re-enable button
-                const button = document.querySelector(`button[onclick*="${productId}"]`);
-                if (button) {
-                    button.disabled = false;
-                    button.textContent = '🔄 Process Manual Content';
-                }
+                showAlert(`Error: ${error.message}`, 'error');
             }
         }
 
-        function calculateTotal() {
-            if (products.length === 0) {
-                alert('Please add some products before calculating total');
+        // Cost calculation functions
+        function updateCostBreakdown() {
+            if (!products || products.length === 0) {
+                document.getElementById('costBreakdown').innerHTML = '<div class="alert alert-warning"><i class="fas fa-exclamation-triangle"></i>No products to calculate costs for.</div>';
                 return;
             }
-            
-            // Check if all products have confirmed prices
-            const unconfirmedProducts = products.filter(p => !p.price || p.price <= 0);
-            if (unconfirmedProducts.length > 0) {
-                alert('Please confirm prices for all products before proceeding');
-                return;
-            }
-            
-            goToPage(3);
-            displayFinalSummary();
-        }
 
-        function displayFinalSummary() {
-            const container = document.getElementById('finalSummary');
-            
             // Calculate totals
-            let subtotal = 0;
-            let totalShipping = 0;
-            const deliveryFees = {};
+            const productTotal = products.reduce((sum, p) => sum + (p.price || 0), 0);
+            const dutyAmount = productTotal * 0.265; // 26.5% duty
+            const totalShippingCost = products.reduce((sum, p) => sum + (p.shippingCost || 0), 0);
             
-            products.forEach(product => {
-                const quantity = product.quantity || 1;
-                const unitPrice = product.price || 0;
-                
-                subtotal += unitPrice * quantity;
-                totalShipping += product.shippingCost;
-                
-                // Group delivery fees by retailer
-                const retailer = product.retailer || 'Unknown';
-                if (!deliveryFees[retailer]) {
-                    deliveryFees[retailer] = 0;
-                }
-                deliveryFees[retailer] += 25; // $25 delivery fee per retailer
-            });
+            // Calculate delivery fees total
+            const totalDeliveryFees = Object.values(deliveryFees).reduce((sum, fee) => sum + (parseFloat(fee) || 0), 0);
             
-            const dutyAmount = subtotal * 0.265; // 26.5% duty
-            const totalDeliveryFees = Object.values(deliveryFees).reduce((sum, fee) => sum + fee, 0);
-            const grandTotal = subtotal + dutyAmount + totalShipping + totalDeliveryFees;
-            
-            let html = `
-                <div class="summary-section">
-                    <div class="summary-header">Import Cost Breakdown</div>
-                    
-                    <div class="summary-row">
-                        <span class="summary-label">Product Subtotal (${products.length} items):</span>
-                        <span class="summary-value">$${subtotal.toFixed(2)}</span>
-                    </div>
-                    
-                    <div class="summary-row">
-                        <span class="summary-label">Bermuda Import Duty (26.5%):</span>
-                        <span class="summary-value">$${dutyAmount.toFixed(2)}</span>
-                    </div>
-                    
-                    <div class="summary-row">
-                        <span class="summary-label">Ocean Freight & Handling:</span>
-                        <span class="summary-value">$${totalShipping.toFixed(2)}</span>
-                    </div>
-            `;
-            
-            // Add delivery fees by retailer
-            Object.entries(deliveryFees).forEach(([retailer, fee]) => {
-                html += `
-                    <div class="summary-row">
-                        <span class="summary-label">${retailer} US Delivery Fee:</span>
-                        <span class="summary-value">$${fee.toFixed(2)}</span>
-                    </div>
-                `;
-            });
-            
-            html += `
-                    <div class="summary-row">
-                        <span class="summary-label">TOTAL IMPORT COST:</span>
-                        <span class="summary-value">$${grandTotal.toFixed(2)}</span>
-                    </div>
-                </div>
-                
-                <div class="warning-box">
-                    <div class="warning-header">Important Notes</div>
-                    <div class="warning-text">
-                        • Estimated delivery time: 3-5 weeks via ocean freight<br>
-                        • Prices are estimates and may vary based on actual product dimensions<br>
-                        • Additional fees may apply for oversized or hazardous items<br>
-                        • All prices in USD
-                    </div>
-                </div>
-            `;
-            
-            container.innerHTML = html;
-            
-            // Store data for checkout
-            window.checkoutData = {
-                products: products,
-                deliveryFees: deliveryFees,
-                totals: {
-                    subtotal: subtotal,
-                    dutyAmount: dutyAmount,
-                    totalShippingCost: totalShipping,
-                    totalShippingAndHandling: totalShipping,
-                    totalDeliveryFees: totalDeliveryFees,
-                    grandTotal: grandTotal
-                },
-                originalUrls: originalUrls
+            const grandTotal = productTotal + dutyAmount + totalShippingCost + totalDeliveryFees;
+
+            totals = {
+                productTotal,
+                dutyAmount,
+                totalShippingCost,
+                totalDeliveryFees,
+                grandTotal
             };
+
+            // Display breakdown
+            document.getElementById('costBreakdown').innerHTML = `
+                <div class="cost-breakdown">
+                    <div class="cost-item">
+                        <span class="cost-label">Products (${products.length} items)</span>
+                        <span class="cost-value">$${productTotal.toFixed(2)}</span>
+                    </div>
+                    <div class="cost-item">
+                        <span class="cost-label">Bermuda Import Duty (26.5%)</span>
+                        <span class="cost-value">$${dutyAmount.toFixed(2)}</span>
+                    </div>
+                    <div class="cost-item">
+                        <span class="cost-label">Ocean Freight & Handling</span>
+                        <span class="cost-value">$${totalShippingCost.toFixed(2)}</span>
+                    </div>
+                    <div class="cost-item">
+                        <span class="cost-label">US Delivery Fees</span>
+                        <span class="cost-value">$${totalDeliveryFees.toFixed(2)}</span>
+                    </div>
+                    <div class="cost-item">
+                        <span class="cost-label">Total Import Cost</span>
+                        <span class="cost-value">$${grandTotal.toFixed(2)}</span>
+                    </div>
+                </div>
+            `;
+
+            // Update delivery fees section
+            updateDeliveryFeesSection();
         }
 
-        async function proceedToCheckout() {
-            if (!window.checkoutData) {
-                alert('Error: Checkout data not available');
+        function updateDeliveryFeesSection() {
+            const retailers = [...new Set(products.map(p => p.retailer))];
+            const section = document.getElementById('deliveryFeesSection');
+            
+            section.innerHTML = retailers.map(retailer => `
+                <div class="delivery-fee-item">
+                    <div class="delivery-fee-label">
+                        <i class="fas fa-store"></i>
+                        ${retailer} Delivery Fee
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <span>$</span>
+                        <input 
+                            type="number" 
+                            class="form-input delivery-fee-input" 
+                            value="${deliveryFees[retailer] || '25.00'}" 
+                            step="0.01" 
+                            min="0"
+                            onchange="updateDeliveryFee('${retailer}', this.value)"
+                        >
+                    </div>
+                </div>
+            `).join('');
+
+            // Initialize delivery fees if not set
+            retailers.forEach(retailer => {
+                if (!deliveryFees[retailer]) {
+                    deliveryFees[retailer] = '25.00';
+                }
+            });
+        }
+
+        function updateDeliveryFee(retailer, value) {
+            deliveryFees[retailer] = value;
+            updateCostBreakdown(); // Recalculate totals
+        }
+
+        function updateOrderSummary() {
+            document.getElementById('orderSummary').innerHTML = `
+                <div class="cost-breakdown">
+                    <h3 style="margin-bottom: 1rem;">Order Summary</h3>
+                    <div class="cost-item">
+                        <span class="cost-label">Products</span>
+                        <span class="cost-value">${products.length} items</span>
+                    </div>
+                    <div class="cost-item">
+                        <span class="cost-label">Estimated Delivery</span>
+                        <span class="cost-value">3-5 weeks</span>
+                    </div>
+                    <div class="cost-item">
+                        <span class="cost-label">Total Cost</span>
+                        <span class="cost-value">$${totals.grandTotal.toFixed(2)}</span>
+                    </div>
+                </div>
+                
+                <div class="alert alert-success" style="margin-top: 1.5rem;">
+                    <i class="fas fa-info-circle"></i>
+                    <div>
+                        <strong>What happens next:</strong><br>
+                        We'll review your order, purchase the items from US retailers, and ship them to Bermuda via ocean freight. You'll be notified at each step.
+                    </div>
+                </div>
+            `;
+        }
+
+        async function submitOrder() {
+            const name = document.getElementById('customerName').value.trim();
+            const email = document.getElementById('customerEmail').value.trim();
+            const phone = document.getElementById('customerPhone').value.trim();
+
+            if (!name || !email) {
+                showAlert('Please fill in all required fields', 'error');
                 return;
             }
-            
+
             try {
-                const response = await fetch('/api/store-pending-order', {
+                const orderData = {
+                    products,
+                    deliveryFees,
+                    totals,
+                    customer: { name, email, phone },
+                    originalUrls: document.getElementById('productUrls').value
+                };
+
+                const response = await fetch('/apps/instant-import/create-draft-order', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(window.checkoutData)
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(orderData)
                 });
-                
+
                 if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'Failed to create order');
                 }
-                
+
                 const result = await response.json();
                 
                 if (result.success) {
-                    // Redirect to complete order page
-                    window.location.href = `/complete-order.html?checkoutId=${result.orderId}`;
+                    showAlert('🎉 Order created successfully! Check your email for details.', 'success');
+                    // Could redirect to a success page here
                 } else {
-                    throw new Error(result.error || 'Failed to prepare checkout');
+                    throw new Error(result.error || 'Failed to create order');
                 }
-                
+
             } catch (error) {
-                console.error('Checkout error:', error);
-                alert('Error preparing checkout: ' + error.message);
+                console.error('Order submission error:', error);
+                showAlert(`Error: ${error.message}`, 'error');
             }
         }
 
-        function startOver() {
-            if (confirm('Are you sure you want to start over? All current data will be lost.')) {
-                // Reset everything
-                products = [];
-                originalUrls = '';
-                document.getElementById('productUrls').value = '';
-                goToPage(1);
-            }
+        // Utility functions
+        function showAlert(message, type = 'info') {
+            const alertDiv = document.createElement('div');
+            alertDiv.className = `alert alert-${type} slide-up`;
+            alertDiv.innerHTML = `
+                <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle'}"></i>
+                <div>${message}</div>
+            `;
+            
+            // Insert at top of current page
+            const currentPageEl = document.querySelector('.page.active');
+            currentPageEl.insertBefore(alertDiv, currentPageEl.firstChild);
+            
+            // Remove after 5 seconds
+            setTimeout(() => {
+                if (alertDiv.parentNode) {
+                    alertDiv.remove();
+                }
+            }, 5000);
         }
 
-        // Initialize
-        updateProgress(1);
+        // Initialize delivery fees when products are loaded
+        function initializeDeliveryFees() {
+            const retailers = [...new Set(products.map(p => p.retailer))];
+            retailers.forEach(retailer => {
+                if (!deliveryFees[retailer]) {
+                    deliveryFees[retailer] = '25.00';
+                }
+            });
+        }
     </script>
 </body>
 </html>
