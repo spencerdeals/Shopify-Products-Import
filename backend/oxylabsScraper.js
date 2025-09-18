@@ -71,23 +71,25 @@ class OxylabsScraper {
       console.log('📄 HTML preview (first 1000 chars):', htmlPreview);
       
       // Check if we got blocked or redirected
-      const isBlocked = response.data.includes('blocked') || 
-                       response.data.includes('captcha') || 
-                       response.data.includes('Access Denied') ||
-                       response.data.length < 1000;
+      const isBlocked = response.data.toLowerCase().includes('blocked') || 
+                       response.data.toLowerCase().includes('captcha') || 
+                       response.data.toLowerCase().includes('access denied') ||
+                       response.data.toLowerCase().includes('please verify you are human') ||
+                       response.data.length < 5000; // Increased threshold
       
-      const hasRedirects = response.data.includes('window.location') || 
-                          response.data.includes('redirect');
+      const hasRedirects = response.data.includes('window.location.href') || 
+                          response.data.includes('window.location.replace') ||
+                          (response.data.includes('redirect') && response.data.length < 10000);
       
       console.log('🔍 Content Analysis:');
       console.log('   Is Blocked/Captcha:', isBlocked);
       console.log('   Has Redirects:', hasRedirects);
-      console.log('   Suspiciously Small:', response.data.length < 1000);
+      console.log('   Suspiciously Small:', response.data.length < 5000);
       console.log('   Contains "price":', response.data.toLowerCase().includes('price'));
       console.log('   Contains "add to cart":', response.data.toLowerCase().includes('add to cart'));
       console.log('   Contains product data:', response.data.toLowerCase().includes('product'));
       
-      if (isBlocked) {
+      if (isBlocked && response.data.length < 50000) {
         throw new Error('Content appears to be blocked or captcha protected');
       }
       
