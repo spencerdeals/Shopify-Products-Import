@@ -31,10 +31,8 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     port: PORT,
     scraping: {
-      amazonCrawler: USE_AMAZON_CRAWLER,
-      oxylabs: USE_OXYLABS,
-      apify: USE_APIFY,
-      proWeb: USE_PROWEB,
+      fastScraper: USE_FAST_SCRAPER,
+      gptParser: true,
       upcitemdb: USE_UPCITEMDB
     },
     shopifyConfigured: !!SHOPIFY_ACCESS_TOKEN
