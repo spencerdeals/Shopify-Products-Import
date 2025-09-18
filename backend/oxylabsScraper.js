@@ -113,14 +113,12 @@ class OxylabsScraper {
     const $ = cheerio.load(html);
     
     const productData = {
+      vendor: retailer,
       name: null,
       price: null,
       image: null,
       dimensions: null,
       weight: null,
-      brand: null,
-      category: null,
-      inStock: true,
       variant: null
     };
 
@@ -130,7 +128,7 @@ class OxylabsScraper {
       const element = $(selector).first();
       if (element.length && element.text().trim()) {
         productData.name = element.text().trim().replace(/\s+/g, ' ').substring(0, 200);
-        console.log('   📝 Extracted title:', productData.name.substring(0, 50) + '...');
+        console.log('   📝 Product name:', productData.name.substring(0, 60) + '...');
         break;
       }
     }
@@ -144,7 +142,7 @@ class OxylabsScraper {
         const price = parseFloat(priceText);
         if (price > 0 && price < 100000) {
           productData.price = price;
-          console.log('   💰 Extracted price: $' + productData.price);
+          console.log('   💰 Price: $' + productData.price);
           break;
         }
       }
@@ -167,55 +165,66 @@ class OxylabsScraper {
           
           if (imgSrc.startsWith('http')) {
             productData.image = imgSrc;
-            console.log('   🖼️ Extracted image URL');
+            console.log('   🖼️ Image: Found');
             break;
           }
         }
       }
     }
 
-    // Extract dimensions from text
-    const bodyText = $.text();
-    const dimMatch = bodyText.match(/(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*(?:inches?|in\.?|")/i);
-    if (dimMatch) {
-      productData.dimensions = {
-        length: parseFloat(dimMatch[1]),
-        width: parseFloat(dimMatch[2]),
-        height: parseFloat(dimMatch[3])
-      };
-      console.log('   📏 Extracted dimensions:', productData.dimensions);
-    }
-
-    // Extract weight
-    const weightMatch = bodyText.match(/(\d+(?:\.\d+)?)\s*(?:pounds?|lbs?|kg|kilograms?)/i);
-    if (weightMatch) {
-      let weight = parseFloat(weightMatch[1]);
-      // Convert kg to lbs if needed
-      if (/kg|kilogram/i.test(weightMatch[0])) {
-        weight *= 2.205;
-      }
-      productData.weight = Math.round(weight * 10) / 10;
-      console.log('   ⚖️ Extracted weight:', productData.weight + ' lbs');
-    }
-
-    // Extract variant/color/size
+    // Extract variant/color/size - PRIORITY FIELD
     const variantSelectors = this.getVariantSelectors(retailer);
     for (const selector of variantSelectors) {
       const element = $(selector).first();
       if (element.length && element.text().trim()) {
         const variantText = element.text().trim();
-        if (!/^(select|choose|option|default|click|tap)$/i.test(variantText) && 
-            variantText.length >= 3 && variantText.length <= 50) {
+        if (!/^(select|choose|option|default|click|tap|size|color)$/i.test(variantText) && 
+            variantText.length >= 2 && variantText.length <= 50 &&
+            !/^[\d\-_]+$/.test(variantText)) {
           productData.variant = variantText;
-          console.log('   🎨 Extracted variant:', productData.variant);
+          console.log('   🎨 Variant:', productData.variant);
           break;
         }
       }
     }
 
-    // Check availability
-    const unavailableKeywords = /out of stock|unavailable|sold out|not available|currently unavailable/i;
-    productData.inStock = !unavailableKeywords.test(bodyText);
+    // Extract dimensions from text
+    const bodyText = $.text();
+    
+    // Try multiple dimension patterns
+    const dimPatterns = [
+      /(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*(?:inches?|in\.?|")/i,
+      /dimensions?[^:]*:\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)/i,
+      /L:\s*(\d+(?:\.\d+)?)[^0-9]*W:\s*(\d+(?:\.\d+)?)[^0-9]*H:\s*(\d+(?:\.\d+)?)/i,
+      /length[^:]*:\s*(\d+(?:\.\d+)?)[^0-9]*width[^:]*:\s*(\d+(?:\.\d+)?)[^0-9]*height[^:]*:\s*(\d+(?:\.\d+)?)/i
+    ];
+    
+    for (const pattern of dimPatterns) {
+      const match = bodyText.match(pattern);
+      if (match) {
+        const dims = {
+          length: parseFloat(match[1]),
+          width: parseFloat(match[2]),
+          height: parseFloat(match[3])
+        };
+        // Validate dimensions are reasonable
+        if (dims.length > 0 && dims.width > 0 && dims.height > 0 && 
+            dims.length < 200 && dims.width < 200 && dims.height < 200) {
+          productData.dimensions = dims;
+          console.log('   📏 Dimensions:', `${dims.length}" × ${dims.width}" × ${dims.height}"`);
+          break;
+        }
+      }
+    }
+
+    console.log('   ✅ Oxylabs extraction complete:', {
+      vendor: !!productData.vendor,
+      name: !!productData.name,
+      price: !!productData.price,
+      image: !!productData.image,
+      variant: !!productData.variant,
+      dimensions: !!productData.dimensions
+    });
 
     return productData;
   }
@@ -332,29 +341,46 @@ class OxylabsScraper {
 
   getVariantSelectors(retailer) {
     const common = [
+      '.selected',
       '.selected-option',
+      '.selected-variant',
       '[aria-selected="true"]',
       '.variant-selected',
-      '.option-selected'
+      '.option-selected',
+      '.swatch-selected',
+      '.color-selected',
+      '.size-selected'
     ];
 
     const specific = {
       'Amazon': [
         '.a-button-selected .a-button-text',
         '.a-dropdown-prompt',
-        '#variation_color_name .selection'
+        '#variation_color_name .selection',
+        '#variation_size_name .selection',
+        '#variation_style_name .selection',
+        '.swatches .a-button-selected span'
       ],
       'Wayfair': [
         '.SelectedOption',
-        '.option-selected'
+        '.option-selected',
+        '.selected-swatch',
+        '[data-testid="selected-option"]'
       ],
       'Target': [
         '.selected-variant',
-        '.h-text-bold'
+        '.h-text-bold',
+        '[data-test="selected-variant"]',
+        '.swatch--selected'
       ],
       'Walmart': [
         '.selected-variant-value',
-        '[data-selected="true"]'
+        '[data-selected="true"]',
+        '.variant-pill--selected'
+      ],
+      'Best Buy': [
+        '.selected-variation',
+        '.variation-selected'
       ]
     };
 

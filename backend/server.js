@@ -466,6 +466,7 @@ async function scrapeProduct(url) {
   const product = {
     id: productId,
     url: url,
+    vendor: retailer,
     name: productName,
     price: productData.price,
     image: productData.image || 'https://placehold.co/400x400/7CB342/FFFFFF/png?text=SDL',
@@ -477,6 +478,7 @@ async function scrapeProduct(url) {
     scrapingMethod: scrapingMethod,
     variant: productData.variant,
     dataCompleteness: {
+      hasVendor: !!retailer,
       hasName: !!productData.name,
       hasImage: !!productData.image,
       hasDimensions: !!productData.dimensions,
@@ -557,7 +559,16 @@ app.post('/api/scrape', async (req, res) => {
     console.log(`   GPT Parser used: ${gptCount}`);
     console.log(`   UPCitemdb used: ${upcitemdbCount}`);
     console.log(`   Fully estimated: ${estimatedCount}`);
-    console.log(`   Success rate: ${((products.length - estimatedCount) / products.length * 100).toFixed(1)}%\n`);
+    console.log(`   Success rate: ${((products.length - estimatedCount) / products.length * 100).toFixed(1)}%`);
+    
+    // Log data completeness
+    const withVariants = products.filter(p => p.variant).length;
+    const withDimensions = products.filter(p => p.dimensions).length;
+    const withImages = products.filter(p => p.image && !p.image.includes('placehold')).length;
+    console.log(`   📊 Data Quality:`);
+    console.log(`      Variants found: ${withVariants}/${products.length}`);
+    console.log(`      Dimensions found: ${withDimensions}/${products.length}`);
+    console.log(`      Real images: ${withImages}/${products.length}\n`);
     
     res.json({ 
       products,
