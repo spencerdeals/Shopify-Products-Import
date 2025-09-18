@@ -8,8 +8,14 @@ const axios = require('axios');
 // Add error handling for missing modules
 let UPCItemDB, OrderTracker, parseProduct;
 
-// Disable Oxylabs for now to avoid Playwright issues
-const OxylabsScraper = class { constructor() { this.enabled = false; } };
+// Import Oxylabs - it doesn't use Playwright!
+let OxylabsScraper;
+try {
+  OxylabsScraper = require('./oxylabsScraper');
+} catch (error) {
+  console.warn('⚠️ OxylabsScraper not available:', error.message);
+  OxylabsScraper = class { constructor() { this.enabled = false; } };
+}
 
 try {
   UPCItemDB = require('./upcitemdb');
@@ -79,7 +85,7 @@ console.log(`Platform: ${process.platform}`);
 console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
 console.log(`Port: ${PORT}`);
 console.log('🔍 SCRAPING CONFIGURATION:');
-console.log(`1. Primary: GPT Parser - ✅ ENABLED`);
+console.log(`1. Primary: Oxylabs Proxy - ${oxylabsScraper?.enabled ? '✅ ENABLED' : '❌ DISABLED'}`);
 console.log(`2. Intelligence: GPT Parser - ✅ ENABLED`);
 console.log(`3. Enhancement: UPCitemdb - ${USE_UPCITEMDB && upcItemDB?.enabled ? '✅ ENABLED' : '❌ DISABLED'}`);
 console.log('');
@@ -428,7 +434,26 @@ async function scrapeProduct(url) {
   console.log(`   Retailer: ${retailer}`);
   
   // STEP 1: Try Oxylabs first
-  // STEP 1: Try GPT Parser first (Oxylabs disabled for deployment)
+  // STEP 1: Try Oxylabs first (our best scraper!)
+  if (oxylabsScraper?.enabled) {
+    try {
+      console.log('   🚀 Attempting Oxylabs...');
+      const oxylabsData = await oxylabsScraper.scrapeProduct(url);
+      
+      if (oxylabsData) {
+        productData = oxylabsData;
+        scrapingMethod = 'oxylabs';
+        console.log('   ✅ Oxylabs success');
+      } else {
+        console.log('   ❌ Oxylabs returned null data');
+      }
+    } catch (error) {
+      console.log('   ❌ Oxylabs failed:', error.message);
+      productData = null;
+    }
+  }
+  
+  // STEP 2: Try GPT Parser as fallback
   if (!productData) {
     try {
       console.log('   🤖 Attempting GPT Parser...');
@@ -605,7 +630,7 @@ app.post('/api/scrape', async (req, res) => {
     
     console.log('\n📊 SCRAPING SUMMARY:');
     console.log(`   Total products: ${products.length}`);
-    console.log(`   GPT Parser used: ${gptCount}`);
+    console.log(`   Oxylabs used: ${oxylabsCount}`);
     console.log(`   GPT Parser used: ${gptCount}`);
     console.log(`   UPCitemdb used: ${upcitemdbCount}`);
     console.log(`   Fully estimated: ${estimatedCount}`);
@@ -627,6 +652,7 @@ app.post('/api/scrape', async (req, res) => {
         scraped: products.length - estimatedCount,
         estimated: estimatedCount,
         scrapingMethods: {
+          oxylabs: oxylabsCount,
           gpt: gptCount,
           upcitemdb: upcitemdbCount,
           estimation: estimatedCount
