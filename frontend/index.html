@@ -1666,6 +1666,58 @@
             }
         }
 
+        // Process manual content function
+        async function processManualContent(url) {
+            const textarea = document.getElementById('manualContent');
+            const content = textarea.value.trim();
+            
+            if (!content) {
+                alert('Please paste the webpage content first');
+                return;
+            }
+            
+            const button = event.target;
+            const originalText = button.textContent;
+            button.disabled = true;
+            button.textContent = '⏳ Processing...';
+            
+            try {
+                const response = await fetch('/api/process-manual-content', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        url: url,
+                        htmlContent: content
+                    })
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'Failed to process content');
+                }
+                
+                const result = await response.json();
+                
+                if (result.success && result.product) {
+                    // Replace the manual entry form with the processed product
+                    displayProducts([result.product]);
+                    showSuccessMessage('✅ Product processed successfully from manual content!');
+                } else {
+                    throw new Error('Failed to extract product data');
+                }
+                
+            } catch (error) {
+                console.error('Manual content processing error:', error);
+                alert('Error: ' + error.message);
+                
+                // Re-enable button
+                button.disabled = false;
+                button.textContent = originalText;
+            }
+        }
+
         function calculateTotal() {
             if (products.length === 0) {
                 alert('Please add some products before calculating total');
