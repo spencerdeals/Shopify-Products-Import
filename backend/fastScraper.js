@@ -414,15 +414,25 @@ async function scrapeProduct(url) {
       console.log(`   📊 Zyte confidence: ${(confidence * 100).toFixed(1)}%`);
     }
     
+    // Check if we got essential data - name AND price are required
+    const hasEssentialData = productData && productData.name && productData.price;
+    
     // Check if confidence is too low (likely blocked/failed)
-    if (confidence !== null && confidence < CONFIDENCE_THRESHOLD) {
-      console.log(`   ⚠️ Low confidence (${(confidence * 100).toFixed(1)}% < ${CONFIDENCE_THRESHOLD * 100}%), trying GPT fallback...`);
-      throw new Error(`Low confidence: ${confidence}`);
+    const lowConfidence = confidence !== null && confidence < CONFIDENCE_THRESHOLD;
+    
+    if (!hasEssentialData || lowConfidence) {
+      if (!hasEssentialData) {
+        console.log(`   ⚠️ Missing essential data (name: ${!!productData?.name}, price: ${!!productData?.price}), trying GPT fallback...`);
+      }
+      if (lowConfidence) {
+        console.log(`   ⚠️ Low confidence (${(confidence * 100).toFixed(1)}% < ${CONFIDENCE_THRESHOLD * 100}%), trying GPT fallback...`);
+      }
+      throw new Error(`Zyte failed: ${!hasEssentialData ? 'missing essential data' : 'low confidence'}`);
     }
     
     console.log('   ✅ Zyte API success with good confidence');
   } catch (error) {
-    console.log('   ❌ Zyte API failed or low confidence:', error.message);
+    console.log('   ❌ Zyte API failed:', error.message);
     
     // STEP 2: Try GPT parser as fallback
     if (USE_GPT_FALLBACK) {
@@ -430,7 +440,10 @@ async function scrapeProduct(url) {
         console.log('   🤖 Trying GPT parser fallback...');
         const gptData = await parseWithGPT(url);
         
-        if (gptData && gptData.name && gptData.price) {
+        // Check if GPT got essential data
+        const gptHasEssentialData = gptData && gptData.name && gptData.price;
+        
+        if (gptHasEssentialData) {
           // Convert GPT parser format to our expected format
           productData = {
             name: gptData.name,
@@ -446,11 +459,15 @@ async function scrapeProduct(url) {
           scrapingMethod = 'gpt-fallback';
           console.log('   ✅ GPT parser fallback success!');
         } else {
-          throw new Error('GPT parser returned incomplete data');
+          console.log('   ❌ GPT parser also missing essential data');
+          throw new Error(`GPT parser failed: missing essential data (name: ${!!gptData?.name}, price: ${!!gptData?.price})`);
         }
       } catch (gptError) {
         console.log('   ❌ GPT parser fallback failed:', gptError.message);
-        scrapingMethod = 'estimation';
+        
+        // Both Zyte and GPT failed - require manual entry
+        console.log('   🚨 Both automated methods failed - requiring manual entry');
+        scrapingMethod = 'manual-required';
       }
     } else {
       console.log('   ⚠️ No GPT fallback available (missing OpenAI API key)');
