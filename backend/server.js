@@ -8,7 +8,6 @@ const FastScraper = require('./fastScraper');
 const UPCItemDB = require('./upcitemdb');
 const OrderTracker = require('./orderTracking');
 const { parseProduct } = require('./gptParser');
-const FastScraper = require('./fastScraper');
 const PORT = process.env.PORT || 3000;
 
 // Configuration
