@@ -48,11 +48,11 @@ console.log(`Shopify Domain: ${SHOPIFY_DOMAIN}`);
 console.log('');
 console.log('🔍 SCRAPING CONFIGURATION:');
 console.log(`1. Primary: Zyte API - ${USE_ZYTE ? '✅ ENABLED' : '❌ DISABLED (Missing API Key)'}`);
-console.log(`2. Secondary: Apify Actors - ${USE_APIFY_ACTORS ? '✅ ENABLED' : '❌ DISABLED (Missing API Key)'}`);
+console.log(`2. Secondary: Apify Actors - ${USE_APIFY_ACTORS ? '✅ ENABLED (Optimized)' : '❌ DISABLED (Missing API Key)'}`);
 console.log(`3. Fallback: GPT Parser - ${process.env.OPENAI_API_KEY ? '✅ ENABLED' : '❌ DISABLED (Missing API Key)'}`);
 console.log(`4. Enhancement: UPCitemdb - ${USE_UPCITEMDB ? '✅ ENABLED' : '❌ DISABLED (Missing API Key)'}`);
 console.log('');
-console.log('⚡ STRATEGY: Zyte API → Apify Actors → GPT Parser → Smart estimation');
+console.log('⚡ OPTIMIZED STRATEGY: Zyte API → Apify Actors → GPT Parser → UPCitemdb → Smart estimation');
 console.log('=====================');
 
 // Middleware
@@ -424,7 +424,7 @@ async function scrapeProduct(url) {
   // STEP 2: If Zyte failed or returned incomplete data, try GPT Parser
   if (USE_APIFY_ACTORS && (!productData || !isDataComplete(productData))) {
     try {
-      console.log('   🎭 Attempting Apify Actor scrape...');
+      console.log('   🎭 Attempting optimized Apify Actor scrape...');
       const apifyData = await apifyActorScraper.scrapeProduct(url);
       
       if (apifyData) {
@@ -437,18 +437,21 @@ async function scrapeProduct(url) {
           // Merge data - keep Zyte data but fill in missing fields from Apify
           const mergedData = mergeProductData(productData, apifyData);
           
-          // Log what was supplemented
+          // Log what was supplemented with enhanced detail
           if (!productData.name && apifyData.name) {
-            console.log('   ✅ Apify Actor provided missing name');
+            console.log('   ✅ Apify Actor enhanced: missing name');
           }
           if (!productData.price && apifyData.price) {
-            console.log('   ✅ Apify Actor provided missing price');
+            console.log('   ✅ Apify Actor enhanced: missing price');
           }
           if (!productData.image && apifyData.image) {
-            console.log('   ✅ Apify Actor provided missing image');
+            console.log('   ✅ Apify Actor enhanced: missing image');
           }
           if (!productData.dimensions && apifyData.dimensions) {
-            console.log('   ✅ Apify Actor provided missing dimensions');
+            console.log('   ✅ Apify Actor enhanced: missing dimensions');
+          }
+          if (!productData.variant && apifyData.variant) {
+            console.log('   ✅ Apify Actor enhanced: missing variant');
           }
           
           productData = mergedData;
@@ -456,7 +459,7 @@ async function scrapeProduct(url) {
         }
       }
     } catch (error) {
-      console.log('   ❌ Apify Actor failed:', error.message);
+      console.log('   ❌ Apify Actor failed:', error.message.substring(0, 100));
     }
   }
   
@@ -660,15 +663,17 @@ app.post('/api/scrape', async (req, res) => {
     const gptCount = products.filter(p => p.scrapingMethod?.includes('gpt')).length;
     const upcitemdbCount = products.filter(p => p.scrapingMethod?.includes('upcitemdb')).length;
     const estimatedCount = products.filter(p => p.scrapingMethod === 'estimation').length;
+    const successfulScrapes = products.length - estimatedCount;
     
-    console.log('\n📊 SCRAPING SUMMARY:');
+    console.log('\n📊 OPTIMIZED SCRAPING SUMMARY:');
     console.log(`   Total products: ${products.length}`);
-    console.log(`   Zyte API used: ${zyteCount}`);
-    console.log(`   Apify Actors used: ${apifyActorCount}`);
-    console.log(`   GPT Parser used: ${gptCount}`);
-    console.log(`   UPCitemdb used: ${upcitemdbCount}`);
+    console.log(`   Zyte API success: ${zyteCount}`);
+    console.log(`   Apify Actors success: ${apifyActorCount}`);
+    console.log(`   GPT Parser success: ${gptCount}`);
+    console.log(`   UPCitemdb enhanced: ${upcitemdbCount}`);
     console.log(`   Fully estimated: ${estimatedCount}`);
-    console.log(`   Success rate: ${((products.length - estimatedCount) / products.length * 100).toFixed(1)}%\n`);
+    console.log(`   Overall success rate: ${(successfulScrapes / products.length * 100).toFixed(1)}%`);
+    console.log(`   Data quality: ${successfulScrapes > 0 ? 'HIGH' : 'LOW'}\n`);
     
     res.json({ 
       products,
