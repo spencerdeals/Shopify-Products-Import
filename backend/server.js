@@ -330,7 +330,6 @@ class ApifyActorScraper {
       cleanedData.variant = null;
     }
 
-
     // Check availability - handle different formats
     if (item.inStock !== undefined) {
       // Amazon format
