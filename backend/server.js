@@ -38,7 +38,7 @@ try {
 }
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8080;
 
 // Configuration
 const SHOPIFY_DOMAIN = process.env.SHOPIFY_DOMAIN || 'spencer-deals-ltd.myshopify.com';
@@ -78,6 +78,10 @@ try {
 }
 
 console.log('=== SERVER STARTUP ===');
+console.log(`Node version: ${process.version}`);
+console.log(`Platform: ${process.platform}`);
+console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+console.log(`Port: ${PORT}`);
 console.log('🔍 SCRAPING CONFIGURATION:');
 console.log(`1. Primary: Oxylabs Proxy - ${oxylabsScraper?.enabled ? '✅ ENABLED' : '❌ DISABLED'}`);
 console.log(`2. Intelligence: GPT Parser - ✅ ENABLED`);
@@ -817,7 +821,7 @@ app.post('/apps/instant-import/create-draft-order', async (req, res) => {
 });
 
 // Start server
-const server = app.listen(PORT, () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`\n🚀 Server running on port ${PORT}`);
   console.log(`📍 Frontend: http://localhost:${PORT}`);
   console.log(`📍 API Health: http://localhost:${PORT}/health`);
@@ -844,10 +848,12 @@ process.on('SIGINT', () => {
 // Handle uncaught exceptions
 process.on('uncaughtException', (error) => {
   console.error('💥 Uncaught Exception:', error);
-  process.exit(1);
+  // Don't exit immediately on Railway
+  setTimeout(() => process.exit(1), 1000);
 });
 
 process.on('unhandledRejection', (reason, promise) => {
   console.error('💥 Unhandled Rejection at:', promise, 'reason:', reason);
-  process.exit(1);
+  // Don't exit immediately on Railway
+  setTimeout(() => process.exit(1), 1000);
 });
