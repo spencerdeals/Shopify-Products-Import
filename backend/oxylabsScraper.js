@@ -35,7 +35,7 @@ class OxylabsScraper {
       
       const response = await axios.get(url, {
         proxy: {
-          protocol: 'http',
+          protocol: 'https',
           host: 'realtime.oxylabs.io',
           port: 60000,
           auth: {
