@@ -31,7 +31,7 @@ class OxylabsScraper {
     console.log(`🚀 Oxylabs scraping ${retailer}: ${url.substring(0, 60)}...`);
 
     try {
-      // Use Oxylabs proxy endpoint exactly as documented
+      // Use Oxylabs proxy endpoint EXACTLY as documented
       const response = await axios({
         method: 'GET',
         url: url,
@@ -48,17 +48,7 @@ class OxylabsScraper {
           rejectUnauthorized: false // Equivalent to curl -k --insecure
         }),
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-          'Accept-Language': 'en-US,en;q=0.5',
-          'Accept-Encoding': 'gzip, deflate, br',
-          'Connection': 'keep-alive',
-          'Upgrade-Insecure-Requests': '1',
-          'Sec-Fetch-Dest': 'document',
-          'Sec-Fetch-Mode': 'navigate',
-          'Sec-Fetch-Site': 'none',
-          'Cache-Control': 'max-age=0',
-          // Oxylabs specific headers
+          // ONLY Oxylabs specific headers - let them handle User-Agent
           'x-oxylabs-user-agent-type': 'desktop_chrome',
           'x-oxylabs-geo-location': 'United States',
           'x-oxylabs-render': 'html'
@@ -66,7 +56,7 @@ class OxylabsScraper {
         timeout: 30000,
         maxRedirects: 5,
         validateStatus: function (status) {
-          return status >= 200 && status < 300; // Only accept 2xx responses
+          return status >= 200 && status < 300;
         }
       });
 
@@ -76,6 +66,9 @@ class OxylabsScraper {
         throw new Error('No HTML content received from Oxylabs');
       }
 
+      console.log('📄 HTML length received:', response.data.length);
+      console.log('📊 Response headers:', Object.keys(response.headers));
+      
       // Parse the HTML response
       const productData = this.parseHTML(response.data, url, retailer);
       
@@ -84,7 +77,7 @@ class OxylabsScraper {
         hasPrice: !!productData.price,
         hasImage: !!productData.image,
         hasDimensions: !!productData.dimensions,
-        hasWeight: !!productData.weight
+        hasVariant: !!productData.variant
       });
 
       return productData;
