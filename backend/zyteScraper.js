@@ -30,19 +30,18 @@ class ZyteScraper {
     try {
       console.log('   📤 Sending request to Zyte API...');
       
-      // Try Zyte API with proper basic auth (API key as username, empty password)
+      // Try Zyte API with API key in header (newer format)
       const response = await axios.post(this.baseURL, {
         url: url,
         httpResponseBody: true,
-        product: true
+        product: true,
+        productOptions: {
+          extractFrom: 'httpResponseBody'
+        }
       }, {
-        auth: {
-          username: this.apiKey,
-          password: ''
-        },
         headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
+          'Authorization': `ApiKey ${this.apiKey}`,
+          'Content-Type': 'application/json'
         },
         timeout: 30000
       });
@@ -72,12 +71,42 @@ class ZyteScraper {
       
       if (error.response) {
         console.error('Response status:', error.response.status);
-        console.error('Response data:', JSON.stringify(error.response.data, null, 2));
+        console.error('Response data:', error.response.data);
         
         if (error.response.status === 401) {
-          console.error('❌ Authentication failed - API key format issue');
-        } else if (error.response.status === 422) {
-          console.error('❌ Request format invalid - check API parameters');
+          console.error('❌ Authentication failed - trying alternative auth method...');
+          
+          // Try alternative authentication method (Basic Auth)
+          try {
+            const response2 = await axios.post(this.baseURL, {
+              url: url,
+              httpResponseBody: true,
+              product: true,
+              productOptions: {
+                extractFrom: 'httpResponseBody'
+              }
+            }, {
+              auth: {
+                username: this.apiKey,
+                password: ''
+              },
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              timeout: 30000
+            });
+
+            console.log('✅ Zyte request completed with Basic Auth');
+            const productData = this.parseZyteResponse(response2.data, url, retailer);
+            return productData;
+            
+          } catch (error2) {
+            console.error('❌ Both auth methods failed');
+            console.error('   Method 1 (ApiKey): 401');
+            console.error('   Method 2 (Basic): ', error2.response?.status || error2.message);
+            throw error; // Throw original error
+          }
+          
         } else if (error.response.status === 403) {
           console.error('❌ Access forbidden - check Zyte subscription');
         } else if (error.response.status >= 500) {
