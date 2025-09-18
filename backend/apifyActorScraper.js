@@ -10,14 +10,14 @@ class ApifyActorScraper {
     // Actor configurations for different retailers
     this.actors = {
       amazon: {
-        actorId: 'junglee/amazon-crawler', // Let's try this first
+        actorId: 'junglee/Amazon-crawler', // Fixed case - this one works!
         timeout: 120000, // 2 minutes
         memory: 2048
       },
       wayfair: {
-        actorId: 'dtrungtin/wayfair-scraper', // Let's verify this exists
-        timeout: 120000,
-        memory: 2048
+        actorId: 'apify/web-scraper', // Use generic scraper for Wayfair too
+        timeout: 90000,
+        memory: 1024
       },
       generic: {
         actorId: 'apify/web-scraper',
@@ -70,24 +70,13 @@ class ApifyActorScraper {
       if (retailerType === 'amazon') {
         console.log(`   🛒 Amazon input preparation...`);
         input = {
-          categoryOrProductUrls: [url],
+          startUrls: [{ url: url }],
           maxItems: 1,
-          proxyConfiguration: { useApifyProxy: true },
-          includeReviews: false,
-          scrapeProductDetails: true
+          proxyConfiguration: { useApifyProxy: true }
         };
         console.log(`   📦 Amazon input:`, JSON.stringify(input, null, 2));
-      } else if (retailerType === 'wayfair') {
-        console.log(`   🏠 Wayfair input preparation...`);
-        input = {
-          startUrls: [url],
-          maxItems: 1,
-          proxyConfiguration: { useApifyProxy: true },
-          scrapeProductDetails: true
-        };
-        console.log(`   📦 Wayfair input:`, JSON.stringify(input, null, 2));
       } else {
-        console.log(`   🌐 Generic input preparation...`);
+        console.log(`   🌐 Generic/Wayfair input preparation...`);
         // Generic actor
         input = {
           startUrls: [{ url }],
