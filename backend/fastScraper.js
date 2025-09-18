@@ -4,12 +4,13 @@ const rateLimit = require('express-rate-limit');
 const axios = require('axios');
 const path = require('path');
 const { URL } = require('url');
-const { parseProduct } = require('./gptParser');
+const { parseProduct } = require('./boxEstimator');
 require('dotenv').config();
 const UPCItemDB = require('./upcitemdb');
 const OrderTracker = require('./orderTracking');
 const ZyteScraper = require('./zyteScraper');
 const ApifyActorScraper = require('./apifyActorScraper');
+const { parseProduct: parseWithGPT } = require('./gptParser');
 
 // Simple, working scraper approach
 const MAX_CONCURRENT = 1; // Process one at a time to avoid issues
@@ -33,6 +34,10 @@ const zyteScraper = new ZyteScraper();
 const USE_ZYTE = zyteScraper.enabled;
 const apifyActorScraper = new ApifyActorScraper(process.env.APIFY_API_KEY);
 const USE_APIFY_ACTORS = apifyActorScraper.isAvailable();
+const USE_GPT_FALLBACK = !!process.env.OPENAI_API_KEY;
+
+// Confidence threshold for triggering GPT fallback
+const CONFIDENCE_THRESHOLD = 0.3; // If Zyte confidence < 30%, try GPT
 
 // Initialize order tracker
 let orderTracker = null;
@@ -45,6 +50,12 @@ OrderTracker.create().then(tracker => {
 )
 console.log('=== SERVER STARTUP ===');
 console.log(`Port: ${PORT}`);
+console.log('');
+console.log('🔍 SCRAPING CONFIGURATION:');
+console.log(`1. Primary: Zyte API - ${USE_ZYTE ? '✅ ENABLED' : '❌ DISABLED (Missing API Key)'}`);
+console.log(`2. Fallback: GPT Parser - ${USE_GPT_FALLBACK ? '✅ ENABLED' : '❌ DISABLED (Missing OpenAI Key)'}`);
+console.log(`3. Confidence Threshold: ${CONFIDENCE_THRESHOLD} (${CONFIDENCE_THRESHOLD * 100}%)`);
+console.log('');
 
 // Middleware
 app.use(cors());
@@ -386,19 +397,65 @@ async function scrapeProduct(url) {
   const retailer = detectRetailer(url);
   
   let productData = null;
-  let scrapingMethod = 'zyte';
+  let scrapingMethod = 'none';
+  let confidence = null;
   
   console.log(`\n📦 Processing: ${url}`);
   console.log(`   Retailer: ${retailer}`);
   
-  // ONLY use Zyte
+  // STEP 1: Try Zyte API first
   try {
     console.log('   🕷️ Using Zyte API...');
     productData = await zyteScraper.scrapeProduct(url);
-    console.log('   ✅ Zyte API success');
+    confidence = productData?.confidence || null;
+    scrapingMethod = 'zyte';
+    
+    if (confidence !== null) {
+      console.log(`   📊 Zyte confidence: ${(confidence * 100).toFixed(1)}%`);
+    }
+    
+    // Check if confidence is too low (likely blocked/failed)
+    if (confidence !== null && confidence < CONFIDENCE_THRESHOLD) {
+      console.log(`   ⚠️ Low confidence (${(confidence * 100).toFixed(1)}% < ${CONFIDENCE_THRESHOLD * 100}%), trying GPT fallback...`);
+      throw new Error(`Low confidence: ${confidence}`);
+    }
+    
+    console.log('   ✅ Zyte API success with good confidence');
   } catch (error) {
-    console.log('   ❌ Zyte API failed:', error.message);
-    scrapingMethod = 'estimation';
+    console.log('   ❌ Zyte API failed or low confidence:', error.message);
+    
+    // STEP 2: Try GPT parser as fallback
+    if (USE_GPT_FALLBACK) {
+      try {
+        console.log('   🤖 Trying GPT parser fallback...');
+        const gptData = await parseWithGPT(url);
+        
+        if (gptData && gptData.name && gptData.price) {
+          // Convert GPT parser format to our expected format
+          productData = {
+            name: gptData.name,
+            price: gptData.price,
+            image: gptData.image,
+            dimensions: gptData.dimensions || gptData.package_dimensions,
+            weight: gptData.weight || gptData.package_weight_lbs,
+            brand: gptData.brand,
+            category: gptData.category,
+            inStock: gptData.inStock,
+            variant: gptData.variant
+          };
+          scrapingMethod = 'gpt-fallback';
+          console.log('   ✅ GPT parser fallback success!');
+        } else {
+          throw new Error('GPT parser returned incomplete data');
+        }
+      } catch (gptError) {
+        console.log('   ❌ GPT parser fallback failed:', gptError.message);
+        scrapingMethod = 'estimation';
+      }
+    } else {
+      console.log('   ⚠️ No GPT fallback available (missing OpenAI API key)');
+      scrapingMethod = 'estimation';
+    }
   }
   
   // Ensure we always have valid productData
@@ -453,6 +510,7 @@ async function scrapeProduct(url) {
     weight: productData.weight,
     shippingCost: shippingCost,
     scrapingMethod: scrapingMethod,
+    confidence: confidence,
     variant: (productData && productData.variant) ? productData.variant : null,
     dataCompleteness: {
       hasName: !!(productData && productData.name),
@@ -466,6 +524,9 @@ async function scrapeProduct(url) {
   
   console.log(`   💰 Shipping cost: $${shippingCost}`);
   console.log(`   📊 Data source: ${scrapingMethod}`);
+  if (confidence !== null) {
+    console.log(`   🎯 Confidence: ${(confidence * 100).toFixed(1)}%`);
+  }
   console.log(`   ✅ Product processed\n`);
 
   return product;
