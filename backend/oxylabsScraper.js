@@ -6,19 +6,19 @@ class OxylabsScraper {
   constructor() {
     this.username = process.env.OXYLABS_USERNAME;
     this.password = process.env.OXYLABS_PASSWORD;
-    this.proxyEndpoint = 'https://realtime.oxylabs.io:60000';
+    this.apiEndpoint = 'https://realtime.oxylabs.io/v1/queries';
     this.enabled = !!(this.username && this.password);
     
     console.log('🚀 OxylabsScraper Constructor:');
     console.log(`   Username: ${this.username ? '✅ SET' : '❌ MISSING'}`);
     console.log(`   Password: ${this.password ? '✅ SET' : '❌ MISSING'}`);
-    console.log(`   Endpoint: ${this.proxyEndpoint}`);
+    console.log(`   Endpoint: ${this.apiEndpoint}`);
     console.log(`   Status: ${this.enabled ? '✅ ENABLED' : '❌ DISABLED'}`);
     
     if (!this.enabled) {
       console.log('   ⚠️ Set OXYLABS_USERNAME and OXYLABS_PASSWORD environment variables');
     } else {
-      console.log('   🎯 Ready to use Oxylabs proxy endpoint');
+      console.log('   🎯 Ready to use Oxylabs Push-Pull API');
     }
   }
 
@@ -30,41 +30,44 @@ class OxylabsScraper {
     const retailer = this.detectRetailer(url);
     console.log(`🚀 Oxylabs scraping ${retailer}: ${url.substring(0, 60)}...`);
 
-    // Special handling for different retailers
+    // Determine source type and parameters based on retailer
+    let source = 'universal';
     let geoLocation = 'United States';
-    let renderType = 'html';
+    let parseData = false;
     
+    // Use specific sources for better results
     if (retailer === 'Amazon') {
-      renderType = 'png'; // Try PNG rendering for Amazon to avoid blocks
+      source = 'amazon_product';
+      parseData = true;
+      // Extract ASIN from URL
+      const asinMatch = url.match(/\/dp\/([A-Z0-9]{10})/);
+      if (asinMatch) {
+        console.log('   🎯 Using Amazon source with ASIN:', asinMatch[1]);
+      }
     }
+    
     try {
-      // Use Oxylabs proxy endpoint as actual HTTP proxy
-      const response = await axios({
-        method: 'GET',
+      // Prepare request payload
+      const payload = {
+        source: source,
         url: url,
-        proxy: {
-          protocol: 'http',
-          host: 'realtime.oxylabs.io',
-          port: 60000,
-          auth: {
-            username: this.username,
-            password: this.password
-          }
+        geo_location: geoLocation,
+        parse: parseData,
+        render: 'html',
+        user_agent_type: 'desktop_chrome'
+      };
+      
+      console.log('   📤 Sending request to Oxylabs API...');
+      
+      const response = await axios.post(this.apiEndpoint, payload, {
+        auth: {
+          username: this.username,
+          password: this.password
         },
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'x-oxylabs-user-agent-type': 'desktop_chrome',
-          'x-oxylabs-geo-location': geoLocation,
-          'x-oxylabs-render': renderType
+          'Content-Type': 'application/json'
         },
         timeout: 30000,
-        maxRedirects: 5,
-        httpsAgent: new (require('https').Agent)({
-          rejectUnauthorized: false // Equivalent to curl -k --insecure
-        }),
-        httpAgent: new (require('http').Agent)({
-          keepAlive: true
-        }),
         validateStatus: function (status) {
           return status >= 200 && status < 300;
         }
@@ -72,32 +75,30 @@ class OxylabsScraper {
 
       console.log('✅ Oxylabs request completed successfully');
       
-      if (!response.data) {
-        throw new Error('No HTML content received from Oxylabs');
+      if (!response.data || !response.data.results || !response.data.results[0]) {
+        throw new Error('No results received from Oxylabs API');
       }
 
-      console.log('📄 HTML length received:', response.data.length);
-      console.log('📊 Response headers:', Object.keys(response.headers));
+      const result = response.data.results[0];
+      console.log('📄 Result status:', result.status_code);
+      console.log('📊 Content length:', result.content ? result.content.length : 0);
       
-      // CRITICAL DEBUG: Check if we're getting the actual product page or a block/redirect
-      const htmlPreview = response.data.substring(0, 1000);
-      console.log('📄 HTML preview (first 1000 chars):', htmlPreview);
+      if (result.status_code !== 200) {
+        throw new Error(`Oxylabs returned status ${result.status_code}`);
+      }
       
-      // Check for common blocking/error patterns
-      const isBlocked = /blocked|captcha|access denied|forbidden|robot|bot detection/i.test(htmlPreview);
-      const isRedirect = /redirect|location\.href|window\.location/i.test(htmlPreview);
-      const isEmpty = response.data.length < 10000; // Suspiciously small for a product page
+      if (!result.content) {
+        throw new Error('No content received from Oxylabs');
+      }
       
-      console.log('🔍 Content Analysis:');
-      console.log('   Is Blocked/Captcha:', isBlocked);
-      console.log('   Has Redirects:', isRedirect);
-      console.log('   Suspiciously Small:', isEmpty);
-      console.log('   Contains "price":', /price/i.test(response.data));
-      console.log('   Contains "add to cart":', /add to cart|addtocart/i.test(response.data));
-      console.log('   Contains product data:', /product|item|buy/i.test(response.data));
+      // If we have parsed data, use it directly
+      if (result.parsed && parseData) {
+        console.log('   🎯 Using parsed data from Oxylabs');
+        return this.processParsedData(result.parsed, url, retailer);
+      }
       
       // Parse the HTML response
-      const productData = this.parseHTML(response.data, url, retailer);
+      const productData = this.parseHTML(result.content, url, retailer);
       
       console.log('📦 Oxylabs extraction results:', {
         hasName: !!productData.name,
@@ -415,6 +416,58 @@ class OxylabsScraper {
       dimensions: !!productData.dimensions
     });
 
+    return productData;
+  }
+
+  processParsedData(parsed, url, retailer) {
+    console.log('   📊 Processing parsed data from Oxylabs...');
+    
+    const productData = {
+      vendor: retailer,
+      name: null,
+      price: null,
+      image: null,
+      dimensions: null,
+      weight: null,
+      variant: null
+    };
+    
+    // Extract data from parsed response
+    if (parsed.title) {
+      productData.name = parsed.title.trim();
+      console.log('   📝 Product name (parsed):', productData.name.substring(0, 60) + '...');
+    }
+    
+    if (parsed.price) {
+      const priceValue = typeof parsed.price === 'object' ? parsed.price.value : parsed.price;
+      const price = parseFloat(String(priceValue).replace(/[^0-9.]/g, ''));
+      if (price > 0 && price < 100000) {
+        productData.price = price;
+        console.log('   💰 Price (parsed): $' + productData.price);
+      }
+    }
+    
+    if (parsed.images && parsed.images.length > 0) {
+      productData.image = parsed.images[0];
+      console.log('   🖼️ Image (parsed): Found');
+    }
+    
+    // Look for dimensions in parsed data
+    if (parsed.specifications || parsed.details) {
+      const specs = parsed.specifications || parsed.details;
+      const specsText = JSON.stringify(specs).toLowerCase();
+      
+      const dimMatch = specsText.match(/(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)/);
+      if (dimMatch) {
+        productData.dimensions = {
+          length: parseFloat(dimMatch[1]),
+          width: parseFloat(dimMatch[2]),
+          height: parseFloat(dimMatch[3])
+        };
+        console.log('   📏 Dimensions (parsed):', `${productData.dimensions.length}" × ${productData.dimensions.width}" × ${productData.dimensions.height}"`);
+      }
+    }
+    
     return productData;
   }
 
