@@ -76,8 +76,22 @@ class OxylabsScraper {
       console.log('📄 HTML length received:', response.data.length);
       console.log('📊 Response headers:', Object.keys(response.headers));
       
-      // Debug: Show first 500 chars of HTML to see what we're getting
-      console.log('📄 HTML preview:', response.data.substring(0, 500).replace(/\s+/g, ' '));
+      // CRITICAL DEBUG: Check if we're getting the actual product page or a block/redirect
+      const htmlPreview = response.data.substring(0, 1000);
+      console.log('📄 HTML preview (first 1000 chars):', htmlPreview);
+      
+      // Check for common blocking/error patterns
+      const isBlocked = /blocked|captcha|access denied|forbidden|robot|bot detection/i.test(htmlPreview);
+      const isRedirect = /redirect|location\.href|window\.location/i.test(htmlPreview);
+      const isEmpty = response.data.length < 10000; // Suspiciously small for a product page
+      
+      console.log('🔍 Content Analysis:');
+      console.log('   Is Blocked/Captcha:', isBlocked);
+      console.log('   Has Redirects:', isRedirect);
+      console.log('   Suspiciously Small:', isEmpty);
+      console.log('   Contains "price":', /price/i.test(response.data));
+      console.log('   Contains "add to cart":', /add to cart|addtocart/i.test(response.data));
+      console.log('   Contains product data:', /product|item|buy/i.test(response.data));
       
       // Parse the HTML response
       const productData = this.parseHTML(response.data, url, retailer);
@@ -119,6 +133,26 @@ class OxylabsScraper {
 
   parseHTML(html, url, retailer) {
     const $ = cheerio.load(html);
+    
+    // CRITICAL DEBUG: See what elements actually exist
+    console.log('🔍 HTML Element Analysis:');
+    console.log('   Total elements:', $('*').length);
+    console.log('   H1 tags:', $('h1').length);
+    console.log('   IMG tags:', $('img').length);
+    console.log('   Elements with "price":', $('[class*="price"], [id*="price"]').length);
+    console.log('   Elements with "product":', $('[class*="product"], [id*="product"]').length);
+    
+    // Show actual H1 content if any exists
+    if ($('h1').length > 0) {
+      console.log('   First H1 content:', $('h1').first().text().trim().substring(0, 100));
+    }
+    
+    // Show actual price-related elements
+    const priceElements = $('[class*="price"], [id*="price"]');
+    if (priceElements.length > 0) {
+      console.log('   First price element class:', priceElements.first().attr('class'));
+      console.log('   First price element text:', priceElements.first().text().trim());
+    }
     
     const productData = {
       vendor: retailer,
