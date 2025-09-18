@@ -10,60 +10,9 @@ const UPCItemDB = require('./upcitemdb');
 const OrderTracker = require('./orderTracking');
 const ZyteScraper = require('./zyteScraper');
 const ApifyActorScraper = require('./apifyActorScraper');
-const AdaptiveScraper = require('./adaptiveScraper');
 
-// Enhanced scraping with best practices
-const SCRAPING_DELAYS = {
-  'amazon.com': 2000,      // 2 seconds between requests
-  'wayfair.com': 1500,     // 1.5 seconds
-  'target.com': 1000,      // 1 second
-  'walmart.com': 1000,     // 1 second
-  'default': 1500          // Default 1.5 seconds
-};
-
-const USER_AGENTS = [
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15',
-  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-];
-
-// Track last request times per domain for throttling
-const lastRequestTimes = new Map();
-
-function getRandomUserAgent() {
-  return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
-}
-
-function getDomainDelay(url) {
-  try {
-    const domain = new URL(url).hostname.toLowerCase();
-    for (const [key, delay] of Object.entries(SCRAPING_DELAYS)) {
-      if (domain.includes(key)) {
-        return delay;
-      }
-    }
-    return SCRAPING_DELAYS.default;
-  } catch (e) {
-    return SCRAPING_DELAYS.default;
-  }
-}
-
-async function respectfulDelay(url) {
-  const domain = new URL(url).hostname;
-  const requiredDelay = getDomainDelay(url);
-  const lastRequest = lastRequestTimes.get(domain) || 0;
-  const timeSinceLastRequest = Date.now() - lastRequest;
-  
-  if (timeSinceLastRequest < requiredDelay) {
-    const waitTime = requiredDelay - timeSinceLastRequest;
-    console.log(`   ⏳ Respectful delay: ${waitTime}ms for ${domain}`);
-    await new Promise(resolve => setTimeout(resolve, waitTime));
-  }
-  
-  lastRequestTimes.set(domain, Date.now());
-}
+// Simple, working scraper approach
+const MAX_CONCURRENT = 1; // Process one at a time to avoid issues
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -87,26 +36,13 @@ const USE_APIFY_ACTORS = apifyActorScraper.isAvailable();
 
 // Initialize order tracker
 let orderTracker = null;
-let adaptiveScraper = null;
 
 OrderTracker.create().then(tracker => {
   orderTracker = tracker;
 }).catch(error => {
   console.error('Failed to initialize order tracker:', error);
-}
-)
 console.log('=== SERVER STARTUP ===');
 console.log(`Port: ${PORT}`);
-console.log(`Shopify Domain: ${SHOPIFY_DOMAIN}`);
-console.log('');
-console.log('🔍 SCRAPING CONFIGURATION:');
-console.log(`1. Primary: Zyte API - ${USE_ZYTE ? '✅ ENABLED' : '❌ DISABLED (Missing API Key)'}`);
-console.log(`2. Secondary: Apify Actors - ${USE_APIFY_ACTORS ? '✅ ENABLED (Optimized)' : '❌ DISABLED (Missing API Key)'}`);
-console.log(`3. Fallback: GPT Parser - ${process.env.OPENAI_API_KEY ? '✅ ENABLED' : '❌ DISABLED (Missing API Key)'}`);
-console.log(`4. Enhancement: UPCitemdb - ${USE_UPCITEMDB ? '✅ ENABLED' : '❌ DISABLED (Missing API Key)'}`);
-console.log('');
-console.log('⚡ OPTIMIZED STRATEGY: Zyte API → Apify Actors → GPT Parser → UPCitemdb → Smart estimation');
-console.log('=====================');
 
 // Middleware
 app.use(cors());
@@ -444,154 +380,70 @@ function mergeProductData(primary, secondary) {
 
 // Main product scraping function
 async function scrapeProduct(url) {
-  // Implement respectful delay before scraping
-  await respectfulDelay(url);
-  
   const productId = generateProductId();
   const retailer = detectRetailer(url);
   
   let productData = null;
   let scrapingMethod = 'none';
-  let failureReasons = [];
   
   console.log(`\n📦 Processing: ${url}`);
   console.log(`   Retailer: ${retailer}`);
-  console.log(`   User-Agent: ${getRandomUserAgent().substring(0, 50)}...`);
   
-  // STEP 1: Try Zyte API first
-  if (USE_ZYTE) {
-    try {
-      console.log('   🕷️ Attempting Zyte API scrape...');
-      productData = await zyteScraper.scrapeProduct(url, { userAgent: getRandomUserAgent() });
-      
-      if (productData) {
-        scrapingMethod = 'zyte';
-        console.log('   ✅ Zyte API success');
-        
-        // Check if data is complete
-        if (!isDataComplete(productData)) {
-          console.log('   ⚠️ Zyte data incomplete, will try GPT for missing fields');
-          if (!productData.name) failureReasons.push('no_name');
-          if (!productData.price) failureReasons.push('no_price');
-          if (!productData.image) failureReasons.push('no_image');
-        }
-      }
-    } catch (error) {
-      console.log('   ❌ Zyte API failed:', error.message);
-      productData = null;
-      failureReasons.push('zyte_failed');
-    }
-  }
-  
-  // STEP 2: If Zyte failed or returned incomplete data, try GPT Parser
-  if (USE_APIFY_ACTORS && (!productData || !productData.price)) {
-    try {
-      console.log('   🎭 Attempting Apify Actor scrape...');
-      const apifyData = await apifyActorScraper.scrapeProduct(url, { userAgent: getRandomUserAgent() });
-      
-      if (apifyData) {
-        if (!productData) {
-          productData = apifyData;
-          scrapingMethod = 'apify';
-          console.log('   ✅ Using Apify data');
-        } else {
-          const mergedData = mergeProductData(productData, apifyData);
-          productData = mergedData;
-          scrapingMethod = 'zyte+apify';
-          console.log('   ✅ Apify enhanced Zyte data');
-        }
-      }
-    } catch (error) {
-      console.log('   ❌ Apify failed:', error.message.substring(0, 50));
-      failureReasons.push('apify_failed');
-    }
-  }
-  
-  // STEP 3: If Zyte and Apify failed or returned incomplete data, try GPT Parser
-  if (process.env.OPENAI_API_KEY && (!productData || !isDataComplete(productData))) {
+  // Try GPT Parser first - it's most reliable
+  if (process.env.OPENAI_API_KEY) {
     try {
       console.log('   🤖 Attempting GPT Parser...');
-      const gptData = await parseProduct(url);
+      productData = await parseProduct(url);
       
-      if (gptData) {
-        if (!productData) {
-          // Zyte failed completely, use GPT data
-          productData = gptData;
-          scrapingMethod = 'gpt';
-          console.log('   ✅ Using GPT data (Zyte failed)');
-        } else {
-          // Merge data - keep Zyte data but fill in missing fields from GPT
-          // Merge data - keep existing data but fill in missing fields from GPT
-          const mergedData = mergeProductData(productData, gptData);
-          
-          // Log what was supplemented
-          if (!productData.name && gptData.name) {
-            console.log('   ✅ GPT provided missing name');
-          }
-          if (!productData.price && gptData.price) {
-            console.log('   ✅ GPT provided missing price');
-          }
-          if (!productData.image && gptData.image) {
-            console.log('   ✅ GPT provided missing image');
-          }
-          if (!productData.dimensions && gptData.dimensions) {
-            console.log('   ✅ GPT provided missing dimensions');
-          }
-          
-          productData = mergedData;
-          scrapingMethod = scrapingMethod === 'zyte+apify-actor' ? 'zyte+apify-actor+gpt' : 
-                          scrapingMethod === 'apify-actor' ? 'apify-actor+gpt' :
-                          scrapingMethod === 'zyte' ? 'zyte+gpt' : scrapingMethod + '+gpt';
-        }
+      if (productData && productData.name && productData.price) {
+        scrapingMethod = 'gpt';
+        console.log('   ✅ GPT Parser success');
       }
     } catch (error) {
       console.log('   ❌ GPT Parser failed:', error.message);
     }
   }
   
-  // STEP 4: Try UPCitemdb if we have a product name but missing dimensions
-  if (USE_UPCITEMDB && productData && productData.name && (!productData.dimensions || !productData.weight)) {
+  // If GPT failed, try Zyte as backup
+  if (USE_ZYTE) {
     try {
-      console.log('   📦 Attempting UPCitemdb lookup...');
-      const upcData = await upcItemDB.searchByName(productData.name);
+      console.log('   🕷️ Attempting Zyte API scrape...');
+      const zyteData = await zyteScraper.scrapeProduct(url);
       
-      if (upcData) {
-        // UPCitemdb returns PRODUCT dimensions, convert to BOX dimensions
-        if (!productData.dimensions && upcData.dimensions) {
-          const category = productData.category || categorizeProduct(productData.name || '', url);
-          productData.dimensions = estimateBoxDimensions(upcData.dimensions, category);
-          console.log('   ✅ UPCitemdb provided product dimensions, converted to box dimensions');
+      if (zyteData && zyteData.name && zyteData.price) {
+        if (!productData) {
+          productData = zyteData;
+          scrapingMethod = 'zyte';
+        } else {
+          productData = mergeProductData(productData, zyteData);
+          scrapingMethod = scrapingMethod + '+zyte';
         }
-        if (!productData.weight && upcData.weight) {
-          productData.weight = upcData.weight;
-          console.log('   ✅ UPCitemdb provided weight');
-        }
-        if (!productData.image && upcData.image) {
-          productData.image = upcData.image;
-          console.log('   ✅ UPCitemdb provided image');
-        }
-        scrapingMethod = scrapingMethod === 'estimation' ? 'upcitemdb' : scrapingMethod + '+upcitemdb';
+        console.log('   ✅ Zyte API success');
       }
     } catch (error) {
-      console.log('   ❌ UPCitemdb lookup failed:', error.message);
+      console.log('   ❌ Zyte API failed:', error.message);
     }
   }
   
-  // STEP 5: Use intelligent estimation for any missing data
-  if (!productData) {
-    // All methods failed completely
-    productData = {
-      name: 'Product from ' + retailer,
-      price: null,
-      image: null,
-      dimensions: null,
-      weight: null,
-      category: null,
-      variant: null
-    };
-    scrapingMethod = 'estimation';
-    console.log('   ⚠️ All methods failed, using estimation');
-   failureReasons.push('complete_failure');
+  // If both failed, try Apify as last resort
+  if (USE_APIFY_ACTORS && (!productData || !productData.name || !productData.price)) {
+    try {
+      console.log('   🎭 Attempting Apify Actor scrape...');
+      const apifyData = await apifyActorScraper.scrapeProduct(url);
+      
+      if (apifyData && apifyData.name && apifyData.price) {
+        if (!productData) {
+          productData = apifyData;
+          scrapingMethod = 'apify';
+        } else {
+          productData = mergeProductData(productData, apifyData);
+          scrapingMethod = scrapingMethod + '+apify';
+        }
+        console.log('   ✅ Apify success');
+      }
+    } catch (error) {
+      console.log('   ❌ Apify failed:', error.message);
+    }
   }
   
   // Fill in missing data with estimations
@@ -644,20 +496,13 @@ async function scrapeProduct(url) {
   
   console.log(`   💰 Shipping cost: $${shippingCost}`);
   console.log(`   📊 Data source: ${scrapingMethod}`);
-  console.log(`   ✅ Product processed successfully\n`);
-  
- // Record scraping attempt for learning
- if (adaptiveScraper) {
-   const success = scrapingMethod !== 'estimation' && productData.name && productData.name !== `Product from ${retailer}`;
-   adaptiveScraper.recordScrapingAttempt(url, retailer, success, productData, failureReasons)
-     .catch(error => console.log('   ⚠️ Learning system error:', error.message));
- }
- 
+  console.log(`   ✅ Product processed\n`);
+
   return product;
 }
 
 // Batch processing with concurrency control
-async function processBatch(urls, batchSize = MAX_CONCURRENT_SCRAPES) {
+async function processBatch(urls, batchSize = MAX_CONCURRENT) {
   const results = [];
   for (let i = 0; i < urls.length; i += batchSize) {
     const batch = urls.slice(i, i + batchSize);
@@ -700,39 +545,10 @@ app.post('/api/scrape', async (req, res) => {
     console.log(`\n🚀 Starting batch scrape for ${urls.length} products...`);
     
     const products = await processBatch(urls);
-    
-    // Log summary
-    const zyteCount = products.filter(p => p.scrapingMethod?.includes('zyte')).length;
-    const apifyActorCount = products.filter(p => p.scrapingMethod?.includes('apify-actor')).length;
-    const gptCount = products.filter(p => p.scrapingMethod?.includes('gpt')).length;
-    const upcitemdbCount = products.filter(p => p.scrapingMethod?.includes('upcitemdb')).length;
-    const estimatedCount = products.filter(p => p.scrapingMethod === 'estimation').length;
-    const successfulScrapes = products.length - estimatedCount;
-    
-    console.log('\n📊 OPTIMIZED SCRAPING SUMMARY:');
-    console.log(`   Total products: ${products.length}`);
-    console.log(`   Zyte API success: ${zyteCount}`);
-    console.log(`   Apify Actors success: ${apifyActorCount}`);
-    console.log(`   GPT Parser success: ${gptCount}`);
-    console.log(`   UPCitemdb enhanced: ${upcitemdbCount}`);
-    console.log(`   Fully estimated: ${estimatedCount}`);
-    console.log(`   Overall success rate: ${(successfulScrapes / products.length * 100).toFixed(1)}%`);
-    console.log(`   Data quality: ${successfulScrapes > 0 ? 'HIGH' : 'LOW'}\n`);
+    console.log(`\n✅ Completed scraping ${products.length} products\n`);
     
     res.json({ 
-      products,
-      summary: {
-        total: products.length,
-        scraped: products.length - estimatedCount,
-        estimated: estimatedCount,
-        scrapingMethods: {
-          zyte: zyteCount,
-          apifyActor: apifyActorCount,
-          gpt: gptCount,
-          upcitemdb: upcitemdbCount,
-          estimation: estimatedCount
-        }
-      }
+      products
     });
     
   } catch (error) {
