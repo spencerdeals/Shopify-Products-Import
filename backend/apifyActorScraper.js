@@ -32,7 +32,6 @@ class ApifyActorScraper {
       console.log(`   - Amazon: ${this.actors.amazon.actorId}`);
       console.log(`   - Wayfair: ${this.actors.wayfair.actorId}`);
       console.log(`   - Generic: ${this.actors.generic.actorId}`);
-      console.log('   🔍 Will verify these actors exist during first run...');
     }
   }
 
@@ -45,23 +44,7 @@ class ApifyActorScraper {
       const domain = new URL(url).hostname.toLowerCase();
       if (domain.includes('amazon.com')) return 'amazon';
       if (domain.includes('wayfair.com')) return 'wayfair';
-      if (domain.includes('lunafurn.com')) return 'generic';
-      if (domain.includes('overstock.com')) return 'generic';
-      if (domain.includes('target.com')) return 'generic';
-      if (domain.includes('walmart.com')) return 'generic';
-      if (domain.includes('bestbuy.com')) return 'generic';
-      if (domain.includes('homedepot.com')) return 'generic';
-      if (domain.includes('lowes.com')) return 'generic';
-      if (domain.includes('costco.com')) return 'generic';
-      if (domain.includes('macys.com')) return 'generic';
-      if (domain.includes('ikea.com')) return 'generic';
-      if (domain.includes('cb2.com')) return 'generic';
-      if (domain.includes('crateandbarrel.com')) return 'generic';
-      if (domain.includes('westelm.com')) return 'generic';
-      if (domain.includes('potterybarn.com')) return 'generic';
-      if (domain.includes('ashleyfurniture.com')) return 'generic';
-      if (domain.includes('roomstogo.com')) return 'generic';
-      if (domain.includes('livingspaces.com')) return 'generic';
+      // All other retailers use generic actor
       return 'generic';
     } catch (e) {
       return 'generic';
@@ -76,130 +59,59 @@ class ApifyActorScraper {
     const retailerType = this.detectRetailer(url);
     const actorConfig = this.actors[retailerType];
     
-    console.log(`🎭 Using ${actorConfig.actorId} for ${retailerType} product`);
-    console.log(`   📋 Raw URL: ${url}`);
-    console.log(`   🔍 URL length: ${url.length}`);
-    console.log(`   ✅ URL validation: ${this.isValidUrl(url)}`);
+    console.log(`   🎭 Using ${actorConfig.actorId} for ${retailerType} product`);
 
     try {
       let input;
       
       if (retailerType === 'amazon') {
-        console.log(`   🛒 Amazon input preparation...`);
         input = {
           categoryOrProductUrls: [{ url }],
           maxItems: 1,
           proxyConfiguration: { useApifyProxy: true }
         };
-        console.log(`   📦 Amazon input:`, JSON.stringify(input, null, 2));
       } else if (retailerType === 'wayfair') {
-        console.log(`   🏠 Wayfair input preparation...`);
         input = {
           productUrls: [url],
           maxResultsPerScrape: 1,
           usePagination: false
         };
-        console.log(`   📦 Wayfair input:`, JSON.stringify(input, null, 2));
       } else {
-        console.log(`   🌐 Generic/Wayfair input preparation...`);
-        // Generic Python Crawlee actor - uses startUrls array
+        // Generic actor for all other websites
         input = {
-          startUrls: [url],  // Python Crawlee expects simple array of URLs
+          startUrls: [url],
           maxRequestsPerCrawl: 1
         };
-        console.log(`   📦 Generic Python input:`, JSON.stringify(input, null, 2));
       }
 
       console.log(`   ⏱️ Running actor with ${actorConfig.timeout/1000}s timeout...`);
-      console.log(`   🎯 Actor ID: ${actorConfig.actorId}`);
-      console.log(`   💾 Memory: ${actorConfig.memory}MB`);
       
-      console.log(`   🚀 Starting actor run...`);
-      const runOptions = {
+      const run = await this.client.actor(actorConfig.actorId).call(input, {
         timeout: actorConfig.timeout,
         memory: actorConfig.memory,
         waitSecs: Math.floor(actorConfig.timeout / 1000) - 10
-      };
-      console.log(`   ⚙️ Run options:`, runOptions);
+      });
       
-      const run = await this.client.actor(actorConfig.actorId).call(input, runOptions);
-      console.log(`   ✅ Actor run completed. Run ID: ${run.id}`);
-      console.log(`   📊 Run status: ${run.status}`);
-      
-      // Log run details for debugging
-      if (run.status !== 'SUCCEEDED') {
-        console.log(`   ⚠️ Actor run status: ${run.status}`);
-        if (run.statusMessage) {
-          console.log(`   📋 Status message: ${run.statusMessage}`);
-        }
-      }
+      console.log(`   ✅ Actor run completed. Status: ${run.status}`);
 
-      console.log(`   📥 Fetching results from dataset: ${run.defaultDatasetId}`);
       const { items } = await this.client.dataset(run.defaultDatasetId).listItems();
-      console.log(`   📋 Dataset items count: ${items ? items.length : 0}`);
-      
-      if (items && items.length > 0) {
-        console.log(`   🔍 First item preview:`, JSON.stringify(items[0], null, 2).substring(0, 500) + '...');
-      } else {
-        console.log(`   ❌ No items in dataset - checking run logs...`);
-        try {
-          const logs = await this.client.log(run.id).get();
-          if (logs) {
-            console.log(`   📋 Actor logs (last 1000 chars):`, logs.substring(-1000));
-          }
-        } catch (logError) {
-          console.log(`   ❌ Could not fetch logs: ${logError.message}`);
-        }
-      }
       
       if (items && items.length > 0) {
         console.log(`   ✅ Actor returned ${items.length} items`);
         return this.cleanResult(items[0], retailerType);
       }
       
-      console.log(`   ❌ No items returned from actor`);
       throw new Error('No results from Apify actor');
       
     } catch (error) {
-      console.error(`   ❌ Actor ${actorConfig.actorId} failed:`);
-      console.error(`   📋 Error message: ${error.message}`);
-      console.error(`   📋 Error type: ${error.constructor.name}`);
-      
-      // More detailed error logging
-      if (error.response) {
-        console.error(`   📋 HTTP status: ${error.response.status}`);
-        console.error(`   📋 Response data:`, error.response.data);
-      }
-      if (error.details) {
-        console.error(`   📋 Error details:`, error.details);
-      }
-      if (error.run) {
-        console.error(`   📋 Run info:`, {
-          id: error.run.id,
-          status: error.run.status,
-          statusMessage: error.run.statusMessage
-        });
-      }
-      if (error.stack) {
-        console.error(`   📋 Stack trace: ${error.stack.substring(0, 500)}...`);
-      }
+      console.error(`   ❌ Actor ${actorConfig.actorId} failed: ${error.message}`);
       throw error;
-    }
-  }
-  
-  isValidUrl(url) {
-    try {
-      new URL(url);
-      return true;
-    } catch (e) {
-      return false;
     }
   }
 
   cleanResult(item, retailerType) {
     console.log(`   🧹 Cleaning result from ${retailerType} actor...`);
     
-    // Handle different actor response formats
     let cleanedData = {
       name: null,
       price: null,
@@ -218,7 +130,7 @@ class ApifyActorScraper {
       cleanedData.name = cleanedData.name.trim().substring(0, 200);
     }
 
-    // Extract price - handle Amazon vs Wayfair vs Generic formats
+    // Extract price - handle different actor formats
     if (item.price) {
       if (typeof item.price === 'object' && item.price.value) {
         // Amazon format: { value: 145.5, currency: "$" }
@@ -278,7 +190,6 @@ class ApifyActorScraper {
 
     // Extract weight - handle different formats
     if (item.weight) {
-      // Handle Wayfair weight format like "75.85 pound"
       const weightStr = String(item.weight).replace(/[^0-9.]/g, '');
       cleanedData.weight = parseFloat(weightStr) || null;
     } else if (item.attributes && item.attributes['overall product weight']) {
@@ -286,43 +197,37 @@ class ApifyActorScraper {
       cleanedData.weight = parseFloat(weightStr) || null;
     }
 
-    // Extract brand - handle different formats
+    // Extract brand
     cleanedData.brand = item.brand || item.manufacturer || null;
 
-    // Extract category - handle different formats
+    // Extract category
     if (item.breadCrumbs) {
-      // Amazon uses breadCrumbs string like "Electronics › Computers & Accessories › Memory Cards"
+      // Amazon uses breadCrumbs string
       const breadcrumbArray = item.breadCrumbs.split(' › ');
       cleanedData.category = breadcrumbArray[breadcrumbArray.length - 1];
     } else if (item.breadcrumbs && Array.isArray(item.breadcrumbs)) {
       // Wayfair uses breadcrumbs array
-      cleanedData.category = item.breadcrumbs[item.breadcrumbs.length - 2] || item.breadcrumbs[item.breadcrumbs.length - 1]; // Skip SKU
+      cleanedData.category = item.breadcrumbs[item.breadcrumbs.length - 2] || item.breadcrumbs[item.breadcrumbs.length - 1];
     } else if (item.category) {
       // Generic format
       cleanedData.category = Array.isArray(item.category) ? item.category[item.category.length - 1] : item.category;
     }
 
-    // Extract variant - handle different formats
+    // Extract variant
     if (retailerType === 'amazon') {
       // Amazon variants from variantAttributes
       if (item.variantAttributes && item.variantAttributes.length > 0) {
         const variants = item.variantAttributes.map(attr => `${attr.name}: ${attr.value}`);
         cleanedData.variant = variants.join(', ');
-      } else if (item.selectedVariant) {
-        cleanedData.variant = item.selectedVariant;
       }
     } else if (retailerType === 'wayfair') {
-      // Wayfair variants from attributes or selected options
+      // Wayfair variants from attributes
       if (item.attributes && item.attributes.color) {
         cleanedData.variant = `Color: ${item.attributes.color}`;
-      } else if (item.selectedOptions) {
-        cleanedData.variant = Object.entries(item.selectedOptions)
-          .map(([key, value]) => `${key}: ${value}`)
-          .join(', ');
       }
     } else {
       // Generic variant extraction
-      cleanedData.variant = item.variant || item.selectedVariant || item.color || item.size || item.style || null;
+      cleanedData.variant = item.variant || item.color || item.size || item.style || null;
     }
     
     // Clean up variant text
@@ -330,16 +235,12 @@ class ApifyActorScraper {
       cleanedData.variant = null;
     }
 
-
-    // Check availability - handle different formats
+    // Check availability
     if (item.inStock !== undefined) {
-      // Amazon format
       cleanedData.inStock = !!item.inStock;
     } else if (item.in_stock !== undefined) {
-      // Wayfair format
       cleanedData.inStock = !!item.in_stock;
     } else if (item.availability) {
-      // Generic format
       cleanedData.inStock = !item.availability.toLowerCase().includes('out of stock');
     } else {
       cleanedData.inStock = true;
@@ -355,38 +256,6 @@ class ApifyActorScraper {
     });
 
     return cleanedData;
-  }
-
-  // Batch scraping method
-  async scrapeMultipleProducts(urls) {
-    if (!this.enabled) {
-      throw new Error('Apify not configured');
-    }
-
-    const results = [];
-    const batchSize = 2; // Small batches to avoid rate limits
-    
-    for (let i = 0; i < urls.length; i += batchSize) {
-      const batch = urls.slice(i, i + batchSize);
-      
-      const batchPromises = batch.map(url => 
-        this.scrapeProduct(url).catch(error => ({
-          url,
-          error: error.message,
-          success: false
-        }))
-      );
-      
-      const batchResults = await Promise.all(batchPromises);
-      results.push(...batchResults);
-      
-      // Small delay between batches
-      if (i + batchSize < urls.length) {
-        await new Promise(resolve => setTimeout(resolve, 3000));
-      }
-    }
-    
-    return results;
   }
 }
 

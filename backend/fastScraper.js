@@ -9,6 +9,7 @@ require('dotenv').config();
 const UPCItemDB = require('./upcitemdb');
 const OrderTracker = require('./orderTracking');
 const ZyteScraper = require('./zyteScraper');
+const ApifyActorScraper = require('./apifyActorScraper');
 const AdaptiveScraper = require('./adaptiveScraper');
 
 const app = express();
@@ -28,6 +29,8 @@ const SHIPPING_RATE_PER_CUBIC_FOOT = 8;
 // Initialize scrapers
 const zyteScraper = new ZyteScraper();
 const USE_ZYTE = zyteScraper.enabled;
+const apifyActorScraper = new ApifyActorScraper(process.env.APIFY_API_KEY);
+const USE_APIFY_ACTORS = apifyActorScraper.isAvailable();
 
 // Initialize order tracker
 let orderTracker = null;
@@ -45,10 +48,11 @@ console.log(`Shopify Domain: ${SHOPIFY_DOMAIN}`);
 console.log('');
 console.log('🔍 SCRAPING CONFIGURATION:');
 console.log(`1. Primary: Zyte API - ${USE_ZYTE ? '✅ ENABLED' : '❌ DISABLED (Missing API Key)'}`);
-console.log(`2. Fallback: GPT Parser - ${process.env.OPENAI_API_KEY ? '✅ ENABLED' : '❌ DISABLED (Missing API Key)'}`);
-console.log(`3. Enhancement: UPCitemdb - ${USE_UPCITEMDB ? '✅ ENABLED' : '❌ DISABLED (Missing API Key)'}`);
+console.log(`2. Secondary: Apify Actors - ${USE_APIFY_ACTORS ? '✅ ENABLED' : '❌ DISABLED (Missing API Key)'}`);
+console.log(`3. Fallback: GPT Parser - ${process.env.OPENAI_API_KEY ? '✅ ENABLED' : '❌ DISABLED (Missing API Key)'}`);
+console.log(`4. Enhancement: UPCitemdb - ${USE_UPCITEMDB ? '✅ ENABLED' : '❌ DISABLED (Missing API Key)'}`);
 console.log('');
-console.log('⚡ STRATEGY: Zyte API → GPT Parser → Smart estimation');
+console.log('⚡ STRATEGY: Zyte API → Apify Actors → GPT Parser → Smart estimation');
 console.log('=====================');
 
 // Middleware
@@ -418,6 +422,45 @@ async function scrapeProduct(url) {
   }
   
   // STEP 2: If Zyte failed or returned incomplete data, try GPT Parser
+  if (USE_APIFY_ACTORS && (!productData || !isDataComplete(productData))) {
+    try {
+      console.log('   🎭 Attempting Apify Actor scrape...');
+      const apifyData = await apifyActorScraper.scrapeProduct(url);
+      
+      if (apifyData) {
+        if (!productData) {
+          // Zyte failed completely, use Apify data
+          productData = apifyData;
+          scrapingMethod = 'apify-actor';
+          console.log('   ✅ Using Apify Actor data (Zyte failed)');
+        } else {
+          // Merge data - keep Zyte data but fill in missing fields from Apify
+          const mergedData = mergeProductData(productData, apifyData);
+          
+          // Log what was supplemented
+          if (!productData.name && apifyData.name) {
+            console.log('   ✅ Apify Actor provided missing name');
+          }
+          if (!productData.price && apifyData.price) {
+            console.log('   ✅ Apify Actor provided missing price');
+          }
+          if (!productData.image && apifyData.image) {
+            console.log('   ✅ Apify Actor provided missing image');
+          }
+          if (!productData.dimensions && apifyData.dimensions) {
+            console.log('   ✅ Apify Actor provided missing dimensions');
+          }
+          
+          productData = mergedData;
+          scrapingMethod = 'zyte+apify-actor';
+        }
+      }
+    } catch (error) {
+      console.log('   ❌ Apify Actor failed:', error.message);
+    }
+  }
+  
+  // STEP 3: If Zyte and Apify failed or returned incomplete data, try GPT Parser
   if (process.env.OPENAI_API_KEY && (!productData || !isDataComplete(productData))) {
     try {
       console.log('   🤖 Attempting GPT Parser...');
@@ -431,6 +474,7 @@ async function scrapeProduct(url) {
           console.log('   ✅ Using GPT data (Zyte failed)');
         } else {
           // Merge data - keep Zyte data but fill in missing fields from GPT
+          // Merge data - keep existing data but fill in missing fields from GPT
           const mergedData = mergeProductData(productData, gptData);
           
           // Log what was supplemented
@@ -448,7 +492,9 @@ async function scrapeProduct(url) {
           }
           
           productData = mergedData;
-          scrapingMethod = 'zyte+gpt';
+          scrapingMethod = scrapingMethod === 'zyte+apify-actor' ? 'zyte+apify-actor+gpt' : 
+                          scrapingMethod === 'apify-actor' ? 'apify-actor+gpt' :
+                          scrapingMethod === 'zyte' ? 'zyte+gpt' : scrapingMethod + '+gpt';
         }
       }
     } catch (error) {
@@ -456,7 +502,7 @@ async function scrapeProduct(url) {
     }
   }
   
-  // STEP 3: Try UPCitemdb if we have a product name but missing dimensions
+  // STEP 4: Try UPCitemdb if we have a product name but missing dimensions
   if (USE_UPCITEMDB && productData && productData.name && (!productData.dimensions || !productData.weight)) {
     try {
       console.log('   📦 Attempting UPCitemdb lookup...');
@@ -484,7 +530,7 @@ async function scrapeProduct(url) {
     }
   }
   
-  // STEP 4: Use intelligent estimation for any missing data
+  // STEP 5: Use intelligent estimation for any missing data
   if (!productData) {
     // All methods failed completely
     productData = {
@@ -610,6 +656,7 @@ app.post('/api/scrape', async (req, res) => {
     
     // Log summary
     const zyteCount = products.filter(p => p.scrapingMethod?.includes('zyte')).length;
+    const apifyActorCount = products.filter(p => p.scrapingMethod?.includes('apify-actor')).length;
     const gptCount = products.filter(p => p.scrapingMethod?.includes('gpt')).length;
     const upcitemdbCount = products.filter(p => p.scrapingMethod?.includes('upcitemdb')).length;
     const estimatedCount = products.filter(p => p.scrapingMethod === 'estimation').length;
@@ -617,6 +664,7 @@ app.post('/api/scrape', async (req, res) => {
     console.log('\n📊 SCRAPING SUMMARY:');
     console.log(`   Total products: ${products.length}`);
     console.log(`   Zyte API used: ${zyteCount}`);
+    console.log(`   Apify Actors used: ${apifyActorCount}`);
     console.log(`   GPT Parser used: ${gptCount}`);
     console.log(`   UPCitemdb used: ${upcitemdbCount}`);
     console.log(`   Fully estimated: ${estimatedCount}`);
@@ -630,6 +678,7 @@ app.post('/api/scrape', async (req, res) => {
         estimated: estimatedCount,
         scrapingMethods: {
           zyte: zyteCount,
+          apifyActor: apifyActorCount,
           gpt: gptCount,
           upcitemdb: upcitemdbCount,
           estimation: estimatedCount
