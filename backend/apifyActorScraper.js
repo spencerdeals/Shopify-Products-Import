@@ -214,29 +214,29 @@ class ZyteScraper {
   }
 
   extractVariantProperties(obj, variantParts) {
-    for (const prop in obj) {
-      if (obj.hasOwnProperty(prop)) {
-        const value = obj[prop];
-        if (value && typeof value === 'string' && value.trim()) {
+    for (const [prop, value] of Object.entries(obj)) {
+      if (value && typeof value === 'string' && value.trim()) {
+        const trimmedValue = value.trim();
+        if (trimmedValue.length >= 2 && trimmedValue.length <= 50) {
           // Smart categorization based on actual content
-          const lowerValue = value.toLowerCase();
+          const lowerValue = trimmedValue.toLowerCase();
           
           if (this.isColorValue(lowerValue)) {
-            variantParts.push(`Color: ${value}`);
+            variantParts.push(`Color: ${trimmedValue}`);
           } else if (this.isSizeValue(lowerValue)) {
-            variantParts.push(`Size: ${value}`);
+            variantParts.push(`Size: ${trimmedValue}`);
           } else if (prop === 'material' || this.isMaterialValue(lowerValue)) {
-            variantParts.push(`Material: ${value}`);
+            variantParts.push(`Material: ${trimmedValue}`);
           } else if (prop === 'style' || prop === 'type') {
-            variantParts.push(`Style: ${value}`);
+            variantParts.push(`Style: ${trimmedValue}`);
           } else if (prop === 'finish') {
-            variantParts.push(`Finish: ${value}`);
+            variantParts.push(`Finish: ${trimmedValue}`);
           } else if (prop === 'pattern') {
-            variantParts.push(`Pattern: ${value}`);
+            variantParts.push(`Pattern: ${trimmedValue}`);
           } else {
             // Default to the property name
             const propName = prop.charAt(0).toUpperCase() + prop.slice(1);
-            variantParts.push(`${propName}: ${value}`);
+            variantParts.push(`${propName}: ${trimmedValue}`);
           }
         }
       }
