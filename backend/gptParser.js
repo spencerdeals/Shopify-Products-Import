@@ -142,7 +142,7 @@ function vendorPromptHints(vendor){
     case 'HomeDepot':
       return `For Home Depot: look for the main selling price, ignore bulk pricing and special offers.`;
     case 'CrateAndBarrel':
-      return `For Crate & Barrel: look for the main product price, ignore financing options and membership prices.`;
+      return `For Crate & Barrel: look for the main product price (like $2,899.00), ignore financing options and membership prices. Extract dimensions from format like "23.8"H height 85.4"W width 37"D depth".`;
     case 'IKEA':
       return `For IKEA: prefer the main price display, ignore assembly service costs.`;
     case 'LunaFurniture':
@@ -186,8 +186,10 @@ Rules:
 - "price" must be > 0 and realistic.
 - Prefer selling price (not list/was/per-month).
 - If you see an explicit "Package Dimensions" or "Box Dimensions", include them.
+- For dimensions like "23.8"H height 85.4"W width 37"D depth", convert to: length=85.4, width=37, height=23.8
 - "image" should be the main product image URL if visible.
 - Extract variant info like color, size, or style if clearly selected.
+- Look for SKU numbers in the content.
 `.trim();
 
   const user = `URL: ${url}\nExtract product data from the provided HTML and visible text.\nReturn ONLY JSON, no explanations.`;
