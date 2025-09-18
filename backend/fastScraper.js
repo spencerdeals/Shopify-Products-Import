@@ -8,6 +8,8 @@ const axios = require('axios');
 // Import modules that exist
 const UPCItemDB = require('./upcitemdb');
 const OrderTracker = require('./orderTracking');
+const ZyteScraper = require('./zyteScraper');
+const { parseProduct } = require('./gptParser');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -24,12 +26,22 @@ const SHIPPING_RATE_PER_CUBIC_FOOT = 8;
 // Initialize services
 const upcItemDB = new UPCItemDB(UPCITEMDB_API_KEY);
 const orderTracker = new OrderTracker();
+const zyteScraper = new ZyteScraper();
 const USE_UPCITEMDB = !!UPCITEMDB_API_KEY;
+const USE_ZYTE = zyteScraper.enabled;
 
+console.log('=== SERVER STARTUP ===');
 console.log('🔍 SCRAPING CONFIGURATION:');
-console.log(`1. Primary: GPT Parser - ✅ ENABLED`);
-console.log(`2. Enhancement: UPCitemdb - ${USE_UPCITEMDB ? '✅ ENABLED' : '❌ DISABLED'}`);
-console.log('⚡ STRATEGY: GPT intelligence → UPCitemdb enhancement → Smart estimation');
+console.log(`1. Primary: Zyte API - ${USE_ZYTE ? '✅ ENABLED' : '❌ DISABLED (Missing API Key)'}`);
+console.log(`2. Fallback: GPT Parser - ✅ ENABLED`);
+console.log(`3. Enhancement: UPCitemdb - ${USE_UPCITEMDB ? '✅ ENABLED' : '❌ DISABLED'}`);
+console.log('');
+if (USE_ZYTE) {
+  console.log('⚡ STRATEGY: Zyte API → GPT Parser → Smart estimation');
+} else {
+  console.log('⚡ STRATEGY: GPT Parser → Smart estimation (Zyte disabled)');
+}
+
 // Middleware
 app.use(cors());
 app.use(express.json({ limit: '5mb' }));
@@ -44,8 +56,8 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     port: PORT,
     scraping: {
-      primary: 'GPT Parser',
-      fallback: 'None',
+      zyteAPI: USE_ZYTE,
+      gptParser: true,
       upcitemdb: USE_UPCITEMDB
     },
     shopifyConfigured: !!SHOPIFY_ACCESS_TOKEN
@@ -351,22 +363,76 @@ async function scrapeProduct(url) {
   let productData = null;
   let scrapingMethod = 'none';
   
-  // STEP 1: Try GPT Parser (primary scraper)
-  try {
-    console.log('   🤖 Attempting GPT Parser...');
-    const gptData = await parseProduct(url);
-    
-    if (gptData) {
-      productData = gptData;
-      scrapingMethod = 'gpt';
-      console.log('   ✅ GPT Parser returned data');
+  console.log(`\n📦 Processing: ${url}`);
+  console.log(`   Retailer: ${retailer}`);
+  
+  // STEP 1: Try Zyte API first (if enabled)
+  if (USE_ZYTE) {
+    try {
+      console.log('   🕷️ Attempting Zyte API scrape...');
+      const zyteData = await zyteScraper.scrapeProduct(url);
+      
+      if (zyteData) {
+        productData = zyteData;
+        scrapingMethod = 'zyte';
+        console.log('   ✅ Zyte API success');
+        
+        // Check if data is complete
+        if (!isDataComplete(productData)) {
+          console.log('   ⚠️ Zyte data incomplete, will try GPT for missing fields');
+        }
+      }
+    } catch (error) {
+      console.log('   ❌ Zyte API failed:', error.message);
+      productData = null;
     }
-  } catch (error) {
-    console.log('   ❌ GPT Parser failed:', error.message);
-    productData = null;
   }
   
-  // STEP 2: Try UPCitemdb if we have a product name but missing dimensions
+  // STEP 2: Try GPT Parser as fallback if Zyte failed or returned incomplete data
+  if (!productData || !isDataComplete(productData)) {
+    try {
+      console.log('   🤖 Attempting GPT Parser...');
+      const gptData = await parseProduct(url);
+      
+      if (gptData) {
+        if (!productData) {
+          // Zyte failed completely, use GPT data
+          productData = gptData;
+          scrapingMethod = 'gpt';
+          console.log('   ✅ Using GPT Parser data (Zyte failed)');
+        } else {
+          // Merge data - keep Zyte data but fill in missing fields from GPT
+          const mergedData = mergeProductData(productData, gptData);
+          
+          // Log what was supplemented
+          if (!productData.name && gptData.name) {
+            console.log('   ✅ GPT provided missing name');
+          }
+          if (!productData.price && gptData.price) {
+            console.log('   ✅ GPT provided missing price');
+          }
+          if (!productData.image && gptData.image) {
+            console.log('   ✅ GPT provided missing image');
+          }
+          if (!productData.dimensions && gptData.dimensions) {
+            console.log('   ✅ GPT provided missing dimensions');
+          }
+          
+          productData = mergedData;
+          scrapingMethod = 'zyte+gpt';
+        }
+      }
+    } catch (error) {
+      console.log('   ❌ GPT Parser failed:', error.message);
+    }
+  }
+  
+  // Clean variant
+  if (productData) {
+    productData.variant = cleanVariant(productData.variant);
+  }
+  
+  // STEP 3: Try UPCitemdb for missing dimensions (only if needed)
   if (USE_UPCITEMDB && productData && productData.name && (!productData.dimensions || !productData.weight)) {
     try {
       console.log('   📦 Attempting UPCitemdb lookup...');
@@ -394,7 +460,7 @@ async function scrapeProduct(url) {
     }
   }
   
-  // STEP 3: Use estimation for missing data
+  // STEP 4: Use estimation for any missing data
   if (!productData) {
     productData = {
       name: 'Product from ' + retailer,
@@ -451,7 +517,7 @@ async function scrapeProduct(url) {
     }
   };
   
-  console.log(`   💰 Shipping cost: $${shippingCost}`);
+  console.log(`   💰 Shipping cost: ${shippingCost}`);
   console.log(`   📊 Data source: ${scrapingMethod}`);
   console.log(`   ✅ Product processed successfully\n`);
   
@@ -510,6 +576,7 @@ app.post('/api/scrape', async (req, res) => {
     console.log(`\n🚀 Starting batch scrape for ${urls.length} products...`);
     
     const products = await processBatch(urls);
+    
     const gptCount = products.filter(p => p.scrapingMethod?.includes('gpt')).length;
     const upcitemdbCount = products.filter(p => p.scrapingMethod?.includes('upcitemdb')).length;
     const estimatedCount = products.filter(p => p.scrapingMethod === 'estimation').length;
