@@ -658,12 +658,36 @@ app.post('/api/process-manual-content', async (req, res) => {
     
     console.log('✅ OpenAI API key found, proceeding with GPT parsing...');
     
-    // Use GPT parser to extract from the provided HTML
-    const { parseWithGPT } = require('./gptParser');
+    // Use OpenAI directly to parse the content
+    const OpenAI = require('openai');
+    const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
     
     try {
       console.log('🤖 Calling GPT parser...');
-      const gptData = await parseWithGPT({ url, html: htmlContent });
+      
+      const retailer = detectRetailer(url);
+      const prompt = `Extract product information from this ${retailer} webpage content and return ONLY valid JSON with these fields:
+- name (string)
+- price (number, no currency symbols)
+- dimensions (object with length, width, height in inches if found)
+- sku (string if found)
+- variant (string like color/size if found)
+
+For Crate & Barrel: Extract dimensions from format like "23.8"H height 85.4"W width 37"D depth" as length=85.4, width=37, height=23.8.
+
+Content: ${htmlContent.substring(0, 15000)}`;
+
+      const response = await client.chat.completions.create({
+        model: 'gpt-4o-mini',
+        temperature: 0,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: 'You are a product data extractor. Return only valid JSON.' },
+          { role: 'user', content: prompt }
+        ],
+      });
+
+      const gptData = JSON.parse(response.choices[0].message.content || '{}');
       console.log('📊 GPT parser result:', {
         hasName: !!gptData?.name,
         hasPrice: !!gptData?.price,
