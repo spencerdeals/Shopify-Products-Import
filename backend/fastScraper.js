@@ -648,11 +648,28 @@ app.post('/api/process-manual-content', async (req, res) => {
     console.log(`📄 Content length: ${htmlContent.length} characters`);
     console.log(`📄 Content preview: ${htmlContent.substring(0, 500)}...`);
     
+    // Check if OpenAI API key is available
+    if (!process.env.OPENAI_API_KEY) {
+      console.log('❌ OpenAI API key not found');
+      return res.status(500).json({ 
+        error: 'GPT processing not available - missing OpenAI API key' 
+      });
+    }
+    
+    console.log('✅ OpenAI API key found, proceeding with GPT parsing...');
+    
     // Use GPT parser to extract from the provided HTML
     const { parseWithGPT } = require('./gptParser');
     
     try {
+      console.log('🤖 Calling GPT parser...');
       const gptData = await parseWithGPT({ url, html: htmlContent });
+      console.log('📊 GPT parser result:', {
+        hasName: !!gptData?.name,
+        hasPrice: !!gptData?.price,
+        name: gptData?.name?.substring(0, 50),
+        price: gptData?.price
+      });
       
       if (gptData && gptData.name && gptData.price) {
         const retailer = detectRetailer(url);
@@ -714,13 +731,20 @@ app.post('/api/process-manual-content', async (req, res) => {
         res.json({ success: true, product });
         
       } else {
+        console.log('❌ GPT extraction failed - missing required data:', {
+          hasName: !!gptData?.name,
+          hasPrice: !!gptData?.price,
+          gptData: gptData
+        });
         throw new Error('GPT could not extract required data from manual content');
       }
       
     } catch (error) {
+      console.log('❌ GPT parsing error details:', error.message);
+      console.log('📄 Content sample for debugging:', htmlContent.substring(0, 1000));
       console.log('   ❌ Manual content processing failed:', error.message);
       res.status(400).json({ 
-        error: 'Could not extract product data from the provided content. Please ensure you copied the complete webpage.' 
+        error: `GPT parsing failed: ${error.message}. Please try copying the webpage content again, including product name and price.` 
       });
     }
     
