@@ -170,8 +170,28 @@ class ZyteScraper {
         const selectedVariant = product.variants.find(v => v.selected) || product.variants[0];
         if (selectedVariant) {
           const variantParts = [];
-          if (selectedVariant.color) variantParts.push(`Color: ${selectedVariant.color}`);
-          if (selectedVariant.size) variantParts.push(`Size: ${selectedVariant.size}`);
+          
+          // Smart variant detection - check what the value actually represents
+          if (selectedVariant.color) {
+            const colorValue = selectedVariant.color.toLowerCase();
+            // Check if "color" field actually contains size info
+            if (/\b(twin|full|queen|king|california|cal|single|double|xl|extra)\b/i.test(colorValue)) {
+              variantParts.push(`Size: ${selectedVariant.color}`);
+            } else {
+              variantParts.push(`Color: ${selectedVariant.color}`);
+            }
+          }
+          
+          if (selectedVariant.size) {
+            const sizeValue = selectedVariant.size.toLowerCase();
+            // Check if "size" field actually contains color info
+            if (/\b(black|white|brown|gray|grey|blue|red|green|yellow|beige|tan|navy|cream|ivory)\b/i.test(sizeValue)) {
+              variantParts.push(`Color: ${selectedVariant.size}`);
+            } else {
+              variantParts.push(`Size: ${selectedVariant.size}`);
+            }
+          }
+          
           if (selectedVariant.style) variantParts.push(`Style: ${selectedVariant.style}`);
           if (selectedVariant.material) variantParts.push(`Material: ${selectedVariant.material}`);
           
@@ -183,8 +203,25 @@ class ZyteScraper {
       } else if (product.color || product.size || product.style) {
         // Direct variant properties
         const variantParts = [];
-        if (product.color) variantParts.push(`Color: ${product.color}`);
-        if (product.size) variantParts.push(`Size: ${product.size}`);
+        
+        if (product.color) {
+          const colorValue = product.color.toLowerCase();
+          if (/\b(twin|full|queen|king|california|cal|single|double|xl|extra)\b/i.test(colorValue)) {
+            variantParts.push(`Size: ${product.color}`);
+          } else {
+            variantParts.push(`Color: ${product.color}`);
+          }
+        }
+        
+        if (product.size) {
+          const sizeValue = product.size.toLowerCase();
+          if (/\b(black|white|brown|gray|grey|blue|red|green|yellow|beige|tan|navy|cream|ivory)\b/i.test(sizeValue)) {
+            variantParts.push(`Color: ${product.size}`);
+          } else {
+            variantParts.push(`Size: ${product.size}`);
+          }
+        }
+        
         if (product.style) variantParts.push(`Style: ${product.style}`);
         
         if (variantParts.length > 0) {
