@@ -14,10 +14,13 @@ class ApifyActorScraper {
         timeout: 60000, // 1 minute - much faster
         memory: 1024,
         maxRetries: 1,
-        getInput: (url) => ({
+        getInput: (url, userAgent) => ({
           startUrls: [{ url }],
           maxItems: 1,
-          proxyConfiguration: { useApifyProxy: true }
+          proxyConfiguration: { useApifyProxy: true },
+          customHttpRequestHeaders: userAgent ? {
+            'User-Agent': userAgent
+          } : undefined
         })
       },
       wayfair: {
@@ -25,10 +28,13 @@ class ApifyActorScraper {
         timeout: 45000, // 45 seconds
         memory: 1024,
         maxRetries: 1,
-        getInput: (url) => ({
+        getInput: (url, userAgent) => ({
           startUrls: [{ url }],
           maxItems: 1,
-          proxyConfiguration: { useApifyProxy: true }
+          proxyConfiguration: { useApifyProxy: true },
+          customHttpRequestHeaders: userAgent ? {
+            'User-Agent': userAgent
+          } : undefined
         })
       },
       generic: {
@@ -36,25 +42,72 @@ class ApifyActorScraper {
         timeout: 30000, // 30 seconds
         memory: 1024,
         maxRetries: 1,
-        getInput: (url) => ({
+        getInput: (url, userAgent) => ({
           startUrls: [{ url }],
           maxRequestsPerCrawl: 1,
           proxyConfiguration: { useApifyProxy: true },
+          customHttpRequestHeaders: userAgent ? {
+            'User-Agent': userAgent
+          } : undefined,
           pageFunction: `async function pageFunction(context) {
             const { page } = context;
             await page.waitForTimeout(2000);
             
-            const title = await page.$eval('h1', el => el.textContent).catch(() => null);
-            const price = await page.evaluate(() => {
-              const priceEl = document.querySelector('.price, [class*="price"]');
-              if (priceEl) {
-                const match = priceEl.textContent.match(/[\d,]+\.?\d*/);
-                return match ? parseFloat(match[0].replace(/,/g, '')) : null;
+            // Enhanced extraction with multiple selectors
+            const result = await page.evaluate(() => {
+              // Title extraction with multiple selectors
+              const titleSelectors = [
+                'h1[data-testid*="title"]', 'h1[data-testid*="name"]',
+                '#productTitle', 'h1.product-title', 'h1.ProductTitle',
+                'h1', '.product-title h1', '.product-name h1'
+              ];
+              
+              let title = null;
+              for (const selector of titleSelectors) {
+                const el = document.querySelector(selector);
+                if (el && el.textContent.trim()) {
+                  title = el.textContent.trim();
+                  break;
+                }
               }
-              return null;
+              
+              // Price extraction with multiple selectors and patterns
+              const priceSelectors = [
+                '.MoneyPrice', '[data-testid="price"]', '.a-price .a-offscreen',
+                '.price', '[class*="price"]', '.current-price', '.sale-price'
+              ];
+              
+              let price = null;
+              for (const selector of priceSelectors) {
+                const el = document.querySelector(selector);
+                if (el) {
+                  const match = el.textContent.match(/[\d,]+\.?\d*/);
+                  if (match) {
+                    price = parseFloat(match[0].replace(/,/g, ''));
+                    if (price > 0) break;
+                  }
+                }
+              }
+              
+              // Image extraction
+              const imageSelectors = [
+                'img[data-testid*="image"]', '#landingImage', '.product-image img',
+                'img[class*="product"]', '.hero-image img'
+              ];
+              
+              let image = null;
+              for (const selector of imageSelectors) {
+                const el = document.querySelector(selector);
+                if (el && el.src && el.src.startsWith('http')) {
+                  image = el.src;
+                  break;
+                }
+              }
+              
+              return { title, price, image };
             });
             
-            return { title, price };
+            return result;
           }`
         })
       }
@@ -84,7 +137,7 @@ class ApifyActorScraper {
     }
   }
 
-  async scrapeProduct(url) {
+  async scrapeProduct(url, options = {}) {
     if (!this.enabled) {
       throw new Error('Apify not configured - no API key provided');
     }
@@ -99,7 +152,7 @@ class ApifyActorScraper {
 
     while (attempt <= actorConfig.maxRetries) {
       try {
-        const input = actorConfig.getInput(url);
+        const input = actorConfig.getInput(url, options.userAgent);
         
         console.log(`   ⏱️ Running actor (attempt ${attempt + 1}/${actorConfig.maxRetries + 1}) with ${actorConfig.timeout/1000}s timeout...`);
         

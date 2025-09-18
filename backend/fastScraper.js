@@ -12,6 +12,59 @@ const ZyteScraper = require('./zyteScraper');
 const ApifyActorScraper = require('./apifyActorScraper');
 const AdaptiveScraper = require('./adaptiveScraper');
 
+// Enhanced scraping with best practices
+const SCRAPING_DELAYS = {
+  'amazon.com': 2000,      // 2 seconds between requests
+  'wayfair.com': 1500,     // 1.5 seconds
+  'target.com': 1000,      // 1 second
+  'walmart.com': 1000,     // 1 second
+  'default': 1500          // Default 1.5 seconds
+};
+
+const USER_AGENTS = [
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15',
+  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+];
+
+// Track last request times per domain for throttling
+const lastRequestTimes = new Map();
+
+function getRandomUserAgent() {
+  return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
+}
+
+function getDomainDelay(url) {
+  try {
+    const domain = new URL(url).hostname.toLowerCase();
+    for (const [key, delay] of Object.entries(SCRAPING_DELAYS)) {
+      if (domain.includes(key)) {
+        return delay;
+      }
+    }
+    return SCRAPING_DELAYS.default;
+  } catch (e) {
+    return SCRAPING_DELAYS.default;
+  }
+}
+
+async function respectfulDelay(url) {
+  const domain = new URL(url).hostname;
+  const requiredDelay = getDomainDelay(url);
+  const lastRequest = lastRequestTimes.get(domain) || 0;
+  const timeSinceLastRequest = Date.now() - lastRequest;
+  
+  if (timeSinceLastRequest < requiredDelay) {
+    const waitTime = requiredDelay - timeSinceLastRequest;
+    console.log(`   ⏳ Respectful delay: ${waitTime}ms for ${domain}`);
+    await new Promise(resolve => setTimeout(resolve, waitTime));
+  }
+  
+  lastRequestTimes.set(domain, Date.now());
+}
+
 const app = express();
 const PORT = process.env.PORT || 8080;
 
@@ -391,20 +444,25 @@ function mergeProductData(primary, secondary) {
 
 // Main product scraping function
 async function scrapeProduct(url) {
+  // Implement respectful delay before scraping
+  await respectfulDelay(url);
+  
   const productId = generateProductId();
   const retailer = detectRetailer(url);
   
   let productData = null;
   let scrapingMethod = 'none';
+  let failureReasons = [];
   
   console.log(`\n📦 Processing: ${url}`);
   console.log(`   Retailer: ${retailer}`);
+  console.log(`   User-Agent: ${getRandomUserAgent().substring(0, 50)}...`);
   
   // STEP 1: Try Zyte API first
   if (USE_ZYTE) {
     try {
       console.log('   🕷️ Attempting Zyte API scrape...');
-      productData = await zyteScraper.scrapeProduct(url);
+      productData = await zyteScraper.scrapeProduct(url, { userAgent: getRandomUserAgent() });
       
       if (productData) {
         scrapingMethod = 'zyte';
@@ -413,11 +471,15 @@ async function scrapeProduct(url) {
         // Check if data is complete
         if (!isDataComplete(productData)) {
           console.log('   ⚠️ Zyte data incomplete, will try GPT for missing fields');
+          if (!productData.name) failureReasons.push('no_name');
+          if (!productData.price) failureReasons.push('no_price');
+          if (!productData.image) failureReasons.push('no_image');
         }
       }
     } catch (error) {
       console.log('   ❌ Zyte API failed:', error.message);
       productData = null;
+      failureReasons.push('zyte_failed');
     }
   }
   
@@ -425,7 +487,7 @@ async function scrapeProduct(url) {
   if (USE_APIFY_ACTORS && (!productData || !productData.price)) {
     try {
       console.log('   🎭 Attempting Apify Actor scrape...');
-      const apifyData = await apifyActorScraper.scrapeProduct(url);
+      const apifyData = await apifyActorScraper.scrapeProduct(url, { userAgent: getRandomUserAgent() });
       
       if (apifyData) {
         if (!productData) {
@@ -441,6 +503,7 @@ async function scrapeProduct(url) {
       }
     } catch (error) {
       console.log('   ❌ Apify failed:', error.message.substring(0, 50));
+      failureReasons.push('apify_failed');
     }
   }
   

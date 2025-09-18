@@ -28,6 +28,7 @@ class ZyteScraper {
   }
 
   async scrapeProduct(url) {
+  async scrapeProduct(url, options = {}) {
     if (!this.enabled) {
       throw new Error('Zyte not configured - missing API key');
     }
@@ -43,13 +44,16 @@ class ZyteScraper {
       
       const response = await axios.post(this.baseURL, requestConfig.body, {
         auth: {
+        customHttpRequestHeaders: options.userAgent ? {
+          'User-Agent': options.userAgent
+        } : undefined,
           username: this.apiKey,
           password: ''
         },
         headers: {
           'Content-Type': 'application/json',
           'User-Agent': 'SDL-Import-Calculator/1.0'
-        },
+        timeout: 30000  // Faster timeout
         timeout: requestConfig.timeout,
         validateStatus: (status) => status < 500 // Retry on 5xx errors
       });
