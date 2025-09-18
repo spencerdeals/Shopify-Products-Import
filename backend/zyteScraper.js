@@ -174,55 +174,18 @@ class ZyteScraper {
           // Smart variant detection - check what the value actually represents
           if (selectedVariant.color) {
             const colorValue = selectedVariant.color.toLowerCase();
-            // Check if "color" field actually contains size info
-            if (/\b(twin|full|queen|king|california|cal|single|double|xl|extra)\b/i.test(colorValue)) {
-              variantParts.push(`Size: ${selectedVariant.color}`);
-            } else {
-              variantParts.push(`Color: ${selectedVariant.color}`);
-            }
-          }
-          
-          if (selectedVariant.size) {
-            const sizeValue = selectedVariant.size.toLowerCase();
-            // Check if "size" field actually contains color info
-            if (/\b(black|white|brown|gray|grey|blue|red|green|yellow|beige|tan|navy|cream|ivory|khaki|charcoal|burgundy|maroon|olive|teal|coral|sage|taupe|mocha|espresso|cappuccino|latte|camel|sand|stone|slate|pewter|bronze|copper|gold|silver|rose|blush|mint|seafoam|turquoise|aqua|lavender|purple|violet|magenta|pink|orange|peach|apricot|rust|terracotta)\b/i.test(sizeValue)) {
-              variantParts.push(`Color: ${selectedVariant.size}`);
-            } else {
-              variantParts.push(`Size: ${selectedVariant.size}`);
-            }
-          }
-          
-          if (selectedVariant.style) variantParts.push(`Style: ${selectedVariant.style}`);
-          if (selectedVariant.material) variantParts.push(`Material: ${selectedVariant.material}`);
+          // Collect ALL variant properties from selected variant
+          this.extractVariantProperties(selectedVariant, variantParts);
           
           if (variantParts.length > 0) {
             productData.variant = variantParts.join(', ');
             console.log('   🎨 Variant:', productData.variant);
           }
         }
-      } else if (product.color || product.size || product.style) {
-        // Direct variant properties
+      } else if (product.color || product.size || product.style || product.material || product.finish) {
+        // Direct variant properties from product level
         const variantParts = [];
-        
-        if (product.color) {
-          const colorValue = product.color.toLowerCase();
-          if (/\b(twin|full|queen|king|california|cal|single|double|xl|extra)\b/i.test(colorValue)) {
-            variantParts.push(`Size: ${product.color}`);
-          } else {
-            variantParts.push(`Color: ${product.color}`);
-          }
-        }
-        
-        if (product.size) {
-          const sizeValue = product.size.toLowerCase();
-          if (/\b(black|white|brown|gray|grey|blue|red|green|yellow|beige|tan|navy|cream|ivory)\b/i.test(sizeValue)) {
-            variantParts.push(`Color: ${product.size}`);
-          } else {
-            variantParts.push(`Size: ${product.size}`);
-          }
-        }
-        
-        if (product.style) variantParts.push(`Style: ${product.style}`);
+        this.extractVariantProperties(product, variantParts);
         
         if (variantParts.length > 0) {
           productData.variant = variantParts.join(', ');
@@ -247,6 +210,46 @@ class ZyteScraper {
     }
 
     return productData;
+  }
+
+          // Smart categorization based on actual content
+          const lowerValue = value.toLowerCase();
+          
+          if (this.isColorValue(lowerValue)) {
+            variantParts.push(`Color: ${value}`);
+          } else if (this.isSizeValue(lowerValue)) {
+            variantParts.push(`Size: ${value}`);
+          } else if (prop === 'material' || this.isMaterialValue(lowerValue)) {
+            variantParts.push(`Material: ${value}`);
+          } else if (prop === 'style' || prop === 'type') {
+            variantParts.push(`Style: ${value}`);
+          } else if (prop === 'finish') {
+            variantParts.push(`Finish: ${value}`);
+          } else if (prop === 'pattern') {
+            variantParts.push(`Pattern: ${value}`);
+          } else {
+            // Default to the property name
+            const propName = prop.charAt(0).toUpperCase() + prop.slice(1);
+            variantParts.push(`${propName}: ${value}`);
+          }
+        }
+      }
+    }
+  }
+
+  isColorValue(value) {
+    const colorKeywords = /\b(black|white|brown|gray|grey|blue|red|green|yellow|beige|tan|navy|cream|ivory|khaki|charcoal|burgundy|maroon|olive|teal|coral|sage|taupe|mocha|espresso|latte|camel|sand|stone|slate|pewter|bronze|copper|gold|silver|rose|blush|mint|seafoam|turquoise|aqua|lavender|purple|violet|magenta|pink|orange|peach|apricot|rust|terracotta|denim|indigo|rattan|wicker|natural|antique|vintage|distressed|weathered|aged)\b/i;
+    return colorKeywords.test(value);
+  }
+
+  isSizeValue(value) {
+    const sizeKeywords = /\b(twin|full|queen|king|california|cal|single|double|xl|extra|small|medium|large|xs|s|m|l|xl|xxl|xxxl|\d+['"]\s*x\s*\d+['"']|\d+\s*x\s*\d+|\d+['"]\s*wide|\d+['"]\s*deep|\d+['"]\s*high|\d+\s*inch|\d+\s*ft|\d+\s*cm|\d+\s*mm)\b/i;
+    return sizeKeywords.test(value);
+  }
+
+  isMaterialValue(value) {
+    const materialKeywords = /\b(wood|wooden|metal|steel|iron|aluminum|plastic|fabric|cotton|linen|polyester|leather|velvet|suede|silk|wool|bamboo|rattan|wicker|glass|ceramic|marble|granite|stone|concrete|oak|pine|cherry|maple|walnut|mahogany|teak|cedar|birch|ash|poplar|acacia|mango|sheesham|rosewood)\b/i;
+    return materialKeywords.test(value);
   }
 
   parseHTML(html, url, retailer) {
@@ -303,16 +306,25 @@ class ZyteScraper {
 
     // Extract variant information
     const variantSelectors = this.getVariantSelectors(retailer);
+    const allVariants = [];
+    
     for (const selector of variantSelectors) {
-      const element = $(selector).first();
-      if (element.length && element.text().trim()) {
-        const variantText = element.text().trim();
-        if (variantText.length >= 2 && variantText.length <= 50) {
-          productData.variant = variantText;
-          console.log('   🎨 HTML Variant:', productData.variant);
-          break;
+      const elements = $(selector);
+      elements.each((i, el) => {
+        const variantText = $(el).text().trim();
+        if (variantText.length >= 2 && variantText.length <= 50 && 
+            !variantText.toLowerCase().includes('select') &&
+            !variantText.toLowerCase().includes('choose') &&
+            !allVariants.includes(variantText)) {
+          allVariants.push(variantText);
         }
-      }
+      });
+    }
+    
+    // Combine all found variants
+    if (allVariants.length > 0) {
+      productData.variant = allVariants.join(', ');
+      console.log('   🎨 HTML Variants:', productData.variant);
     }
 
     // Extract dimensions from text
@@ -454,25 +466,56 @@ class ZyteScraper {
         '.a-button-selected .a-button-text',
         '.a-dropdown-prompt',
         '#variation_color_name .selection',
-        '#variation_size_name .selection'
+        '#variation_size_name .selection',
+        '#variation_style_name .selection',
+        '.swatches .a-button-selected span'
       ],
       'Wayfair': [
         '.SelectedOption',
         '.option-selected',
-        '.selected-swatch'
+        '.selected-swatch',
+        '[data-testid="selected-option"]',
+        '.ProductOptionPills .selected',
+        '.OptionPill.selected'
       ],
       'Target': [
         '.selected-variant',
         '.h-text-bold',
-        '[data-test="selected-variant"]'
+        '[data-test="selected-variant"]',
+        '.swatch--selected'
       ],
       'Walmart': [
         '.selected-variant-value',
-        '[data-selected="true"]'
+        '[data-selected="true"]',
+        '.variant-pill--selected'
       ],
       'Best Buy': [
         '.selected-variation',
         '.variation-selected'
+      ],
+      'IKEA': [
+        '.range-revamp-pip-selected',
+        '.pip-selected',
+        '.range-revamp-color-image.selected',
+        '.range-revamp-size-option.selected',
+        '[aria-pressed="true"]'
+      ],
+      'Crate & Barrel': [
+        '.selected-swatch',
+        '.swatch.selected',
+        '.option-selected',
+        '.variant-selected',
+        '[data-selected="true"]',
+        '.color-swatch.selected',
+        '.size-option.selected'
+      ],
+      'Luna Furniture': [
+        '.product-form__input:checked + label',
+        '.variant-input:checked + label',
+        '.swatch.selected',
+        '.option-value.selected',
+        '.variant-option.selected',
+        '.product-option.selected'
       ]
     };
 
