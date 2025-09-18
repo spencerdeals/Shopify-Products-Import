@@ -256,6 +256,9 @@ class OxylabsScraper {
       '#landingImage', '.a-dynamic-image', 'img[data-old-hires]', '.imgTagWrapper img',
       // Target specific
       '.ProductImages img', 'img[data-test="product-image"]',
+      // Luna Furniture specific
+      '.product__media img', '.product-single__photo img', '.product-photo-main img',
+      '.featured-image img', '.product-image-main img',
       // Generic fallbacks
       '.product-image img', 'img[class*="product"]', 'img[class*="hero"]'
     ];
@@ -267,7 +270,8 @@ class OxylabsScraper {
         let imgSrc = element.attr('src') || element.attr('data-src') || 
                      element.attr('data-original') || element.attr('data-lazy') ||
                      element.attr('data-srcset') || element.attr('data-large-src') ||
-                     element.attr('data-zoom-src') || element.attr('srcset');
+                     element.attr('data-zoom-src') || element.attr('srcset') ||
+                     element.attr('data-zoom') || element.attr('data-full-size-image-url');
         
         // Handle srcset - take the largest image
         if (imgSrc && imgSrc.includes(',')) {
@@ -275,8 +279,8 @@ class OxylabsScraper {
           imgSrc = srcsetParts[srcsetParts.length - 1].trim().split(' ')[0];
         }
         
+        // Handle protocol-relative URLs
         if (imgSrc) {
-          // Handle relative URLs
           if (imgSrc.startsWith('//')) {
             imgSrc = 'https:' + imgSrc;
           } else if (imgSrc.startsWith('/')) {
@@ -289,6 +293,8 @@ class OxylabsScraper {
               !imgSrc.includes('loading') &&
               !imgSrc.includes('spinner') &&
               !imgSrc.includes('blank') &&
+              !imgSrc.includes('no-image') &&
+              !imgSrc.includes('default') &&
               imgSrc.length > 20) {
             productData.image = imgSrc;
             console.log('   🖼️ Image: Found');
@@ -306,14 +312,28 @@ class OxylabsScraper {
         const scriptContent = $(scriptTags[i]).html();
         if (scriptContent && (scriptContent.includes('image') || scriptContent.includes('photo'))) {
           // Look for image URLs in JSON
-          const imageMatches = scriptContent.match(/"(https?:\/\/[^"]*\.(jpg|jpeg|png|webp)[^"]*)"/gi);
+          const imageMatches = scriptContent.match(/"(https?:\/\/[^"]*\.(jpg|jpeg|png|webp|avif)[^"?]*)/gi);
           if (imageMatches && imageMatches.length > 0) {
-            let imgUrl = imageMatches[0].replace(/"/g, '');
-            if (imgUrl.length > 20 && !imgUrl.includes('placeholder')) {
+            // Find the largest/best quality image
+            for (const match of imageMatches) {
+              let imgUrl = match.replace(/"/g, '');
+              if (imgUrl.length > 20 && 
+                  !imgUrl.includes('placeholder') && 
+                  !imgUrl.includes('thumb') &&
+                  !imgUrl.includes('small') &&
+                  (imgUrl.includes('large') || imgUrl.includes('master') || imgUrl.includes('original') || imgUrl.width > 400)) {
+                productData.image = imgUrl;
+                console.log('   🖼️ Image: Found in script tag');
+                break;
+              }
+            }
+            // Fallback to first image if no large one found
+            if (!productData.image && imageMatches.length > 0) {
+              let imgUrl = imageMatches[0].replace(/"/g, '');
               productData.image = imgUrl;
               console.log('   🖼️ Image: Found in script tag');
-              break;
             }
+            if (productData.image) break;
           }
         }
       }
@@ -339,10 +359,15 @@ class OxylabsScraper {
       '.SelectedOption', '.option-selected', '.selected-swatch', '[data-testid="selected-option"]',
       // Target specific
       '.selected-variant', '.h-text-bold', '[data-test="selected-variant"]', '.swatch--selected',
+      // Luna Furniture / Shopify specific
+      '.product-form__input:checked + label', '.variant-input:checked + label', 
+      '.swatch.selected', '.option-value.selected', '.variant-option.selected',
+      '.product-option.selected', '.color-swatch.selected', '.size-option.selected',
       // Generic fallbacks
       '.selected', '.selected-option', '[aria-selected="true"]', '.variant-selected'
     ];
     
+    console.log(`   🔍 Searching for variant with ${variantSelectors.length} selectors...`);
     for (const selector of variantSelectors) {
       const element = $(selector).first();
       if (element.length && element.text().trim()) {
@@ -355,6 +380,44 @@ class OxylabsScraper {
           break;
         }
       }
+    }
+    
+    // Method 2: Look for variant info in URL parameters or page data
+    if (!productData.variant) {
+      console.log('   🔍 Searching for variant in URL and page data...');
+      
+      // Check URL for variant parameter
+      try {
+        const urlObj = new URL(url);
+        const variant = urlObj.searchParams.get('variant') || urlObj.searchParams.get('color') || urlObj.searchParams.get('size');
+        if (variant && variant.length > 1 && variant.length < 50) {
+          productData.variant = variant;
+          console.log('   🎨 Variant (URL):', productData.variant);
+        }
+      } catch (e) {}
+      
+      // Look for variant in JSON-LD or other structured data
+      if (!productData.variant) {
+        const scriptTags = $('script[type="application/ld+json"], script[type="application/json"]');
+        for (let i = 0; i < scriptTags.length; i++) {
+          try {
+            const jsonContent = $(scriptTags[i]).html();
+            if (jsonContent) {
+              const data = JSON.parse(jsonContent);
+              const variant = data.variant || data.selectedVariant || data.color || data.size || data.style;
+              if (variant && typeof variant === 'string' && variant.length > 1 && variant.length < 50) {
+                productData.variant = variant;
+                console.log('   🎨 Variant (JSON):', productData.variant);
+                break;
+              }
+            }
+          } catch (e) {}
+        }
+      }
+    }
+    
+    if (!productData.variant) {
+      console.log('   ❌ No variant found with any method');
     }
 
     // Extract dimensions from text
@@ -623,6 +686,15 @@ class OxylabsScraper {
       if (domain.includes('costco.com')) return 'Costco';
       if (domain.includes('macys.com')) return 'Macys';
       if (domain.includes('ikea.com')) return 'IKEA';
+      if (domain.includes('lunafurn.com')) return 'Luna Furniture';
+      if (domain.includes('overstock.com')) return 'Overstock';
+      if (domain.includes('cb2.com')) return 'CB2';
+      if (domain.includes('crateandbarrel.com')) return 'Crate & Barrel';
+      if (domain.includes('westelm.com')) return 'West Elm';
+      if (domain.includes('potterybarn.com')) return 'Pottery Barn';
+      if (domain.includes('ashleyfurniture.com')) return 'Ashley Furniture';
+      if (domain.includes('roomstogo.com')) return 'Rooms To Go';
+      if (domain.includes('livingspaces.com')) return 'Living Spaces';
       return 'Unknown';
     } catch (e) {
       return 'Unknown';
