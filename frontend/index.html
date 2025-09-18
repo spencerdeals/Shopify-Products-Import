@@ -1704,17 +1704,11 @@
                         <span class="summary-label">Ocean Freight & Handling:</span>
                         <span class="summary-value">$${totalShipping.toFixed(2)}</span>
                     </div>
-            `;
-            
-            // Add delivery fees by retailer
-            Object.entries(deliveryFees).forEach(([retailer, fee]) => {
-                html += `
                     <div class="summary-row">
-                        <span class="summary-label">${retailer} US Delivery Fee:</span>
-                        <span class="summary-value">$${fee.toFixed(2)}</span>
+                        <span class="summary-label">US Delivery Fees:</span>
+                        <span class="summary-value">$${totalDeliveryFees.toFixed(2)}</span>
                     </div>
-                `;
-            });
+            `;
             
             html += `
                     <div class="summary-row">
@@ -1739,7 +1733,6 @@
             // Store data for checkout
             window.checkoutData = {
                 products: products,
-            document.getElementById('totalDelivery').textContent = `$${totalDeliveryFees.toFixed(2)}`;
                 deliveryFees: deliveryFees,
                 totals: {
                     subtotal: subtotal,
@@ -1748,7 +1741,6 @@
                     totalShippingAndHandling: totalShipping,
                     totalDeliveryFees: totalDeliveryFees,
                     grandTotal: grandTotal
-                deliveryFees: totalDeliveryFees,
                 },
                 originalUrls: originalUrls
             };
