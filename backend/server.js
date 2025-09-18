@@ -6,14 +6,7 @@ const { URL } = require('url');
 const axios = require('axios');
 
 // Import modules with error handling
-let UPCItemDB, OrderTracker, parseProduct, OxylabsScraper;
-
-try {
-  OxylabsScraper = require('./oxylabsScraper');
-} catch (error) {
-  console.warn('⚠️ OxylabsScraper not available:', error.message);
-  OxylabsScraper = class { constructor() { this.enabled = false; } };
-}
+let UPCItemDB, OrderTracker, parseProduct;
 
 try {
   UPCItemDB = require('./upcitemdb');
@@ -37,6 +30,15 @@ try {
   parseProduct = async () => { throw new Error('GPT Parser not available'); };
 }
 
+// Import Apify Actor Scraper
+let ApifyActorScraper;
+try {
+  ApifyActorScraper = require('./apifyActorScraper');
+} catch (error) {
+  console.warn('⚠️ ApifyActorScraper not available:', error.message);
+  ApifyActorScraper = class { constructor() { this.enabled = false; } };
+}
+
 const app = express();
 const PORT = process.env.PORT || 8080;
 
@@ -45,18 +47,20 @@ const SHOPIFY_DOMAIN = process.env.SHOPIFY_DOMAIN || 'spencer-deals-ltd.myshopif
 const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN || '';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '1064';
 const UPCITEMDB_API_KEY = process.env.UPCITEMDB_API_KEY || '';
+const APIFY_API_KEY = process.env.APIFY_API_KEY || '';
 const USE_UPCITEMDB = !!UPCITEMDB_API_KEY;
+const USE_APIFY = !!APIFY_API_KEY;
 const SHIPPING_RATE_PER_CUBIC_FOOT = parseFloat(process.env.SHIPPING_RATE_PER_CUBIC_FOOT) || 12;
 const MAX_CONCURRENT_SCRAPES = parseInt(process.env.MAX_CONCURRENT_SCRAPES) || 3;
 
 // Initialize services
-let oxylabsScraper, upcItemDB, orderTracker;
+let apifyActorScraper, upcItemDB, orderTracker;
 
 try {
-  oxylabsScraper = new OxylabsScraper();
+  apifyActorScraper = new ApifyActorScraper(APIFY_API_KEY);
 } catch (error) {
-  console.warn('⚠️ Failed to initialize OxylabsScraper:', error.message);
-  oxylabsScraper = { enabled: false };
+  console.warn('⚠️ Failed to initialize ApifyActorScraper:', error.message);
+  apifyActorScraper = { enabled: false };
 }
 
 try {
@@ -80,7 +84,7 @@ try {
 console.log('=== SERVER STARTUP ===');
 console.log(`Port: ${PORT}`);
 console.log('🔍 SCRAPING CONFIGURATION:');
-console.log(`1. Primary: Oxylabs Proxy - ${oxylabsScraper?.enabled ? '✅ ENABLED' : '❌ DISABLED'}`);
+console.log(`1. Primary: Apify Actors - ${USE_APIFY && apifyActorScraper?.enabled ? '✅ ENABLED' : '❌ DISABLED'}`);
 console.log(`2. Intelligence: GPT Parser - ✅ ENABLED`);
 console.log(`3. Enhancement: UPCitemdb - ${USE_UPCITEMDB && upcItemDB?.enabled ? '✅ ENABLED' : '❌ DISABLED'}`);
 console.log('');
@@ -104,7 +108,7 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     port: PORT,
     scraping: {
-      oxylabs: oxylabsScraper?.enabled || false,
+      apifyActors: USE_APIFY && (apifyActorScraper?.enabled || false),
       gptParser: true,
       upcitemdb: USE_UPCITEMDB && (upcItemDB?.enabled || false)
     },
@@ -361,19 +365,19 @@ async function scrapeProduct(url) {
   console.log(`\n📦 Processing: ${url}`);
   console.log(`   Retailer: ${retailer}`);
   
-  // STEP 1: Try Oxylabs first
-  if (oxylabsScraper?.enabled) {
+  // STEP 1: Try Apify Actors first
+  if (USE_APIFY && apifyActorScraper?.enabled) {
     try {
-      console.log('   🚀 Attempting Oxylabs...');
-      const oxylabsData = await oxylabsScraper.scrapeProduct(url);
+      console.log('   🎭 Attempting Apify Actors...');
+      const apifyData = await apifyActorScraper.scrapeProduct(url);
       
-      if (oxylabsData) {
-        productData = oxylabsData;
-        scrapingMethod = 'oxylabs';
-        console.log('   ✅ Oxylabs success');
+      if (apifyData) {
+        productData = apifyData;
+        scrapingMethod = 'apify-actors';
+        console.log('   ✅ Apify Actors success');
       }
     } catch (error) {
-      console.log('   ❌ Oxylabs failed:', error.message);
+      console.log('   ❌ Apify Actors failed:', error.message);
     }
   }
   
@@ -393,7 +397,24 @@ async function scrapeProduct(url) {
     }
   }
   
-  // STEP 3: Use estimation for missing data
+  // STEP 3: Try UPCitemdb for missing dimensions
+  if (USE_UPCITEMDB && upcItemDB?.enabled && productData && productData.name && !productData.dimensions) {
+    try {
+      console.log('   📦 Attempting UPCitemdb lookup...');
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      const upcData = await upcItemDB.searchByName(productData.name);
+      
+      if (upcData && upcData.dimensions) {
+        productData.dimensions = upcData.dimensions;
+        scrapingMethod += '+upcitemdb';
+        console.log('   ✅ UPCitemdb provided dimensions');
+      }
+    } catch (error) {
+      console.log('   ❌ UPCitemdb lookup failed:', error.message);
+    }
+  }
+  
+  // STEP 4: Use estimation for missing data
   if (!productData) {
     productData = {
       name: 'Product from ' + retailer,
@@ -502,18 +523,211 @@ app.post('/api/scrape', async (req, res) => {
     
     const products = await processBatch(urls);
     
+    const apifyCount = products.filter(p => p.scrapingMethod?.includes('apify')).length;
+    const gptCount = products.filter(p => p.scrapingMethod?.includes('gpt')).length;
+    const upcitemdbCount = products.filter(p => p.scrapingMethod?.includes('upcitemdb')).length;
+    const estimatedCount = products.filter(p => p.scrapingMethod === 'estimation').length;
+    
+    console.log('\n📊 SCRAPING SUMMARY:');
+    console.log(`   Total products: ${products.length}`);
+    console.log(`   Apify Actors used: ${apifyCount}`);
+    console.log(`   GPT Parser used: ${gptCount}`);
+    console.log(`   UPCitemdb used: ${upcitemdbCount}`);
+    console.log(`   Fully estimated: ${estimatedCount}`);
+    console.log(`   Success rate: ${((products.length - estimatedCount) / products.length * 100).toFixed(1)}%\n`);
+    
     res.json({ 
       products,
       summary: {
         total: products.length,
         scraped: products.filter(p => p.scrapingMethod !== 'estimation').length,
-        estimated: products.filter(p => p.scrapingMethod === 'estimation').length
+        estimated: estimatedCount,
+        scrapingMethods: {
+          apifyActors: apifyCount,
+          gpt: gptCount,
+          upcitemdb: upcitemdbCount,
+          estimation: estimatedCount
+        }
       }
     });
     
   } catch (error) {
     console.error('Scraping error:', error);
     res.status(500).json({ error: 'Failed to scrape products' });
+  }
+});
+
+// Store pending orders temporarily
+const pendingOrders = new Map();
+
+app.post('/api/store-pending-order', (req, res) => {
+  const orderId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
+  pendingOrders.set(orderId, {
+    data: req.body,
+    timestamp: Date.now()
+  });
+  
+  setTimeout(() => pendingOrders.delete(orderId), 3600000);
+  
+  console.log(`📦 Stored pending order ${orderId}`);
+  res.json({ orderId, success: true });
+});
+
+app.get('/api/get-pending-order/:orderId', (req, res) => {
+  const order = pendingOrders.get(req.params.orderId);
+  if (order) {
+    console.log(`✅ Retrieved pending order ${req.params.orderId}`);
+    res.json(order.data);
+    pendingOrders.delete(req.params.orderId);
+  } else {
+    console.log(`❌ Order ${req.params.orderId} not found`);
+    res.status(404).json({ error: 'Order not found or expired' });
+  }
+});
+
+// Order tracking endpoints
+app.post('/api/orders/:orderId/start-tracking', async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const { retailerOrders } = req.body;
+    
+    const result = await orderTracker.startTracking(orderId, retailerOrders);
+    res.json(result);
+  } catch (error) {
+    console.error('Start tracking error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+app.post('/api/orders/:orderId/stop-tracking', async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const result = await orderTracker.stopTracking(orderId);
+    res.json(result);
+  } catch (error) {
+    console.error('Stop tracking error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+app.get('/api/orders/:orderId/tracking-status', async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const result = await orderTracker.getTrackingStatus(orderId);
+    res.json(result);
+  } catch (error) {
+    console.error('Get tracking status error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Shopify Draft Order Creation
+app.post('/apps/instant-import/create-draft-order', async (req, res) => {
+  try {
+    const { products, deliveryFees, totals, customer, originalUrls } = req.body;
+    
+    if (!SHOPIFY_ACCESS_TOKEN) {
+      return res.status(500).json({ error: 'Shopify not configured. Please check API credentials.' });
+    }
+    
+    if (!customer || !customer.email || !customer.name) {
+      return res.status(400).json({ error: 'Customer information required' });
+    }
+    
+    const lineItems = [];
+    
+    products.forEach(product => {
+      if (product.price && product.price > 0) {
+        lineItems.push({
+          title: product.name,
+          price: product.price.toFixed(2),
+          quantity: 1,
+          properties: [
+            { name: 'Source URL', value: product.url },
+            { name: 'Retailer', value: product.retailer },
+            { name: 'Category', value: product.category }
+          ]
+        });
+      }
+    });
+    
+    if (totals.dutyAmount > 0) {
+      lineItems.push({
+        title: 'Bermuda Import Duty (26.5%)',
+        price: totals.dutyAmount.toFixed(2),
+        quantity: 1,
+        taxable: false
+      });
+    }
+    
+    Object.entries(deliveryFees).forEach(([vendor, fee]) => {
+      if (fee > 0) {
+        lineItems.push({
+          title: `${vendor} US Delivery Fee`,
+          price: fee.toFixed(2),
+          quantity: 1,
+          taxable: false
+        });
+      }
+    });
+    
+    if (totals.totalShippingCost > 0) {
+      lineItems.push({
+        title: 'Ocean Freight & Handling to Bermuda',
+        price: totals.totalShippingCost.toFixed(2),
+        quantity: 1,
+        taxable: false
+      });
+    }
+    
+    const draftOrderData = {
+      draft_order: {
+        line_items: lineItems,
+        customer: {
+          email: customer.email,
+          first_name: customer.name.split(' ')[0],
+          last_name: customer.name.split(' ').slice(1).join(' ') || ''
+        },
+        email: customer.email,
+        note: `Import Calculator Order\n\nOriginal URLs:\n${originalUrls}`,
+        tags: 'import-calculator, ocean-freight',
+        tax_exempt: true,
+        send_receipt: false,
+        send_fulfillment_receipt: false
+      }
+    };
+    
+    console.log(`📝 Creating draft order for ${customer.email}...`);
+    
+    const shopifyResponse = await axios.post(
+      `https://${SHOPIFY_DOMAIN}/admin/api/2023-10/draft_orders.json`,
+      draftOrderData,
+      {
+        headers: {
+          'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+    
+    const draftOrder = shopifyResponse.data.draft_order;
+    console.log(`✅ Draft order ${draftOrder.name} created successfully`);
+    
+    res.json({
+      success: true,
+      draftOrderId: draftOrder.id,
+      draftOrderNumber: draftOrder.name,
+      invoiceUrl: draftOrder.invoice_url,
+      checkoutUrl: `https://${SHOPIFY_DOMAIN}/admin/draft_orders/${draftOrder.id}`,
+      totalAmount: totals.grandTotal
+    });
+    
+  } catch (error) {
+    console.error('Draft order creation error:', error.response?.data || error);
+    res.status(500).json({ 
+      error: 'Failed to create draft order. Please try again or contact support.',
+      details: error.response?.data?.errors || error.message
+    });
   }
 });
 
