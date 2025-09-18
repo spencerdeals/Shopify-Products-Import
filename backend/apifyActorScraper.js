@@ -143,8 +143,10 @@ class ApifyActorScraper {
       } else {
         console.log(`   ❌ No items in dataset - checking run logs...`);
         try {
-          const logs = await this.client.log(run.defaultDatasetId).get();
-          console.log(`   📋 Actor logs (last 1000 chars):`, logs.substring(-1000));
+          const logs = await this.client.log(run.id).get();
+          if (logs) {
+            console.log(`   📋 Actor logs (last 1000 chars):`, logs.substring(-1000));
+          }
         } catch (logError) {
           console.log(`   ❌ Could not fetch logs: ${logError.message}`);
         }
@@ -302,6 +304,7 @@ class ApifyActorScraper {
 
     // Extract variant - handle different formats
     if (retailerType === 'amazon') {
+      // Amazon variants from variantAttributes
       if (item.variantAttributes && item.variantAttributes.length > 0) {
         const variants = item.variantAttributes.map(attr => `${attr.name}: ${attr.value}`);
         cleanedData.variant = variants.join(', ');
