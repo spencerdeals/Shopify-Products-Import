@@ -82,8 +82,8 @@ class ZyteScraper {
       
       // Extract price
       const pricePatterns = [
-        /\$(\d+(?:,\d{3})*(?:\.\d{2})?)/g,
-        /price[^>]*>[\s\S]*?\$(\d+(?:,\d{3})*(?:\.\d{2})?)/i
+        /\$(\d+(?:,\d{3})*(?:\.\d{2})?)/gi,
+        /price[^>]*>[\s\S]*?\$(\d+(?:,\d{3})*(?:\.\d{2})?)/gi
       ];
       
       for (const pattern of pricePatterns) {
