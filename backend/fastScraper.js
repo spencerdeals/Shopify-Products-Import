@@ -47,6 +47,9 @@ const { parseProduct } = require('./gptParser');
     // Middleware
     app.use(cors());
     app.use(express.json({ limit: '5mb' }));
+  }
+}
+)
 
 // Serve static files
 app.use(express.static(path.join(__dirname, '../frontend')));
@@ -784,16 +787,10 @@ app.post('/apps/instant-import/create-draft-order', async (req, res) => {
   }
 });
 
-    // Start server
-    app.listen(PORT, () => {
-      console.log(`\n🚀 Server running on port ${PORT}`);
-      console.log(`📍 Frontend: http://localhost:${PORT}`);
-      console.log(`📍 API Health: http://localhost:${PORT}/health`);
-      console.log(`📍 Admin Panel: http://localhost:${PORT}/admin (admin:${ADMIN_PASSWORD})\n`);
-    });
-
-  } catch (error) {
-    console.error('❌ Failed to start server:', error);
-    process.exit(1);
-  }
-})();
+// Start server
+app.listen(PORT, () => {
+  console.log(`\n🚀 Server running on port ${PORT}`);
+  console.log(`📍 Frontend: http://localhost:${PORT}`);
+  console.log(`📍 API Health: http://localhost:${PORT}/health`);
+  console.log(`📍 Admin Panel: http://localhost:${PORT}/admin (admin:${ADMIN_PASSWORD})\n`);
+});
