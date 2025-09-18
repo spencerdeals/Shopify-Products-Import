@@ -10,17 +10,17 @@ class ApifyActorScraper {
     // Actor configurations for different retailers
     this.actors = {
       amazon: {
-        actorId: 'junglee/Amazon-crawler',
+        actorId: 'junglee/amazon-crawler',
         timeout: 120000, // 2 minutes
         memory: 2048
       },
       wayfair: {
-        actorId: '123webdata/wayfair-scraper',
+        actorId: 'dtrungtin/wayfair-scraper',
         timeout: 120000,
         memory: 2048
       },
       generic: {
-        actorId: 'assertive_analogy/pro-web-content-crawler',
+        actorId: 'apify/web-scraper',
         timeout: 90000, // 1.5 minutes
         memory: 1024
       }
@@ -65,18 +65,18 @@ class ApifyActorScraper {
       
       if (retailerType === 'amazon') {
         input = {
-          startUrls: [{ url }],
-          maxRequestsPerCrawl: 1,
+          categoryOrProductUrls: [url],
+          maxItems: 1,
           proxyConfiguration: { useApifyProxy: true },
           includeReviews: false,
-          scrapeProductDetails: true,
-          scrapeProductVariants: false
+          scrapeProductDetails: true
         };
       } else if (retailerType === 'wayfair') {
         input = {
-          startUrls: [{ url }],
-          maxRequestsPerCrawl: 1,
-          proxyConfiguration: { useApifyProxy: true }
+          startUrls: [url],
+          maxItems: 1,
+          proxyConfiguration: { useApifyProxy: true },
+          scrapeProductDetails: true
         };
       } else {
         // Generic actor

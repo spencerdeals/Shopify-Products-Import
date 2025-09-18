@@ -39,7 +39,8 @@ class UPCItemDB {
           type: 'product'
         },
         headers: {
-          'Authorization': `Bearer ${this.apiKey}`,
+          'user_key': this.apiKey,
+          'key_type': 'upc',
           'Content-Type': 'application/json'
         },
         timeout: 10000
@@ -64,7 +65,7 @@ class UPCItemDB {
       return null;
       
     } catch (error) {
-      console.error('❌ UPCitemdb search failed:', error.message);
+      console.error('❌ UPCitemdb search failed:', error.response?.status, error.message);
       return null;
     }
   }
