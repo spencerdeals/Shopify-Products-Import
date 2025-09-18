@@ -70,26 +70,13 @@ class OxylabsScraper {
       const htmlPreview = response.data.substring(0, 1000);
       console.log('📄 HTML preview (first 1000 chars):', htmlPreview);
       
-      // Check if we got blocked or redirected
-      const isBlocked = response.data.toLowerCase().includes('blocked') || 
-                       response.data.toLowerCase().includes('captcha') || 
-                       response.data.toLowerCase().includes('access denied') ||
-                       response.data.toLowerCase().includes('please verify you are human');
-      
-      const hasRedirects = false; // Remove redirect detection - too many false positives
-      
-      console.log('🔍 Content Analysis:');
-      console.log('   Is Blocked/Captcha:', isBlocked);
-      console.log('   Has Redirects:', hasRedirects);
-      console.log('   Content Size:', response.data.length + ' bytes');
-      console.log('   Contains "price":', response.data.toLowerCase().includes('price'));
-      console.log('   Contains "add to cart":', response.data.toLowerCase().includes('add to cart'));
-      console.log('   Contains product data:', response.data.toLowerCase().includes('product'));
-      
-      // Only block if we have clear blocking indicators AND small content
-      if (isBlocked && response.data.length < 10000) {
-        throw new Error('Content appears to be blocked or captcha protected');
+      // Quick content validation
+      if (response.data.length < 5000) {
+        console.log('⚠️ Small content received, may be blocked');
+        throw new Error('Insufficient content received');
       }
+      
+      console.log('✅ Content validation passed - proceeding with extraction');
       
       // Parse the HTML response
       const productData = this.parseHTML(response.data, url, retailer);
