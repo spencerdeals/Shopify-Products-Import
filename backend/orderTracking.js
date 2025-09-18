@@ -1,15 +1,32 @@
 // Order Tracking System for SDL Import Calculator
-const { createClient } = require('@libsql/client');
 
 class OrderTracker {
-  constructor() {
-    // Initialize database connection
-    this.db = createClient({
-      url: process.env.TURSO_DATABASE_URL || 'file:orders.db',
-      authToken: process.env.TURSO_AUTH_TOKEN
-    });
-    
-    this.initDatabase();
+  constructor(dbClient) {
+    this.db = dbClient;
+  }
+
+  static async create() {
+    try {
+      // Dynamically import the ES Module
+      const { createClient } = await import('@libsql/client');
+      
+      // Create the database client
+      const dbClient = createClient({
+        url: process.env.TURSO_DATABASE_URL || 'file:orders.db',
+        authToken: process.env.TURSO_AUTH_TOKEN
+      });
+      
+      // Create the OrderTracker instance
+      const tracker = new OrderTracker(dbClient);
+      
+      // Initialize the database
+      await tracker.initDatabase();
+      
+      return tracker;
+    } catch (error) {
+      console.error('❌ Failed to create OrderTracker:', error);
+      throw error;
+    }
   }
 
   async initDatabase() {

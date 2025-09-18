@@ -11,40 +11,42 @@ const OrderTracker = require('./orderTracking');
 const ZyteScraper = require('./zyteScraper');
 const { parseProduct } = require('./gptParser');
 
-const app = express();
-const PORT = process.env.PORT || 3000;
+(async () => {
+  try {
+    const app = express();
+    const PORT = process.env.PORT || 3000;
 
-// Configuration
-const SHOPIFY_DOMAIN = process.env.SHOPIFY_DOMAIN || 'spencer-deals-ltd.myshopify.com';
-const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN || '';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '1064';
-const UPCITEMDB_API_KEY = process.env.UPCITEMDB_API_KEY || '';
-const MAX_CONCURRENT_SCRAPES = 2;
-const BERMUDA_DUTY_RATE = 0.265;
-const SHIPPING_RATE_PER_CUBIC_FOOT = 8;
+    // Configuration
+    const SHOPIFY_DOMAIN = process.env.SHOPIFY_DOMAIN || 'spencer-deals-ltd.myshopify.com';
+    const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN || '';
+    const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '1064';
+    const UPCITEMDB_API_KEY = process.env.UPCITEMDB_API_KEY || '';
+    const MAX_CONCURRENT_SCRAPES = 2;
+    const BERMUDA_DUTY_RATE = 0.265;
+    const SHIPPING_RATE_PER_CUBIC_FOOT = 8;
 
-// Initialize services
-const upcItemDB = new UPCItemDB(UPCITEMDB_API_KEY);
-const orderTracker = new OrderTracker();
-const zyteScraper = new ZyteScraper();
-const USE_UPCITEMDB = !!UPCITEMDB_API_KEY;
-const USE_ZYTE = zyteScraper.enabled;
+    // Initialize services
+    const upcItemDB = new UPCItemDB(UPCITEMDB_API_KEY);
+    const orderTracker = await OrderTracker.create();
+    const zyteScraper = new ZyteScraper();
+    const USE_UPCITEMDB = !!UPCITEMDB_API_KEY;
+    const USE_ZYTE = zyteScraper.enabled;
 
-console.log('=== SERVER STARTUP ===');
-console.log('🔍 SCRAPING CONFIGURATION:');
-console.log(`1. Primary: Zyte API - ${USE_ZYTE ? '✅ ENABLED' : '❌ DISABLED (Missing API Key)'}`);
-console.log(`2. Fallback: GPT Parser - ✅ ENABLED`);
-console.log(`3. Enhancement: UPCitemdb - ${USE_UPCITEMDB ? '✅ ENABLED' : '❌ DISABLED'}`);
-console.log('');
-if (USE_ZYTE) {
-  console.log('⚡ STRATEGY: Zyte API → GPT Parser → Smart estimation');
-} else {
-  console.log('⚡ STRATEGY: GPT Parser → Smart estimation (Zyte disabled)');
-}
+    console.log('=== SERVER STARTUP ===');
+    console.log('🔍 SCRAPING CONFIGURATION:');
+    console.log(`1. Primary: Zyte API - ${USE_ZYTE ? '✅ ENABLED' : '❌ DISABLED (Missing API Key)'}`);
+    console.log(`2. Fallback: GPT Parser - ✅ ENABLED`);
+    console.log(`3. Enhancement: UPCitemdb - ${USE_UPCITEMDB ? '✅ ENABLED' : '❌ DISABLED'}`);
+    console.log('');
+    if (USE_ZYTE) {
+      console.log('⚡ STRATEGY: Zyte API → GPT Parser → Smart estimation');
+    } else {
+      console.log('⚡ STRATEGY: GPT Parser → Smart estimation (Zyte disabled)');
+    }
 
-// Middleware
-app.use(cors());
-app.use(express.json({ limit: '5mb' }));
+    // Middleware
+    app.use(cors());
+    app.use(express.json({ limit: '5mb' }));
 
 // Serve static files
 app.use(express.static(path.join(__dirname, '../frontend')));
@@ -782,10 +784,16 @@ app.post('/apps/instant-import/create-draft-order', async (req, res) => {
   }
 });
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`\n🚀 Server running on port ${PORT}`);
-  console.log(`📍 Frontend: http://localhost:${PORT}`);
-  console.log(`📍 API Health: http://localhost:${PORT}/health`);
-  console.log(`📍 Admin Panel: http://localhost:${PORT}/admin (admin:${ADMIN_PASSWORD})\n`);
-});
+    // Start server
+    app.listen(PORT, () => {
+      console.log(`\n🚀 Server running on port ${PORT}`);
+      console.log(`📍 Frontend: http://localhost:${PORT}`);
+      console.log(`📍 API Health: http://localhost:${PORT}/health`);
+      console.log(`📍 Admin Panel: http://localhost:${PORT}/admin (admin:${ADMIN_PASSWORD})\n`);
+    });
+
+  } catch (error) {
+    console.error('❌ Failed to start server:', error);
+    process.exit(1);
+  }
+})();
