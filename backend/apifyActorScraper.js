@@ -144,20 +144,65 @@ class ApifyActorScraper {
 
     const retailerType = this.detectRetailer(url);
     
-    // Simple, working actor configurations
+    console.log(`   🎭 Using ${retailerType} scraping strategy`);
+    
     let actorId, input;
     
     if (retailerType === 'amazon') {
-      actorId = 'junglee/amazon-crawler';
-      input = { startUrls: [{ url }], maxItems: 1 };
+      // Use a reliable Amazon actor
+      actorId = 'apify/amazon-product-scraper';
+      input = { 
+        startUrls: [{ url }], 
+        maxItems: 1,
+        proxyConfiguration: { useApifyProxy: true }
+      };
     } else if (retailerType === 'wayfair') {
-      actorId = '123webdata/wayfair-scraper';
-      input = { startUrls: [{ url }], maxItems: 1 };
-    } else {
+      // Use web scraper for Wayfair with custom extraction
       actorId = 'apify/web-scraper';
       input = {
         startUrls: [{ url }],
         maxRequestsPerCrawl: 1,
+        proxyConfiguration: { useApifyProxy: true },
+        pageFunction: `async function pageFunction(context) {
+          const { page } = context;
+          await page.waitForTimeout(3000);
+          
+          const result = await page.evaluate(() => {
+            let title = null;
+            let price = null;
+            let image = null;
+            
+            // Wayfair-specific selectors
+            const titleEl = document.querySelector('h1[data-testid="product-title"]') || 
+                           document.querySelector('h1.ProductTitle') || 
+                           document.querySelector('h1');
+            if (titleEl) title = titleEl.textContent.trim();
+            
+            const priceEl = document.querySelector('.MoneyPrice') || 
+                           document.querySelector('[data-testid="price"]') ||
+                           document.querySelector('.price');
+            if (priceEl) {
+              const match = priceEl.textContent.match(/[\\d,]+\\.?\\d*/);
+              if (match) price = parseFloat(match[0].replace(/,/g, ''));
+            }
+            
+            const imgEl = document.querySelector('img[data-testid="product-image"]') || 
+                         document.querySelector('.ProductImages img');
+            if (imgEl && imgEl.src) image = imgEl.src;
+            
+            return { title, price, image };
+          });
+          
+          return result;
+        }`
+      };
+    } else {
+      // Generic web scraper
+      actorId = 'apify/web-scraper';
+      input = {
+        startUrls: [{ url }],
+        maxRequestsPerCrawl: 1,
+        proxyConfiguration: { useApifyProxy: true },
         pageFunction: `async function pageFunction(context) {
           const { page } = context;
           await page.waitForTimeout(2000);
@@ -167,19 +212,26 @@ class ApifyActorScraper {
             let price = null;
             let image = null;
             
-            // Simple title extraction
-            const titleEl = document.querySelector('h1') || document.querySelector('.product-title') || document.querySelector('[class*="title"]');
+            // Enhanced title extraction
+            const titleEl = document.querySelector('h1') || 
+                           document.querySelector('.product-title') || 
+                           document.querySelector('[class*="title"]') ||
+                           document.querySelector('[data-testid*="title"]');
             if (titleEl) title = titleEl.textContent.trim();
             
-            // Simple price extraction
-            const priceEl = document.querySelector('.price') || document.querySelector('[class*="price"]');
+            // Enhanced price extraction
+            const priceEl = document.querySelector('.price') || 
+                           document.querySelector('[class*="price"]') ||
+                           document.querySelector('[data-testid*="price"]');
             if (priceEl) {
-              const match = priceEl.textContent.match(/[\d,]+\.?\d*/);
+              const match = priceEl.textContent.match(/[\\d,]+\\.?\\d*/);
               if (match) price = parseFloat(match[0].replace(/,/g, ''));
             }
             
-            // Simple image extraction
-            const imgEl = document.querySelector('.product-image img') || document.querySelector('img[class*="product"]');
+            // Enhanced image extraction
+            const imgEl = document.querySelector('.product-image img') || 
+                         document.querySelector('img[class*="product"]') ||
+                         document.querySelector('img[data-testid*="image"]');
             if (imgEl && imgEl.src) image = imgEl.src;
             
             return { title, price, image };
@@ -191,35 +243,92 @@ class ApifyActorScraper {
     }
     
     try {
+      console.log(`   ⏱️ Running ${actorId} with 45s timeout...`);
+      
       const run = await this.client.actor(actorId).call(input, {
-        timeout: 60000, // 1 minute
-        memory: 1024
+        timeout: 45000, // 45 seconds
+        memory: 1024,
+        waitSecs: 30
       });
       
       const { items } = await this.client.dataset(run.defaultDatasetId).listItems();
       
       if (items && items.length > 0) {
+        console.log(`   ✅ Actor returned ${items.length} items`);
         return this.cleanResult(items[0]);
       }
       
+      console.log('   ❌ Actor returned no items');
       return null;
       
     } catch (error) {
+      console.error(`   ❌ Actor ${actorId} failed:`, error.message);
       throw error;
     }
   }
 
   cleanResult(item) {
-    return {
-      name: item.name || item.title || null,
-      price: item.price || null,
-      image: item.image || null,
+    if (!item) return null;
+    
+    console.log('   🧹 Cleaning result from actor...');
+    
+    // Handle different response formats
+    const result = {
+      name: null,
+      price: null,
+      image: null,
       dimensions: null,
       weight: null,
-      brand: item.brand || null,
-      category: item.category || null,
+      brand: null,
+      category: null,
       inStock: true,
-      variant: item.variant || null
+      variant: null
+    };
+    
+    // Extract name/title
+    result.name = item.name || item.title || item.productName || null;
+    if (result.name) {
+      result.name = result.name.trim().substring(0, 200);
+      console.log(`   📝 Name: ${result.name.substring(0, 50)}...`);
+    }
+    
+    // Extract price
+    if (item.price !== undefined && item.price !== null) {
+      if (typeof item.price === 'string') {
+        const match = item.price.match(/[\d,]+\.?\d*/);
+        if (match) {
+          result.price = parseFloat(match[0].replace(/,/g, ''));
+        }
+      } else if (typeof item.price === 'number') {
+        result.price = item.price;
+      }
+      
+      if (result.price && result.price > 0) {
+        console.log(`   💰 Price: $${result.price}`);
+      }
+    }
+    
+    // Extract image
+    result.image = item.image || item.imageUrl || item.mainImage || null;
+    if (result.image && result.image.startsWith('http')) {
+      console.log('   🖼️ Image: Found');
+    }
+    
+    // Extract other fields
+    result.brand = item.brand || null;
+    result.variant = item.variant || item.color || item.size || null;
+    
+    console.log('   📊 Cleaned data quality:', {
+      hasName: !!result.name,
+      hasPrice: !!result.price,
+      hasImage: !!result.image,
+      hasDimensions: !!result.dimensions,
+      hasWeight: !!result.weight,
+      hasVariant: !!result.variant
+    });
+    
+    return {
+      ...result
     };
   }
 

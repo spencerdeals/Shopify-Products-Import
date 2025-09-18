@@ -45,12 +45,22 @@ async function fetchViaAxios(url){
   let lastErr = null;
   for (let i=0;i<MAX_AXIOS_RETRIES;i++){
     try{
+      // Add random delay to avoid rate limits
+      if (i > 0) {
+        await sleep(Math.random() * 2000 + 1000); // 1-3 second delay on retries
+      }
+      
       const res = await axios.get(url, {
         timeout: TIMEOUT_MS,
         headers: {
-          'User-Agent': `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${rnd(118,126)} Safari/537.36`,
+          'User-Agent': `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${rnd(120,125)}.0.0.0 Safari/537.36`,
           'Accept-Language': 'en-US,en;q=0.9',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
           'Cache-Control': 'no-cache', 'Pragma': 'no-cache',
+          'Sec-Fetch-Dest': 'document',
+          'Sec-Fetch-Mode': 'navigate',
+          'Sec-Fetch-Site': 'none',
+          'Upgrade-Insecure-Requests': '1'
         },
         validateStatus: () => true,
       });
@@ -59,8 +69,13 @@ async function fetchViaAxios(url){
         return typeof res.data === 'string' ? res.data : res.data.toString();
       }
       if (res.status === 429){
-        const waitMs = 1500*(i+1) + rnd(0,1500);
+        const waitMs = 2000*(i+1) + rnd(1000,3000); // Longer delays for 429
         console.warn(`[GPT Parser - Axios] 429. Retry ${i + 1}/3 after ${waitMs}ms`);
+        await sleep(waitMs); continue;
+      }
+      if (res.status === 403){
+        const waitMs = 3000*(i+1) + rnd(1000,2000); // Even longer for 403
+        console.warn(`[GPT Parser - Axios] 403. Retry ${i + 1}/3 after ${waitMs}ms`);
         await sleep(waitMs); continue;
       }
       if (res.status >= 500 && res.status < 600){
@@ -72,7 +87,7 @@ async function fetchViaAxios(url){
       return null;
     }catch(e){
       lastErr = e;
-      const waitMs = 800*(i+1);
+      const waitMs = 1000*(i+1) + rnd(500,1500);
       console.warn(`[GPT Parser - Axios] Error ${i + 1}/3: ${e.message}. Waiting ${waitMs}ms...`);
       await sleep(waitMs);
     }

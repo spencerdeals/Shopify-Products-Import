@@ -20,11 +20,16 @@ class ZyteScraper {
     }
 
     try {
-      const response = await axios.post(this.baseURL, {
+      // Simple, working Zyte configuration
+      const requestData = {
         url: url,
-        httpResponseBody: true,
-        product: true
-      }, {
+        product: true,
+        productOptions: {
+          extractFrom: 'httpResponseBody'
+        }
+      };
+      
+      const response = await axios.post(this.baseURL, requestData, {
         auth: {
           username: this.apiKey,
           password: ''
@@ -32,8 +37,15 @@ class ZyteScraper {
         headers: {
           'Content-Type': 'application/json'
         },
-        timeout: 30000
+        timeout: 25000,
+        validateStatus: function (status) {
+          return status >= 200 && status < 500; // Don't throw on 4xx errors
+        }
       });
+
+      if (response.status >= 400) {
+        throw new Error(`Zyte API error: ${response.status} - ${response.data?.error || 'Unknown error'}`);
+      }
 
       if (!response.data) {
         throw new Error('No data received from Zyte API');
@@ -42,7 +54,11 @@ class ZyteScraper {
       return this.parseZyteResponse(response.data);
 
     } catch (error) {
-      console.error('❌ Zyte scraping failed:', error.message);
+      if (error.response && error.response.status === 422) {
+        console.error('❌ Zyte 422: Invalid request format');
+      } else {
+        console.error('❌ Zyte scraping failed:', error.message);
+      }
       throw error;
     }
   }
