@@ -74,22 +74,20 @@ class OxylabsScraper {
       const isBlocked = response.data.toLowerCase().includes('blocked') || 
                        response.data.toLowerCase().includes('captcha') || 
                        response.data.toLowerCase().includes('access denied') ||
-                       response.data.toLowerCase().includes('please verify you are human') ||
-                       response.data.length < 5000; // Increased threshold
+                       response.data.toLowerCase().includes('please verify you are human');
       
-      const hasRedirects = response.data.includes('window.location.href') || 
-                          response.data.includes('window.location.replace') ||
-                          (response.data.includes('redirect') && response.data.length < 10000);
+      const hasRedirects = false; // Remove redirect detection - too many false positives
       
       console.log('🔍 Content Analysis:');
       console.log('   Is Blocked/Captcha:', isBlocked);
       console.log('   Has Redirects:', hasRedirects);
-      console.log('   Suspiciously Small:', response.data.length < 5000);
+      console.log('   Content Size:', response.data.length + ' bytes');
       console.log('   Contains "price":', response.data.toLowerCase().includes('price'));
       console.log('   Contains "add to cart":', response.data.toLowerCase().includes('add to cart'));
       console.log('   Contains product data:', response.data.toLowerCase().includes('product'));
       
-      if (isBlocked && response.data.length < 50000) {
+      // Only block if we have clear blocking indicators AND small content
+      if (isBlocked && response.data.length < 10000) {
         throw new Error('Content appears to be blocked or captcha protected');
       }
       
