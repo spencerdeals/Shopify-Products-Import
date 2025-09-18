@@ -200,7 +200,8 @@ class OxylabsScraper {
     // AGGRESSIVE price extraction - try multiple methods
     const priceSelectors = [
       // Wayfair specific
-      '.MoneyPrice', '[data-testid="price"]', '.price-current',
+      '[data-testid="price"]', '.MoneyPrice', '.price-current', '.BasePriceBlock', 
+      '.PriceBlock', '.price-block', '[class*="Price"]', '[data-price]',
       // Amazon specific
       '.a-price-whole', '.a-price .a-offscreen', '.a-price-range .a-price .a-offscreen',
       // Target specific
@@ -208,7 +209,7 @@ class OxylabsScraper {
       // Walmart specific
       '[data-automation-id="product-price"]', '.price-current',
       // Generic fallbacks
-      '.price', '[class*="price"]', '.current-price', '.sale-price'
+      '.price', '[class*="price"]', '.current-price', '.sale-price', '[class*="Price"]'
     ];
     
     console.log(`   🔍 Searching for price with ${priceSelectors.length} selectors...`);
@@ -230,6 +231,10 @@ class OxylabsScraper {
     if (!productData.price) {
       console.log('   🔍 Trying regex price patterns...');
       const pricePatterns = [
+        /"price":\s*"?\$?(\d+(?:,\d{3})*(?:\.\d{2})?)"?/g,
+        /data-price[^>]*=["']?\$?(\d+(?:,\d{3})*(?:\.\d{2})?)/g,
+        /"currentPrice":\s*"?\$?(\d+(?:,\d{3})*(?:\.\d{2})?)"?/g,
+        /"salePrice":\s*"?\$?(\d+(?:,\d{3})*(?:\.\d{2})?)"?/g,
         /\$(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)/g,
         /"price":\s*"?\$?(\d+(?:,\d{3})*(?:\.\d{2})?)"?/g,
         /price[^>]*>[\s\S]*?\$(\d+(?:,\d{3})*(?:\.\d{2})?)/gi
@@ -238,6 +243,9 @@ class OxylabsScraper {
       for (const pattern of pricePatterns) {
         const matches = [...html.matchAll(pattern)];
         console.log(`   🔍 Pattern found ${matches.length} matches`);
+        if (matches.length > 0) {
+          console.log(`   🔍 First few matches:`, matches.slice(0, 3).map(m => m[1]));
+        }
         for (const match of matches) {
           const price = parseFloat(match[1].replace(/,/g, ''));
           if (price > 10 && price < 100000) { // Reasonable price range
@@ -256,7 +264,9 @@ class OxylabsScraper {
     // AGGRESSIVE image extraction
     const imageSelectors = [
       // Wayfair specific
-      'img[data-testid="product-image"]', '.ProductImages img', '.hero-image img',
+      '[data-testid="product-image"] img', '.ProductImages img', '.hero-image img',
+      '.MediaCarousel img', '.product-media img', '.main-image img', 
+      'img[data-testid*="image"]', 'img[class*="Product"]',
       // Amazon specific
       '#landingImage', '.a-dynamic-image', 'img[data-old-hires]', '.imgTagWrapper img',
       // Target specific
