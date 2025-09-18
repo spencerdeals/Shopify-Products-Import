@@ -458,30 +458,6 @@ async function scrapeProduct(url) {
     }
   }
   
-  // STEP 3.5: Try ScrapingBee if still missing data
-  if (process.env.SCRAPINGBEE_API_KEY && (!productData || !isDataComplete(productData))) {
-    try {
-      console.log('   🐝 Attempting ScrapingBee scrape...');
-      const { parseProduct } = require('./gptParser');
-      const scrapingBeeData = await parseProduct(url);
-      
-      if (scrapingBeeData) {
-        if (!productData) {
-          productData = scrapingBeeData;
-          scrapingMethod = 'scrapingbee';
-          console.log('   ✅ ScrapingBee returned data');
-        } else {
-          const mergedData = mergeProductData(productData, scrapingBeeData);
-          productData = mergedData;
-          scrapingMethod = scrapingMethod + '+scrapingbee';
-          console.log('   ✅ Enhanced with ScrapingBee data');
-        }
-      }
-    } catch (error) {
-      console.log('   ❌ ScrapingBee failed:', error.message);
-    }
-  }
-  
   // STEP 4: Try ProWebCrawler if still missing data
   if (USE_PROWEB && (!productData || !isDataComplete(productData))) {
     try {
