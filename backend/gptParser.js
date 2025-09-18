@@ -47,6 +47,7 @@ function detectRetailer(url){
 async function fetchViaAxios(url){
   let lastErr = null;
   for (let i=0;i<MAX_AXIOS_RETRIES;i++){
+      let waitMs; // Declare once at loop scope
       // Add random delay to avoid rate limits
       if (i > 0) {
         await sleep(Math.random() * 2000 + 1000); // 1-3 second delay on retries
@@ -71,21 +72,21 @@ async function fetchViaAxios(url){
         return res.data;
       }
       if (res.status === 429){
-        const waitMs = 5000*(i+1) + rnd(2000,5000); // Much longer delays for 429
+        waitMs = 5000*(i+1) + rnd(2000,5000); // Much longer delays for 429
         console.warn(`[Axios] 429. Retry ${i + 1}/3 after ${waitMs}ms`);
         await sleep(waitMs); continue;
       }
       if (res.status === 403){
-        const waitMs = 8000*(i+1) + rnd(3000,5000); // Much longer for 403
+        waitMs = 8000*(i+1) + rnd(3000,5000); // Much longer for 403
         console.warn(`[Axios] 403. Retry ${i + 1}/3 after ${waitMs}ms`);
         await sleep(waitMs); continue;
       }
-      const waitMs = 1000*(i+1) + rnd(500,1500);
+      waitMs = 1000*(i+1) + rnd(500,1500);
       console.warn(`[Axios] ${res.status}. Retry ${i + 1}/3 after ${waitMs}ms`);
       await sleep(waitMs);
     } catch (err) {
       lastErr = err;
-      const waitMs = 1000*(i+1) + rnd(500,1500);
+      waitMs = 1000*(i+1) + rnd(500,1500);
       console.warn(`[Axios] Error. Retry ${i + 1}/3 after ${waitMs}ms: ${err.message}`);
       await sleep(waitMs);
     }
