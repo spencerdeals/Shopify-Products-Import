@@ -476,7 +476,11 @@
                 return;
             }
             
-            const urlList = urls.split('\n').filter(url => url.trim());
+            // Split by newlines, then by spaces/tabs to handle multiple URLs on same line
+            const urlList = urls.split(/[\n\r]+/)
+                .flatMap(line => line.split(/\s+/))
+                .map(url => url.trim())
+                .filter(url => url && url.startsWith('http'));
             
             // Show loading
             document.getElementById('loadingSection').style.display = 'block';
