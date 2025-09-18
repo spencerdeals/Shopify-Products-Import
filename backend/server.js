@@ -143,10 +143,8 @@ class ApifyActorScraper {
       } else {
         console.log(`   ❌ No items in dataset - checking run logs...`);
         try {
-          const logs = await this.client.log(run.id).get();
-          if (logs) {
-            console.log(`   📋 Actor logs (last 1000 chars):`, logs.substring(-1000));
-          }
+          const logs = await this.client.log(run.defaultDatasetId).get();
+          console.log(`   📋 Actor logs (last 1000 chars):`, logs.substring(-1000));
         } catch (logError) {
           console.log(`   ❌ Could not fetch logs: ${logError.message}`);
         }
@@ -304,7 +302,6 @@ class ApifyActorScraper {
 
     // Extract variant - handle different formats
     if (retailerType === 'amazon') {
-      // Amazon variants from variantAttributes
       if (item.variantAttributes && item.variantAttributes.length > 0) {
         const variants = item.variantAttributes.map(attr => `${attr.name}: ${attr.value}`);
         cleanedData.variant = variants.join(', ');
@@ -329,6 +326,8 @@ class ApifyActorScraper {
     if (cleanedData.variant && (cleanedData.variant.length < 2 || cleanedData.variant.length > 50)) {
       cleanedData.variant = null;
     }
+
+
 
     // Check availability - handle different formats
     if (item.inStock !== undefined) {
@@ -383,6 +382,12 @@ class ApifyActorScraper {
       if (i + batchSize < urls.length) {
         await new Promise(resolve => setTimeout(resolve, 3000));
       }
+      
+      // For generic actor failures, suggest GPT Parser fallback
+      if (retailerType === 'generic') {
+        console.log(`   💡 Generic actor failed - GPT Parser will be tried as fallback`);
+      }
+      
     }
     
     return results;
