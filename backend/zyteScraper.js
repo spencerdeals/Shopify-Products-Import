@@ -214,31 +214,29 @@ class ZyteScraper {
   }
 
   extractVariantProperties(obj, variantParts) {
-    const variantProps = ['color', 'size', 'style', 'material', 'finish', 'pattern', 'type'];
-    
-    for (const prop of variantProps) {
-      if (obj[prop]) {
-        const value = String(obj[prop]).trim();
-        if (value && value.length >= 2 && value.length <= 50) {
+    for (const [prop, value] of Object.entries(obj)) {
+      if (value && typeof value === 'string' && value.trim()) {
+        const trimmedValue = value.trim();
+        if (trimmedValue.length >= 2 && trimmedValue.length <= 50) {
           // Smart categorization based on actual content
-          const lowerValue = value.toLowerCase();
+          const lowerValue = trimmedValue.toLowerCase();
           
           if (this.isColorValue(lowerValue)) {
-            variantParts.push(`Color: ${value}`);
+            variantParts.push(`Color: ${trimmedValue}`);
           } else if (this.isSizeValue(lowerValue)) {
-            variantParts.push(`Size: ${value}`);
+            variantParts.push(`Size: ${trimmedValue}`);
           } else if (prop === 'material' || this.isMaterialValue(lowerValue)) {
-            variantParts.push(`Material: ${value}`);
+            variantParts.push(`Material: ${trimmedValue}`);
           } else if (prop === 'style' || prop === 'type') {
-            variantParts.push(`Style: ${value}`);
+            variantParts.push(`Style: ${trimmedValue}`);
           } else if (prop === 'finish') {
-            variantParts.push(`Finish: ${value}`);
+            variantParts.push(`Finish: ${trimmedValue}`);
           } else if (prop === 'pattern') {
-            variantParts.push(`Pattern: ${value}`);
+            variantParts.push(`Pattern: ${trimmedValue}`);
           } else {
             // Default to the property name
             const propName = prop.charAt(0).toUpperCase() + prop.slice(1);
-            variantParts.push(`${propName}: ${value}`);
+            variantParts.push(`${propName}: ${trimmedValue}`);
           }
         }
       }
@@ -474,25 +472,56 @@ class ZyteScraper {
         '.a-button-selected .a-button-text',
         '.a-dropdown-prompt',
         '#variation_color_name .selection',
-        '#variation_size_name .selection'
+        '#variation_size_name .selection',
+        '#variation_style_name .selection',
+        '.swatches .a-button-selected span'
       ],
       'Wayfair': [
         '.SelectedOption',
         '.option-selected',
-        '.selected-swatch'
+        '.selected-swatch',
+        '[data-testid="selected-option"]',
+        '.ProductOptionPills .selected',
+        '.OptionPill.selected'
       ],
       'Target': [
         '.selected-variant',
         '.h-text-bold',
-        '[data-test="selected-variant"]'
+        '[data-test="selected-variant"]',
+        '.swatch--selected'
       ],
       'Walmart': [
         '.selected-variant-value',
-        '[data-selected="true"]'
+        '[data-selected="true"]',
+        '.variant-pill--selected'
       ],
       'Best Buy': [
         '.selected-variation',
         '.variation-selected'
+      ],
+      'IKEA': [
+        '.range-revamp-pip-selected',
+        '.pip-selected',
+        '.range-revamp-color-image.selected',
+        '.range-revamp-size-option.selected',
+        '[aria-pressed="true"]'
+      ],
+      'Crate & Barrel': [
+        '.selected-swatch',
+        '.swatch.selected',
+        '.option-selected',
+        '.variant-selected',
+        '[data-selected="true"]',
+        '.color-swatch.selected',
+        '.size-option.selected'
+      ],
+      'Luna Furniture': [
+        '.product-form__input:checked + label',
+        '.variant-input:checked + label',
+        '.swatch.selected',
+        '.option-value.selected',
+        '.variant-option.selected',
+        '.product-option.selected'
       ]
     };
 
