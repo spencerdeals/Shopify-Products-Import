@@ -4,24 +4,32 @@ const rateLimit = require('express-rate-limit');
 const path = require('path');
 const { URL } = require('url');
 const axios = require('axios');
-const FastScraper = require('./fastScraper');
 const UPCItemDB = require('./upcitemdb');
 const OrderTracker = require('./orderTracking');
 const { parseProduct } = require('./gptParser');
-const FastScraper = require('./fastScraper');
+const PORT = process.env.PORT || 3000;
+
 // Configuration
 const SHOPIFY_DOMAIN = process.env.SHOPIFY_DOMAIN || 'spencer-deals-ltd.myshopify.com';
 const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN || '';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '1064';
 // Initialize services
+const fastScraper = new FastScraper();
+const USE_FAST_SCRAPER = fastScraper.enabled;
+console.log('=== SERVER STARTUP ===');
+console.log('🔍 SCRAPING CONFIGURATION:');
+console.log(`1. Primary: FastScraper (ScrapingBee + Direct) - ${USE_FAST_SCRAPER ? '✅ ENABLED' : '❌ DISABLED'}`);
+console.log(`2. Intelligence: GPT Parser - ✅ ENABLED`);
 console.log(`3. Enhancement: UPCitemdb - ${USE_UPCITEMDB ? '✅ ENABLED' : '❌ DISABLED'}`);
 console.log('');
 console.log('⚡ STRATEGY: Fast scraping → GPT intelligence → Smart estimation');
 app.use(express.json({ limit: '5mb' }));
-const fastScraper = new FastScraper();
+
+// Serve static files
 app.use(express.static(path.join(__dirname, '../frontend')));
 
-const fastScraper = new FastScraper();
+// Health check
+app.get('/health', (req, res) => {
   res.json({ 
     status: 'OK', 
     timestamp: new Date().toISOString(),
