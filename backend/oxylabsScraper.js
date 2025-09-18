@@ -38,22 +38,30 @@ class OxylabsScraper {
       renderType = 'png'; // Try PNG rendering for Amazon to avoid blocks
     }
     try {
-      // Use Oxylabs proxy endpoint EXACTLY as documented
+      // Use Oxylabs proxy endpoint as actual HTTP proxy
       const response = await axios({
         method: 'GET',
         url: url,
-        proxy: false, // Disable axios proxy, we'll use auth headers instead
+        proxy: {
+          protocol: 'https',
+          host: 'realtime.oxylabs.io',
+          port: 60000,
+          auth: {
+            username: this.username,
+            password: this.password
+          }
+        },
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
           'x-oxylabs-user-agent-type': 'desktop_chrome',
           'x-oxylabs-geo-location': geoLocation,
-          'x-oxylabs-render': renderType,
-          'Authorization': 'Basic ' + Buffer.from(`${this.username}:${this.password}`).toString('base64')
+          'x-oxylabs-render': renderType
         },
-        // Use Oxylabs endpoint directly
-        baseURL: 'https://realtime.oxylabs.io:60000',
         timeout: 30000,
         maxRedirects: 5,
+        httpsAgent: new (require('https').Agent)({
+          rejectUnauthorized: false // Equivalent to curl -k --insecure
+        }),
         validateStatus: function (status) {
           return status >= 200 && status < 300;
         }
