@@ -80,85 +80,15 @@ class ZyteScraper {
   }
 
   getOptimizedConfig(url, retailer) {
-    const baseConfig = {
-      url: url,
-      httpResponseBody: true,
-      product: true,
-      productOptions: {
-        extractFrom: 'httpResponseBody'
-      }
+    // Simplified, working configuration
+    return {
+      body: {
+        url: url,
+        httpResponseBody: true,
+        product: true
+      },
+      timeout: 30000 // Fast 30 second timeout
     };
-
-    // Retailer-specific optimizations based on Zyte documentation
-    switch (retailer) {
-      case 'Amazon':
-        return {
-          body: {
-            ...baseConfig,
-            // Amazon-specific optimizations
-            geolocation: 'US',
-            device: 'desktop',
-            requestHeaders: {
-              'Accept-Language': 'en-US,en;q=0.9'
-            },
-            productOptions: {
-              extractFrom: 'httpResponseBody',
-              includeVariants: true,
-              includePricing: true,
-              includeAvailability: true
-            }
-          },
-          timeout: 60000 // Amazon can be slow
-        };
-        
-      case 'Wayfair':
-        return {
-          body: {
-            ...baseConfig,
-            geolocation: 'US',
-            device: 'desktop',
-            productOptions: {
-              extractFrom: 'httpResponseBody',
-              includeVariants: true,
-              includePricing: true,
-              includeDimensions: true
-            }
-          },
-          timeout: 45000
-        };
-        
-      case 'Target':
-        return {
-          body: {
-            ...baseConfig,
-            geolocation: 'US',
-            device: 'desktop',
-            requestHeaders: {
-              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
-            }
-          },
-          timeout: 40000
-        };
-        
-      case 'Walmart':
-        return {
-          body: {
-            ...baseConfig,
-            geolocation: 'US',
-            device: 'desktop',
-            requestHeaders: {
-              'Accept-Language': 'en-US,en;q=0.9'
-            }
-          },
-          timeout: 40000
-        };
-        
-      default:
-        return {
-          body: baseConfig,
-          timeout: 35000
-        };
-    }
   }
 
   handleZyteError(error, url, retailer) {

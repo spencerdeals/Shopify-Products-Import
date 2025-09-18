@@ -10,230 +10,52 @@ class ApifyActorScraper {
     // Optimized actor configurations based on deep research
     this.actors = {
       amazon: {
-        actorId: 'junglee/amazon-crawler',
-        timeout: 180000, // 3 minutes - Amazon can be slow
-        memory: 2048,
-        maxRetries: 2,
-        // Optimized input parameters based on actor documentation
+        actorId: 'junglee/amazon-crawler', 
+        timeout: 60000, // 1 minute - much faster
+        memory: 1024,
+        maxRetries: 1,
         getInput: (url) => ({
-          categoryOrProductUrls: [{ url }],
+          startUrls: [{ url }],
           maxItems: 1,
-          maxItemsPerStartUrl: 1,
-          proxyConfiguration: { useApifyProxy: true },
-          extendOutputFunction: `($) => {
-            const result = {};
-            
-            // Enhanced price extraction for Amazon
-            const priceSelectors = [
-              '.a-price-current .a-offscreen',
-              '.a-price .a-offscreen', 
-              '.a-price-whole',
-              '.apexPriceToPay .a-offscreen',
-              '.a-price.a-text-price .a-offscreen'
-            ];
-            
-            for (const selector of priceSelectors) {
-              const priceEl = $(selector).first();
-              if (priceEl.length) {
-                const priceText = priceEl.text().replace(/[^0-9.]/g, '');
-                const price = parseFloat(priceText);
-                if (price > 0) {
-                  result.enhancedPrice = price;
-                  break;
-                }
-              }
-            }
-            
-            // Enhanced variant extraction
-            const selectedVariants = [];
-            $('.a-button-selected .a-button-text').each((i, el) => {
-              const text = $(el).text().trim();
-              if (text && text.length > 1 && text.length < 50) {
-                selectedVariants.push(text);
-              }
-            });
-            
-            if (selectedVariants.length > 0) {
-              result.enhancedVariant = selectedVariants.join(', ');
-            }
-            
-            return result;
-          }`,
-          includeReviews: false,
-          maxReviews: 0,
-          scrapeProductDetails: true,
-          scrapePriceHistory: false
+          proxyConfiguration: { useApifyProxy: true }
         })
       },
       wayfair: {
-        actorId: '123webdata/wayfair-scraper',
-        timeout: 120000, // 2 minutes
+        actorId: 'dtrungtin/wayfair-scraper',
+        timeout: 45000, // 45 seconds
         memory: 1024,
-        maxRetries: 2,
+        maxRetries: 1,
         getInput: (url) => ({
-          productUrls: [url],
-          maxResultsPerScrape: 1,
-          usePagination: false,
-          proxyConfiguration: { useApifyProxy: true },
-          // Wayfair-specific optimizations
-          includeProductDetails: true,
-          includeImages: true,
-          includeReviews: false,
-          maxReviews: 0
+          startUrls: [{ url }],
+          maxItems: 1,
+          proxyConfiguration: { useApifyProxy: true }
         })
       },
       generic: {
-        actorId: 'assertive_analogy/pro-web-content-crawler',
-        timeout: 90000, // 1.5 minutes
+        actorId: 'apify/web-scraper',
+        timeout: 30000, // 30 seconds
         memory: 1024,
-        maxRetries: 2,
+        maxRetries: 1,
         getInput: (url) => ({
           startUrls: [{ url }],
           maxRequestsPerCrawl: 1,
           proxyConfiguration: { useApifyProxy: true },
-          // Enhanced extraction for generic sites
-          pageFunction: `
-            async function pageFunction(context) {
-              const { page, request } = context;
-              
-              // Wait for content to load
-              await page.waitForTimeout(3000);
-              
-              const result = await page.evaluate(() => {
-                const data = {
-                  name: null,
-                  price: null,
-                  image: null,
-                  variant: null,
-                  availability: 'InStock'
-                };
-                
-                // Enhanced title extraction
-                const titleSelectors = [
-                  'h1[data-testid*="title"]',
-                  'h1[data-testid*="name"]', 
-                  'h1.product-title',
-                  'h1.ProductTitle',
-                  'h1',
-                  '.product-title',
-                  '.product-name'
-                ];
-                
-                for (const selector of titleSelectors) {
-                  const titleEl = document.querySelector(selector);
-                  if (titleEl && titleEl.textContent.trim()) {
-                    data.name = titleEl.textContent.trim();
-                    break;
-                  }
-                }
-                
-                // Enhanced price extraction with multiple methods
-                const priceSelectors = [
-                  '.price',
-                  '[class*="price"]',
-                  '.current-price',
-                  '.sale-price',
-                  '[data-testid*="price"]',
-                  '.MoneyPrice',
-                  '[data-test="product-price"]'
-                ];
-                
-                // Method 1: CSS Selectors
-                for (const selector of priceSelectors) {
-                  const priceEl = document.querySelector(selector);
-                  if (priceEl) {
-                    const priceText = priceEl.textContent.replace(/[^0-9.]/g, '');
-                    const price = parseFloat(priceText);
-                    if (price > 0 && price < 100000) {
-                      data.price = price;
-                      break;
-                    }
-                  }
-                }
-                
-                // Method 2: JSON-LD structured data
-                if (!data.price) {
-                  const jsonLdScripts = document.querySelectorAll('script[type="application/ld+json"]');
-                  for (const script of jsonLdScripts) {
-                    try {
-                      const jsonData = JSON.parse(script.textContent);
-                      const offers = jsonData.offers || jsonData['@graph']?.find(item => item.offers)?.offers;
-                      if (offers) {
-                        const offer = Array.isArray(offers) ? offers[0] : offers;
-                        if (offer.price || offer.priceSpecification?.price) {
-                          const price = parseFloat(offer.price || offer.priceSpecification.price);
-                          if (price > 0) {
-                            data.price = price;
-                            break;
-                          }
-                        }
-                      }
-                    } catch (e) {}
-                  }
-                }
-                
-                // Enhanced image extraction
-                const imageSelectors = [
-                  '.product-image img',
-                  'img[class*="product"]',
-                  '.hero-image img',
-                  'img[data-testid*="image"]',
-                  '.main-image img',
-                  '.featured-image img'
-                ];
-                
-                for (const selector of imageSelectors) {
-                  const imgEl = document.querySelector(selector);
-                  if (imgEl && imgEl.src && imgEl.src.startsWith('http')) {
-                    data.image = imgEl.src;
-                    break;
-                  }
-                }
-                
-                // Enhanced variant extraction
-                const variantSelectors = [
-                  '.selected',
-                  '.selected-option',
-                  '[aria-selected="true"]',
-                  '.variant-selected',
-                  '.option-selected'
-                ];
-                
-                const variants = [];
-                for (const selector of variantSelectors) {
-                  const elements = document.querySelectorAll(selector);
-                  elements.forEach(el => {
-                    const text = el.textContent.trim();
-                    if (text && text.length > 1 && text.length < 50 && 
-                        !text.toLowerCase().includes('select') &&
-                        !variants.includes(text)) {
-                      variants.push(text);
-                    }
-                  });
-                }
-                
-                if (variants.length > 0) {
-                  data.variant = variants.join(', ');
-                }
-                
-                // Check availability
-                const outOfStockKeywords = /out of stock|unavailable|sold out|not available/i;
-                if (outOfStockKeywords.test(document.body.textContent)) {
-                  data.availability = 'OutOfStock';
-                }
-                
-                return data;
-              });
-              
-              return {
-                url: request.url,
-                ...result,
-                scrapedAt: new Date().toISOString()
-              };
-            }
-          `,
-          maxConcurrency: 1,
-          requestTimeoutSecs: 60
+          pageFunction: `async function pageFunction(context) {
+            const { page } = context;
+            await page.waitForTimeout(2000);
+            
+            const title = await page.$eval('h1', el => el.textContent).catch(() => null);
+            const price = await page.evaluate(() => {
+              const priceEl = document.querySelector('.price, [class*="price"]');
+              if (priceEl) {
+                const match = priceEl.textContent.match(/[\d,]+\.?\d*/);
+                return match ? parseFloat(match[0].replace(/,/g, '')) : null;
+              }
+              return null;
+            });
+            
+            return { title, price };
+          }`
         })
       }
     };

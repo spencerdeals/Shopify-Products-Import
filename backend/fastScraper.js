@@ -422,44 +422,25 @@ async function scrapeProduct(url) {
   }
   
   // STEP 2: If Zyte failed or returned incomplete data, try GPT Parser
-  if (USE_APIFY_ACTORS && (!productData || !isDataComplete(productData))) {
+  if (USE_APIFY_ACTORS && (!productData || !productData.price)) {
     try {
-      console.log('   🎭 Attempting optimized Apify Actor scrape...');
+      console.log('   🎭 Attempting Apify Actor scrape...');
       const apifyData = await apifyActorScraper.scrapeProduct(url);
       
       if (apifyData) {
         if (!productData) {
-          // Zyte failed completely, use Apify data
           productData = apifyData;
-          scrapingMethod = 'apify-actor';
-          console.log('   ✅ Using Apify Actor data (Zyte failed)');
+          scrapingMethod = 'apify';
+          console.log('   ✅ Using Apify data');
         } else {
-          // Merge data - keep Zyte data but fill in missing fields from Apify
           const mergedData = mergeProductData(productData, apifyData);
-          
-          // Log what was supplemented with enhanced detail
-          if (!productData.name && apifyData.name) {
-            console.log('   ✅ Apify Actor enhanced: missing name');
-          }
-          if (!productData.price && apifyData.price) {
-            console.log('   ✅ Apify Actor enhanced: missing price');
-          }
-          if (!productData.image && apifyData.image) {
-            console.log('   ✅ Apify Actor enhanced: missing image');
-          }
-          if (!productData.dimensions && apifyData.dimensions) {
-            console.log('   ✅ Apify Actor enhanced: missing dimensions');
-          }
-          if (!productData.variant && apifyData.variant) {
-            console.log('   ✅ Apify Actor enhanced: missing variant');
-          }
-          
           productData = mergedData;
-          scrapingMethod = 'zyte+apify-actor';
+          scrapingMethod = 'zyte+apify';
+          console.log('   ✅ Apify enhanced Zyte data');
         }
       }
     } catch (error) {
-      console.log('   ❌ Apify Actor failed:', error.message.substring(0, 100));
+      console.log('   ❌ Apify failed:', error.message.substring(0, 50));
     }
   }
   
