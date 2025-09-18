@@ -90,8 +90,12 @@ app.use(cors());
 app.use(express.json({ limit: '5mb' }));
 app.set('trust proxy', true);
 
-// Serve static files
-app.use(express.static(path.join(__dirname, '../frontend')));
+// Serve static files with error handling
+try {
+  app.use(express.static(path.join(__dirname, '../frontend')));
+} catch (error) {
+  console.warn('⚠️ Frontend static files not available:', error.message);
+}
 
 // Health check
 app.get('/health', (req, res) => {
@@ -127,23 +131,48 @@ function requireAdmin(req, res, next) {
   }
 }
 
-// Admin routes
+// Admin routes with error handling
 app.get('/admin', requireAdmin, (req, res) => {
-  res.sendFile(path.join(__dirname, '../frontend/admin.html'));
+  try {
+    res.sendFile(path.join(__dirname, '../frontend/admin.html'));
+  } catch (error) {
+    res.send('<h1>Admin Panel</h1><p>Admin files not available</p>');
+  }
 });
 
 app.get('/pages/imports/admin', requireAdmin, (req, res) => {
-  res.sendFile(path.join(__dirname, '../frontend/admin-calculator.html'));
+  try {
+    res.sendFile(path.join(__dirname, '../frontend/admin-calculator.html'));
+  } catch (error) {
+    res.send('<h1>Admin Calculator</h1><p>Calculator files not available</p>');
+  }
 });
 
-// Root route
+// Root route with fallback
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, '../frontend/index.html'));
+  try {
+    res.sendFile(path.join(__dirname, '../frontend/index.html'));
+  } catch (error) {
+    res.send(`
+      <html>
+        <head><title>SDL Import Calculator</title></head>
+        <body>
+          <h1>🚢 SDL Import Calculator</h1>
+          <p>API is running. Frontend files not available.</p>
+          <p><a href="/health">Health Check</a></p>
+        </body>
+      </html>
+    `);
+  }
 });
 
 // Complete order page
 app.get('/complete-order.html', (req, res) => {
-  res.sendFile(path.join(__dirname, '../frontend/complete-order.html'));
+  try {
+    res.sendFile(path.join(__dirname, '../frontend/complete-order.html'));
+  } catch (error) {
+    res.redirect('/');
+  }
 });
 
 // Rate limiter
@@ -173,16 +202,6 @@ function detectRetailer(url) {
     if (domain.includes('costco.com')) return 'Costco';
     if (domain.includes('macys.com')) return 'Macys';
     if (domain.includes('ikea.com')) return 'IKEA';
-    if (domain.includes('lunafurn.com')) return 'Luna Furniture';
-    if (domain.includes('overstock.com')) return 'Overstock';
-    if (domain.includes('bedbathandbeyond.com')) return 'Bed Bath & Beyond';
-    if (domain.includes('cb2.com')) return 'CB2';
-    if (domain.includes('crateandbarrel.com')) return 'Crate & Barrel';
-    if (domain.includes('westelm.com')) return 'West Elm';
-    if (domain.includes('potterybarn.com')) return 'Pottery Barn';
-    if (domain.includes('ashleyfurniture.com')) return 'Ashley Furniture';
-    if (domain.includes('roomstogo.com')) return 'Rooms To Go';
-    if (domain.includes('livingspaces.com')) return 'Living Spaces';
     return 'Unknown Retailer';
   } catch (e) {
     return 'Unknown Retailer';
@@ -196,9 +215,7 @@ function isSDLDomain(url) {
       'spencer-deals-ltd.myshopify.com',
       'sdl.bm',
       'spencer-deals',
-      'spencerdeals',
-      'sdl.com',
-      '.sdl.'
+      'spencerdeals'
     ];
     return blockedPatterns.some(pattern => domain.includes(pattern));
   } catch (e) {
@@ -317,32 +334,6 @@ function estimateDimensions(category, name = '') {
   };
 }
 
-function estimateBoxDimensions(productDimensions, category) {
-  if (!productDimensions) return null;
-  
-  const paddingFactors = {
-    'electronics': 1.3,
-    'appliances': 1.2,
-    'furniture': 1.1,
-    'clothing': 1.4,
-    'books': 1.2,
-    'toys': 1.25,
-    'sports': 1.2,
-    'home-decor': 1.35,
-    'tools': 1.15,
-    'garden': 1.2,
-    'general': 1.25
-  };
-  
-  const factor = paddingFactors[category] || 1.25;
-  
-  return {
-    length: Math.round(productDimensions.length * factor * 10) / 10,
-    width: Math.round(productDimensions.width * factor * 10) / 10,
-    height: Math.round(productDimensions.height * factor * 10) / 10
-  };
-}
-
 function calculateShippingCost(dimensions, weight, price) {
   if (!dimensions) {
     return Math.max(25, price * 0.15);
@@ -358,46 +349,6 @@ function calculateShippingCost(dimensions, weight, price) {
   
   const totalCost = baseCost + oversizeFee + valueFee + handlingFee;
   return Math.round(totalCost);
-}
-
-function isDataComplete(productData) {
-  return productData && 
-         productData.name && 
-         productData.name !== 'Unknown Product' &&
-         productData.image && 
-         productData.dimensions &&
-         productData.dimensions.length > 0 &&
-         productData.dimensions.width > 0 &&
-         productData.dimensions.height > 0;
-}
-
-function mergeProductData(primary, secondary) {
-  if (!primary) return secondary;
-  if (!secondary) return primary;
-  
-  return {
-    name: primary.name || secondary.name,
-    price: primary.price || secondary.price,
-    image: primary.image || secondary.image,
-    dimensions: primary.dimensions || secondary.dimensions,
-    weight: primary.weight || secondary.weight,
-    brand: primary.brand || secondary.brand,
-    category: primary.category || secondary.category,
-    inStock: primary.inStock !== undefined ? primary.inStock : secondary.inStock,
-    variant: primary.variant || secondary.variant
-  };
-}
-
-function cleanVariant(variant) {
-  if (!variant || typeof variant !== 'string') return null;
-  
-  const cleaned = variant.trim();
-  
-  if (cleaned.length < 3 || cleaned.length > 50) return null;
-  if (/^[\d\-_]+$/.test(cleaned)) return null;
-  if (/^(select|choose|option|default|click|tap)$/i.test(cleaned)) return null;
-  
-  return cleaned;
 }
 
 async function scrapeProduct(url) {
@@ -420,12 +371,9 @@ async function scrapeProduct(url) {
         productData = oxylabsData;
         scrapingMethod = 'oxylabs';
         console.log('   ✅ Oxylabs success');
-      } else {
-        console.log('   ❌ Oxylabs returned null data');
       }
     } catch (error) {
       console.log('   ❌ Oxylabs failed:', error.message);
-      productData = null;
     }
   }
   
@@ -445,40 +393,7 @@ async function scrapeProduct(url) {
     }
   }
   
-  // Clean variant
-  if (productData) {
-    productData.variant = cleanVariant(productData.variant);
-  }
-  
-  // STEP 3: Try UPCitemdb for missing dimensions (only if needed)
-  if (USE_UPCITEMDB && upcItemDB?.enabled && productData && productData.name && (!productData.dimensions || !productData.weight)) {
-    try {
-      console.log('   📦 Attempting UPCitemdb lookup...');
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      const upcData = await upcItemDB.searchByName(productData.name);
-      
-      if (upcData) {
-        if (!productData.dimensions && upcData.dimensions) {
-          const category = productData.category || categorizeProduct(productData.name || '', url);
-          productData.dimensions = estimateBoxDimensions(upcData.dimensions, category);
-          console.log('   ✅ UPCitemdb provided dimensions');
-        }
-        if (!productData.weight && upcData.weight) {
-          productData.weight = upcData.weight;
-          console.log('   ✅ UPCitemdb provided weight');
-        }
-        if (!productData.image && upcData.image) {
-          productData.image = upcData.image;
-          console.log('   ✅ UPCitemdb provided image');
-        }
-        scrapingMethod = scrapingMethod === 'estimation' ? 'upcitemdb' : scrapingMethod + '+upcitemdb';
-      }
-    } catch (error) {
-      console.log('   ❌ UPCitemdb lookup failed:', error.message);
-    }
-  }
-  
-  // STEP 4: Use estimation for missing data
+  // STEP 3: Use estimation for missing data
   if (!productData) {
     productData = {
       name: 'Product from ' + retailer,
@@ -486,8 +401,7 @@ async function scrapeProduct(url) {
       image: null,
       dimensions: null,
       weight: null,
-      category: null,
-      variant: null
+      category: null
     };
     scrapingMethod = 'estimation';
     console.log('   ⚠️ All methods failed, using estimation');
@@ -517,7 +431,6 @@ async function scrapeProduct(url) {
   const product = {
     id: productId,
     url: url,
-    vendor: retailer,
     name: productName,
     price: productData.price,
     image: productData.image || 'https://placehold.co/400x400/7CB342/FFFFFF/png?text=SDL',
@@ -526,17 +439,7 @@ async function scrapeProduct(url) {
     dimensions: productData.dimensions,
     weight: productData.weight,
     shippingCost: shippingCost,
-    scrapingMethod: scrapingMethod,
-    variant: productData.variant,
-    dataCompleteness: {
-      hasVendor: !!retailer,
-      hasName: !!productData.name,
-      hasImage: !!productData.image,
-      hasDimensions: !!productData.dimensions,
-      hasWeight: !!productData.weight,
-      hasPrice: !!productData.price,
-      hasVariant: !!productData.variant
-    }
+    scrapingMethod: scrapingMethod
   };
   
   console.log(`   💰 Shipping cost: $${shippingCost}`);
@@ -599,220 +502,18 @@ app.post('/api/scrape', async (req, res) => {
     
     const products = await processBatch(urls);
     
-    const oxylabsCount = products.filter(p => p.scrapingMethod?.includes('oxylabs')).length;
-    const gptCount = products.filter(p => p.scrapingMethod?.includes('gpt')).length;
-    const upcitemdbCount = products.filter(p => p.scrapingMethod?.includes('upcitemdb')).length;
-    const estimatedCount = products.filter(p => p.scrapingMethod === 'estimation').length;
-    
-    console.log('\n📊 SCRAPING SUMMARY:');
-    console.log(`   Total products: ${products.length}`);
-    console.log(`   Oxylabs used: ${oxylabsCount}`);
-    console.log(`   GPT Parser used: ${gptCount}`);
-    console.log(`   UPCitemdb used: ${upcitemdbCount}`);
-    console.log(`   Fully estimated: ${estimatedCount}`);
-    console.log(`   Success rate: ${((products.length - estimatedCount) / products.length * 100).toFixed(1)}%`);
-    
-    // Log data completeness
-    const withVariants = products.filter(p => p.variant).length;
-    const withDimensions = products.filter(p => p.dimensions).length;
-    const withImages = products.filter(p => p.image && !p.image.includes('placehold')).length;
-    console.log(`   📊 Data Quality:`);
-    console.log(`      Variants found: ${withVariants}/${products.length}`);
-    console.log(`      Dimensions found: ${withDimensions}/${products.length}`);
-    console.log(`      Real images: ${withImages}/${products.length}\n`);
-    
     res.json({ 
       products,
       summary: {
         total: products.length,
-        scraped: products.length - estimatedCount,
-        estimated: estimatedCount,
-        scrapingMethods: {
-          oxylabs: oxylabsCount,
-          gpt: gptCount,
-          upcitemdb: upcitemdbCount,
-          estimation: estimatedCount
-        }
+        scraped: products.filter(p => p.scrapingMethod !== 'estimation').length,
+        estimated: products.filter(p => p.scrapingMethod === 'estimation').length
       }
     });
     
   } catch (error) {
     console.error('Scraping error:', error);
     res.status(500).json({ error: 'Failed to scrape products' });
-  }
-});
-
-// Store pending orders temporarily
-const pendingOrders = new Map();
-
-app.post('/api/store-pending-order', (req, res) => {
-  const orderId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
-  pendingOrders.set(orderId, {
-    data: req.body,
-    timestamp: Date.now()
-  });
-  
-  setTimeout(() => pendingOrders.delete(orderId), 3600000);
-  
-  console.log(`📦 Stored pending order ${orderId}`);
-  res.json({ orderId, success: true });
-});
-
-app.get('/api/get-pending-order/:orderId', (req, res) => {
-  const order = pendingOrders.get(req.params.orderId);
-  if (order) {
-    console.log(`✅ Retrieved pending order ${req.params.orderId}`);
-    res.json(order.data);
-    pendingOrders.delete(req.params.orderId);
-  } else {
-    console.log(`❌ Order ${req.params.orderId} not found`);
-    res.status(404).json({ error: 'Order not found or expired' });
-  }
-});
-
-// Order tracking endpoints
-app.post('/api/orders/:orderId/start-tracking', async (req, res) => {
-  try {
-    const { orderId } = req.params;
-    const { retailerOrders } = req.body;
-    
-    const result = await orderTracker.startTracking(orderId, retailerOrders);
-    res.json(result);
-  } catch (error) {
-    console.error('Start tracking error:', error);
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-app.post('/api/orders/:orderId/stop-tracking', async (req, res) => {
-  try {
-    const { orderId } = req.params;
-    const result = await orderTracker.stopTracking(orderId);
-    res.json(result);
-  } catch (error) {
-    console.error('Stop tracking error:', error);
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-app.get('/api/orders/:orderId/tracking-status', async (req, res) => {
-  try {
-    const { orderId } = req.params;
-    const result = await orderTracker.getTrackingStatus(orderId);
-    res.json(result);
-  } catch (error) {
-    console.error('Get tracking status error:', error);
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-// Shopify Draft Order Creation
-app.post('/apps/instant-import/create-draft-order', async (req, res) => {
-  try {
-    const { products, deliveryFees, totals, customer, originalUrls } = req.body;
-    
-    if (!SHOPIFY_ACCESS_TOKEN) {
-      return res.status(500).json({ error: 'Shopify not configured. Please check API credentials.' });
-    }
-    
-    if (!customer || !customer.email || !customer.name) {
-      return res.status(400).json({ error: 'Customer information required' });
-    }
-    
-    const lineItems = [];
-    
-    products.forEach(product => {
-      if (product.price && product.price > 0) {
-        lineItems.push({
-          title: product.name,
-          price: product.price.toFixed(2),
-          quantity: 1,
-          properties: [
-            { name: 'Source URL', value: product.url },
-            { name: 'Retailer', value: product.retailer },
-            { name: 'Category', value: product.category }
-          ]
-        });
-      }
-    });
-    
-    if (totals.dutyAmount > 0) {
-      lineItems.push({
-        title: 'Bermuda Import Duty (26.5%)',
-        price: totals.dutyAmount.toFixed(2),
-        quantity: 1,
-        taxable: false
-      });
-    }
-    
-    Object.entries(deliveryFees).forEach(([vendor, fee]) => {
-      if (fee > 0) {
-        lineItems.push({
-          title: `${vendor} US Delivery Fee`,
-          price: fee.toFixed(2),
-          quantity: 1,
-          taxable: false
-        });
-      }
-    });
-    
-    if (totals.totalShippingCost > 0) {
-      lineItems.push({
-        title: 'Ocean Freight & Handling to Bermuda',
-        price: totals.totalShippingCost.toFixed(2),
-        quantity: 1,
-        taxable: false
-      });
-    }
-    
-    const draftOrderData = {
-      draft_order: {
-        line_items: lineItems,
-        customer: {
-          email: customer.email,
-          first_name: customer.name.split(' ')[0],
-          last_name: customer.name.split(' ').slice(1).join(' ') || ''
-        },
-        email: customer.email,
-        note: `Import Calculator Order\n\nOriginal URLs:\n${originalUrls}`,
-        tags: 'import-calculator, ocean-freight',
-        tax_exempt: true,
-        send_receipt: false,
-        send_fulfillment_receipt: false
-      }
-    };
-    
-    console.log(`📝 Creating draft order for ${customer.email}...`);
-    
-    const shopifyResponse = await axios.post(
-      `https://${SHOPIFY_DOMAIN}/admin/api/2023-10/draft_orders.json`,
-      draftOrderData,
-      {
-        headers: {
-          'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN,
-          'Content-Type': 'application/json'
-        }
-      }
-    );
-    
-    const draftOrder = shopifyResponse.data.draft_order;
-    console.log(`✅ Draft order ${draftOrder.name} created successfully`);
-    
-    res.json({
-      success: true,
-      draftOrderId: draftOrder.id,
-      draftOrderNumber: draftOrder.name,
-      invoiceUrl: draftOrder.invoice_url,
-      checkoutUrl: `https://${SHOPIFY_DOMAIN}/admin/draft_orders/${draftOrder.id}`,
-      totalAmount: totals.grandTotal
-    });
-    
-  } catch (error) {
-    console.error('Draft order creation error:', error.response?.data || error);
-    res.status(500).json({ 
-      error: 'Failed to create draft order. Please try again or contact support.',
-      details: error.response?.data?.errors || error.message
-    });
   }
 });
 
@@ -839,17 +540,4 @@ process.on('SIGINT', () => {
     console.log('✅ Server closed');
     process.exit(0);
   });
-});
-
-// Handle uncaught exceptions
-process.on('uncaughtException', (error) => {
-  console.error('💥 Uncaught Exception:', error);
-  // Don't exit immediately on Railway
-  setTimeout(() => process.exit(1), 1000);
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('💥 Unhandled Rejection at:', promise, 'reason:', reason);
-  // Don't exit immediately on Railway
-  setTimeout(() => process.exit(1), 1000);
 });
