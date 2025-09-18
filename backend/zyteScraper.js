@@ -10,6 +10,7 @@ class ZyteScraper {
     
     console.log('🕷️ ZyteScraper Constructor:');
     console.log(`   API Key: ${this.apiKey ? '✅ SET' : '❌ MISSING'}`);
+    console.log(`   API Key (first 8 chars): ${this.apiKey ? this.apiKey.substring(0, 8) + '...' : 'N/A'}`);
     console.log(`   Status: ${this.enabled ? '✅ ENABLED' : '❌ DISABLED'}`);
     
     if (!this.enabled) {
@@ -30,7 +31,7 @@ class ZyteScraper {
     try {
       console.log('   📤 Sending request to Zyte API...');
       
-      // Use Basic Auth (proven to work from logs)
+      // Use Basic Auth with API key as username, empty password
       const response = await axios.post(this.baseURL, {
         url: url,
         httpResponseBody: true,
@@ -46,11 +47,12 @@ class ZyteScraper {
         headers: {
           'Content-Type': 'application/json'
         },
-        timeout: 30000
+        timeout: 45000
       });
 
-      console.log('✅ Zyte request completed with Basic Auth');
+      console.log('✅ Zyte request completed successfully');
       console.log('📊 Response status:', response.status);
+      console.log('📊 Response headers:', Object.keys(response.headers || {}));
       
       if (!response.data) {
         throw new Error('No data received from Zyte API');
