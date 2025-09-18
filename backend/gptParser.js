@@ -47,17 +47,12 @@ function detectRetailer(url){
 async function fetchViaAxios(url){
   let lastErr = null;
   for (let i=0;i<MAX_AXIOS_RETRIES;i++){
-        const waitMs = 5000*(i+1) + rnd(2000,5000); // Much longer delays for 429
       // Add random delay to avoid rate limits
       if (i > 0) {
         await sleep(Math.random() * 2000 + 1000); // 1-3 second delay on retries
-      if (res.status === 403){
-        const waitMs = 8000*(i+1) + rnd(3000,5000); // Much longer for 403
-        console.warn(`[Axios] 403. Retry ${i + 1}/3 after ${waitMs}ms`);
-        await sleep(waitMs); continue;
-      }
       }
       
+      try {
       const res = await axios.get(url, {
         timeout: TIMEOUT_MS,
         headers: {
@@ -65,7 +60,7 @@ async function fetchViaAxios(url){
           'Accept-Language': 'en-US,en;q=0.9',
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
           'Cache-Control': 'no-cache', 'Pragma': 'no-cache',
-      const waitMs = 1000*(i+1) + rnd(500,1500);
+          'Sec-Fetch-Dest': 'document',
           'Sec-Fetch-Mode': 'navigate',
           'Sec-Fetch-Site': 'none',
           'Upgrade-Insecure-Requests': '1'
@@ -73,22 +68,85 @@ async function fetchViaAxios(url){
         validateStatus: () => true,
       });
       if (res.status === 200 && res.data){
-// -------- Fetchers (Apify → Axios) --------
-function vendorPromptHints(vendor){
+        return res.data;
+      }
+      if (res.status === 429){
+        const waitMs = 5000*(i+1) + rnd(2000,5000); // Much longer delays for 429
+        console.warn(`[Axios] 429. Retry ${i + 1}/3 after ${waitMs}ms`);
+        await sleep(waitMs); continue;
+      }
+      if (res.status === 403){
+        const waitMs = 8000*(i+1) + rnd(3000,5000); // Much longer for 403
+        console.warn(`[Axios] 403. Retry ${i + 1}/3 after ${waitMs}ms`);
+        await sleep(waitMs); continue;
+      }
+      const waitMs = 1000*(i+1) + rnd(500,1500);
+      console.warn(`[Axios] ${res.status}. Retry ${i + 1}/3 after ${waitMs}ms`);
+      await sleep(waitMs);
+    } catch (err) {
+      lastErr = err;
+      const waitMs = 1000*(i+1) + rnd(500,1500);
+      console.warn(`[Axios] Error. Retry ${i + 1}/3 after ${waitMs}ms: ${err.message}`);
+      await sleep(waitMs);
+    }
+  }
+  throw lastErr || new Error('Axios failed after retries');
+}
+
+async function smartFetchHtml(url) {
   console.log('[GPT Parser] Starting smart HTML fetch...');
-      return `For Wayfair: prefer the current price near the main buy button; ignore per-month and struck list prices.`;
+  let html = null;
+  
+  // Try Apify first (if available)
+  try {
+    // html = await fetchViaApify(url);
+  } catch (err) {
+    console.warn('[GPT Parser] Apify failed:', err.message);
+  }
+  
   if (html) {
     console.log('[GPT Parser] Got HTML via Apify');
     return html;
   }
-      return `For Amazon: prefer the price near "Add to Cart"; ignore subscription/per-month and struck list prices.`;
+  
+  // Fallback to Axios
+  try {
+    html = await fetchViaAxios(url);
+  } catch (err) {
+    console.warn('[GPT Parser] Axios failed:', err.message);
+  }
+  
   if (html) {
     console.log('[GPT Parser] Got HTML via Axios');
   } else {
     console.log('[GPT Parser] All fetch methods failed');
   }
+  
+  return html;
+}
+
+// -------- Fetchers (Apify → Axios) --------
+function vendorPromptHints(vendor){
+  switch (vendor) {
+    case 'Wayfair':
+      return `For Wayfair: prefer the current price near the main buy button; ignore per-month and struck list prices.`;
+    case 'Amazon':
+      return `For Amazon: prefer the price near "Add to Cart"; ignore subscription/per-month and struck list prices.`;
     case 'Walmart':
       return `For Walmart: prefer the main price above "Add to cart"; ignore fees and per-month financing.`;
+    case 'Target':
+      return `For Target: look for the main product price, ignore membership prices and financing.`;
+    case 'BestBuy':
+      return `For Best Buy: prefer the main price display, ignore membership discounts and financing.`;
+    case 'HomeDepot':
+      return `For Home Depot: look for the main selling price, ignore bulk pricing and special offers.`;
+    case 'CrateAndBarrel':
+      return `For Crate & Barrel: look for the main product price, ignore financing options and membership prices.`;
+    case 'IKEA':
+      return `For IKEA: prefer the main price display, ignore assembly service costs.`;
+    case 'LunaFurniture':
+      return `For Luna Furniture: look for the current selling price, ignore compare-at prices.`;
+    default:
       return `Prefer the most prominent product price near the buy action; ignore per-month financing and struck-through prices.`;
   }
 }
@@ -98,12 +156,6 @@ async function parseWithGPT({ url, html, currencyFallback = DEFAULT_CURRENCY }){
   if (!apiKey) throw new Error('OPENAI_API_KEY is missing for gptParser.');
   if (gptCallsUsed >= MAX_GPT_CALLS_PER_RUN) throw new Error('GPT budget limit reached for this run.');
 
-    case 'CrateAndBarrel':
-      return `For Crate & Barrel: look for the main product price, ignore financing options and membership prices.`;
-    case 'IKEA':
-      return `For IKEA: prefer the main price display, ignore assembly service costs.`;
-    case 'LunaFurniture':
-      return `For Luna Furniture: look for the current selling price, ignore compare-at prices.`;
   const client = new OpenAI({ apiKey });
   const vendor = detectRetailer(url);
 
@@ -139,6 +191,8 @@ Rules:
 
   const user = `URL: ${url}\nExtract product data from the provided HTML and visible text.\nReturn ONLY JSON, no explanations.`;
 
+  console.log(`[GPT Parser] Making GPT call ${gptCallsUsed}/${MAX_GPT_CALLS_PER_RUN} for ${vendor}`);
+  
   gptCallsUsed += 1;
   const response = await client.chat.completions.create({
     model: MODEL,
@@ -150,8 +204,6 @@ Rules:
       { role: 'user', content: `VISIBLE_TEXT:\n${visibleText}` },
       { role: 'user', content: `HTML:\n${htmlSlice}` },
     ],
-  console.log(`[GPT Parser] Making GPT call ${gptCallsUsed}/${MAX_GPT_CALLS_PER_RUN} for ${vendor}`);
-  
   });
 
   let data = {};
@@ -188,22 +240,14 @@ Rules:
   const availability = ['in_stock','out_of_stock','preorder','unknown'].includes(availabilityRaw) ? availabilityRaw : 'unknown';
 
   const breadcrumbs = Array.isArray(data.breadcrumbs)
-      // Add random delay to avoid rate limits
-      if (i > 0) {
-        await sleep(Math.random() * 2000 + 1000); // 1-3 second delay on retries
-      }
-      
     ? data.breadcrumbs.map(s => (typeof s === 'string' ? s.trim() : '')).filter(Boolean).slice(0, 10)
     : [];
 
-          'User-Agent': `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${rnd(120,125)}.0.0.0 Safari/537.36`,
+  if (response.usage) {
     console.log(`[GPT usage] prompt_tokens=${response.usage.prompt_tokens} completion_tokens=${response.usage.completion_tokens}`);
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-  }
-          'Sec-Fetch-Dest': 'document',
-          'Sec-Fetch-Mode': 'navigate',
+  } else {
     console.log(`[GPT Parser] Usage: ${response.usage.prompt_tokens} prompt + ${response.usage.completion_tokens} completion tokens`);
-          'Upgrade-Insecure-Requests': '1'
+  }
 
   return {
     url, name, price, currency, image, brand, sku, availability, breadcrumbs, variant,
