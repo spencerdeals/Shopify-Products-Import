@@ -143,10 +143,8 @@ class ApifyActorScraper {
       } else {
         console.log(`   ❌ No items in dataset - checking run logs...`);
         try {
-          const logs = await this.client.log(run.id).get();
-          if (logs) {
-            console.log(`   📋 Actor logs (last 1000 chars):`, logs.substring(-1000));
-          }
+          const logs = await this.client.log(run.defaultDatasetId).get();
+          console.log(`   📋 Actor logs (last 1000 chars):`, logs.substring(-1000));
         } catch (logError) {
           console.log(`   ❌ Could not fetch logs: ${logError.message}`);
         }
@@ -213,16 +211,16 @@ class ApifyActorScraper {
     };
 
     // Extract name - handle different formats
-   cleanedData.name = item.name || item.title || item.productName || null;
+    cleanedData.name = item.name || item.title || item.productName || null;
     if (cleanedData.name) {
       cleanedData.name = cleanedData.name.trim().substring(0, 200);
     }
 
     // Extract price - handle Amazon vs Wayfair vs Generic formats
     if (item.price) {
-     if (typeof item.price === 'object' && item.price.value) {
+      if (typeof item.price === 'object' && item.price.value) {
         // Amazon format: { value: 145.5, currency: "$" }
-       cleanedData.price = parseFloat(item.price.value);
+        cleanedData.price = parseFloat(item.price.value);
       } else {
         // Wayfair/Generic format: direct number or string
         const priceStr = String(item.price).replace(/[^0-9.]/g, '');
@@ -236,13 +234,13 @@ class ApifyActorScraper {
     }
 
     // Extract image - handle different formats
-   if (item.thumbnailImage) {
+    if (item.thumbnailImage) {
       // Amazon format
-     cleanedData.image = item.thumbnailImage;
-   } else if (item.main_image) {
+      cleanedData.image = item.thumbnailImage;
+    } else if (item.main_image) {
       // Wayfair format
-     cleanedData.image = item.main_image;
-   } else if (item.image) {
+      cleanedData.image = item.main_image;
+    } else if (item.image) {
       // Generic format
       cleanedData.image = Array.isArray(item.image) ? item.image[0] : item.image;
     } else if (item.images && Array.isArray(item.images) && item.images.length > 0) {
@@ -287,43 +285,23 @@ class ApifyActorScraper {
     }
 
     // Extract brand - handle different formats
-   cleanedData.brand = item.brand || item.manufacturer || null;
+    cleanedData.brand = item.brand || item.manufacturer || null;
 
     // Extract category - handle different formats
-   if (item.breadCrumbs) {
-     // Amazon uses breadCrumbs string like "Electronics › Computers & Accessories › Memory Cards"
-     const breadcrumbArray = item.breadCrumbs.split(' › ');
-     cleanedData.category = breadcrumbArray[breadcrumbArray.length - 1];
-   } else if (item.breadcrumbs && Array.isArray(item.breadcrumbs)) {
-     // Wayfair uses breadcrumbs array
-     cleanedData.category = item.breadcrumbs[item.breadcrumbs.length - 2] || item.breadcrumbs[item.breadcrumbs.length - 1]; // Skip SKU
-   } else if (item.category) {
+    if (item.breadCrumbs) {
+      // Amazon uses breadCrumbs string like "Electronics › Computers & Accessories › Memory Cards"
+      const breadcrumbArray = item.breadCrumbs.split(' › ');
+      cleanedData.category = breadcrumbArray[breadcrumbArray.length - 1];
+    } else if (item.breadcrumbs && Array.isArray(item.breadcrumbs)) {
+      // Wayfair uses breadcrumbs array
+      cleanedData.category = item.breadcrumbs[item.breadcrumbs.length - 2] || item.breadcrumbs[item.breadcrumbs.length - 1]; // Skip SKU
+    } else if (item.category) {
       // Generic format
       cleanedData.category = Array.isArray(item.category) ? item.category[item.category.length - 1] : item.category;
     }
 
     // Extract variant - handle different formats
-    cleanedData.variant = item.variant || item.selectedVariant || item.color || item.size || item.style || null;
-    if (cleanedData.variant && (cleanedData.variant.length < 2 || cleanedData.variant.length > 50)) {
-      cleanedData.variant = null;
-    }
-
-          id: run.id,
-          status: run.status,
-          statusMessage: run.statusMessage,
-          startedAt: run.startedAt,
-          finishedAt: run.finishedAt,
-          stats: run.stats
-        });
-        
-        // For Luna Furniture specifically, let's check if it's a Shopify site issue
-        if (retailerType === 'generic' && url.includes('lunafurn.com')) {
-          console.log(`   🏪 Luna Furniture detected - this is a Shopify store`);
-          console.log(`   💡 Shopify sites often require special handling for product data`);
-          console.log(`   🔄 Will fall back to GPT Parser for better Shopify extraction`);
-        }
-        
-
+    if (retailerType === 'amazon') {
       if (item.variantAttributes && item.variantAttributes.length > 0) {
         const variants = item.variantAttributes.map(attr => `${attr.name}: ${attr.value}`);
         cleanedData.variant = variants.join(', ');
@@ -345,18 +323,21 @@ class ApifyActorScraper {
     }
     
     // Clean up variant text
+    if (cleanedData.variant && (cleanedData.variant.length < 2 || cleanedData.variant.length > 50)) {
+      cleanedData.variant = null;
+    }
 
     // Check availability - handle different formats
-   if (item.inStock !== undefined) {
+    if (item.inStock !== undefined) {
       // Amazon format
-     cleanedData.inStock = !!item.inStock;
-   } else if (item.in_stock !== undefined) {
+      cleanedData.inStock = !!item.inStock;
+    } else if (item.in_stock !== undefined) {
       // Wayfair format
-     cleanedData.inStock = !!item.in_stock;
-   } else if (item.availability) {
+      cleanedData.inStock = !!item.in_stock;
+    } else if (item.availability) {
       // Generic format
-     cleanedData.inStock = !item.availability.toLowerCase().includes('out of stock');
-   } else {
+      cleanedData.inStock = !item.availability.toLowerCase().includes('out of stock');
+    } else {
       cleanedData.inStock = true;
     }
 
