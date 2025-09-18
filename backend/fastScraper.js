@@ -765,7 +765,7 @@ app.post('/apps/instant-import/create-draft-order', async (req, res) => {
     if (totals.totalShippingCost > 0) {
       lineItems.push({
         title: 'Ocean Freight & Handling to Bermuda',
-        price: totals.totalShippingCost.toFixed(2),
+        price: (totals.shippingCost || totals.totalShippingCost || 0).toFixed(2),
         quantity: 1,
         taxable: false
       });
