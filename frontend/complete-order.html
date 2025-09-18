@@ -252,7 +252,7 @@
                     throw new Error('Order not found or expired');
                 }
                 
-                const result = await response.json();
+                orderData = result;
                 
                 displayOrderSummary();
                 showCustomerForm();
