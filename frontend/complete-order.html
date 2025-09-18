@@ -249,7 +249,6 @@
                 const response = await fetch(`/api/get-checkout/${checkoutId}`);
                 
                 if (!response.ok) {
-                    throw new Error('Order not found or expired');
                 orderData = result;
                 
                 displayOrderSummary();
