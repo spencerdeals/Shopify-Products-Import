@@ -3,7 +3,7 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 const OpenAI = require('openai');
 
-const MODEL = process.env.GPT_PARSER_MODEL || 'gpt-4o-mini'; // Will upgrade to GPT-5 when available
+const MODEL = process.env.GPT_PARSER_MODEL || 'gpt-4o-mini';
 const TIMEOUT_MS = 30000;
 const MAX_AXIOS_RETRIES = 3;
 const DEFAULT_CURRENCY = (process.env.DEFAULT_CURRENCY || 'USD').toUpperCase();
