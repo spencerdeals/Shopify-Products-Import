@@ -3,28 +3,33 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SDL Instant Import Calculator - Ship to Bermuda</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <title>SDL Import Calculator - Ship to Bermuda Fast & Easy</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <style>
         :root {
-            --sdl-green-light: #7CB342;
+            --sdl-green-light: #8BC34A;
             --sdl-green-medium: #4CAF50;
             --sdl-green-dark: #2E7D32;
-            --sdl-gradient: linear-gradient(135deg, #7CB342 0%, #4CAF50 50%, #2E7D32 100%);
-            --sdl-gradient-light: linear-gradient(135deg, #A5D6A7 0%, #7CB342 100%);
+            --sdl-gradient: linear-gradient(135deg, #8BC34A 0%, #4CAF50 50%, #2E7D32 100%);
+            --sdl-gradient-light: linear-gradient(135deg, #C8E6C9 0%, #8BC34A 100%);
             --text-primary: #1A1A1A;
-            --text-secondary: #666666;
-            --text-light: #999999;
+            --text-secondary: #555555;
+            --text-light: #888888;
             --bg-light: #F8FDF9;
             --bg-white: #FFFFFF;
             --border-light: #E8F5E8;
-            --shadow-soft: 0 4px 20px rgba(76, 175, 80, 0.1);
-            --shadow-medium: 0 8px 30px rgba(76, 175, 80, 0.15);
-            --shadow-strong: 0 12px 40px rgba(76, 175, 80, 0.2);
+            --shadow-soft: 0 4px 20px rgba(76, 175, 80, 0.08);
+            --shadow-medium: 0 8px 30px rgba(76, 175, 80, 0.12);
+            --shadow-strong: 0 12px 40px rgba(76, 175, 80, 0.16);
             --radius-small: 8px;
             --radius-medium: 12px;
             --radius-large: 20px;
+            --accent-blue: #2196F3;
+            --accent-orange: #FF9800;
+            --success-green: #4CAF50;
+            --warning-orange: #FF9800;
+            --error-red: #F44336;
         }
 
         * {
@@ -48,12 +53,13 @@
             position: sticky;
             top: 0;
             z-index: 100;
+            border-bottom: 1px solid var(--border-light);
         }
 
         .header-content {
             max-width: 1200px;
             margin: 0 auto;
-            padding: 1rem 2rem;
+            padding: 1.2rem 2rem;
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -62,41 +68,61 @@
         .logo {
             display: flex;
             align-items: center;
-            gap: 0.75rem;
+            gap: 1rem;
         }
 
         .logo-circles {
             display: flex;
-            gap: -2px;
+            gap: -3px;
         }
 
         .logo-circle {
-            width: 40px;
-            height: 40px;
+            width: 44px;
+            height: 44px;
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
             color: white;
-            font-weight: 700;
-            font-size: 1.1rem;
-            margin-left: -2px;
+            font-weight: 800;
+            font-size: 1.2rem;
+            margin-left: -3px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         }
 
-        .logo-circle:nth-child(1) { background: #7CB342; }
+        .logo-circle:nth-child(1) { background: #8BC34A; }
         .logo-circle:nth-child(2) { background: #4CAF50; }
         .logo-circle:nth-child(3) { background: #2E7D32; }
 
         .logo-text {
-            font-size: 1.5rem;
-            font-weight: 600;
+            font-size: 1.6rem;
+            font-weight: 700;
             color: var(--text-primary);
         }
 
         .header-subtitle {
             color: var(--text-secondary);
-            font-size: 0.9rem;
+            font-size: 0.95rem;
             font-weight: 500;
+        }
+
+        .header-info {
+            display: flex;
+            align-items: center;
+            gap: 2rem;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+
+        .header-stat {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-weight: 600;
+        }
+
+        .header-stat i {
+            color: var(--sdl-green-medium);
         }
 
         /* Main Container */
@@ -110,47 +136,84 @@
         .hero {
             text-align: center;
             margin-bottom: 3rem;
+            padding: 2rem 0;
         }
 
         .hero h1 {
-            font-size: 2.5rem;
-            font-weight: 700;
+            font-size: 3rem;
+            font-weight: 800;
             background: var(--sdl-gradient);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             background-clip: text;
             margin-bottom: 1rem;
+            line-height: 1.1;
         }
 
-        .hero p {
-            font-size: 1.2rem;
+        .hero-subtitle {
+            font-size: 1.3rem;
             color: var(--text-secondary);
-            max-width: 600px;
+            max-width: 700px;
             margin: 0 auto 2rem;
+            font-weight: 500;
         }
 
-        .hero-stats {
+        .hero-features {
+            display: flex;
+            justify-content: center;
+            gap: 3rem;
+            margin: 2rem 0;
+            flex-wrap: wrap;
+        }
+
+        .hero-feature {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .hero-feature i {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: var(--sdl-gradient);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.1rem;
+        }
+
+        .trust-indicators {
             display: flex;
             justify-content: center;
             gap: 2rem;
             margin-top: 2rem;
+            padding: 1.5rem;
+            background: rgba(255,255,255,0.7);
+            border-radius: var(--radius-large);
+            backdrop-filter: blur(10px);
         }
 
-        .stat {
+        .trust-item {
             text-align: center;
         }
 
-        .stat-number {
-            font-size: 2rem;
-            font-weight: 700;
+        .trust-number {
+            font-size: 2.2rem;
+            font-weight: 800;
             color: var(--sdl-green-medium);
+            display: block;
         }
 
-        .stat-label {
-            font-size: 0.9rem;
+        .trust-label {
+            font-size: 0.85rem;
             color: var(--text-light);
             text-transform: uppercase;
             letter-spacing: 0.5px;
+            font-weight: 600;
         }
 
         /* Steps Navigation */
@@ -160,25 +223,40 @@
             margin-bottom: 3rem;
             background: var(--bg-white);
             border-radius: var(--radius-large);
-            padding: 1rem;
+            padding: 1.2rem;
             box-shadow: var(--shadow-soft);
+            border: 1px solid var(--border-light);
         }
 
         .step-indicator {
             display: flex;
             align-items: center;
-            gap: 0.5rem;
-            padding: 0.75rem 1.5rem;
+            gap: 0.75rem;
+            padding: 1rem 2rem;
             border-radius: var(--radius-medium);
-            font-weight: 500;
+            font-weight: 600;
             transition: all 0.3s ease;
             cursor: pointer;
+            position: relative;
+        }
+
+        .step-indicator:not(:last-child)::after {
+            content: '';
+            position: absolute;
+            right: -20px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 40px;
+            height: 2px;
+            background: var(--border-light);
+            z-index: 1;
         }
 
         .step-indicator.active {
             background: var(--sdl-gradient);
             color: white;
             box-shadow: var(--shadow-medium);
+            transform: translateY(-2px);
         }
 
         .step-indicator.completed {
@@ -186,16 +264,20 @@
             color: var(--sdl-green-dark);
         }
 
+        .step-indicator.completed::after {
+            background: var(--sdl-green-medium);
+        }
+
         .step-number {
-            width: 24px;
-            height: 24px;
+            width: 28px;
+            height: 28px;
             border-radius: 50%;
             background: rgba(255, 255, 255, 0.2);
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 0.8rem;
-            font-weight: 600;
+            font-size: 0.9rem;
+            font-weight: 700;
         }
 
         .step-indicator:not(.active) .step-number {
@@ -206,7 +288,7 @@
         /* Page Sections */
         .page {
             display: none;
-            animation: fadeIn 0.5s ease-in-out;
+            animation: fadeIn 0.6s ease-in-out;
         }
 
         .page.active {
@@ -214,7 +296,7 @@
         }
 
         @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(20px); }
+            from { opacity: 0; transform: translateY(30px); }
             to { opacity: 1; transform: translateY(0); }
         }
 
@@ -222,10 +304,22 @@
         .card {
             background: var(--bg-white);
             border-radius: var(--radius-large);
-            padding: 2rem;
+            padding: 2.5rem;
             box-shadow: var(--shadow-soft);
             border: 1px solid var(--border-light);
             transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: var(--sdl-gradient);
         }
 
         .card:hover {
@@ -236,76 +330,130 @@
         .card-header {
             display: flex;
             align-items: center;
-            gap: 1rem;
-            margin-bottom: 1.5rem;
+            gap: 1.2rem;
+            margin-bottom: 2rem;
         }
 
         .card-icon {
-            width: 48px;
-            height: 48px;
+            width: 56px;
+            height: 56px;
             border-radius: var(--radius-medium);
             background: var(--sdl-gradient);
             display: flex;
             align-items: center;
             justify-content: center;
             color: white;
-            font-size: 1.2rem;
+            font-size: 1.4rem;
+            box-shadow: var(--shadow-soft);
         }
 
         .card-title {
-            font-size: 1.5rem;
-            font-weight: 600;
+            font-size: 1.8rem;
+            font-weight: 700;
             color: var(--text-primary);
+            margin-bottom: 0.25rem;
         }
 
         .card-subtitle {
             color: var(--text-secondary);
-            font-size: 0.9rem;
+            font-size: 1rem;
+            font-weight: 500;
+        }
+
+        /* Important Notice */
+        .important-notice {
+            background: linear-gradient(135deg, #FFF3E0 0%, #FFE0B2 100%);
+            border: 2px solid var(--accent-orange);
+            border-radius: var(--radius-medium);
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            position: relative;
+        }
+
+        .important-notice::before {
+            content: '⚠️';
+            position: absolute;
+            top: -10px;
+            left: 20px;
+            background: var(--accent-orange);
+            color: white;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1rem;
+        }
+
+        .notice-title {
+            font-weight: 700;
+            color: #E65100;
+            margin-bottom: 0.5rem;
+            font-size: 1.1rem;
+        }
+
+        .notice-text {
+            color: #BF360C;
+            font-weight: 500;
+            line-height: 1.5;
         }
 
         /* Form Elements */
         .form-group {
-            margin-bottom: 1.5rem;
+            margin-bottom: 1.8rem;
         }
 
         .form-label {
             display: block;
-            font-weight: 500;
+            font-weight: 600;
             color: var(--text-primary);
-            margin-bottom: 0.5rem;
+            margin-bottom: 0.75rem;
+            font-size: 1rem;
         }
 
         .form-input {
             width: 100%;
-            padding: 0.875rem 1rem;
+            padding: 1rem 1.2rem;
             border: 2px solid var(--border-light);
             border-radius: var(--radius-medium);
             font-size: 1rem;
             transition: all 0.3s ease;
             background: var(--bg-white);
+            font-family: inherit;
         }
 
         .form-input:focus {
             outline: none;
             border-color: var(--sdl-green-medium);
-            box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.1);
+            box-shadow: 0 0 0 4px rgba(76, 175, 80, 0.1);
+            transform: translateY(-1px);
         }
 
         .form-textarea {
-            min-height: 120px;
+            min-height: 140px;
             resize: vertical;
-            font-family: inherit;
+            font-family: 'Inter', monospace;
+            line-height: 1.5;
         }
 
         .form-help {
-            font-size: 0.85rem;
+            font-size: 0.9rem;
             color: var(--text-light);
-            margin-top: 0.5rem;
+            margin-top: 0.75rem;
+            display: flex;
+            align-items: flex-start;
+            gap: 0.5rem;
+        }
+
+        .form-help i {
+            color: var(--sdl-green-medium);
+            margin-top: 0.1rem;
         }
 
         /* URL Input Section */
         .url-input-section {
-            margin-bottom: 2rem;
+            margin-bottom: 2.5rem;
         }
 
         .url-input-container {
@@ -313,53 +461,84 @@
         }
 
         .url-input {
-            padding-left: 3rem;
+            padding-left: 3.5rem;
+            font-family: 'Inter', monospace;
         }
 
         .url-icon {
             position: absolute;
-            left: 1rem;
+            left: 1.2rem;
             top: 50%;
             transform: translateY(-50%);
             color: var(--text-light);
+            font-size: 1.1rem;
         }
 
         .url-examples {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
             gap: 1rem;
-            margin-top: 1rem;
+            margin-top: 1.5rem;
         }
 
         .url-example {
-            padding: 0.75rem;
+            padding: 1rem;
             background: var(--bg-light);
             border-radius: var(--radius-small);
-            font-size: 0.85rem;
+            font-size: 0.9rem;
             color: var(--text-secondary);
             cursor: pointer;
             transition: all 0.3s ease;
+            border: 2px solid transparent;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
         }
 
         .url-example:hover {
             background: var(--sdl-gradient-light);
             color: var(--sdl-green-dark);
+            border-color: var(--sdl-green-medium);
+            transform: translateY(-2px);
+        }
+
+        .url-example i {
+            font-size: 1.2rem;
+            color: var(--sdl-green-medium);
         }
 
         /* Buttons */
         .btn {
             display: inline-flex;
             align-items: center;
-            gap: 0.5rem;
-            padding: 0.875rem 1.5rem;
+            gap: 0.75rem;
+            padding: 1rem 2rem;
             border: none;
             border-radius: var(--radius-medium);
             font-size: 1rem;
-            font-weight: 500;
+            font-weight: 600;
             cursor: pointer;
             transition: all 0.3s ease;
             text-decoration: none;
             justify-content: center;
+            font-family: inherit;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+            transition: left 0.5s;
+        }
+
+        .btn:hover::before {
+            left: 100%;
         }
 
         .btn-primary {
@@ -370,7 +549,7 @@
 
         .btn-primary:hover {
             box-shadow: var(--shadow-medium);
-            transform: translateY(-2px);
+            transform: translateY(-3px);
         }
 
         .btn-secondary {
@@ -382,11 +561,13 @@
         .btn-secondary:hover {
             background: var(--sdl-green-medium);
             color: white;
+            transform: translateY(-2px);
         }
 
         .btn-large {
-            padding: 1.125rem 2rem;
+            padding: 1.25rem 2.5rem;
             font-size: 1.1rem;
+            font-weight: 700;
         }
 
         .btn:disabled {
@@ -395,21 +576,26 @@
             transform: none !important;
         }
 
+        .btn:disabled::before {
+            display: none;
+        }
+
         /* Loading States */
         .loading {
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 1rem;
-            padding: 3rem;
+            gap: 1.5rem;
+            padding: 4rem;
             color: var(--text-secondary);
+            text-align: center;
         }
 
         .spinner {
-            width: 32px;
-            height: 32px;
-            border: 3px solid var(--border-light);
-            border-top: 3px solid var(--sdl-green-medium);
+            width: 40px;
+            height: 40px;
+            border: 4px solid var(--border-light);
+            border-top: 4px solid var(--sdl-green-medium);
             border-radius: 50%;
             animation: spin 1s linear infinite;
         }
@@ -419,12 +605,22 @@
             100% { transform: rotate(360deg); }
         }
 
+        .loading h3 {
+            font-size: 1.3rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        .loading p {
+            color: var(--text-light);
+        }
+
         /* Product Grid */
         .products-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-            gap: 1.5rem;
-            margin-top: 2rem;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 2rem;
+            margin-top: 2.5rem;
         }
 
         .product-card {
@@ -433,6 +629,7 @@
             overflow: hidden;
             box-shadow: var(--shadow-soft);
             transition: all 0.3s ease;
+            border: 1px solid var(--border-light);
         }
 
         .product-card:hover {
@@ -442,46 +639,60 @@
 
         .product-image {
             width: 100%;
-            height: 200px;
+            height: 220px;
             object-fit: cover;
             background: var(--bg-light);
         }
 
         .product-content {
-            padding: 1.5rem;
-        }
-
-        .product-name {
-            font-weight: 600;
-            color: var(--text-primary);
-            margin-bottom: 0.5rem;
-            line-height: 1.4;
+            padding: 1.8rem;
         }
 
         .product-retailer {
             display: inline-block;
             background: var(--sdl-gradient-light);
             color: var(--sdl-green-dark);
-            padding: 0.25rem 0.75rem;
+            padding: 0.4rem 1rem;
             border-radius: var(--radius-small);
             font-size: 0.8rem;
-            font-weight: 500;
+            font-weight: 600;
             margin-bottom: 1rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .product-name {
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 0.75rem;
+            line-height: 1.4;
+            font-size: 1.1rem;
         }
 
         .product-price {
-            font-size: 1.5rem;
-            font-weight: 700;
+            font-size: 1.6rem;
+            font-weight: 800;
             color: var(--sdl-green-medium);
-            margin-bottom: 1rem;
+            margin-bottom: 1.2rem;
         }
 
         .product-details {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 0.5rem;
-            font-size: 0.85rem;
+            gap: 0.75rem;
+            font-size: 0.9rem;
             color: var(--text-secondary);
+        }
+
+        .product-detail {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .product-detail i {
+            color: var(--sdl-green-medium);
+            width: 16px;
         }
 
         /* Manual Entry Modal */
@@ -492,9 +703,9 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0, 0, 0, 0.5);
+            background: rgba(0, 0, 0, 0.6);
             z-index: 1000;
-            backdrop-filter: blur(4px);
+            backdrop-filter: blur(8px);
         }
 
         .modal.active {
@@ -507,25 +718,43 @@
         .modal-content {
             background: var(--bg-white);
             border-radius: var(--radius-large);
-            padding: 2rem;
-            max-width: 600px;
+            padding: 2.5rem;
+            max-width: 700px;
             width: 90%;
-            max-height: 80vh;
+            max-height: 85vh;
             overflow-y: auto;
             box-shadow: var(--shadow-strong);
+            position: relative;
+        }
+
+        .modal-content::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: var(--sdl-gradient);
         }
 
         .modal-header {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            margin-bottom: 1.5rem;
+            margin-bottom: 2rem;
         }
 
         .modal-title {
-            font-size: 1.5rem;
-            font-weight: 600;
+            font-size: 1.6rem;
+            font-weight: 700;
             color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .modal-title i {
+            color: var(--sdl-green-medium);
         }
 
         .modal-close {
@@ -542,57 +771,134 @@
         .modal-close:hover {
             background: var(--bg-light);
             color: var(--text-primary);
+            transform: rotate(90deg);
+        }
+
+        .manual-steps {
+            background: var(--bg-light);
+            border-radius: var(--radius-medium);
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .manual-steps h4 {
+            color: var(--sdl-green-dark);
+            margin-bottom: 1rem;
+            font-weight: 600;
+        }
+
+        .manual-steps ol {
+            padding-left: 1.5rem;
+            color: var(--text-secondary);
+        }
+
+        .manual-steps li {
+            margin-bottom: 0.5rem;
+            font-weight: 500;
         }
 
         /* Cost Breakdown */
         .cost-breakdown {
             background: var(--bg-light);
             border-radius: var(--radius-medium);
-            padding: 1.5rem;
-            margin-top: 2rem;
+            padding: 2rem;
+            margin-top: 2.5rem;
+            border: 1px solid var(--border-light);
+        }
+
+        .cost-breakdown h3 {
+            color: var(--text-primary);
+            margin-bottom: 1.5rem;
+            font-size: 1.3rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .cost-breakdown h3 i {
+            color: var(--sdl-green-medium);
         }
 
         .cost-item {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 0.75rem 0;
+            padding: 1rem 0;
             border-bottom: 1px solid var(--border-light);
         }
 
         .cost-item:last-child {
             border-bottom: none;
-            font-weight: 600;
-            font-size: 1.1rem;
+            font-weight: 700;
+            font-size: 1.2rem;
             color: var(--sdl-green-dark);
+            background: rgba(76, 175, 80, 0.05);
+            margin: 1rem -2rem -2rem;
+            padding: 1.5rem 2rem;
+            border-radius: 0 0 var(--radius-medium) var(--radius-medium);
         }
 
         .cost-label {
             color: var(--text-secondary);
+            font-weight: 500;
         }
 
         .cost-value {
-            font-weight: 500;
+            font-weight: 600;
             color: var(--text-primary);
+            font-size: 1.1rem;
         }
 
         /* Delivery Fee Section */
         .delivery-fees {
             background: var(--bg-white);
             border-radius: var(--radius-large);
-            padding: 2rem;
-            margin-top: 2rem;
+            padding: 2.5rem;
+            margin-top: 2.5rem;
             box-shadow: var(--shadow-soft);
+            border: 1px solid var(--border-light);
+        }
+
+        .delivery-fees::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: var(--sdl-gradient);
+        }
+
+        .delivery-fees h3 {
+            color: var(--text-primary);
+            margin-bottom: 1rem;
+            font-size: 1.4rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .delivery-fees h3 i {
+            color: var(--accent-blue);
         }
 
         .delivery-fee-item {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 1rem;
+            padding: 1.2rem;
             background: var(--bg-light);
             border-radius: var(--radius-medium);
             margin-bottom: 1rem;
+            border: 2px solid transparent;
+            transition: all 0.3s ease;
+        }
+
+        .delivery-fee-item:hover {
+            border-color: var(--sdl-green-medium);
+            background: rgba(76, 175, 80, 0.05);
         }
 
         .delivery-fee-item:last-child {
@@ -600,13 +906,137 @@
         }
 
         .delivery-fee-label {
-            font-weight: 500;
+            font-weight: 600;
             color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .delivery-fee-label i {
+            color: var(--sdl-green-medium);
         }
 
         .delivery-fee-input {
             width: 120px;
             text-align: right;
+            font-weight: 600;
+        }
+
+        /* Success/Error Messages */
+        .alert {
+            padding: 1.2rem 1.5rem;
+            border-radius: var(--radius-medium);
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: flex-start;
+            gap: 1rem;
+            font-weight: 500;
+        }
+
+        .alert i {
+            font-size: 1.2rem;
+            margin-top: 0.1rem;
+        }
+
+        .alert-success {
+            background: #E8F5E9;
+            color: #2E7D32;
+            border: 2px solid #C8E6C9;
+        }
+
+        .alert-error {
+            background: #FFEBEE;
+            color: #C62828;
+            border: 2px solid #FFCDD2;
+        }
+
+        .alert-warning {
+            background: #FFF3E0;
+            color: #F57C00;
+            border: 2px solid #FFE0B2;
+        }
+
+        .alert-info {
+            background: #E3F2FD;
+            color: #1976D2;
+            border: 2px solid #BBDEFB;
+        }
+
+        /* Order Summary */
+        .order-summary {
+            background: linear-gradient(135deg, #E8F5E9 0%, #C8E6C9 100%);
+            border-radius: var(--radius-large);
+            padding: 2.5rem;
+            margin-bottom: 2.5rem;
+            border: 2px solid var(--sdl-green-medium);
+        }
+
+        .order-summary h3 {
+            color: var(--sdl-green-dark);
+            margin-bottom: 1.5rem;
+            font-size: 1.5rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .summary-item {
+            text-align: center;
+            padding: 1rem;
+            background: rgba(255,255,255,0.7);
+            border-radius: var(--radius-medium);
+        }
+
+        .summary-value {
+            font-size: 1.8rem;
+            font-weight: 800;
+            color: var(--sdl-green-dark);
+            display: block;
+        }
+
+        .summary-label {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* Liability Checkbox */
+        .liability-section {
+            background: #FFF3E0;
+            border: 2px solid var(--accent-orange);
+            border-radius: var(--radius-medium);
+            padding: 1.5rem;
+            margin: 2rem 0;
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: flex-start;
+            gap: 1rem;
+        }
+
+        .checkbox-input {
+            width: 20px;
+            height: 20px;
+            margin-top: 0.2rem;
+            accent-color: var(--sdl-green-medium);
+        }
+
+        .checkbox-label {
+            color: #BF360C;
+            font-weight: 500;
+            line-height: 1.5;
+            cursor: pointer;
         }
 
         /* Responsive Design */
@@ -616,14 +1046,19 @@
             }
 
             .hero h1 {
-                font-size: 2rem;
+                font-size: 2.2rem;
             }
 
-            .hero p {
-                font-size: 1rem;
+            .hero-subtitle {
+                font-size: 1.1rem;
             }
 
-            .hero-stats {
+            .hero-features {
+                flex-direction: column;
+                gap: 1.5rem;
+            }
+
+            .trust-indicators {
                 flex-direction: column;
                 gap: 1rem;
             }
@@ -637,6 +1072,10 @@
                 justify-content: center;
             }
 
+            .step-indicator::after {
+                display: none;
+            }
+
             .products-grid {
                 grid-template-columns: 1fr;
             }
@@ -644,48 +1083,42 @@
             .modal-content {
                 margin: 1rem;
                 width: calc(100% - 2rem);
+                padding: 2rem;
             }
 
             .header-content {
                 padding: 1rem;
+                flex-direction: column;
+                gap: 1rem;
+                text-align: center;
+            }
+
+            .header-info {
+                justify-content: center;
             }
 
             .logo-text {
-                font-size: 1.2rem;
+                font-size: 1.3rem;
             }
-        }
 
-        /* Success/Error Messages */
-        .alert {
-            padding: 1rem 1.5rem;
-            border-radius: var(--radius-medium);
-            margin-bottom: 1.5rem;
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-        }
+            .card {
+                padding: 2rem;
+            }
 
-        .alert-success {
-            background: #E8F5E9;
-            color: #2E7D32;
-            border: 1px solid #C8E6C9;
-        }
+            .delivery-fee-item {
+                flex-direction: column;
+                gap: 1rem;
+                text-align: center;
+            }
 
-        .alert-error {
-            background: #FFEBEE;
-            color: #C62828;
-            border: 1px solid #FFCDD2;
-        }
-
-        .alert-warning {
-            background: #FFF3E0;
-            color: #F57C00;
-            border: 1px solid #FFE0B2;
+            .summary-grid {
+                grid-template-columns: 1fr;
+            }
         }
 
         /* Animations */
         .fade-in {
-            animation: fadeIn 0.5s ease-in-out;
+            animation: fadeIn 0.6s ease-in-out;
         }
 
         .slide-up {
@@ -695,11 +1128,50 @@
         @keyframes slideUp {
             from {
                 opacity: 0;
-                transform: translateY(30px);
+                transform: translateY(40px);
             }
             to {
                 opacity: 1;
                 transform: translateY(0);
+            }
+        }
+
+        .bounce-in {
+            animation: bounceIn 0.6s ease-out;
+        }
+
+        @keyframes bounceIn {
+            0% {
+                opacity: 0;
+                transform: scale(0.3);
+            }
+            50% {
+                opacity: 1;
+                transform: scale(1.05);
+            }
+            70% {
+                transform: scale(0.9);
+            }
+            100% {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+
+        /* Pulse animation for important elements */
+        .pulse {
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% {
+                box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.4);
+            }
+            70% {
+                box-shadow: 0 0 0 10px rgba(76, 175, 80, 0);
+            }
+            100% {
+                box-shadow: 0 0 0 0 rgba(76, 175, 80, 0);
             }
         }
     </style>
@@ -716,7 +1188,21 @@
                 </div>
                 <div>
                     <div class="logo-text">Spencer Deals Ltd</div>
-                    <div class="header-subtitle">Instant Import Calculator</div>
+                    <div class="header-subtitle">Bermuda Import Calculator</div>
+                </div>
+            </div>
+            <div class="header-info">
+                <div class="header-stat">
+                    <i class="fas fa-clock"></i>
+                    <span>3-5 Weeks</span>
+                </div>
+                <div class="header-stat">
+                    <i class="fas fa-percentage"></i>
+                    <span>26.5% Duty</span>
+                </div>
+                <div class="header-stat">
+                    <i class="fas fa-ship"></i>
+                    <span>$8/ft³</span>
                 </div>
             </div>
         </div>
@@ -725,21 +1211,36 @@
     <div class="container">
         <!-- Hero Section -->
         <section class="hero">
-            <h1>Ship to Bermuda with Confidence</h1>
-            <p>Get instant, accurate import cost estimates for any product from US retailers. No surprises, no hidden fees.</p>
+            <h1>Import to Bermuda Made Easy</h1>
+            <p class="hero-subtitle">Get instant, accurate import costs for any US product. No surprises, no hidden fees - just transparent pricing for Bermuda residents.</p>
             
-            <div class="hero-stats">
-                <div class="stat">
-                    <div class="stat-number">26.5%</div>
-                    <div class="stat-label">Duty Rate</div>
+            <div class="hero-features">
+                <div class="hero-feature">
+                    <i class="fas fa-calculator"></i>
+                    <span>Instant Cost Calculator</span>
                 </div>
-                <div class="stat">
-                    <div class="stat-number">3-5</div>
-                    <div class="stat-label">Weeks Delivery</div>
+                <div class="hero-feature">
+                    <i class="fas fa-shield-alt"></i>
+                    <span>Transparent Pricing</span>
                 </div>
-                <div class="stat">
-                    <div class="stat-number">$8</div>
-                    <div class="stat-label">Per Cubic Foot</div>
+                <div class="hero-feature">
+                    <i class="fas fa-truck"></i>
+                    <span>Door-to-Door Service</span>
+                </div>
+            </div>
+
+            <div class="trust-indicators">
+                <div class="trust-item">
+                    <span class="trust-number">3-5</span>
+                    <div class="trust-label">Weeks Delivery</div>
+                </div>
+                <div class="trust-item">
+                    <span class="trust-number">26.5%</span>
+                    <div class="trust-label">Duty Rate</div>
+                </div>
+                <div class="trust-item">
+                    <span class="trust-number">$8</span>
+                    <div class="trust-label">Per Cubic Foot</div>
                 </div>
             </div>
         </section>
@@ -773,6 +1274,13 @@
                     </div>
                 </div>
 
+                <div class="important-notice">
+                    <div class="notice-title">Important: Select Your Variant First!</div>
+                    <div class="notice-text">
+                        Before copying the product URL, make sure to select your preferred color, size, or style on the retailer's website. This ensures we import exactly what you want!
+                    </div>
+                </div>
+
                 <div class="url-input-section">
                     <div class="form-group">
                         <label class="form-label">Product URLs (one per line)</label>
@@ -787,27 +1295,32 @@
                         </div>
                         <div class="form-help">
                             <i class="fas fa-info-circle"></i>
-                            Supported retailers: Amazon, Wayfair, Target, Walmart, Best Buy, Home Depot, Crate & Barrel, IKEA, and more
+                            <div>
+                                <strong>Supported retailers:</strong> Amazon, Wayfair, Target, Walmart, Best Buy, Home Depot, Crate & Barrel, IKEA, and many more!
+                            </div>
                         </div>
                     </div>
 
                     <div class="url-examples">
                         <div class="url-example" onclick="addExampleUrl('wayfair')">
-                            <i class="fas fa-home"></i> Wayfair Example
+                            <i class="fas fa-home"></i>
+                            <span>Try Wayfair Example</span>
                         </div>
                         <div class="url-example" onclick="addExampleUrl('amazon')">
-                            <i class="fab fa-amazon"></i> Amazon Example
+                            <i class="fab fa-amazon"></i>
+                            <span>Try Amazon Example</span>
                         </div>
                         <div class="url-example" onclick="addExampleUrl('target')">
-                            <i class="fas fa-bullseye"></i> Target Example
+                            <i class="fas fa-bullseye"></i>
+                            <span>Try Target Example</span>
                         </div>
                     </div>
                 </div>
 
-                <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
-                    <button class="btn btn-primary btn-large" onclick="scrapeProducts()">
+                <div style="display: flex; gap: 1.5rem; flex-wrap: wrap; justify-content: center;">
+                    <button class="btn btn-primary btn-large pulse" onclick="scrapeProducts()">
                         <i class="fas fa-search"></i>
-                        Analyze Products
+                        Get My Import Costs
                     </button>
                     <button class="btn btn-secondary" onclick="openManualEntry()">
                         <i class="fas fa-edit"></i>
@@ -823,7 +1336,7 @@
                         <div class="spinner"></div>
                         <div>
                             <h3>Analyzing your products...</h3>
-                            <p>This may take a few moments while we gather product information</p>
+                            <p>We're gathering product information and calculating your import costs</p>
                         </div>
                     </div>
                 </div>
@@ -846,10 +1359,10 @@
                         <!-- Products will be inserted here -->
                     </div>
 
-                    <div style="margin-top: 2rem; text-align: center;">
-                        <button class="btn btn-primary btn-large" onclick="goToPage(2)">
+                    <div style="margin-top: 3rem; text-align: center;">
+                        <button class="btn btn-primary btn-large pulse" onclick="goToPage(2)">
                             <i class="fas fa-calculator"></i>
-                            Calculate Import Costs
+                            Calculate My Total Import Cost
                         </button>
                     </div>
                 </div>
@@ -864,8 +1377,15 @@
                         <i class="fas fa-calculator"></i>
                     </div>
                     <div>
-                        <h2 class="card-title">Import Cost Breakdown</h2>
+                        <h2 class="card-title">Your Import Cost Breakdown</h2>
                         <p class="card-subtitle">Review all costs before placing your order</p>
+                    </div>
+                </div>
+
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle"></i>
+                    <div>
+                        <strong>Delivery Time:</strong> Your items will arrive in Bermuda in approximately <strong>3-5 weeks</strong>. This is an estimate and actual delivery times may vary based on retailer processing and shipping conditions.
                     </div>
                 </div>
 
@@ -875,26 +1395,26 @@
 
                 <!-- Delivery Fees Section -->
                 <div class="delivery-fees">
-                    <h3 style="margin-bottom: 1rem; color: var(--text-primary);">
+                    <h3>
                         <i class="fas fa-truck"></i>
                         US Delivery Fees
                     </h3>
-                    <p style="color: var(--text-secondary); margin-bottom: 1.5rem;">
-                        Enter the delivery fee charged by each retailer to ship to our US warehouse
+                    <p style="color: var(--text-secondary); margin-bottom: 2rem; font-weight: 500;">
+                        Enter the delivery fee each retailer charges to ship to our US warehouse. Most retailers charge $25-50 for delivery.
                     </p>
                     <div id="deliveryFeesSection">
                         <!-- Delivery fees will be inserted here -->
                     </div>
                 </div>
 
-                <div style="display: flex; gap: 1rem; justify-content: space-between; margin-top: 2rem; flex-wrap: wrap;">
+                <div style="display: flex; gap: 1.5rem; justify-content: space-between; margin-top: 3rem; flex-wrap: wrap;">
                     <button class="btn btn-secondary" onclick="goToPage(1)">
                         <i class="fas fa-arrow-left"></i>
                         Back to Products
                     </button>
-                    <button class="btn btn-primary btn-large" onclick="goToPage(3)">
+                    <button class="btn btn-primary btn-large pulse" onclick="goToPage(3)">
                         <i class="fas fa-ship"></i>
-                        Place Import Order
+                        Place My Import Order
                     </button>
                 </div>
             </div>
@@ -913,19 +1433,33 @@
                     </div>
                 </div>
 
-                <div id="orderSummary">
+                <div id="orderSummary" class="order-summary">
                     <!-- Order summary will be inserted here -->
                 </div>
 
-                <div class="card" style="margin-top: 2rem;">
-                    <h3 style="margin-bottom: 1rem;">Contact Information</h3>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div class="alert alert-success">
+                    <i class="fas fa-check-circle"></i>
+                    <div>
+                        <strong>What happens next:</strong><br>
+                        1. We review your order and verify all product information<br>
+                        2. We purchase the items from US retailers<br>
+                        3. Items are shipped to Bermuda via ocean freight<br>
+                        4. You'll be notified when your order arrives for pickup
+                    </div>
+                </div>
+
+                <div class="card" style="margin-top: 2.5rem;">
+                    <h3 style="margin-bottom: 1.5rem; color: var(--text-primary); font-weight: 700;">
+                        <i class="fas fa-user" style="color: var(--sdl-green-medium); margin-right: 0.5rem;"></i>
+                        Contact Information
+                    </h3>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
                         <div class="form-group">
-                            <label class="form-label">Full Name</label>
+                            <label class="form-label">Full Name *</label>
                             <input type="text" id="customerName" class="form-input" placeholder="Enter your full name" required>
                         </div>
                         <div class="form-group">
-                            <label class="form-label">Email Address</label>
+                            <label class="form-label">Email Address *</label>
                             <input type="email" id="customerEmail" class="form-input" placeholder="Enter your email" required>
                         </div>
                     </div>
@@ -935,14 +1469,24 @@
                     </div>
                 </div>
 
-                <div style="display: flex; gap: 1rem; justify-content: space-between; margin-top: 2rem; flex-wrap: wrap;">
+                <!-- Liability Section -->
+                <div class="liability-section">
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="liabilityCheckbox" class="checkbox-input" required>
+                        <label for="liabilityCheckbox" class="checkbox-label">
+                            <strong>I understand and agree:</strong> I am responsible for providing accurate product URLs with the correct variant (color, size, style) selected. SDL is not liable for incorrect items ordered due to wrong URLs or unselected variants. All import cost estimates are approximate and final costs may vary slightly.
+                        </label>
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 1.5rem; justify-content: space-between; margin-top: 3rem; flex-wrap: wrap;">
                     <button class="btn btn-secondary" onclick="goToPage(2)">
                         <i class="fas fa-arrow-left"></i>
                         Back to Costs
                     </button>
-                    <button class="btn btn-primary btn-large" onclick="submitOrder()">
+                    <button class="btn btn-primary btn-large pulse" onclick="submitOrder()">
                         <i class="fas fa-check"></i>
-                        Submit Import Order
+                        Submit My Import Order
                     </button>
                 </div>
             </div>
@@ -966,8 +1510,19 @@
                 <i class="fas fa-info-circle"></i>
                 <div>
                     <strong>Some retailers block automated scraping.</strong><br>
-                    Copy and paste the entire webpage content below for manual processing.
+                    No worries! Just copy the entire webpage content and we'll extract the product information for you.
                 </div>
+            </div>
+
+            <div class="manual-steps">
+                <h4>📋 Easy Steps:</h4>
+                <ol>
+                    <li><strong>Select your variant</strong> (color, size, style) on the product page</li>
+                    <li><strong>Copy the URL</strong> from your browser's address bar</li>
+                    <li><strong>Select all content</strong> (Ctrl+A or Cmd+A)</li>
+                    <li><strong>Copy everything</strong> (Ctrl+C or Cmd+C)</li>
+                    <li><strong>Paste below</strong> and click "Process Content"</li>
+                </ol>
             </div>
 
             <div class="form-group">
@@ -981,15 +1536,15 @@
                     id="manualContent" 
                     class="form-input form-textarea" 
                     rows="12" 
-                    placeholder="1. Go to the product page&#10;2. Press Ctrl+A (or Cmd+A on Mac) to select all&#10;3. Press Ctrl+C (or Cmd+C on Mac) to copy&#10;4. Paste the content here"
+                    placeholder="Paste the entire webpage content here..."
                 ></textarea>
                 <div class="form-help">
                     <i class="fas fa-lightbulb"></i>
-                    Make sure to copy the entire webpage including product name, price, and dimensions
+                    <div>Make sure to copy the entire webpage including product name, price, and dimensions for best results</div>
                 </div>
             </div>
 
-            <div style="display: flex; gap: 1rem; justify-content: flex-end;">
+            <div style="display: flex; gap: 1rem; justify-content: flex-end; margin-top: 2rem;">
                 <button class="btn btn-secondary" onclick="closeManualEntry()">
                     Cancel
                 </button>
@@ -1036,6 +1591,9 @@
             } else if (pageNumber === 3) {
                 updateOrderSummary();
             }
+
+            // Scroll to top
+            window.scrollTo({ top: 0, behavior: 'smooth' });
         }
 
         // Add example URLs
@@ -1050,13 +1608,17 @@
             const currentValue = textarea.value.trim();
             const newValue = currentValue ? currentValue + '\n' + examples[retailer] : examples[retailer];
             textarea.value = newValue;
+            
+            // Add some visual feedback
+            textarea.focus();
+            showAlert(`✨ Added ${retailer.charAt(0).toUpperCase() + retailer.slice(1)} example URL!`, 'success');
         }
 
         // Scrape products
         async function scrapeProducts() {
             const urls = document.getElementById('productUrls').value.trim();
             if (!urls) {
-                showAlert('Please enter at least one product URL', 'error');
+                showAlert('Please enter at least one product URL to get started! 🔗', 'error');
                 return;
             }
 
@@ -1084,7 +1646,7 @@
                 
             } catch (error) {
                 console.error('Error scraping products:', error);
-                showAlert('Failed to analyze products. Please try again.', 'error');
+                showAlert('❌ Failed to analyze products. Please check your URLs and try again.', 'error');
             } finally {
                 document.getElementById('loadingSection').style.display = 'none';
             }
@@ -1096,33 +1658,45 @@
             const count = document.getElementById('productsCount');
             
             if (!products || products.length === 0) {
-                grid.innerHTML = '<div class="alert alert-warning"><i class="fas fa-exclamation-triangle"></i>No products found. Please check your URLs and try again.</div>';
+                grid.innerHTML = '<div class="alert alert-warning"><i class="fas fa-exclamation-triangle"></i><div>No products found. Please check your URLs and try again.</div></div>';
                 count.textContent = '0 products found';
                 return;
             }
 
-            count.textContent = `${products.length} product${products.length !== 1 ? 's' : ''} found`;
+            count.textContent = `${products.length} product${products.length !== 1 ? 's' : ''} ready to import`;
             
             grid.innerHTML = products.map(product => `
-                <div class="product-card">
-                    <img src="${product.image || 'https://placehold.co/300x200/E8F5E8/7CB342/png?text=SDL'}" 
+                <div class="product-card bounce-in">
+                    <img src="${product.image || 'https://placehold.co/320x220/E8F5E8/4CAF50/png?text=SDL+Product'}" 
                          alt="${product.name}" 
                          class="product-image"
-                         onerror="this.src='https://placehold.co/300x200/E8F5E8/7CB342/png?text=SDL'">
+                         onerror="this.src='https://placehold.co/320x220/E8F5E8/4CAF50/png?text=SDL+Product'">
                     <div class="product-content">
                         <div class="product-retailer">${product.retailer}</div>
                         <h3 class="product-name">${product.name}</h3>
                         <div class="product-price">$${(product.price || 0).toFixed(2)}</div>
                         <div class="product-details">
-                            <div><i class="fas fa-cube"></i> ${product.dimensions ? `${product.dimensions.length}" × ${product.dimensions.width}" × ${product.dimensions.height}"` : 'Estimated'}</div>
-                            <div><i class="fas fa-weight"></i> ${product.weight ? `${product.weight} lbs` : 'Estimated'}</div>
-                            <div><i class="fas fa-ship"></i> $${product.shippingCost || 0}</div>
-                            <div><i class="fas fa-tag"></i> ${product.category}</div>
+                            <div class="product-detail">
+                                <i class="fas fa-cube"></i>
+                                <span>${product.dimensions ? `${product.dimensions.length}" × ${product.dimensions.width}" × ${product.dimensions.height}"` : 'Estimated'}</span>
+                            </div>
+                            <div class="product-detail">
+                                <i class="fas fa-weight"></i>
+                                <span>${product.weight ? `${product.weight} lbs` : 'Estimated'}</span>
+                            </div>
+                            <div class="product-detail">
+                                <i class="fas fa-ship"></i>
+                                <span>$${product.shippingCost || 0} shipping</span>
+                            </div>
+                            <div class="product-detail">
+                                <i class="fas fa-tag"></i>
+                                <span>${product.category}</span>
+                            </div>
                         </div>
                         ${product.manualEntryRequired ? `
-                            <div class="alert alert-warning" style="margin-top: 1rem; font-size: 0.8rem;">
+                            <div class="alert alert-warning" style="margin-top: 1rem; font-size: 0.85rem;">
                                 <i class="fas fa-exclamation-triangle"></i>
-                                Manual entry required
+                                <div>Manual entry required</div>
                             </div>
                         ` : ''}
                     </div>
@@ -1130,15 +1704,20 @@
             `).join('');
 
             document.getElementById('productsSection').style.display = 'block';
+            
+            // Initialize delivery fees
+            initializeDeliveryFees();
         }
 
         // Manual entry functions
         function openManualEntry() {
             document.getElementById('manualEntryModal').classList.add('active');
+            document.body.style.overflow = 'hidden';
         }
 
         function closeManualEntry() {
             document.getElementById('manualEntryModal').classList.remove('active');
+            document.body.style.overflow = 'auto';
             document.getElementById('manualUrl').value = '';
             document.getElementById('manualContent').value = '';
         }
@@ -1148,9 +1727,14 @@
             const content = document.getElementById('manualContent').value.trim();
 
             if (!url || !content) {
-                showAlert('Please enter both URL and webpage content', 'error');
+                showAlert('Please enter both URL and webpage content 📝', 'error');
                 return;
             }
+
+            const processBtn = document.querySelector('#manualEntryModal .btn-primary');
+            const originalText = processBtn.innerHTML;
+            processBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
+            processBtn.disabled = true;
 
             try {
                 const response = await fetch('/api/process-manual-content', {
@@ -1170,21 +1754,24 @@
                     products.push(data.product);
                     displayProducts();
                     closeManualEntry();
-                    showAlert('✅ Product processed successfully from manual content!', 'success');
+                    showAlert('🎉 Product processed successfully from manual content!', 'success');
                 } else {
                     throw new Error('Failed to extract product data');
                 }
 
             } catch (error) {
                 console.error('Manual content processing error:', error);
-                showAlert(`Error: ${error.message}`, 'error');
+                showAlert(`❌ ${error.message}`, 'error');
+            } finally {
+                processBtn.innerHTML = originalText;
+                processBtn.disabled = false;
             }
         }
 
         // Cost calculation functions
         function updateCostBreakdown() {
             if (!products || products.length === 0) {
-                document.getElementById('costBreakdown').innerHTML = '<div class="alert alert-warning"><i class="fas fa-exclamation-triangle"></i>No products to calculate costs for.</div>';
+                document.getElementById('costBreakdown').innerHTML = '<div class="alert alert-warning"><i class="fas fa-exclamation-triangle"></i><div>No products to calculate costs for.</div></div>';
                 return;
             }
 
@@ -1209,6 +1796,10 @@
             // Display breakdown
             document.getElementById('costBreakdown').innerHTML = `
                 <div class="cost-breakdown">
+                    <h3>
+                        <i class="fas fa-receipt"></i>
+                        Your Import Cost Breakdown
+                    </h3>
                     <div class="cost-item">
                         <span class="cost-label">Products (${products.length} items)</span>
                         <span class="cost-value">$${productTotal.toFixed(2)}</span>
@@ -1226,7 +1817,7 @@
                         <span class="cost-value">$${totalDeliveryFees.toFixed(2)}</span>
                     </div>
                     <div class="cost-item">
-                        <span class="cost-label">Total Import Cost</span>
+                        <span class="cost-label">🎯 Total Import Cost</span>
                         <span class="cost-value">$${grandTotal.toFixed(2)}</span>
                     </div>
                 </div>
@@ -1247,7 +1838,7 @@
                         ${retailer} Delivery Fee
                     </div>
                     <div style="display: flex; align-items: center; gap: 0.5rem;">
-                        <span>$</span>
+                        <span style="font-weight: 600;">$</span>
                         <input 
                             type="number" 
                             class="form-input delivery-fee-input" 
@@ -1274,28 +1865,25 @@
         }
 
         function updateOrderSummary() {
+            const estimatedWeeks = '3-5';
+            
             document.getElementById('orderSummary').innerHTML = `
-                <div class="cost-breakdown">
-                    <h3 style="margin-bottom: 1rem;">Order Summary</h3>
-                    <div class="cost-item">
-                        <span class="cost-label">Products</span>
-                        <span class="cost-value">${products.length} items</span>
+                <h3>
+                    <i class="fas fa-clipboard-check"></i>
+                    Order Summary
+                </h3>
+                <div class="summary-grid">
+                    <div class="summary-item">
+                        <span class="summary-value">${products.length}</span>
+                        <div class="summary-label">Products</div>
                     </div>
-                    <div class="cost-item">
-                        <span class="cost-label">Estimated Delivery</span>
-                        <span class="cost-value">3-5 weeks</span>
+                    <div class="summary-item">
+                        <span class="summary-value">$${totals.grandTotal.toFixed(2)}</span>
+                        <div class="summary-label">Total Cost</div>
                     </div>
-                    <div class="cost-item">
-                        <span class="cost-label">Total Cost</span>
-                        <span class="cost-value">$${totals.grandTotal.toFixed(2)}</span>
-                    </div>
-                </div>
-                
-                <div class="alert alert-success" style="margin-top: 1.5rem;">
-                    <i class="fas fa-info-circle"></i>
-                    <div>
-                        <strong>What happens next:</strong><br>
-                        We'll review your order, purchase the items from US retailers, and ship them to Bermuda via ocean freight. You'll be notified at each step.
+                    <div class="summary-item">
+                        <span class="summary-value">${estimatedWeeks}</span>
+                        <div class="summary-label">Weeks Delivery</div>
                     </div>
                 </div>
             `;
@@ -1305,11 +1893,22 @@
             const name = document.getElementById('customerName').value.trim();
             const email = document.getElementById('customerEmail').value.trim();
             const phone = document.getElementById('customerPhone').value.trim();
+            const liabilityAccepted = document.getElementById('liabilityCheckbox').checked;
 
             if (!name || !email) {
-                showAlert('Please fill in all required fields', 'error');
+                showAlert('Please fill in all required fields (Name and Email) 📝', 'error');
                 return;
             }
+
+            if (!liabilityAccepted) {
+                showAlert('Please accept the terms and conditions to proceed ✅', 'error');
+                return;
+            }
+
+            const submitBtn = document.querySelector('#page3 .btn-primary');
+            const originalText = submitBtn.innerHTML;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating Your Order...';
+            submitBtn.disabled = true;
 
             try {
                 const orderData = {
@@ -1334,15 +1933,48 @@
                 const result = await response.json();
                 
                 if (result.success) {
-                    showAlert('🎉 Order created successfully! Check your email for details.', 'success');
-                    // Could redirect to a success page here
+                    showAlert('🎉 Order created successfully! Check your email for details and next steps.', 'success');
+                    
+                    // Show success message with order details
+                    document.getElementById('page3').innerHTML = `
+                        <div class="card">
+                            <div class="card-header">
+                                <div class="card-icon" style="background: var(--success-green);">
+                                    <i class="fas fa-check"></i>
+                                </div>
+                                <div>
+                                    <h2 class="card-title">Order Created Successfully! 🎉</h2>
+                                    <p class="card-subtitle">Your import order has been submitted</p>
+                                </div>
+                            </div>
+                            
+                            <div class="alert alert-success">
+                                <i class="fas fa-check-circle"></i>
+                                <div>
+                                    <strong>Order #${result.draftOrderNumber}</strong><br>
+                                    Total: $${(result.totalAmount || 0).toFixed(2)}<br>
+                                    Estimated delivery: 3-5 weeks to Bermuda
+                                </div>
+                            </div>
+                            
+                            <div style="text-align: center; margin-top: 2rem;">
+                                <button class="btn btn-primary btn-large" onclick="location.reload()">
+                                    <i class="fas fa-plus"></i>
+                                    Start New Import Order
+                                </button>
+                            </div>
+                        </div>
+                    `;
                 } else {
                     throw new Error(result.error || 'Failed to create order');
                 }
 
             } catch (error) {
                 console.error('Order submission error:', error);
-                showAlert(`Error: ${error.message}`, 'error');
+                showAlert(`❌ ${error.message}`, 'error');
+            } finally {
+                submitBtn.innerHTML = originalText;
+                submitBtn.disabled = false;
             }
         }
 
@@ -1350,8 +1982,16 @@
         function showAlert(message, type = 'info') {
             const alertDiv = document.createElement('div');
             alertDiv.className = `alert alert-${type} slide-up`;
+            
+            const iconMap = {
+                success: 'check-circle',
+                error: 'exclamation-circle',
+                warning: 'exclamation-triangle',
+                info: 'info-circle'
+            };
+            
             alertDiv.innerHTML = `
-                <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle'}"></i>
+                <i class="fas fa-${iconMap[type]}"></i>
                 <div>${message}</div>
             `;
             
@@ -1359,12 +1999,13 @@
             const currentPageEl = document.querySelector('.page.active');
             currentPageEl.insertBefore(alertDiv, currentPageEl.firstChild);
             
-            // Remove after 5 seconds
+            // Remove after 6 seconds
             setTimeout(() => {
                 if (alertDiv.parentNode) {
-                    alertDiv.remove();
+                    alertDiv.style.animation = 'fadeOut 0.3s ease-out';
+                    setTimeout(() => alertDiv.remove(), 300);
                 }
-            }, 5000);
+            }, 6000);
         }
 
         // Initialize delivery fees when products are loaded
@@ -1375,6 +2016,26 @@
                     deliveryFees[retailer] = '25.00';
                 }
             });
+        }
+
+        // Close modal when clicking outside
+        document.addEventListener('click', function(event) {
+            const modal = document.getElementById('manualEntryModal');
+            if (event.target === modal) {
+                closeManualEntry();
+            }
+        });
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape') {
+                closeManualEntry();
+            }
+        });
+
+        @keyframes fadeOut {
+            from { opacity: 1; transform: translateY(0); }
+            to { opacity: 0; transform: translateY(-20px); }
         }
     </script>
 </body>
