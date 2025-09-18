@@ -198,17 +198,39 @@ class OxylabsScraper {
 
       console.log(`   📥 Oxylabs UPGRADED response: ${response.status} (${response.data?.results?.length || 0} results)`);
       
-      // Only log response structure, not full content
       if (response.data && response.data.results && response.data.results[0]) {
         const result = response.data.results[0];
         
-        if (result.content && result.content.html) {
-          // Fallback: parse HTML manually if structured parsing failed
-          console.log(`✅ Oxylabs UPGRADED: Got ${result.content.html.length} chars of HTML`);
-          return this.parseHtmlContent(result.content.html, url);
-        } else {
-          console.log(`❌ Oxylabs UPGRADED: No HTML content in result`);
+        console.log(`   📊 Result structure:`, {
+          hasContent: !!result.content,
+          hasHtml: !!(result.content && result.content.html),
+          hasUrl: !!result.url,
+          status: result.status_code,
+          contentKeys: result.content ? Object.keys(result.content) : []
+        });
+        
+        // Try different response formats
+        let html = null;
+        
+        if (result.content) {
+          // Try different content formats
+          html = result.content.html || result.content.body || result.content;
+        } else if (result.html) {
+          html = result.html;
+        } else if (typeof result === 'string') {
+          html = result;
         }
+        
+        if (html && typeof html === 'string' && html.length > 100) {
+          console.log(`✅ Oxylabs UPGRADED: Got ${html.length} chars of HTML`);
+          return this.parseHtmlContent(html, url);
+        } else {
+          console.log(`❌ Oxylabs UPGRADED: No valid HTML content`);
+          console.log(`   Raw result sample:`, JSON.stringify(result).substring(0, 200) + '...');
+        }
+      } else {
+        console.log(`❌ Oxylabs UPGRADED: No results array`);
+        console.log(`   Response structure:`, Object.keys(response.data || {}));
       }
       
       throw new Error('No valid results from Oxylabs UPGRADED');
