@@ -7,7 +7,7 @@ const OpenAI = require('openai');
 const { ApifyClient } = require('apify-client');
 
 const MODEL = process.env.GPT_PARSER_MODEL || 'gpt-4o-mini';
-const TIMEOUT_MS = 30000;
+const TIMEOUT_MS = 60000;
 const MAX_AXIOS_RETRIES = 3;
 const DEFAULT_CURRENCY = (process.env.DEFAULT_CURRENCY || 'USD').toUpperCase();
 const ALLOWED_CURRENCIES = ['USD','BMD','CAD','GBP','EUR'];
@@ -54,7 +54,7 @@ async function fetchViaScrapingBee(url){
   for (const country of countries){
     try{
       const res = await axios.get('https://app.scrapingbee.com/api/v1', {
-        timeout: 30000, // Increased timeout to prevent socket hang up
+        timeout: 60000, // Increased timeout to prevent socket hang up
         params: {
           api_key: key,
           url,
@@ -118,7 +118,7 @@ async function fetchViaAxios(url){
       }
       
       const res = await axios.get(url, {
-        timeout: 30000, // Increased timeout to prevent socket hang up
+        timeout: 60000, // Increased timeout to prevent socket hang up
         headers: {
           'User-Agent': `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${rnd(118,126)} Safari/537.36`,
           'Accept-Language': 'en-US,en;q=0.9',
