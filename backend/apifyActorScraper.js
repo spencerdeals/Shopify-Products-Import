@@ -10,12 +10,12 @@ class ApifyActorScraper {
     // Actor configurations for different retailers
     this.actors = {
       amazon: {
-        actorId: 'junglee/amazon-crawler',
+        actorId: 'junglee/amazon-crawler', // Let's try this first
         timeout: 120000, // 2 minutes
         memory: 2048
       },
       wayfair: {
-        actorId: 'dtrungtin/wayfair-scraper',
+        actorId: 'dtrungtin/wayfair-scraper', // Let's verify this exists
         timeout: 120000,
         memory: 2048
       },
@@ -32,6 +32,7 @@ class ApifyActorScraper {
       console.log(`   - Amazon: ${this.actors.amazon.actorId}`);
       console.log(`   - Wayfair: ${this.actors.wayfair.actorId}`);
       console.log(`   - Generic: ${this.actors.generic.actorId}`);
+      console.log('   🔍 Will verify these actors exist during first run...');
     }
   }
 
@@ -59,11 +60,15 @@ class ApifyActorScraper {
     const actorConfig = this.actors[retailerType];
     
     console.log(`🎭 Using ${actorConfig.actorId} for ${retailerType} product`);
+    console.log(`   📋 Raw URL: ${url}`);
+    console.log(`   🔍 URL length: ${url.length}`);
+    console.log(`   ✅ URL validation: ${this.isValidUrl(url)}`);
 
     try {
       let input;
       
       if (retailerType === 'amazon') {
+        console.log(`   🛒 Amazon input preparation...`);
         input = {
           categoryOrProductUrls: [url],
           maxItems: 1,
@@ -71,14 +76,18 @@ class ApifyActorScraper {
           includeReviews: false,
           scrapeProductDetails: true
         };
+        console.log(`   📦 Amazon input:`, JSON.stringify(input, null, 2));
       } else if (retailerType === 'wayfair') {
+        console.log(`   🏠 Wayfair input preparation...`);
         input = {
           startUrls: [url],
           maxItems: 1,
           proxyConfiguration: { useApifyProxy: true },
           scrapeProductDetails: true
         };
+        console.log(`   📦 Wayfair input:`, JSON.stringify(input, null, 2));
       } else {
+        console.log(`   🌐 Generic input preparation...`);
         // Generic actor
         input = {
           startUrls: [{ url }],
@@ -213,28 +222,62 @@ class ApifyActorScraper {
             }
           `
         };
+        console.log(`   📦 Generic input prepared (pageFunction length: ${input.pageFunction.length})`);
       }
 
       console.log(`   ⏱️ Running actor with ${actorConfig.timeout/1000}s timeout...`);
+      console.log(`   🎯 Actor ID: ${actorConfig.actorId}`);
+      console.log(`   💾 Memory: ${actorConfig.memory}MB`);
       
-      const run = await this.client.actor(actorConfig.actorId).call(input, {
+      console.log(`   🚀 Starting actor run...`);
+      const runOptions = {
         timeout: actorConfig.timeout,
         memory: actorConfig.memory,
         waitSecs: Math.floor(actorConfig.timeout / 1000) - 10
-      });
+      };
+      console.log(`   ⚙️ Run options:`, runOptions);
+      
+      const run = await this.client.actor(actorConfig.actorId).call(input, runOptions);
+      console.log(`   ✅ Actor run completed. Run ID: ${run.id}`);
+      console.log(`   📊 Run status: ${run.status}`);
 
+      console.log(`   📥 Fetching results from dataset: ${run.defaultDatasetId}`);
       const { items } = await this.client.dataset(run.defaultDatasetId).listItems();
+      console.log(`   📋 Dataset items count: ${items ? items.length : 0}`);
+      
+      if (items && items.length > 0) {
+        console.log(`   🔍 First item preview:`, JSON.stringify(items[0], null, 2).substring(0, 500) + '...');
+      }
       
       if (items && items.length > 0) {
         console.log(`   ✅ Actor returned ${items.length} items`);
         return this.cleanResult(items[0], retailerType);
       }
       
+      console.log(`   ❌ No items returned from actor`);
       throw new Error('No results from Apify actor');
       
     } catch (error) {
-      console.error(`   ❌ Actor ${actorConfig.actorId} failed: ${error.message}`);
+      console.error(`   ❌ Actor ${actorConfig.actorId} failed:`);
+      console.error(`   📋 Error message: ${error.message}`);
+      console.error(`   📋 Error type: ${error.constructor.name}`);
+      if (error.response) {
+        console.error(`   📋 HTTP status: ${error.response.status}`);
+        console.error(`   📋 Response data:`, error.response.data);
+      }
+      if (error.stack) {
+        console.error(`   📋 Stack trace: ${error.stack.substring(0, 500)}...`);
+      }
       throw error;
+    }
+  }
+  
+  isValidUrl(url) {
+    try {
+      new URL(url);
+      return true;
+    } catch (e) {
+      return false;
     }
   }
 
