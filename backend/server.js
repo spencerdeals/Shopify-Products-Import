@@ -4,10 +4,38 @@ const rateLimit = require('express-rate-limit');
 const path = require('path');
 const { URL } = require('url');
 const axios = require('axios');
-const OxylabsScraper = require('./oxylabsScraper');
-const UPCItemDB = require('./upcitemdb');
-const OrderTracker = require('./orderTracking');
-const { parseProduct } = require('./gptParser');
+
+// Add error handling for missing modules
+let OxylabsScraper, UPCItemDB, OrderTracker, parseProduct;
+
+try {
+  OxylabsScraper = require('./oxylabsScraper');
+} catch (error) {
+  console.warn('⚠️ OxylabsScraper not available:', error.message);
+  OxylabsScraper = class { constructor() { this.enabled = false; } };
+}
+
+try {
+  UPCItemDB = require('./upcitemdb');
+} catch (error) {
+  console.warn('⚠️ UPCItemDB not available:', error.message);
+  UPCItemDB = class { constructor() { this.enabled = false; } };
+}
+
+try {
+  OrderTracker = require('./orderTracking');
+} catch (error) {
+  console.warn('⚠️ OrderTracker not available:', error.message);
+  OrderTracker = class { constructor() {} };
+}
+
+try {
+  const gptParser = require('./gptParser');
+  parseProduct = gptParser.parseProduct;
+} catch (error) {
+  console.warn('⚠️ GPT Parser not available:', error.message);
+  parseProduct = async () => { throw new Error('GPT Parser not available'); };
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -22,15 +50,38 @@ const SHIPPING_RATE_PER_CUBIC_FOOT = parseFloat(process.env.SHIPPING_RATE_PER_CU
 const MAX_CONCURRENT_SCRAPES = parseInt(process.env.MAX_CONCURRENT_SCRAPES) || 3;
 
 // Initialize services
-const oxylabsScraper = new OxylabsScraper();
-const upcItemDB = new UPCItemDB(UPCITEMDB_API_KEY);
-const orderTracker = new OrderTracker();
+let oxylabsScraper, upcItemDB, orderTracker;
+
+try {
+  oxylabsScraper = new OxylabsScraper();
+} catch (error) {
+  console.warn('⚠️ Failed to initialize OxylabsScraper:', error.message);
+  oxylabsScraper = { enabled: false };
+}
+
+try {
+  upcItemDB = new UPCItemDB(UPCITEMDB_API_KEY);
+} catch (error) {
+  console.warn('⚠️ Failed to initialize UPCItemDB:', error.message);
+  upcItemDB = { enabled: false };
+}
+
+try {
+  orderTracker = new OrderTracker();
+} catch (error) {
+  console.warn('⚠️ Failed to initialize OrderTracker:', error.message);
+  orderTracker = { 
+    startTracking: async () => ({ success: false, message: 'OrderTracker not available' }),
+    stopTracking: async () => ({ success: false, message: 'OrderTracker not available' }),
+    getTrackingStatus: async () => ({ isTracking: false, error: 'OrderTracker not available' })
+  };
+}
 
 console.log('=== SERVER STARTUP ===');
 console.log('🔍 SCRAPING CONFIGURATION:');
-console.log(`1. Primary: Oxylabs Proxy - ${oxylabsScraper.enabled ? '✅ ENABLED' : '❌ DISABLED'}`);
+console.log(`1. Primary: Oxylabs Proxy - ${oxylabsScraper?.enabled ? '✅ ENABLED' : '❌ DISABLED'}`);
 console.log(`2. Intelligence: GPT Parser - ✅ ENABLED`);
-console.log(`3. Enhancement: UPCitemdb - ${USE_UPCITEMDB ? '✅ ENABLED' : '❌ DISABLED'}`);
+console.log(`3. Enhancement: UPCitemdb - ${USE_UPCITEMDB && upcItemDB?.enabled ? '✅ ENABLED' : '❌ DISABLED'}`);
 console.log('');
 console.log('⚡ STRATEGY: Oxylabs → GPT intelligence → Smart estimation');
 
@@ -49,9 +100,9 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     port: PORT,
     scraping: {
-      oxylabs: oxylabsScraper.enabled,
+      oxylabs: oxylabsScraper?.enabled || false,
       gptParser: true,
-      upcitemdb: USE_UPCITEMDB
+      upcitemdb: USE_UPCITEMDB && (upcItemDB?.enabled || false)
     },
     shopifyConfigured: !!SHOPIFY_ACCESS_TOKEN
   });
@@ -360,7 +411,7 @@ async function scrapeProduct(url) {
   console.log(`   Retailer: ${retailer}`);
   
   // STEP 1: Try Oxylabs first
-  if (oxylabsScraper.enabled) {
+  if (oxylabsScraper?.enabled) {
     try {
       console.log('   🚀 Attempting Oxylabs...');
       const oxyData = await oxylabsScraper.scrapeProduct(url);
@@ -400,7 +451,7 @@ async function scrapeProduct(url) {
   }
   
   // STEP 3: Try UPCitemdb for missing dimensions (only if needed)
-  if (USE_UPCITEMDB && productData && productData.name && (!productData.dimensions || !productData.weight)) {
+  if (USE_UPCITEMDB && upcItemDB?.enabled && productData && productData.name && (!productData.dimensions || !productData.weight)) {
     try {
       console.log('   📦 Attempting UPCitemdb lookup...');
       await new Promise(resolve => setTimeout(resolve, 1000));
@@ -766,9 +817,37 @@ app.post('/apps/instant-import/create-draft-order', async (req, res) => {
 });
 
 // Start server
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`\n🚀 Server running on port ${PORT}`);
   console.log(`📍 Frontend: http://localhost:${PORT}`);
   console.log(`📍 API Health: http://localhost:${PORT}/health`);
   console.log(`📍 Admin Panel: http://localhost:${PORT}/admin (admin:${ADMIN_PASSWORD})\n`);
+});
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('🛑 SIGTERM received, shutting down gracefully');
+  server.close(() => {
+    console.log('✅ Server closed');
+    process.exit(0);
+  });
+});
+
+process.on('SIGINT', () => {
+  console.log('🛑 SIGINT received, shutting down gracefully');
+  server.close(() => {
+    console.log('✅ Server closed');
+    process.exit(0);
+  });
+});
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (error) => {
+  console.error('💥 Uncaught Exception:', error);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('💥 Unhandled Rejection at:', promise, 'reason:', reason);
+  process.exit(1);
 });
