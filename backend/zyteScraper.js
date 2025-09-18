@@ -1,4 +1,4 @@
-// backend/zyteScraper.js - Zyte API Integration
+// backend/zyteScraper.js - Fixed Zyte API Integration
 const axios = require('axios');
 const cheerio = require('cheerio');
 
@@ -30,6 +30,7 @@ class ZyteScraper {
     try {
       console.log('   📤 Sending request to Zyte API...');
       
+      // Try Zyte API with API key in header (newer format)
       const response = await axios.post(this.baseURL, {
         url: url,
         httpResponseBody: true,
@@ -39,7 +40,7 @@ class ZyteScraper {
         }
       }, {
         headers: {
-          'Authorization': `Bearer ${this.apiKey}`,
+          'Authorization': `ApiKey ${this.apiKey}`,
           'Content-Type': 'application/json'
         },
         timeout: 30000
@@ -73,7 +74,39 @@ class ZyteScraper {
         console.error('Response data:', error.response.data);
         
         if (error.response.status === 401) {
-          console.error('❌ Authentication failed - check Zyte API key');
+          console.error('❌ Authentication failed - trying alternative auth method...');
+          
+          // Try alternative authentication method (Basic Auth)
+          try {
+            const response2 = await axios.post(this.baseURL, {
+              url: url,
+              httpResponseBody: true,
+              product: true,
+              productOptions: {
+                extractFrom: 'httpResponseBody'
+              }
+            }, {
+              auth: {
+                username: this.apiKey,
+                password: ''
+              },
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              timeout: 30000
+            });
+
+            console.log('✅ Zyte request completed with Basic Auth');
+            const productData = this.parseZyteResponse(response2.data, url, retailer);
+            return productData;
+            
+          } catch (error2) {
+            console.error('❌ Both auth methods failed');
+            console.error('   Method 1 (ApiKey): 401');
+            console.error('   Method 2 (Basic): ', error2.response?.status || error2.message);
+            throw error; // Throw original error
+          }
+          
         } else if (error.response.status === 403) {
           console.error('❌ Access forbidden - check Zyte subscription');
         } else if (error.response.status >= 500) {
