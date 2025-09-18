@@ -212,6 +212,42 @@
             background: #f5f5f5;
         }
         
+        .product-image-container {
+            position: relative;
+            margin-bottom: 15px;
+        }
+        
+        .image-not-found-notice {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            border: 1px solid #e0e0e0;
+        }
+        
+        .notice-icon {
+            font-size: 24px;
+            margin-bottom: 5px;
+        }
+        
+        .notice-text {
+            font-size: 12px;
+            color: #666;
+            font-weight: 500;
+            margin-bottom: 3px;
+        }
+        
+        .notice-subtext {
+            font-size: 10px;
+            color: #7cb342;
+            font-weight: 600;
+        }
+        
         .product-details {
             margin-bottom: 20px;
         }
@@ -623,7 +659,7 @@
             let html = '<div class="product-grid">';
             
             products.forEach(product => {
-                const imageUrl = product.image || 'https://placehold.co/400x300/7CB342/FFFFFF/png?text=SDL';
+                const imageUrl = product.image || createPlaceholderImage(product.retailer);
                 const price = product.price || 0;
                 const shippingCost = product.shippingCost || 0;
                 const dutyAmount = price * 0.265; // 26.5% duty
@@ -637,8 +673,17 @@
                             <div class="retailer-badge">${product.retailer}</div>
                         </div>
                         
-                        <img src="${imageUrl}" alt="${product.name}" class="product-image" 
-                             onerror="this.src='https://placehold.co/400x300/7CB342/FFFFFF/png?text=SDL'">
+                        <div class="product-image-container">
+                            <img src="${imageUrl}" alt="${product.name}" class="product-image" 
+                                 onerror="this.src='${createPlaceholderImage(product.retailer)}'">
+                            ${!product.image ? `
+                                <div class="image-not-found-notice">
+                                    <div class="notice-icon">📦</div>
+                                    <div class="notice-text">Image not available</div>
+                                    <div class="notice-subtext">This won't affect your import</div>
+                                </div>
+                            ` : ''}
+                        </div>
                         
                         <div class="product-details">
                             <div class="detail-row">
@@ -824,6 +869,31 @@
                 console.error('API connection failed:', error);
             }
         });
+        
+        // Create softer placeholder images with vendor names
+        function createPlaceholderImage(retailer) {
+            // Get retailer colors and create a gentle gradient
+            const retailerColors = {
+                'Amazon': { bg: 'f8f9fa', text: '232f3e', accent: 'ff9900' },
+                'Wayfair': { bg: 'f5f3ff', text: '7b2cbf', accent: '9d4edd' },
+                'Target': { bg: 'fff5f5', text: 'cc0000', accent: 'ff6b6b' },
+                'Walmart': { bg: 'f0f8ff', text: '004c91', accent: '0071ce' },
+                'Best Buy': { bg: 'fff8e1', text: '003d7a', accent: 'ffb400' },
+                'Home Depot': { bg: 'fff3e0', text: 'f96302', accent: 'ff8c42' },
+                'Lowes': { bg: 'f0f4ff', text: '004990', accent: '0066cc' },
+                'IKEA': { bg: 'fff9c4', text: '003399', accent: 'ffcc00' },
+                'Crate & Barrel': { bg: 'f8f6f0', text: '8b4513', accent: 'daa520' },
+                'Pottery Barn': { bg: 'f5f5dc', text: '654321', accent: 'cd853f' },
+                'West Elm': { bg: 'f0f8f0', text: '2d5016', accent: '7cb342' },
+                'CB2': { bg: 'f8f8f8', text: '333333', accent: '666666' }
+            };
+            
+            const colors = retailerColors[retailer] || { bg: 'f8f9fa', text: '666666', accent: '7cb342' };
+            
+            // Create a gentle placeholder with vendor name
+            const encodedRetailer = encodeURIComponent(retailer);
+            return `https://placehold.co/400x300/${colors.bg}/${colors.text}/png?text=${encodedRetailer}%0A%0A📦%0A%0AImage+not+available%0AImport+cost+calculated`;
+        }
     </script>
 </body>
 </html>
