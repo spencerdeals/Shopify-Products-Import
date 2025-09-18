@@ -9,6 +9,7 @@ require('dotenv').config();
 const UPCItemDB = require('./upcitemdb');
 const OrderTracker = require('./orderTracking');
 const ZyteScraper = require('./zyteScraper');
+const AdaptiveScraper = require('./adaptiveScraper');
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -30,12 +31,24 @@ const USE_ZYTE = zyteScraper.enabled;
 
 // Initialize order tracker
 let orderTracker = null;
+let adaptiveScraper = null;
+
 OrderTracker.create().then(tracker => {
   orderTracker = tracker;
 }).catch(error => {
   console.error('Failed to initialize order tracker:', error);
 });
 
+// Initialize adaptive scraper
+(async () => {
+  try {
+    adaptiveScraper = new AdaptiveScraper();
+    await adaptiveScraper.initialize();
+    console.log('🧠 Adaptive scraper initialized');
+  } catch (error) {
+    console.error('Failed to initialize adaptive scraper:', error);
+  }
+})();
 console.log('=== SERVER STARTUP ===');
 console.log(`Port: ${PORT}`);
 console.log(`Shopify Domain: ${SHOPIFY_DOMAIN}`);
@@ -546,6 +559,20 @@ async function scrapeProduct(url) {
   console.log(`   📊 Data source: ${scrapingMethod}`);
   console.log(`   ✅ Product processed successfully\n`);
   
+  // Record scraping result for learning
+  if (adaptiveScraper) {
+    const success = !!(productData.name && productData.price);
+    const failureReasons = [];
+    
+    if (!productData.name) failureReasons.push('no_title');
+    if (!productData.price) failureReasons.push('no_price');
+    if (!productData.image) failureReasons.push('no_image');
+    if (!productData.dimensions) failureReasons.push('no_dimensions');
+    if (!productData.variant) failureReasons.push('variants_incomplete');
+    
+    await adaptiveScraper.recordScrapingAttempt(url, retailer, success, productData, failureReasons);
+  }
+  
   return product;
 }
 
@@ -691,6 +718,20 @@ app.post('/api/orders/:orderId/stop-tracking', async (req, res) => {
   const { orderId } = req.params;
   const result = await orderTracker.stopTracking(orderId);
   res.json(result);
+});
+
+// Admin endpoint for scraping statistics
+app.get('/api/scraping-stats', requireAdmin, (req, res) => {
+  if (!adaptiveScraper) {
+    return res.status(500).json({ error: 'Adaptive scraper not available' });
+  }
+  
+  const stats = adaptiveScraper.getRetailerStats();
+  res.json({
+    success: true,
+    stats: stats,
+    timestamp: new Date().toISOString()
+  });
 });
 
 // Shopify Draft Order Creation
