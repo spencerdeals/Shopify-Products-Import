@@ -70,7 +70,7 @@ class ApifyActorScraper {
       if (retailerType === 'amazon') {
         console.log(`   🛒 Amazon input preparation...`);
         input = {
-          categoryOrProductUrls: [url],
+         startUrls: [{ url }],
           maxItems: 1,
           proxyConfiguration: { useApifyProxy: true }
         };
@@ -295,15 +295,15 @@ class ApifyActorScraper {
     };
 
     // Extract name
-    cleanedData.name = item.name || item.title || item.productName || null;
+   cleanedData.name = item.name || item.title || item.productName || null;
     if (cleanedData.name) {
       cleanedData.name = cleanedData.name.trim().substring(0, 200);
     }
 
     // Extract price
     if (item.price) {
-      if (typeof item.price === 'object') {
-        cleanedData.price = parseFloat(item.price.value || item.price.amount || item.price.current || 0);
+     if (typeof item.price === 'object' && item.price.value) {
+       cleanedData.price = parseFloat(item.price.value);
       } else {
         const priceStr = String(item.price).replace(/[^0-9.]/g, '');
         cleanedData.price = parseFloat(priceStr) || null;
@@ -316,9 +316,11 @@ class ApifyActorScraper {
     }
 
     // Extract image
-    if (item.main_image) {
-      cleanedData.image = item.main_image;
-    } else if (item.image) {
+   if (item.thumbnailImage) {
+     cleanedData.image = item.thumbnailImage;
+   } else if (item.main_image) {
+     cleanedData.image = item.main_image;
+   } else if (item.image) {
       cleanedData.image = Array.isArray(item.image) ? item.image[0] : item.image;
     } else if (item.images && Array.isArray(item.images) && item.images.length > 0) {
       cleanedData.image = item.images[0];
@@ -361,12 +363,17 @@ class ApifyActorScraper {
     }
 
     // Extract brand
-    cleanedData.brand = item.brand || item.manufacturer || null;
+   cleanedData.brand = item.brand || item.manufacturer || null;
 
     // Extract category
-    if (item.breadcrumbs && Array.isArray(item.breadcrumbs)) {
-      cleanedData.category = item.breadcrumbs[item.breadcrumbs.length - 2] || item.breadcrumbs[item.breadcrumbs.length - 1]; // Skip SKU
-    } else if (item.category) {
+   if (item.breadCrumbs) {
+     // Amazon uses breadCrumbs string like "Electronics › Computers & Accessories › Memory Cards"
+     const breadcrumbArray = item.breadCrumbs.split(' › ');
+     cleanedData.category = breadcrumbArray[breadcrumbArray.length - 1];
+   } else if (item.breadcrumbs && Array.isArray(item.breadcrumbs)) {
+     // Wayfair uses breadcrumbs array
+     cleanedData.category = item.breadcrumbs[item.breadcrumbs.length - 2] || item.breadcrumbs[item.breadcrumbs.length - 1]; // Skip SKU
+   } else if (item.category) {
       cleanedData.category = Array.isArray(item.category) ? item.category[item.category.length - 1] : item.category;
     }
 
@@ -377,9 +384,13 @@ class ApifyActorScraper {
     }
 
     // Check availability
-    if (item.in_stock !== undefined) {
-      cleanedData.inStock = !!item.in_stock;
-    } else if (item.inStock !== undefined) {
+   if (item.inStock !== undefined) {
+     cleanedData.inStock = !!item.inStock;
+   } else if (item.in_stock !== undefined) {
+     cleanedData.inStock = !!item.in_stock;
+   } else if (item.availability) {
+     cleanedData.inStock = !item.availability.toLowerCase().includes('out of stock');
+   }
       cleanedData.inStock = !!item.inStock;
     } else if (item.availability) {
       cleanedData.inStock = !item.availability.toLowerCase().includes('out of stock');
