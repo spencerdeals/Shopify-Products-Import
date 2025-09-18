@@ -185,23 +185,37 @@ async function parseWithGPT({ url, html, currencyFallback = DEFAULT_CURRENCY }){
   const client = new OpenAI({ apiKey });
   const vendor = detectRetailer(url);
 
-  // 🔻 Trim context HARD to cut token spend
-  const visibleText = htmlToVisibleText(html).slice(0, 20000); // 20k chars
-  const htmlSlice = html.slice(0, 20000);                      // 20k chars
+  // Smart content extraction - focus on product data
+  let visibleText = '';
+  let htmlSlice = '';
+  
+  if (html) {
+    // Extract only relevant sections to save tokens
+    const productSections = html.match(/<div[^>]*(?:product|item|detail)[^>]*>[\s\S]*?<\/div>/gi) || [];
+    const titleSections = html.match(/<h1[^>]*>[\s\S]*?<\/h1>/gi) || [];
+    const priceSections = html.match(/<[^>]*(?:price|cost|amount)[^>]*>[\s\S]*?<\/[^>]*>/gi) || [];
+    
+    const relevantHtml = [...titleSections, ...priceSections, ...productSections.slice(0, 3)].join('\n');
+    htmlSlice = relevantHtml.slice(0, 15000); // Focus on relevant content
+    visibleText = htmlToVisibleText(htmlSlice).slice(0, 10000);
+  }
 
   const system = `
-You are a precise e-commerce product extractor.
-Return STRICT JSON with fields:
+You are an expert e-commerce product data extractor. Extract accurate product information and estimate shipping box dimensions.
+
+Return STRICT JSON with these fields:
 - url (string)
 - name (string)
 - price (number, no currency symbols)
 - currency (ISO code)
 - image (string URL)
 - brand (string, optional)
-- sku (string, optional)
- - variant (string, optional - color, size, style if available)
+- variant (string, optional - color, size, style if available)
 - availability (in_stock | out_of_stock | preorder | unknown)
-- breadcrumbs (array of strings, optional)
+- category (string - furniture, electronics, appliances, clothing, toys, sports, home-decor, tools, garden, general)
+- product_dimensions (object with length, width, height in inches - actual product size)
+- estimated_box_dimensions (object with length, width, height in inches - shipping box size with padding)
+- estimated_weight_lbs (number - estimated shipping weight)
 
 Rules:
 - ${vendorPromptHints(vendor)}
@@ -209,10 +223,19 @@ Rules:
 - "price" must be > 0 and realistic.
 - Prefer current selling price, not list/was/per-month.
 - "image" should be a primary product image URL if visible.
- - "variant" should capture color, size, style variations if clearly shown
+- "variant" should capture color, size, style variations if clearly shown.
+- For "category", analyze the product type and choose the most appropriate category.
+- For "product_dimensions", extract actual product measurements if available.
+- For "estimated_box_dimensions", add 20-40% padding to product dimensions for shipping box.
+- For "estimated_weight_lbs", estimate realistic shipping weight based on product type and size.
+- If no dimensions available, estimate based on product category and description.
 `.trim();
 
-  const user = `URL: ${url}\nExtract product data from the provided HTML and visible text.\nReturn ONLY JSON, no explanations.`;
+  const user = `URL: ${url}
+
+Extract comprehensive product data including shipping estimates.
+Focus on accuracy for: name, price, image, dimensions, and weight.
+Return ONLY JSON, no explanations.`;
 
   gptCallsUsed += 1;
   const response = await client.chat.completions.create({
@@ -222,8 +245,8 @@ Rules:
     messages: [
       { role: 'system', content: system },
       { role: 'user', content: user },
-      { role: 'user', content: `VISIBLE_TEXT:\n${visibleText}` },
-      { role: 'user', content: `HTML:\n${htmlSlice}` },
+      ...(visibleText ? [{ role: 'user', content: `CONTENT:\n${visibleText}` }] : []),
+      ...(htmlSlice ? [{ role: 'user', content: `HTML:\n${htmlSlice}` }] : [])
     ],
   });
 
@@ -238,8 +261,35 @@ Rules:
   const name = typeof data.name === 'string' ? data.name.trim() : null;
   const image = typeof data.image === 'string' && data.image.startsWith('http') ? data.image : null;
   const brand = typeof data.brand === 'string' && data.brand.trim() ? data.brand.trim() : null;
-  const sku = typeof data.sku === 'string' && data.sku.trim() ? data.sku.trim() : null;
   const variant = typeof data.variant === 'string' && data.variant.trim() ? data.variant.trim() : null;
+  const category = typeof data.category === 'string' && data.category.trim() ? data.category.trim() : 'general';
+
+  // Extract dimensions
+  let productDimensions = null;
+  let boxDimensions = null;
+  let weight = null;
+
+  if (data.product_dimensions && typeof data.product_dimensions === 'object') {
+    const l = coerceNumber(data.product_dimensions.length);
+    const w = coerceNumber(data.product_dimensions.width);
+    const h = coerceNumber(data.product_dimensions.height);
+    if ([l, w, h].every(Number.isFinite) && l > 0 && w > 0 && h > 0) {
+      productDimensions = { length: l, width: w, height: h };
+    }
+  }
+
+  if (data.estimated_box_dimensions && typeof data.estimated_box_dimensions === 'object') {
+    const l = coerceNumber(data.estimated_box_dimensions.length);
+    const w = coerceNumber(data.estimated_box_dimensions.width);
+    const h = coerceNumber(data.estimated_box_dimensions.height);
+    if ([l, w, h].every(Number.isFinite) && l > 0 && w > 0 && h > 0) {
+      boxDimensions = { length: l, width: w, height: h };
+    }
+  }
+
+  if (data.estimated_weight_lbs != null) {
+    weight = coerceNumber(data.estimated_weight_lbs);
+  }
 
   if (!name || !price || price <= 0 || price > 200000) {
     throw new Error('GPT parse missing/invalid required fields (name/price).');
@@ -248,17 +298,15 @@ Rules:
   const availabilityRaw = (data.availability || '').toString().toLowerCase();
   const availability = ['in_stock','out_of_stock','preorder','unknown'].includes(availabilityRaw) ? availabilityRaw : 'unknown';
 
-  const breadcrumbs = Array.isArray(data.breadcrumbs)
-    ? data.breadcrumbs.map(s => (typeof s === 'string' ? s.trim() : '')).filter(Boolean).slice(0, 10)
-    : [];
-
   if (response.usage) {
     console.log(`[GPT usage] prompt_tokens=${response.usage.prompt_tokens} completion_tokens=${response.usage.completion_tokens}`);
   }
 
   return {
-    url, name, price, currency, image, brand, sku, availability, breadcrumbs,
-    dimensions: null, weight: null, category: breadcrumbs[breadcrumbs.length - 1] || null,
+    url, name, price, currency, image, brand, availability, category,
+    dimensions: boxDimensions, // Use box dimensions for shipping
+    product_dimensions: productDimensions,
+    weight: weight,
     inStock: availability === 'in_stock',
     variant: variant,
     _meta: { vendor, model: MODEL, gptCallsUsed },
@@ -266,10 +314,15 @@ Rules:
 }
 
 async function parseProduct(url, opts = {}){
-  const { currencyFallback = DEFAULT_CURRENCY } = opts;
+  const { currencyFallback = DEFAULT_CURRENCY, html = null } = opts;
   await sleep(rnd(100, 300)); // Reduced random delay
-  const html = await smartFetchHtml(url);
-  if (!html) throw new Error('All HTML fetch methods failed (Bee/Apify/Axios).');
+  
+  let htmlContent = html;
+  if (!htmlContent) {
+    htmlContent = await smartFetchHtml(url);
+    if (!htmlContent) throw new Error('All HTML fetch methods failed (Bee/Apify/Axios).');
+  }
+  
   return parseWithGPT({ url, html, currencyFallback });
 }
 
