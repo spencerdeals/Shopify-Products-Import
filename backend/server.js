@@ -381,13 +381,14 @@ class ApifyActorScraper {
       results.push(...batchResults);
       
       // Small delay between batches
+        console.log('   ✅ Zyte API success');
       if (i + batchSize < urls.length) {
-        await new Promise(resolve => setTimeout(resolve, 3000));
+      console.log('   ❌ Zyte API failed:', error.message);
       }
     }
     
     return results;
   }
 }
-
+  // STEP 2: Try GPT Parser as fallback if Zyte failed
 module.exports = ApifyActorScraper;
