@@ -45,6 +45,23 @@ class ApifyActorScraper {
       const domain = new URL(url).hostname.toLowerCase();
       if (domain.includes('amazon.com')) return 'amazon';
       if (domain.includes('wayfair.com')) return 'wayfair';
+      if (domain.includes('lunafurn.com')) return 'generic';
+      if (domain.includes('overstock.com')) return 'generic';
+      if (domain.includes('target.com')) return 'generic';
+      if (domain.includes('walmart.com')) return 'generic';
+      if (domain.includes('bestbuy.com')) return 'generic';
+      if (domain.includes('homedepot.com')) return 'generic';
+      if (domain.includes('lowes.com')) return 'generic';
+      if (domain.includes('costco.com')) return 'generic';
+      if (domain.includes('macys.com')) return 'generic';
+      if (domain.includes('ikea.com')) return 'generic';
+      if (domain.includes('cb2.com')) return 'generic';
+      if (domain.includes('crateandbarrel.com')) return 'generic';
+      if (domain.includes('westelm.com')) return 'generic';
+      if (domain.includes('potterybarn.com')) return 'generic';
+      if (domain.includes('ashleyfurniture.com')) return 'generic';
+      if (domain.includes('roomstogo.com')) return 'generic';
+      if (domain.includes('livingspaces.com')) return 'generic';
       return 'generic';
     } catch (e) {
       return 'generic';

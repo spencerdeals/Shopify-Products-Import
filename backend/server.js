@@ -206,6 +206,16 @@ function detectRetailer(url) {
     if (domain.includes('costco.com')) return 'Costco';
     if (domain.includes('macys.com')) return 'Macys';
     if (domain.includes('ikea.com')) return 'IKEA';
+    if (domain.includes('lunafurn.com')) return 'Luna Furniture';
+    if (domain.includes('overstock.com')) return 'Overstock';
+    if (domain.includes('bedbathandbeyond.com')) return 'Bed Bath & Beyond';
+    if (domain.includes('cb2.com')) return 'CB2';
+    if (domain.includes('crateandbarrel.com')) return 'Crate & Barrel';
+    if (domain.includes('westelm.com')) return 'West Elm';
+    if (domain.includes('potterybarn.com')) return 'Pottery Barn';
+    if (domain.includes('ashleyfurniture.com')) return 'Ashley Furniture';
+    if (domain.includes('roomstogo.com')) return 'Rooms To Go';
+    if (domain.includes('livingspaces.com')) return 'Living Spaces';
     return 'Unknown Retailer';
   } catch (e) {
     return 'Unknown Retailer';
