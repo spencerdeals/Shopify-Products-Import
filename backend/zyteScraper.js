@@ -11,7 +11,7 @@ class ZyteScraper {
     console.log('🕷️ ZyteScraper Constructor:');
     console.log(`   API Key: ${this.apiKey ? '✅ SET' : '❌ MISSING'}`);
     console.log(`   API Key (first 8 chars): ${this.apiKey ? this.apiKey.substring(0, 8) + '...' : 'N/A'}`);
-    console.log(`   Status: ${this.enabled ? '✅ ENABLED' : '❌ DISABLED'}`);
+    console.log(`   Status: ${this.enabled ? '✅ ENABLED (v2.0)' : '❌ DISABLED'}`);
     
     if (!this.enabled) {
       console.log('   ⚠️ Set ZYTE_API_KEY environment variable to enable Zyte scraping');
