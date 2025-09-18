@@ -196,6 +196,122 @@ class ApifyActorScraper {
     }
   }
 
+  parseZyteResponse(data, url, retailer) {
+    console.log('🔍 Parsing Zyte response...');
+    
+    const productData = {
+      name: null,
+      price: null,
+      image: null,
+      dimensions: null,
+      weight: null,
+      brand: null,
+      category: null,
+      inStock: true,
+      variant: null
+    };
+
+    // Priority 1: Extract from Zyte's automatic product extraction
+    if (data.product) {
+      const product = data.product;
+      
+      // Product name
+      productData.name = product.name || product.title || null;
+      if (productData.name) {
+        productData.name = productData.name.trim().substring(0, 200);
+        console.log('   📝 Product name:', productData.name.substring(0, 50) + '...');
+      }
+
+      // Price - handle multiple formats
+      if (product.price) {
+        let priceValue = product.price;
+        if (typeof priceValue === 'object' && priceValue.value) {
+          priceValue = priceValue.value;
+        }
+        productData.price = parseFloat(String(priceValue).replace(/[^0-9.]/g, ''));
+        if (productData.price > 0 && productData.price < 100000) {
+          console.log('   💰 Price: $' + productData.price);
+        } else {
+          productData.price = null;
+        }
+      } else if (product.regularPrice) {
+        productData.price = parseFloat(String(product.regularPrice).replace(/[^0-9.]/g, ''));
+        console.log('   💰 Regular Price: $' + productData.price);
+      }
+
+      // Images - handle multiple formats
+      if (product.images && product.images.length > 0) {
+        const firstImage = product.images[0];
+        productData.image = typeof firstImage === 'object' ? firstImage.url : firstImage;
+        console.log('   🖼️ Image: Found');
+      } else if (product.mainImage) {
+        productData.image = typeof product.mainImage === 'object' ? product.mainImage.url : product.mainImage;
+        console.log('   🖼️ Image: Found (main)');
+      }
+
+      // Brand
+      productData.brand = product.brand || null;
+
+      // Category/Breadcrumbs
+      if (product.breadcrumbs && product.breadcrumbs.length > 0) {
+        productData.category = product.breadcrumbs[product.breadcrumbs.length - 1].name || 
+                              product.breadcrumbs[product.breadcrumbs.length - 1];
+      }
+
+      // Availability
+      if (product.availability) {
+        const availability = String(product.availability).toLowerCase();
+        productData.inStock = !availability.includes('out of stock') && 
+                             !availability.includes('unavailable') &&
+                             !availability.includes('sold out');
+      }
+
+      // Variants - Enhanced extraction
+      if (product.variants && product.variants.length > 0) {
+        const selectedVariant = product.variants.find(v => v.selected) || product.variants[0];
+        if (selectedVariant) {
+          const variantParts = [];
+          if (selectedVariant.color) variantParts.push(`Color: ${selectedVariant.color}`);
+          if (selectedVariant.size) variantParts.push(`Size: ${selectedVariant.size}`);
+          if (selectedVariant.style) variantParts.push(`Style: ${selectedVariant.style}`);
+          if (selectedVariant.material) variantParts.push(`Material: ${selectedVariant.material}`);
+          
+          if (variantParts.length > 0) {
+            productData.variant = variantParts.join(', ');
+            console.log('   🎨 Variant:', productData.variant);
+          }
+        }
+      } else if (product.color || product.size || product.style) {
+        // Direct variant properties
+        const variantParts = [];
+        if (product.color) variantParts.push(`Color: ${product.color}`);
+        if (product.size) variantParts.push(`Size: ${product.size}`);
+        if (product.style) variantParts.push(`Style: ${product.style}`);
+        
+        if (variantParts.length > 0) {
+          productData.variant = variantParts.join(', ');
+          console.log('   🎨 Direct Variant:', productData.variant);
+        }
+      }
+    }
+
+    // Priority 2: Parse from browser HTML if structured data is incomplete
+    if (data.browserHtml && (!productData.name || !productData.price)) {
+      console.log('   🔍 Falling back to HTML parsing...');
+      const htmlData = this.parseHTML(data.browserHtml, url, retailer);
+      
+      // Merge data - prefer structured data but fill gaps with HTML parsing
+      productData.name = productData.name || htmlData.name;
+      productData.price = productData.price || htmlData.price;
+      productData.image = productData.image || htmlData.image;
+      productData.dimensions = productData.dimensions || htmlData.dimensions;
+      productData.weight = productData.weight || htmlData.weight;
+      productData.variant = productData.variant || htmlData.variant;
+    }
+
+    return productData;
+  }
+
   cleanResult(item, retailerType) {
     console.log(`   🧹 Cleaning result from ${retailerType} actor...`);
     
@@ -330,7 +446,6 @@ class ApifyActorScraper {
       cleanedData.variant = null;
     }
 
-
     // Check availability - handle different formats
     if (item.inStock !== undefined) {
       // Amazon format
@@ -350,24 +465,21 @@ class ApifyActorScraper {
       hasPrice: !!cleanedData.price,
       hasImage: !!cleanedData.image,
       hasDimensions: !!cleanedData.dimensions,
-        // Use Zyte's automatic product extraction
-        product: true,
-        productOptions: {
-          extractFrom: 'httpResponseBody'
-        },
-        // Enable browser rendering for JavaScript-heavy sites
-        browserHtml: true,
-        // Take screenshot for quality checks
-        screenshot: true,
-        // Use US geolocation for consistent pricing
-        geolocation: 'US',
-        // Handle JavaScript execution
-        actions: [
-          {
-            action: 'waitForTimeout',
-            timeout: 3000
-          }
-        ]
+      hasWeight: !!cleanedData.weight,
+      hasVariant: !!cleanedData.variant
+    });
+
+    return cleanedData;
+  }
+
+  // Batch scraping method
+  async scrapeMultipleProducts(urls) {
+    if (!this.enabled) {
+      throw new Error('Apify not configured');
+    }
+
+    const results = [];
+    const batchSize = 2; // Small batches to avoid rate limits
     
     for (let i = 0; i < urls.length; i += batchSize) {
       const batch = urls.slice(i, i + batchSize);
@@ -378,7 +490,7 @@ class ApifyActorScraper {
           error: error.message,
           success: false
         }))
-        timeout: 120000 // Increased timeout for complex sites
+      );
       
       const batchResults = await Promise.all(batchPromises);
       results.push(...batchResults);
