@@ -429,6 +429,8 @@ async function scrapeProduct(url) {
     
     if (gptData) {
       productData = gptData;
+    }
+  }
   if (USE_UPCITEMDB && productData && productData.name && (!productData.dimensions || !productData.weight)) {
       console.log('   📦 Attempting UPCitemdb lookup...');
       await new Promise(resolve => setTimeout(resolve, 1000));
