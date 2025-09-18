@@ -30,6 +30,13 @@ class OxylabsScraper {
     const retailer = this.detectRetailer(url);
     console.log(`🚀 Oxylabs scraping ${retailer}: ${url.substring(0, 60)}...`);
 
+    // Special handling for different retailers
+    let geoLocation = 'United States';
+    let renderType = 'html';
+    
+    if (retailer === 'Amazon') {
+      renderType = 'png'; // Try PNG rendering for Amazon to avoid blocks
+    }
     try {
       // Use Oxylabs proxy endpoint EXACTLY as documented
       const response = await axios({
@@ -50,8 +57,8 @@ class OxylabsScraper {
         headers: {
           // ONLY Oxylabs specific headers - let them handle User-Agent
           'x-oxylabs-user-agent-type': 'desktop_chrome',
-          'x-oxylabs-geo-location': 'United States',
-          'x-oxylabs-render': 'html'
+          'x-oxylabs-geo-location': geoLocation,
+          'x-oxylabs-render': renderType
         },
         timeout: 30000,
         maxRedirects: 5,
