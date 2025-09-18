@@ -222,11 +222,6 @@ class ApifyActorScraper {
       variant: item.variant || null
     };
   }
-}
-    });
-
-    return cleanedData;
-  }
 
   extractName(item, retailerType) {
     const nameFields = ['name', 'title', 'productName', 'itemName'];
@@ -259,6 +254,30 @@ class ApifyActorScraper {
     }
     
     const priceFields = ['price', 'currentPrice', 'salePrice', 'regularPrice', 'listPrice'];
+    
+    for (const field of priceFields) {
+      if (item[field] !== undefined && item[field] !== null) {
+        let price = item[field];
+        
+        if (typeof price === 'string') {
+          // Extract numeric value from string
+          const match = price.match(/[\d,]+\.?\d*/);
+          if (match) {
+            price = parseFloat(match[0].replace(/,/g, ''));
+          }
+        }
+        
+        if (typeof price === 'number' && price > 0) {
+          console.log(`   💰 Extracted price from ${field}: $${price}`);
+          return price;
+        }
+      }
+    }
+    
+    return null;
+  }
+
+  extractVariant(item, retailerType) {
     // Generic variant extraction
     const variantFields = ['variant', 'color', 'size', 'style'];
     for (const field of variantFields) {
