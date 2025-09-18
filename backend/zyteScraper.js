@@ -185,7 +185,7 @@ class ZyteScraper {
           if (selectedVariant.size) {
             const sizeValue = selectedVariant.size.toLowerCase();
             // Check if "size" field actually contains color info
-            if (/\b(black|white|brown|gray|grey|blue|red|green|yellow|beige|tan|navy|cream|ivory)\b/i.test(sizeValue)) {
+            if (/\b(black|white|brown|gray|grey|blue|red|green|yellow|beige|tan|navy|cream|ivory|khaki|charcoal|burgundy|maroon|olive|teal|coral|sage|taupe|mocha|espresso|cappuccino|latte|camel|sand|stone|slate|pewter|bronze|copper|gold|silver|rose|blush|mint|seafoam|turquoise|aqua|lavender|purple|violet|magenta|pink|orange|peach|apricot|rust|terracotta)\b/i.test(sizeValue)) {
               variantParts.push(`Color: ${selectedVariant.size}`);
             } else {
               variantParts.push(`Size: ${selectedVariant.size}`);
