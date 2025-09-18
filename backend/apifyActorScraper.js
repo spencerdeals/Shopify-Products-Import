@@ -75,6 +75,14 @@ class ApifyActorScraper {
           proxyConfiguration: { useApifyProxy: true }
         };
         console.log(`   📦 Amazon input:`, JSON.stringify(input, null, 2));
+      } else if (retailerType === 'wayfair') {
+        console.log(`   🏠 Wayfair input preparation...`);
+        input = {
+          productUrls: [url],
+          maxResultsPerScrape: 1,
+          usePagination: false
+        };
+        console.log(`   📦 Wayfair input:`, JSON.stringify(input, null, 2));
       } else {
         console.log(`   🌐 Generic/Wayfair input preparation...`);
         // Generic actor
@@ -308,7 +316,9 @@ class ApifyActorScraper {
     }
 
     // Extract image
-    if (item.image) {
+    if (item.main_image) {
+      cleanedData.image = item.main_image;
+    } else if (item.image) {
       cleanedData.image = Array.isArray(item.image) ? item.image[0] : item.image;
     } else if (item.images && Array.isArray(item.images) && item.images.length > 0) {
       cleanedData.image = item.images[0];
@@ -320,7 +330,17 @@ class ApifyActorScraper {
     }
 
     // Extract dimensions
-    if (item.dimensions) {
+    if (item.attributes && item.attributes.overall) {
+      // Parse Wayfair dimensions like "31'' H X 51'' W X 16'' D"
+      const dimMatch = item.attributes.overall.match(/(\d+(?:\.\d+)?)''\s*H\s*X\s*(\d+(?:\.\d+)?)''\s*W\s*X\s*(\d+(?:\.\d+)?)''\s*D/i);
+      if (dimMatch) {
+        cleanedData.dimensions = {
+          length: parseFloat(dimMatch[2]), // Width becomes length
+          width: parseFloat(dimMatch[3]),  // Depth becomes width
+          height: parseFloat(dimMatch[1])  // Height stays height
+        };
+      }
+    } else if (item.dimensions) {
       if (typeof item.dimensions === 'object' && item.dimensions.length && item.dimensions.width && item.dimensions.height) {
         cleanedData.dimensions = {
           length: parseFloat(item.dimensions.length),
@@ -332,6 +352,11 @@ class ApifyActorScraper {
 
     // Extract weight
     if (item.weight) {
+      // Handle Wayfair weight format like "75.85 pound"
+      const weightStr = String(item.weight).replace(/[^0-9.]/g, '');
+      cleanedData.weight = parseFloat(weightStr) || null;
+    } else if (item.attributes && item.attributes['overall product weight']) {
+      const weightStr = String(item.attributes['overall product weight']).replace(/[^0-9.]/g, '');
       cleanedData.weight = parseFloat(item.weight) || null;
     }
 
@@ -339,20 +364,22 @@ class ApifyActorScraper {
     cleanedData.brand = item.brand || item.manufacturer || null;
 
     // Extract category
-    if (item.category) {
+    if (item.breadcrumbs && Array.isArray(item.breadcrumbs)) {
+      cleanedData.category = item.breadcrumbs[item.breadcrumbs.length - 2] || item.breadcrumbs[item.breadcrumbs.length - 1]; // Skip SKU
+    } else if (item.category) {
       cleanedData.category = Array.isArray(item.category) ? item.category[item.category.length - 1] : item.category;
-    } else if (item.breadcrumbs && Array.isArray(item.breadcrumbs)) {
-      cleanedData.category = item.breadcrumbs[item.breadcrumbs.length - 1];
     }
 
     // Extract variant
-    cleanedData.variant = item.variant || item.selectedVariant || item.color || item.size || null;
+    cleanedData.variant = item.variant || item.selectedVariant || item.color || item.size || item.style || null;
     if (cleanedData.variant && (cleanedData.variant.length < 2 || cleanedData.variant.length > 50)) {
       cleanedData.variant = null;
     }
 
     // Check availability
-    if (item.inStock !== undefined) {
+    if (item.in_stock !== undefined) {
+      cleanedData.inStock = !!item.in_stock;
+    } else if (item.inStock !== undefined) {
       cleanedData.inStock = !!item.inStock;
     } else if (item.availability) {
       cleanedData.inStock = !item.availability.toLowerCase().includes('out of stock');
