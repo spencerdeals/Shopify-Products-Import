@@ -42,24 +42,16 @@ class OxylabsScraper {
       const response = await axios({
         method: 'GET',
         url: url,
-        proxy: {
-          protocol: 'https',
-          host: 'realtime.oxylabs.io',
-          port: 60000,
-          auth: {
-            username: this.username,
-            password: this.password
-          }
-        },
-        httpsAgent: new (require('https').Agent)({
-          rejectUnauthorized: false // Equivalent to curl -k --insecure
-        }),
+        proxy: false, // Disable axios proxy, we'll use auth headers instead
         headers: {
-          // ONLY Oxylabs specific headers - let them handle User-Agent
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
           'x-oxylabs-user-agent-type': 'desktop_chrome',
           'x-oxylabs-geo-location': geoLocation,
-          'x-oxylabs-render': renderType
+          'x-oxylabs-render': renderType,
+          'Authorization': 'Basic ' + Buffer.from(`${this.username}:${this.password}`).toString('base64')
         },
+        // Use Oxylabs endpoint directly
+        baseURL: 'https://realtime.oxylabs.io:60000',
         timeout: 30000,
         maxRedirects: 5,
         validateStatus: function (status) {
