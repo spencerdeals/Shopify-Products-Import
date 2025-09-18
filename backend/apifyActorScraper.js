@@ -70,7 +70,7 @@ class ApifyActorScraper {
       if (retailerType === 'amazon') {
         console.log(`   🛒 Amazon input preparation...`);
         input = {
-         startUrls: [{ url }],
+          categoryOrProductUrls: [{ url }],
           maxItems: 1,
           proxyConfiguration: { useApifyProxy: true }
         };
