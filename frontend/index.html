@@ -434,32 +434,50 @@
     <!-- Manual Entry Modal (hidden by default) -->
     <div id="manualEntryModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000;">
         <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 30px; border-radius: 15px; max-width: 600px; width: 90%;">
-            <h3 style="color: #e65100; margin-bottom: 15px;">Manual Content Entry Required</h3>
-            <p style="margin-bottom: 15px; color: #666;"><span id="retailerName">This retailer</span> requires manual content entry. Please follow these steps:</p>
-            
-            <div style="background: #f0f8ff; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #2196f3;">
-                <h4 style="margin: 0 0 10px 0; color: #1976d2;">📋 Easy Steps:</h4>
-                <ol style="margin: 0; padding-left: 20px; color: #333;">
-                    <li>Click the "Open Product Page" button below</li>
-                    <li>On the product page, press <kbd style="background: #eee; padding: 2px 6px; border-radius: 3px;">Ctrl+A</kbd> (or <kbd style="background: #eee; padding: 2px 6px; border-radius: 3px;">Cmd+A</kbd> on Mac) to select all</li>
-                    <li>Press <kbd style="background: #eee; padding: 2px 6px; border-radius: 3px;">Ctrl+C</kbd> (or <kbd style="background: #eee; padding: 2px 6px; border-radius: 3px;">Cmd+C</kbd> on Mac) to copy</li>
-                    <li>Come back here and paste it in the box below</li>
-                </ol>
+            <div style="text-align: center; margin-bottom: 20px;">
+                <div style="font-size: 48px; margin-bottom: 10px;">🛍️</div>
+                <h3 style="color: #2e7d32; margin-bottom: 10px; font-size: 24px;">Almost There!</h3>
+                <p style="color: #666; font-size: 16px;">We need a quick copy & paste from <strong><span id="retailerName">this retailer</span></strong> to get your exact pricing</p>
             </div>
             
-            <div style="margin-bottom: 15px;">
-                <button class="btn" onclick="openProductPage()" style="margin-bottom: 10px;">
-                    🔗 Open Product Page
-                </button>
-                <div style="font-size: 12px; color: #666; word-break: break-all;">
-                    <strong>URL:</strong> <span id="manualEntryUrl"></span>
+            <div style="background: linear-gradient(135deg, #e8f5e9 0%, #f1f8e9 100%); padding: 20px; border-radius: 12px; margin-bottom: 20px; border: 2px solid #7cb342;">
+                <h4 style="margin: 0 0 15px 0; color: #2e7d32; font-size: 18px;">✨ Super Easy - Just 4 Steps:</h4>
+                <ol style="margin: 0; padding-left: 20px; color: #333;">
+                    <li style="margin-bottom: 8px; font-size: 15px;">Click the green "Open Product Page" button below 👇</li>
+                    <li style="margin-bottom: 8px; font-size: 15px;">On the product page, press <kbd style="background: #7cb342; color: white; padding: 4px 8px; border-radius: 4px; font-weight: bold;">Ctrl+A</kbd> (or <kbd style="background: #7cb342; color: white; padding: 4px 8px; border-radius: 4px; font-weight: bold;">Cmd+A</kbd> on Mac) to select everything</li>
+                    <li style="margin-bottom: 8px; font-size: 15px;">Press <kbd style="background: #7cb342; color: white; padding: 4px 8px; border-radius: 4px; font-weight: bold;">Ctrl+C</kbd> (or <kbd style="background: #7cb342; color: white; padding: 4px 8px; border-radius: 4px; font-weight: bold;">Cmd+C</kbd> on Mac) to copy</li>
+                    <li style="margin-bottom: 0; font-size: 15px;">Come back here and paste it in the box below ✅</li>
+                </ol>
+                <div style="background: rgba(255,255,255,0.8); padding: 12px; border-radius: 8px; margin-top: 15px; text-align: center;">
+                    <strong style="color: #2e7d32;">💡 Why do we need this?</strong><br>
+                    <span style="color: #666; font-size: 14px;">This helps us get the exact product details and current pricing for your import calculation!</span>
                 </div>
             </div>
             
-            <textarea id="manualEntryContent" placeholder="Copy and paste the entire webpage content here..." style="width: 100%; height: 200px; padding: 10px; border: 1px solid #ddd; border-radius: 5px;"></textarea>
-            <div style="margin-top: 15px; text-align: right;">
-                <button class="btn btn-secondary" onclick="closeManualEntry()">Cancel</button>
-                <button class="btn" onclick="submitManualEntry()">Process Content</button>
+            <div style="text-align: center; margin-bottom: 20px;">
+                <button class="btn" onclick="openProductPage()" style="margin-bottom: 15px; font-size: 18px; padding: 15px 30px;">
+                    🛍️ Open Product Page
+                </button>
+                <div style="font-size: 13px; color: #888; word-break: break-all; background: #f8f9fa; padding: 10px; border-radius: 6px;">
+                    <strong style="color: #666;">Product URL:</strong><br>
+                    <span id="manualEntryUrl" style="font-family: monospace;"></span>
+                </div>
+            </div>
+            
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #333; font-size: 16px;">📋 Paste the webpage content here:</label>
+                <textarea id="manualEntryContent" placeholder="After copying from the product page, paste everything here... 
+
+Don't worry about formatting - just paste it all! ✨" style="width: 100%; height: 180px; padding: 15px; border: 2px solid #7cb342; border-radius: 8px; font-size: 14px; resize: vertical;"></textarea>
+            </div>
+            
+            <div style="text-align: center;">
+                <button class="btn btn-secondary" onclick="closeManualEntry()" style="margin-right: 15px;">
+                    ← Back to Products
+                </button>
+                <button class="btn" onclick="submitManualEntry()" style="font-size: 18px; padding: 15px 30px;">
+                    🚀 Calculate My Import Cost
+                </button>
             </div>
         </div>
     </div>
