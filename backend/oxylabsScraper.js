@@ -6,19 +6,19 @@ class OxylabsScraper {
   constructor() {
     this.username = process.env.OXYLABS_USERNAME;
     this.password = process.env.OXYLABS_PASSWORD;
-    this.apiEndpoint = 'https://realtime.oxylabs.io/v1/queries';
+    this.proxyEndpoint = 'realtime.oxylabs.io:60000';
     this.enabled = !!(this.username && this.password);
     
     console.log('🚀 OxylabsScraper Constructor:');
     console.log(`   Username: ${this.username ? '✅ SET' : '❌ MISSING'}`);
     console.log(`   Password: ${this.password ? '✅ SET' : '❌ MISSING'}`);
-    console.log(`   Endpoint: ${this.apiEndpoint}`);
+    console.log(`   Endpoint: ${this.proxyEndpoint}`);
     console.log(`   Status: ${this.enabled ? '✅ ENABLED' : '❌ DISABLED'}`);
     
     if (!this.enabled) {
       console.log('   ⚠️ Set OXYLABS_USERNAME and OXYLABS_PASSWORD environment variables');
     } else {
-      console.log('   🎯 Ready to use Oxylabs Push-Pull API');
+      console.log('   🎯 Ready to use Oxylabs proxy endpoint');
     }
   }
 
@@ -30,75 +30,69 @@ class OxylabsScraper {
     const retailer = this.detectRetailer(url);
     console.log(`🚀 Oxylabs scraping ${retailer}: ${url.substring(0, 60)}...`);
 
-    // Determine source type and parameters based on retailer
-    let source = 'universal';
-    let geoLocation = 'United States';
-    let parseData = false;
-    
-    // Use specific sources for better results
-    if (retailer === 'Amazon') {
-      source = 'amazon_product';
-      parseData = true;
-      // Extract ASIN from URL
-      const asinMatch = url.match(/\/dp\/([A-Z0-9]{10})/);
-      if (asinMatch) {
-        console.log('   🎯 Using Amazon source with ASIN:', asinMatch[1]);
-      }
-    }
-    
     try {
-      // Prepare request payload
-      const payload = {
-        source: source,
-        url: url,
-        geo_location: geoLocation,
-        parse: parseData,
-        render: 'html',
-        user_agent_type: 'desktop_chrome'
-      };
-      
       console.log('   📤 Sending request to Oxylabs API...');
       
-      const response = await axios.post(this.apiEndpoint, payload, {
-        auth: {
-          username: this.username,
-          password: this.password
+      const response = await axios.get(url, {
+        proxy: {
+          protocol: 'http',
+          host: 'realtime.oxylabs.io',
+          port: 60000,
+          auth: {
+            username: this.username,
+            password: this.password
+          }
         },
         headers: {
-          'Content-Type': 'application/json'
+          'x-oxylabs-user-agent-type': 'desktop_chrome',
+          'x-oxylabs-geo-location': 'United States',
+          'x-oxylabs-render': 'html'
         },
         timeout: 30000,
+        httpsAgent: new (require('https').Agent)({
+          rejectUnauthorized: false
+        }),
         validateStatus: function (status) {
           return status >= 200 && status < 300;
         }
       });
 
       console.log('✅ Oxylabs request completed successfully');
-      
-      if (!response.data || !response.data.results || !response.data.results[0]) {
-        throw new Error('No results received from Oxylabs API');
-      }
 
-      const result = response.data.results[0];
-      console.log('📄 Result status:', result.status_code);
-      console.log('📊 Content length:', result.content ? result.content.length : 0);
+      console.log('📄 HTML length received:', response.data ? response.data.length : 0);
+      console.log('📊 Response headers:', Object.keys(response.headers));
       
-      if (result.status_code !== 200) {
-        throw new Error(`Oxylabs returned status ${result.status_code}`);
+      if (!response.data) {
+        throw new Error('No HTML content received from Oxylabs');
       }
       
-      if (!result.content) {
-        throw new Error('No content received from Oxylabs');
-      }
+      // Show HTML preview for debugging
+      const htmlPreview = response.data.substring(0, 1000);
+      console.log('📄 HTML preview (first 1000 chars):', htmlPreview);
       
-      // If we have parsed data, use it directly
-      if (result.parsed && parseData) {
-        console.log('   🎯 Using parsed data from Oxylabs');
-        return this.processParsedData(result.parsed, url, retailer);
+      // Check if we got blocked or redirected
+      const isBlocked = response.data.includes('blocked') || 
+                       response.data.includes('captcha') || 
+                       response.data.includes('Access Denied') ||
+                       response.data.length < 1000;
+      
+      const hasRedirects = response.data.includes('window.location') || 
+                          response.data.includes('redirect');
+      
+      console.log('🔍 Content Analysis:');
+      console.log('   Is Blocked/Captcha:', isBlocked);
+      console.log('   Has Redirects:', hasRedirects);
+      console.log('   Suspiciously Small:', response.data.length < 1000);
+      console.log('   Contains "price":', response.data.toLowerCase().includes('price'));
+      console.log('   Contains "add to cart":', response.data.toLowerCase().includes('add to cart'));
+      console.log('   Contains product data:', response.data.toLowerCase().includes('product'));
+      
+      if (isBlocked) {
+        throw new Error('Content appears to be blocked or captcha protected');
       }
       
       // Parse the HTML response
-      const productData = this.parseHTML(result.content, url, retailer);
+      const productData = this.parseHTML(response.data, url, retailer);
       
       console.log('📦 Oxylabs extraction results:', {
         hasName: !!productData.name,
