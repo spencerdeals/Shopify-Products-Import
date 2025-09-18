@@ -279,7 +279,17 @@ class OxylabsScraper {
     for (const selector of imageSelectors) {
       const element = $(selector).first();
       if (element.length) {
-        let imgSrc = element.attr('src') || element.attr('data-src') || element.attr('data-original') || element.attr('data-lazy');
+        let imgSrc = element.attr('src') || element.attr('data-src') || 
+                     element.attr('data-original') || element.attr('data-lazy') ||
+                     element.attr('data-srcset') || element.attr('data-large-src') ||
+                     element.attr('data-zoom-src') || element.attr('srcset');
+        
+        // Handle srcset - take the largest image
+        if (imgSrc && imgSrc.includes(',')) {
+          const srcsetParts = imgSrc.split(',');
+          imgSrc = srcsetParts[srcsetParts.length - 1].trim().split(' ')[0];
+        }
+        
         if (imgSrc) {
           // Handle relative URLs
           if (imgSrc.startsWith('//')) {
@@ -289,10 +299,36 @@ class OxylabsScraper {
             imgSrc = urlObj.protocol + '//' + urlObj.host + imgSrc;
           }
           
-          if (imgSrc.startsWith('http') && !imgSrc.includes('placeholder') && !imgSrc.includes('loading')) {
+          if (imgSrc.startsWith('http') && 
+              !imgSrc.includes('placeholder') && 
+              !imgSrc.includes('loading') &&
+              !imgSrc.includes('spinner') &&
+              !imgSrc.includes('blank') &&
+              imgSrc.length > 20) {
             productData.image = imgSrc;
             console.log('   🖼️ Image: Found');
             break;
+          }
+        }
+      }
+    }
+    
+    // Method 2: Search for images in script tags (JSON data)
+    if (!productData.image) {
+      console.log('   🔍 Searching for images in script tags...');
+      const scriptTags = $('script');
+      for (let i = 0; i < scriptTags.length; i++) {
+        const scriptContent = $(scriptTags[i]).html();
+        if (scriptContent && (scriptContent.includes('image') || scriptContent.includes('photo'))) {
+          // Look for image URLs in JSON
+          const imageMatches = scriptContent.match(/"(https?:\/\/[^"]*\.(jpg|jpeg|png|webp)[^"]*)"/gi);
+          if (imageMatches && imageMatches.length > 0) {
+            let imgUrl = imageMatches[0].replace(/"/g, '');
+            if (imgUrl.length > 20 && !imgUrl.includes('placeholder')) {
+              productData.image = imgUrl;
+              console.log('   🖼️ Image: Found in script tag');
+              break;
+            }
           }
         }
       }
