@@ -1642,15 +1642,6 @@
             }
         }
 
-        // Update delivery fee function
-        function updateDeliveryFee(vendor, fee) {
-            const numericFee = parseFloat(fee) || 0;
-            deliveryFees[vendor] = numericFee;
-            
-            console.log(`Updated ${vendor} delivery fee: $${numericFee}`);
-            updateTotals();
-        }
-
         function calculateTotal() {
             if (products.length === 0) {
                 alert('Please add some products before calculating total');
@@ -1748,6 +1739,7 @@
             // Store data for checkout
             window.checkoutData = {
                 products: products,
+            document.getElementById('totalDelivery').textContent = `$${totalDeliveryFees.toFixed(2)}`;
                 deliveryFees: deliveryFees,
                 totals: {
                     subtotal: subtotal,
@@ -1756,6 +1748,7 @@
                     totalShippingAndHandling: totalShipping,
                     totalDeliveryFees: totalDeliveryFees,
                     grandTotal: grandTotal
+                deliveryFees: totalDeliveryFees,
                 },
                 originalUrls: originalUrls
             };
