@@ -201,36 +201,69 @@ class OxylabsScraper {
       if (response.data && response.data.results && response.data.results[0]) {
         const result = response.data.results[0];
         
-        console.log(`   📊 Result structure:`, {
+        // Debug the actual response structure
+        console.log(`   📊 Oxylabs response structure:`, {
           hasContent: !!result.content,
           hasHtml: !!(result.content && result.content.html),
-          hasUrl: !!result.url,
+          hasBody: !!(result.content && result.content.body),
+          hasText: !!(result.content && result.content.text),
+          hasData: !!(result.content && result.content.data),
+          directHtml: !!result.html,
+          directBody: !!result.body,
           status: result.status_code,
-          contentKeys: result.content ? Object.keys(result.content) : []
+          contentKeys: result.content ? Object.keys(result.content) : [],
+          resultKeys: Object.keys(result)
         });
         
-        // Try different response formats
+        // Try multiple response formats for upgraded accounts
         let html = null;
         
         if (result.content) {
-          // Try different content formats
-          html = result.content.html || result.content.body || result.content;
+          // Try all possible content formats
+          html = result.content.html || 
+                 result.content.body || 
+                 result.content.text ||
+                 result.content.data ||
+                 result.content.page_content ||
+                 result.content.raw_html ||
+                 result.content;
         } else if (result.html) {
           html = result.html;
+        } else if (result.body) {
+          html = result.body;
+        } else if (result.text) {
+          html = result.text;
+        } else if (result.data) {
+          html = result.data;
         } else if (typeof result === 'string') {
           html = result;
+        }
+        
+        // If still no HTML, try parsing the entire result as HTML
+        if (!html && typeof result === 'object') {
+          // Sometimes the HTML is nested deeper
+          const possibleHtml = JSON.stringify(result);
+          if (possibleHtml.includes('<html') || possibleHtml.includes('<body')) {
+            // Extract HTML from JSON string
+            const htmlMatch = possibleHtml.match(/"([^"]*<html[^"]*>.*?<\/html>[^"]*)"/) ||
+                             possibleHtml.match(/"([^"]*<body[^"]*>.*?<\/body>[^"]*)"/) ||
+                             possibleHtml.match(/"([^"]*<!DOCTYPE[^"]*>.*?<\/html>[^"]*)"/) ;
+            if (htmlMatch) {
+              html = htmlMatch[1].replace(/\\"/g, '"').replace(/\\n/g, '\n');
+            }
+          }
         }
         
         if (html && typeof html === 'string' && html.length > 100) {
           console.log(`✅ Oxylabs UPGRADED: Got ${html.length} chars of HTML`);
           return this.parseHtmlContent(html, url);
         } else {
-          console.log(`❌ Oxylabs UPGRADED: No valid HTML content`);
-          console.log(`   Raw result sample:`, JSON.stringify(result).substring(0, 200) + '...');
+          console.log(`❌ Oxylabs UPGRADED: No valid HTML content (got ${html ? html.length : 0} chars)`);
+          console.log(`   Raw result sample:`, JSON.stringify(result).substring(0, 500) + '...');
         }
       } else {
         console.log(`❌ Oxylabs UPGRADED: No results array`);
-        console.log(`   Response structure:`, Object.keys(response.data || {}));
+        console.log(`   Full response:`, JSON.stringify(response.data).substring(0, 500) + '...');
       }
       
       throw new Error('No valid results from Oxylabs UPGRADED');
