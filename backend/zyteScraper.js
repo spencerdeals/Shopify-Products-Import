@@ -1,5 +1,6 @@
 // backend/zyteScraper.js - Fixed Zyte API Integration with Automatic Extraction
 const axios = require('axios');
+const cheerio = require('cheerio');
 
 class ZyteScraper {
   constructor() {
@@ -9,12 +10,12 @@ class ZyteScraper {
     
     console.log('🕷️ ZyteScraper Constructor:');
     console.log(`   API Key: ${this.apiKey ? '✅ SET' : '❌ MISSING'}`);
-    console.log(`   Status: ${this.enabled ? '✅ ENABLED (v3.0 - Auto Extraction)' : '❌ DISABLED'}`);
+    console.log(`   Status: ${this.enabled ? '✅ ENABLED (v4.0 - Fixed Price Parsing)' : '❌ DISABLED'}`);
     
     if (!this.enabled) {
       console.log('   ⚠️ Set ZYTE_API_KEY environment variable to enable Zyte scraping');
     } else {
-      console.log('   🎯 Ready to use Zyte API with automatic product extraction');
+      console.log('   🎯 Ready to use Zyte API with automatic product extraction and smart price parsing');
     }
   }
 
@@ -122,18 +123,44 @@ class ZyteScraper {
         console.log('   📝 Product name:', productData.name.substring(0, 50) + '...');
       }
 
-      // Price - handle current price vs regular price
+      // SMART PRICE PARSING - Fixed to handle incorrect Zyte prices
+      let extractedPrice = null;
+      let regularPrice = null;
+      
       if (product.price) {
-        productData.price = parseFloat(product.price);
-        console.log('   💰 Current Price: $' + productData.price);
-        
-        // Log if there's a sale
-        if (product.regularPrice && product.regularPrice > product.price) {
-          console.log('   🏷️ Regular Price: $' + product.regularPrice + ' (ON SALE!)');
+        extractedPrice = parseFloat(product.price);
+        console.log('   💰 Zyte extracted price: $' + extractedPrice);
+      }
+      
+      if (product.regularPrice) {
+        regularPrice = parseFloat(product.regularPrice);
+        console.log('   🏷️ Zyte regular price: $' + regularPrice);
+      }
+      
+      // Validate if Zyte's price makes sense
+      let priceIsValid = true;
+      if (extractedPrice && regularPrice) {
+        // If extracted price is less than 30% of regular price, it's probably wrong
+        const discountPercent = (regularPrice - extractedPrice) / regularPrice;
+        if (discountPercent > 0.7) {
+          console.log('   ⚠️ Zyte price seems too low (>70% discount), will verify with HTML parsing');
+          priceIsValid = false;
         }
-      } else if (product.regularPrice) {
-        productData.price = parseFloat(product.regularPrice);
-        console.log('   💰 Regular Price: $' + productData.price);
+      }
+      
+      if (priceIsValid && extractedPrice) {
+        productData.price = extractedPrice;
+        console.log('   ✅ Using Zyte price: $' + productData.price);
+      } else {
+        console.log('   🔍 Zyte price invalid, falling back to HTML parsing...');
+        const htmlPrice = this.extractPriceFromHTML(data.httpResponseBody);
+        if (htmlPrice) {
+          productData.price = htmlPrice;
+          console.log('   ✅ Using HTML parsed price: $' + productData.price);
+        } else {
+          productData.price = extractedPrice; // Use Zyte price as last resort
+          console.log('   ⚠️ Using Zyte price as fallback: $' + productData.price);
+        }
       }
 
       // Main image
@@ -231,6 +258,76 @@ class ZyteScraper {
     return productData;
   }
 
+  extractPriceFromHTML(html) {
+    if (!html) return null;
+    
+    const $ = cheerio.load(html);
+    
+    // Wayfair-specific price selectors (most specific first)
+    const priceSelectors = [
+      '.MoneyPrice',
+      '[data-testid="price"]',
+      '.BasePriceBlock .MoneyPrice',
+      '.PriceBlock .MoneyPrice',
+      '.price-current',
+      '.current-price'
+    ];
+    
+    console.log('   🔍 Searching for price in HTML...');
+    
+    for (const selector of priceSelectors) {
+      const elements = $(selector);
+      console.log(`   🔍 Found ${elements.length} elements for selector: ${selector}`);
+      
+      elements.each((i, el) => {
+        const priceText = $(el).text().trim();
+        console.log(`   💰 Price text found: "${priceText}"`);
+        
+        // Extract price from text like "$349.99" or "349.99"
+        const priceMatch = priceText.match(/\$?(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)/);
+        if (priceMatch) {
+          const price = parseFloat(priceMatch[1].replace(/,/g, ''));
+          // Filter for reasonable furniture prices
+          if (price >= 50 && price <= 10000) {
+            console.log(`   ✅ Valid price found: $${price}`);
+            return price;
+          }
+        }
+      });
+    }
+    
+    // Fallback: Search for price patterns in raw HTML
+    const pricePatterns = [
+      /\$(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)/g
+    ];
+    
+    for (const pattern of pricePatterns) {
+      const matches = [...html.matchAll(pattern)];
+      const validPrices = [];
+      
+      for (const match of matches) {
+        const price = parseFloat(match[1].replace(/,/g, ''));
+        if (price >= 50 && price <= 10000) {
+          validPrices.push(price);
+        }
+      }
+      
+      if (validPrices.length > 0) {
+        // Return the most common price (likely the current price)
+        const priceFreq = {};
+        validPrices.forEach(p => priceFreq[p] = (priceFreq[p] || 0) + 1);
+        const mostCommonPrice = Object.keys(priceFreq).reduce((a, b) => 
+          priceFreq[a] > priceFreq[b] ? a : b
+        );
+        console.log(`   ✅ Most common price in HTML: $${mostCommonPrice}`);
+        return parseFloat(mostCommonPrice);
+      }
+    }
+    
+    console.log('   ❌ No valid price found in HTML');
+    return null;
+  }
+
   extractDimensionsFromProperties(properties) {
     if (!properties || typeof properties !== 'string') return null;
     
@@ -277,21 +374,7 @@ class ZyteScraper {
     }
 
     // Extract price from HTML
-    const pricePatterns = [
-      /\$(\d+(?:,\d{3})*(?:\.\d{2})?)/g
-    ];
-    
-    for (const pattern of pricePatterns) {
-      const matches = [...html.matchAll(pattern)];
-      for (const match of matches) {
-        const price = parseFloat(match[1].replace(/,/g, ''));
-        if (price > 0 && price < 100000) {
-          productData.price = price;
-          break;
-        }
-      }
-      if (productData.price) break;
-    }
+    productData.price = this.extractPriceFromHTML(html);
 
     return productData;
   }
