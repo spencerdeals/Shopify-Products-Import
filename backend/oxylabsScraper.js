@@ -76,6 +76,9 @@ class OxylabsScraper {
       console.log('📄 HTML length received:', response.data.length);
       console.log('📊 Response headers:', Object.keys(response.headers));
       
+      // Debug: Show first 500 chars of HTML to see what we're getting
+      console.log('📄 HTML preview:', response.data.substring(0, 500).replace(/\s+/g, ' '));
+      
       // Parse the HTML response
       const productData = this.parseHTML(response.data, url, retailer);
       
@@ -141,12 +144,22 @@ class OxylabsScraper {
       'h1', '.product-title', '.product-name', '[class*="title"]', '[class*="Title"]'
     ];
     
+    console.log(`   🔍 Searching for title with ${titleSelectors.length} selectors...`);
     for (const selector of titleSelectors) {
       const element = $(selector).first();
       if (element.length && element.text().trim()) {
         productData.name = element.text().trim().replace(/\s+/g, ' ').substring(0, 200);
         console.log('   📝 Product name:', productData.name.substring(0, 60) + '...');
         break;
+      }
+    }
+    if (!productData.name) {
+      console.log('   ❌ No product name found with any selector');
+      // Try to find any h1 tags for debugging
+      const allH1s = $('h1');
+      console.log(`   🔍 Found ${allH1s.length} h1 tags in HTML`);
+      if (allH1s.length > 0) {
+        console.log('   📝 First h1 content:', allH1s.first().text().trim().substring(0, 100));
       }
     }
 
@@ -164,6 +177,7 @@ class OxylabsScraper {
       '.price', '[class*="price"]', '.current-price', '.sale-price'
     ];
     
+    console.log(`   🔍 Searching for price with ${priceSelectors.length} selectors...`);
     // Method 1: Try selectors
     for (const selector of priceSelectors) {
       const element = $(selector).first();
@@ -180,6 +194,7 @@ class OxylabsScraper {
     
     // Method 2: Regex search in HTML if selectors failed
     if (!productData.price) {
+      console.log('   🔍 Trying regex price patterns...');
       const pricePatterns = [
         /\$(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)/g,
         /"price":\s*"?\$?(\d+(?:,\d{3})*(?:\.\d{2})?)"?/g,
@@ -188,6 +203,7 @@ class OxylabsScraper {
       
       for (const pattern of pricePatterns) {
         const matches = [...html.matchAll(pattern)];
+        console.log(`   🔍 Pattern found ${matches.length} matches`);
         for (const match of matches) {
           const price = parseFloat(match[1].replace(/,/g, ''));
           if (price > 10 && price < 100000) { // Reasonable price range
@@ -198,6 +214,9 @@ class OxylabsScraper {
         }
         if (productData.price) break;
       }
+    }
+    if (!productData.price) {
+      console.log('   ❌ No price found with selectors or regex');
     }
 
     // AGGRESSIVE image extraction
@@ -212,6 +231,7 @@ class OxylabsScraper {
       '.product-image img', 'img[class*="product"]', 'img[class*="hero"]'
     ];
     
+    console.log(`   🔍 Searching for image with ${imageSelectors.length} selectors...`);
     for (const selector of imageSelectors) {
       const element = $(selector).first();
       if (element.length) {
@@ -231,6 +251,17 @@ class OxylabsScraper {
             break;
           }
         }
+      }
+    }
+    if (!productData.image) {
+      console.log('   ❌ No image found with selectors');
+      // Try to find any img tags for debugging
+      const allImgs = $('img');
+      console.log(`   🔍 Found ${allImgs.length} img tags in HTML`);
+      if (allImgs.length > 0) {
+        const firstImg = allImgs.first();
+        console.log('   📝 First img src:', firstImg.attr('src') || 'no src');
+        console.log('   📝 First img data-src:', firstImg.attr('data-src') || 'no data-src');
       }
     }
 
