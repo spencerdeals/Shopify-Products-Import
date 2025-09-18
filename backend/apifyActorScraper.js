@@ -10,17 +10,17 @@ class ApifyActorScraper {
     // Actor configurations for different retailers
     this.actors = {
       amazon: {
-        actorId: 'junglee/Amazon-crawler', // Fixed case - this one works!
+        actorId: 'junglee/amazon-crawler',
         timeout: 120000, // 2 minutes
         memory: 2048
       },
       wayfair: {
-        actorId: 'apify/web-scraper', // Use generic scraper for Wayfair too
+        actorId: '123webdata/wayfair-scraper',
         timeout: 90000,
         memory: 1024
       },
       generic: {
-        actorId: 'apify/web-scraper',
+        actorId: 'assertive_analogy/pro-web-content-crawler',
         timeout: 90000, // 1.5 minutes
         memory: 1024
       }
@@ -70,7 +70,7 @@ class ApifyActorScraper {
       if (retailerType === 'amazon') {
         console.log(`   🛒 Amazon input preparation...`);
         input = {
-          startUrls: [{ url: url }],
+          categoryOrProductUrls: [url],
           maxItems: 1,
           proxyConfiguration: { useApifyProxy: true }
         };
