@@ -8,8 +8,10 @@ class ZyteScraper {
     this.enabled = !!this.apiKey;
     this.baseURL = 'https://api.zyte.com/v1/extract';
     
+  }
 
   async scrapeProduct(url) {
+  }
   async scrapeProduct(url) {
     if (!this.enabled) {
       throw new Error('Zyte not configured - missing API key');
@@ -22,6 +24,7 @@ class ZyteScraper {
         product: true
       }, {
         auth: {
+        }
         customHttpRequestHeaders: options.userAgent ? {
           password: ''
         },
@@ -41,3 +44,5 @@ class ZyteScraper {
     } catch (error) {
       throw error;
     }
+  }
+}
