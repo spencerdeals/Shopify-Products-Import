@@ -246,9 +246,8 @@
             
             try {
                 // Get the checkout data from the backend
-                const response = await fetch(`/api/get-checkout/${checkoutId}`);
+                const response = await fetch(`/api/get-pending-order/${checkoutId}`);
                 
-                if (!response.ok) {
                 orderData = result;
                 
                 displayOrderSummary();
