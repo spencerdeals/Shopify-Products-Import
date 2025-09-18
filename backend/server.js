@@ -5,11 +5,8 @@ const axios = require('axios');
 const path = require('path');
 const { URL } = require('url');
 const { parseProduct } = require('./gptParser');
-const ApifyScraper = require('./apifyScraper');
-const OxylabsScraper = require('./oxylabsScraper');
+const FastScraper = require('./fastScraper');
 const UPCItemDB = require('./upcitemdb');
-const ProWebCrawler = require('./proWebCrawler');
-const AmazonCrawler = require('./amazonCrawler');
 const OrderTracker = require('./orderTracking');
 require('dotenv').config();
 
@@ -21,9 +18,6 @@ const SHOPIFY_DOMAIN = process.env.SHOPIFY_DOMAIN || 'spencer-deals-ltd.myshopif
 const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN || '';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '1064';
 const UPCITEMDB_API_KEY = process.env.UPCITEMDB_API_KEY || '';
-const APIFY_API_KEY = process.env.APIFY_API_KEY || '';
-const OXYLABS_USERNAME = process.env.OXYLABS_USERNAME || 'spencerdeals_PZxt0';
-const OXYLABS_PASSWORD = process.env.OXYLABS_PASSWORD || 'Bermuda69===';
 const SCRAPING_TIMEOUT = 30000;
 const MAX_CONCURRENT_SCRAPES = 2;
 const BERMUDA_DUTY_RATE = 0.265;
@@ -31,31 +25,23 @@ const SHIPPING_RATE_PER_CUBIC_FOOT = 8;
 
 // Initialize services
 console.log('✅ GPT Parser loaded successfully');
-const apifyScraper = new ApifyScraper(APIFY_API_KEY);
-const oxylabsScraper = new OxylabsScraper(OXYLABS_USERNAME, OXYLABS_PASSWORD);
+const fastScraper = new FastScraper();
 const upcItemDB = new UPCItemDB(UPCITEMDB_API_KEY);
-const proWebCrawler = new ProWebCrawler();
-const amazonCrawler = new AmazonCrawler();
 const orderTracker = new OrderTracker();
 
-const USE_APIFY = apifyScraper.isAvailable();
-const USE_OXYLABS = oxylabsScraper.isAvailable();
+const USE_FAST_SCRAPER = fastScraper.enabled;
 const USE_UPCITEMDB = !!UPCITEMDB_API_KEY;
-const USE_PROWEB = proWebCrawler.isAvailable();
-const USE_AMAZON_CRAWLER = amazonCrawler.isAvailable();
 
 console.log('=== SERVER STARTUP ===');
 console.log(`Port: ${PORT}`);
 console.log(`Shopify Domain: ${SHOPIFY_DOMAIN}`);
 console.log('');
 console.log('🔍 SCRAPING CONFIGURATION:');
-console.log(`1. Amazon Specialist: Amazon-Crawler - ${USE_AMAZON_CRAWLER ? '✅ ENABLED' : '❌ DISABLED'}`);
-console.log(`2. Primary: Oxylabs - ${USE_OXYLABS ? '✅ ENABLED' : '❌ DISABLED'} (${OXYLABS_USERNAME ? 'has username' : 'no username'}, ${OXYLABS_PASSWORD ? 'has password' : 'no password'})`);
-console.log(`3. Secondary: Apify - ${USE_APIFY ? '✅ ENABLED' : '❌ DISABLED'}`);
-console.log(`4. Tertiary: ProWebCrawler - ${USE_PROWEB ? '✅ ENABLED' : '❌ DISABLED'}`);
-console.log(`5. Quaternary: ScrapingBee - ✅ ENABLED`);
-console.log(`6. Fallback: GPT Parser - ✅ ENABLED`);
-console.log(`7. Enhancement: UPCitemdb - ${USE_UPCITEMDB ? '✅ ENABLED' : '❌ DISABLED'}`);
+console.log(`1. Primary: FastScraper (ScrapingBee + Direct) - ${USE_FAST_SCRAPER ? '✅ ENABLED' : '❌ DISABLED'}`);
+console.log(`2. Intelligence: GPT Parser - ✅ ENABLED`);
+console.log(`3. Enhancement: UPCitemdb - ${USE_UPCITEMDB ? '✅ ENABLED' : '❌ DISABLED'}`);
+console.log('');
+console.log('⚡ STRATEGY: Fast scraping → GPT intelligence → Smart estimation');
 console.log('=====================');
 
 // Middleware
@@ -385,7 +371,7 @@ async function scrapeProduct(url) {
   console.log(`\n📦 Processing: ${url}`);
   console.log(`   Retailer: ${retailer}`);
   
-  // STEP 1: Always try Oxylabs first (fastest and most reliable)
+  // STEP 1: Try Oxylabs first (primary scraper)
   if (USE_OXYLABS) {
     try {
       console.log('   🌐 Attempting Oxylabs scrape...');
@@ -395,10 +381,6 @@ async function scrapeProduct(url) {
         productData = oxylabsData;
         scrapingMethod = 'oxylabs';
         console.log('   ✅ Oxylabs success');
-        
-        if (!isDataComplete(productData)) {
-          console.log('   ⚠️ Data incomplete, trying fallbacks');
-        }
       } else {
         console.log('   ❌ Oxylabs returned null data');
       }
@@ -408,96 +390,16 @@ async function scrapeProduct(url) {
     }
   }
   
-  // STEP 2: Try Amazon-Crawler for Amazon URLs if Oxylabs failed
-  if (retailer === 'Amazon' && USE_AMAZON_CRAWLER && (!productData || !isDataComplete(productData))) {
-    try {
-      console.log('   🛒 Attempting Amazon-Crawler...');
-      const amazonData = await amazonCrawler.scrapeProduct(url);
-      
-      if (amazonData) {
-        if (!productData) {
-          productData = amazonData;
-          scrapingMethod = 'amazon-crawler';
-          console.log('   ✅ Amazon-Crawler success');
-        } else {
-          const mergedData = mergeProductData(productData, amazonData);
-          productData = mergedData;
-          scrapingMethod = scrapingMethod + '+amazon-crawler';
-          console.log('   ✅ Enhanced with Amazon-Crawler');
-        }
-      }
-    } catch (error) {
-      console.log('   ❌ Amazon-Crawler failed:', error.message);
-    }
-  }
-  
-  // STEP 3: Try Apify if still missing data
-  if (USE_APIFY && (!productData || !isDataComplete(productData))) {
-    try {
-      console.log('   🔄 Attempting Apify scrape...');
-      const apifyData = await apifyScraper.scrapeProduct(url);
-      
-      if (apifyData) {
-        if (!productData) {
-          productData = apifyData;
-          scrapingMethod = 'apify';
-          console.log('   ✅ Apify returned data');
-        } else {
-          const mergedData = mergeProductData(productData, apifyData);
-          productData = mergedData;
-          scrapingMethod = scrapingMethod + '+apify';
-          console.log('   ✅ Enhanced with Apify data');
-        }
-        
-        if (!isDataComplete(productData)) {
-          console.log('   WARNING Data still incomplete, will try more fallbacks');
-        }
-      }
-    } catch (error) {
-      console.log('   ❌ Apify failed:', error.message);
-    }
-  }
-  
-  // STEP 4: Try ProWebCrawler if still missing data
-  if (USE_PROWEB && (!productData || !isDataComplete(productData))) {
-    try {
-      console.log('   🕸️ Attempting ProWebCrawler...');
-      const proWebData = await proWebCrawler.scrapeProduct(url);
-      
-      if (proWebData) {
-        if (!productData) {
-          productData = proWebData;
-          scrapingMethod = 'proweb';
-          console.log('   ✅ ProWebCrawler returned data');
-        } else {
-          const mergedData = mergeProductData(productData, proWebData);
-          productData = mergedData;
-          scrapingMethod = scrapingMethod + '+proweb';
-          console.log('   ✅ Enhanced with ProWebCrawler data');
-        }
-      }
-    } catch (error) {
-      console.log('   ❌ ProWebCrawler failed:', error.message);
-    }
-  }
-  
-  // STEP 5: Try GPT Parser as final fallback
-  if (!productData || !isDataComplete(productData)) {
+  // STEP 2: Try GPT Parser as fallback if Oxylabs failed
+  if (!productData) {
     try {
       console.log('   🤖 Attempting GPT Parser...');
       const gptData = await parseProduct(url);
       
       if (gptData) {
-        if (!productData) {
-          productData = gptData;
-          scrapingMethod = 'gpt';
-          console.log('   ✅ GPT Parser returned data');
-        } else {
-          const mergedData = mergeProductData(productData, gptData);
-          productData = mergedData;
-          scrapingMethod = scrapingMethod + '+gpt';
-          console.log('   ✅ Enhanced with GPT Parser data');
-        }
+        productData = gptData;
+        scrapingMethod = 'gpt';
+        console.log('   ✅ GPT Parser returned data');
       }
     } catch (error) {
       console.log('   ❌ GPT Parser failed:', error.message);
@@ -509,7 +411,7 @@ async function scrapeProduct(url) {
     productData.variant = cleanVariant(productData.variant);
   }
   
-  // STEP 6: Try UPCitemdb for missing dimensions (only if needed)
+  // STEP 3: Try UPCitemdb for missing dimensions (only if needed)
   if (USE_UPCITEMDB && productData && productData.name && (!productData.dimensions || !productData.weight)) {
     try {
       console.log('   📦 Attempting UPCitemdb lookup...');
@@ -538,7 +440,7 @@ async function scrapeProduct(url) {
     }
   }
   
-  // STEP 7: Use estimation for missing data
+  // STEP 4: Use estimation for missing data
   if (!productData) {
     productData = {
       name: 'Product from ' + retailer,
@@ -659,20 +561,14 @@ app.post('/api/scrape', async (req, res) => {
     
     const products = await processBatch(urls);
     
-    const amazonCount = products.filter(p => p.scrapingMethod?.includes('amazon-crawler')).length;
     const oxylabsCount = products.filter(p => p.scrapingMethod?.includes('oxylabs')).length;
-    const apifyCount = products.filter(p => p.scrapingMethod?.includes('apify')).length;
-    const proWebCount = products.filter(p => p.scrapingMethod?.includes('proweb')).length;
     const gptCount = products.filter(p => p.scrapingMethod?.includes('gpt')).length;
     const upcitemdbCount = products.filter(p => p.scrapingMethod?.includes('upcitemdb')).length;
     const estimatedCount = products.filter(p => p.scrapingMethod === 'estimation').length;
     
     console.log('\n📊 SCRAPING SUMMARY:');
     console.log(`   Total products: ${products.length}`);
-    console.log(`   Amazon-Crawler used: ${amazonCount}`);
     console.log(`   Oxylabs used: ${oxylabsCount}`);
-    console.log(`   Apify used: ${apifyCount}`);
-    console.log(`   ProWebCrawler used: ${proWebCount}`);
     console.log(`   GPT Parser used: ${gptCount}`);
     console.log(`   UPCitemdb used: ${upcitemdbCount}`);
     console.log(`   Fully estimated: ${estimatedCount}`);
@@ -685,10 +581,7 @@ app.post('/api/scrape', async (req, res) => {
         scraped: products.length - estimatedCount,
         estimated: estimatedCount,
         scrapingMethods: {
-          amazonCrawler: amazonCount,
           oxylabs: oxylabsCount,
-          apify: apifyCount,
-          proWeb: proWebCount,
           gpt: gptCount,
           upcitemdb: upcitemdbCount,
           estimation: estimatedCount
