@@ -146,19 +146,50 @@ class ApifyActorScraper {
     
     console.log(`   🎭 Using ${retailerType} scraping strategy`);
     
-    let actorId, input;
+    let actorId = 'apify/web-scraper'; // Default to working actor
+    let input;
     
     if (retailerType === 'amazon') {
-      // Use a reliable Amazon actor
-      actorId = 'apify/amazon-product-scraper';
-      input = { 
-        startUrls: [{ url }], 
-        maxItems: 1,
-        proxyConfiguration: { useApifyProxy: true }
+      // Use web scraper for Amazon with custom extraction
+      input = {
+        startUrls: [{ url }],
+        maxRequestsPerCrawl: 1,
+        proxyConfiguration: { useApifyProxy: true },
+        pageFunction: `async function pageFunction(context) {
+          const { page } = context;
+          await page.waitForTimeout(3000);
+          
+          const result = await page.evaluate(() => {
+            let title = null;
+            let price = null;
+            let image = null;
+            
+            // Amazon-specific selectors
+            const titleEl = document.querySelector('#productTitle') || 
+                           document.querySelector('h1.a-size-large') || 
+                           document.querySelector('h1');
+            if (titleEl) title = titleEl.textContent.trim();
+            
+            const priceEl = document.querySelector('.a-price .a-offscreen') || 
+                           document.querySelector('.a-price-whole') ||
+                           document.querySelector('.price');
+            if (priceEl) {
+              const match = priceEl.textContent.match(/[\\d,]+\\.?\\d*/);
+              if (match) price = parseFloat(match[0].replace(/,/g, ''));
+            }
+            
+            const imgEl = document.querySelector('#landingImage') || 
+                         document.querySelector('.a-dynamic-image');
+            if (imgEl && imgEl.src) image = imgEl.src;
+            
+            return { title, price, image };
+          });
+          
+          return result;
+        }`
       };
     } else if (retailerType === 'wayfair') {
       // Use web scraper for Wayfair with custom extraction
-      actorId = 'apify/web-scraper';
       input = {
         startUrls: [{ url }],
         maxRequestsPerCrawl: 1,
@@ -198,7 +229,6 @@ class ApifyActorScraper {
       };
     } else {
       // Generic web scraper
-      actorId = 'apify/web-scraper';
       input = {
         startUrls: [{ url }],
         maxRequestsPerCrawl: 1,
@@ -243,12 +273,12 @@ class ApifyActorScraper {
     }
     
     try {
-      console.log(`   ⏱️ Running ${actorId} with 45s timeout...`);
+      console.log(`   ⏱️ Running ${actorId} with 40s timeout...`);
       
       const run = await this.client.actor(actorId).call(input, {
-        timeout: 45000, // 45 seconds
+        timeout: 40000, // 40 seconds
         memory: 1024,
-        waitSecs: 30
+        waitSecs: 25
       });
       
       const { items } = await this.client.dataset(run.defaultDatasetId).listItems();

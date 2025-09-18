@@ -69,12 +69,12 @@ async function fetchViaAxios(url){
         return typeof res.data === 'string' ? res.data : res.data.toString();
       }
       if (res.status === 429){
-        const waitMs = 2000*(i+1) + rnd(1000,3000); // Longer delays for 429
+        const waitMs = 5000*(i+1) + rnd(2000,5000); // Much longer delays for 429
         console.warn(`[GPT Parser - Axios] 429. Retry ${i + 1}/3 after ${waitMs}ms`);
         await sleep(waitMs); continue;
       }
       if (res.status === 403){
-        const waitMs = 3000*(i+1) + rnd(1000,2000); // Even longer for 403
+        const waitMs = 8000*(i+1) + rnd(3000,5000); // Much longer for 403
         console.warn(`[GPT Parser - Axios] 403. Retry ${i + 1}/3 after ${waitMs}ms`);
         await sleep(waitMs); continue;
       }

@@ -385,14 +385,8 @@ async function scrapeProduct(url) {
   const productId = generateProductId();
   const retailer = detectRetailer(url);
   
-  let productData = null;
-  let scrapingMethod = 'none';
-  
-  console.log(`\n📦 Processing: ${url}`);
-  console.log(`   Retailer: ${retailer}`);
-  
-  // Initialize with safe defaults to prevent null errors
-  productData = {
+  // Initialize with safe defaults to prevent crashes
+  let productData = {
     name: null,
     price: null,
     image: null,
@@ -403,6 +397,10 @@ async function scrapeProduct(url) {
     inStock: true,
     variant: null
   };
+  let scrapingMethod = 'none';
+  
+  console.log(`\n📦 Processing: ${url}`);
+  console.log(`   Retailer: ${retailer}`);
   
   // Try GPT Parser first - it's most reliable
   if (process.env.OPENAI_API_KEY) {
@@ -411,7 +409,7 @@ async function scrapeProduct(url) {
       const gptData = await parseProduct(url);
       
       if (gptData && gptData.name && gptData.price) {
-        productData = { ...productData, ...gptData };
+        productData = mergeProductData(productData, gptData);
         scrapingMethod = 'gpt';
         console.log('   ✅ GPT Parser success');
       }
@@ -420,37 +418,16 @@ async function scrapeProduct(url) {
     }
   }
   
-  // If GPT failed or incomplete, try Apify Actor
-  if (USE_APIFY_ACTORS && (!productData.name || !productData.price)) {
-    try {
-      console.log('   🎭 Attempting Apify Actor scrape...');
-      const apifyData = await apifyActorScraper.scrapeProduct(url);
-      
-      if (apifyData && (apifyData.name || apifyData.price)) {
-        if (!productData.name || !productData.price) {
-          productData = mergeProductData(productData, apifyData);
-          scrapingMethod = scrapingMethod === 'gpt' ? 'gpt+apify' : 'apify';
-          console.log('   ✅ Apify Actor success');
-        } else {
-          productData = mergeProductData(productData, apifyData);
-          scrapingMethod = scrapingMethod + '+apify';
-        }
-      }
-    } catch (error) {
-      console.log('   ❌ Apify Actor failed:', error.message);
-    }
-  }
-  
-  // If still missing data, try Zyte as last resort
-  if (USE_ZYTE && (!productData.name || !productData.price)) {
+  // If GPT failed or incomplete, try Zyte
+  if (USE_ZYTE && (!productData || !productData.name || !productData.price)) {
     try {
       console.log('   🕷️ Attempting Zyte API scrape...');
       const zyteData = await zyteScraper.scrapeProduct(url);
       
       if (zyteData && (zyteData.name || zyteData.price)) {
-        if (!productData.name || !productData.price) {
+        if (!productData || !productData.name || !productData.price) {
           productData = mergeProductData(productData, zyteData);
-          scrapingMethod = scrapingMethod === 'none' ? 'zyte' : scrapingMethod + '+zyte';
+          scrapingMethod = scrapingMethod === 'gpt' ? 'gpt+zyte' : 'zyte';
           console.log('   ✅ Zyte API success');
         } else {
           productData = mergeProductData(productData, zyteData);
@@ -462,8 +439,44 @@ async function scrapeProduct(url) {
     }
   }
   
+  // If still missing data, try Apify as last resort
+  if (USE_APIFY_ACTORS && (!productData || !productData.name || !productData.price)) {
+    try {
+      console.log('   🎭 Attempting Apify Actor scrape...');
+      const apifyData = await apifyActorScraper.scrapeProduct(url);
+      
+      if (apifyData && (apifyData.name || apifyData.price)) {
+        if (!productData || !productData.name || !productData.price) {
+          productData = mergeProductData(productData, apifyData);
+          scrapingMethod = scrapingMethod === 'none' ? 'apify' : scrapingMethod + '+apify';
+          console.log('   ✅ Apify Actor success');
+        } else {
+          productData = mergeProductData(productData, apifyData);
+          scrapingMethod = scrapingMethod + '+apify';
+        }
+      }
+    } catch (error) {
+      console.log('   ❌ Apify Actor failed:', error.message);
+    }
+  }
+  
+  // Ensure we always have valid productData
+  if (!productData) {
+    productData = {
+      name: null,
+      price: null,
+      image: null,
+      dimensions: null,
+      weight: null,
+      brand: null,
+      category: null,
+      inStock: true,
+      variant: null
+    };
+  }
+  
   // Fill in missing data with estimations
-  const productName = productData && productData.name ? productData.name : `Product from ${retailer}`;
+  const productName = (productData && productData.name) ? productData.name : `Product from ${retailer}`;
   const category = productData.category || categorizeProduct(productName, url);
   
   if (!productData.dimensions) {
@@ -483,7 +496,7 @@ async function scrapeProduct(url) {
   const shippingCost = calculateShippingCost(
     productData.dimensions,
     productData.weight,
-    productData && productData.price ? productData.price : 100
+    (productData && productData.price) ? productData.price : 100
   );
   
   // Prepare final product object
@@ -491,15 +504,15 @@ async function scrapeProduct(url) {
     id: productId,
     url: url,
     name: productName,
-    price: productData && productData.price ? productData.price : null,
-    image: productData.image || 'https://placehold.co/400x400/7CB342/FFFFFF/png?text=SDL',
+    price: (productData && productData.price) ? productData.price : null,
+    image: (productData && productData.image) ? productData.image : 'https://placehold.co/400x400/7CB342/FFFFFF/png?text=SDL',
     category: category,
     retailer: retailer,
     dimensions: productData.dimensions,
     weight: productData.weight,
     shippingCost: shippingCost,
     scrapingMethod: scrapingMethod,
-    variant: productData.variant,
+    variant: (productData && productData.variant) ? productData.variant : null,
     dataCompleteness: {
       hasName: !!(productData && productData.name),
       hasImage: !!(productData && productData.image),
