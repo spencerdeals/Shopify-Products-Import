@@ -456,6 +456,7 @@ async function scrapeProduct(url) {
       console.log('   ⚠️ No GPT fallback available (missing OpenAI API key)');
       scrapingMethod = 'manual-required';
     }
+  }
   
   // Check if manual entry is required
   if (scrapingMethod === 'manual-required') {
