@@ -454,11 +454,43 @@ async function scrapeProduct(url) {
       }
     } else {
       console.log('   ⚠️ No GPT fallback available (missing OpenAI API key)');
-      scrapingMethod = 'estimation';
+      scrapingMethod = 'manual-required';
     }
+  } else {
+    scrapingMethod = 'manual-required';
   }
   
-  // Ensure we always have valid productData
+  // Check if manual entry is required
+  if (scrapingMethod === 'manual-required') {
+    console.log(`   ⚠️ ${retailer} requires manual entry - both automated methods failed`);
+    return {
+      id: productId,
+      url: url,
+      name: null,
+      price: null,
+      image: null,
+      category: 'general',
+      retailer: retailer,
+      dimensions: null,
+      weight: null,
+      shippingCost: 0,
+      scrapingMethod: 'manual-required',
+      confidence: null,
+      variant: null,
+      manualEntryRequired: true,
+      message: `${retailer} requires manual entry. Please copy and paste the webpage content.`,
+      dataCompleteness: {
+        hasName: false,
+        hasImage: false,
+        hasDimensions: false,
+        hasWeight: false,
+        hasPrice: false,
+        hasVariant: false
+      }
+    };
+  }
+  
+  // Ensure we always have valid productData for successful scrapes
   if (!productData) {
     productData = {
       name: null,
@@ -585,6 +617,99 @@ app.post('/api/scrape', async (req, res) => {
   } catch (error) {
     console.error('Scraping error:', error);
     res.status(500).json({ error: 'Failed to scrape products' });
+  }
+});
+
+// API endpoint for manual webpage processing
+app.post('/api/process-manual-content', async (req, res) => {
+  try {
+    const { url, htmlContent } = req.body;
+    
+    if (!url || !htmlContent) {
+      return res.status(400).json({ error: 'URL and HTML content required' });
+    }
+    
+    console.log(`\n🤖 Processing manual content for: ${url}`);
+    
+    // Use GPT parser to extract from the provided HTML
+    const { parseWithGPT } = require('./gptParser');
+    
+    try {
+      const gptData = await parseWithGPT({ url, html: htmlContent });
+      
+      if (gptData && gptData.name && gptData.price) {
+        const retailer = detectRetailer(url);
+        const category = gptData.category || categorizeProduct(gptData.name, url);
+        
+        // Convert to our expected format
+        const productData = {
+          name: gptData.name,
+          price: gptData.price,
+          image: gptData.image,
+          dimensions: gptData.dimensions || gptData.package_dimensions,
+          weight: gptData.weight || gptData.package_weight_lbs,
+          brand: gptData.brand,
+          category: category,
+          inStock: gptData.inStock,
+          variant: gptData.variant
+        };
+        
+        // Fill in missing data with estimations
+        if (!productData.dimensions) {
+          productData.dimensions = estimateDimensions(category, productData.name);
+        }
+        
+        if (!productData.weight) {
+          productData.weight = estimateWeight(productData.dimensions, category);
+        }
+        
+        const shippingCost = calculateShippingCost(
+          productData.dimensions,
+          productData.weight,
+          productData.price
+        );
+        
+        const product = {
+          id: generateProductId(),
+          url: url,
+          name: productData.name,
+          price: productData.price,
+          image: productData.image || 'https://placehold.co/400x400/7CB342/FFFFFF/png?text=SDL',
+          category: category,
+          retailer: retailer,
+          dimensions: productData.dimensions,
+          weight: productData.weight,
+          shippingCost: shippingCost,
+          scrapingMethod: 'manual-gpt',
+          confidence: null,
+          variant: productData.variant,
+          dataCompleteness: {
+            hasName: !!productData.name,
+            hasImage: !!productData.image,
+            hasDimensions: !!productData.dimensions,
+            hasWeight: !!productData.weight,
+            hasPrice: !!productData.price,
+            hasVariant: !!productData.variant
+          }
+        };
+        
+        console.log('   ✅ Manual content processed successfully');
+        res.json({ success: true, product });
+        
+      } else {
+        throw new Error('GPT could not extract required data from manual content');
+      }
+      
+    } catch (error) {
+      console.log('   ❌ Manual content processing failed:', error.message);
+      res.status(400).json({ 
+        error: 'Could not extract product data from the provided content. Please ensure you copied the complete webpage.' 
+      });
+    }
+    
+  } catch (error) {
+    console.error('Manual content processing error:', error);
+    res.status(500).json({ error: 'Failed to process manual content' });
   }
 });
 
