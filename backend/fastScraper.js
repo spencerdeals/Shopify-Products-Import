@@ -4,25 +4,38 @@ const rateLimit = require('express-rate-limit');
 const path = require('path');
 const { URL } = require('url');
 const axios = require('axios');
+
+// Import modules that exist
 const UPCItemDB = require('./upcitemdb');
 const OrderTracker = require('./orderTracking');
 const { parseProduct } = require('./gptParser');
+
+const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Configuration
 const SHOPIFY_DOMAIN = process.env.SHOPIFY_DOMAIN || 'spencer-deals-ltd.myshopify.com';
 const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN || '';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '1064';
+const UPCITEMDB_API_KEY = process.env.UPCITEMDB_API_KEY || '';
+const MAX_CONCURRENT_SCRAPES = 2;
+const BERMUDA_DUTY_RATE = 0.265;
+const SHIPPING_RATE_PER_CUBIC_FOOT = 8;
+
 // Initialize services
-const fastScraper = new FastScraper();
-const USE_FAST_SCRAPER = fastScraper.enabled;
+const upcItemDB = new UPCItemDB(UPCITEMDB_API_KEY);
+const orderTracker = new OrderTracker();
+const USE_UPCITEMDB = !!UPCITEMDB_API_KEY;
+
 console.log('=== SERVER STARTUP ===');
 console.log('🔍 SCRAPING CONFIGURATION:');
-console.log(`1. Primary: FastScraper (ScrapingBee + Direct) - ${USE_FAST_SCRAPER ? '✅ ENABLED' : '❌ DISABLED'}`);
-console.log(`2. Intelligence: GPT Parser - ✅ ENABLED`);
-console.log(`3. Enhancement: UPCitemdb - ${USE_UPCITEMDB ? '✅ ENABLED' : '❌ DISABLED'}`);
+console.log(`1. Primary: GPT Parser - ✅ ENABLED`);
+console.log(`2. Enhancement: UPCitemdb - ${USE_UPCITEMDB ? '✅ ENABLED' : '❌ DISABLED'}`);
 console.log('');
-console.log('⚡ STRATEGY: Fast scraping → GPT intelligence → Smart estimation');
+console.log('⚡ STRATEGY: GPT intelligence → Smart estimation');
+
+// Middleware
+app.use(cors());
 app.use(express.json({ limit: '5mb' }));
 
 // Serve static files
@@ -35,7 +48,6 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     port: PORT,
     scraping: {
-      fastScraper: USE_FAST_SCRAPER,
       gptParser: true,
       upcitemdb: USE_UPCITEMDB
     },
@@ -345,39 +357,18 @@ async function scrapeProduct(url) {
   console.log(`\n📦 Processing: ${url}`);
   console.log(`   Retailer: ${retailer}`);
   
-  // STEP 1: Try FastScraper first (ScrapingBee + Direct + GPT)
-  if (USE_FAST_SCRAPER) {
-    try {
-      console.log('   ⚡ Attempting FastScraper...');
-      const fastData = await fastScraper.scrapeProduct(url);
-      
-      if (fastData) {
-        productData = fastData;
-        scrapingMethod = fastData.scrapingMethod || 'fastscraper';
-        console.log('   ✅ FastScraper success');
-      } else {
-        console.log('   ❌ FastScraper returned null data');
-      }
-    } catch (error) {
-      console.log('   ❌ FastScraper failed:', error.message);
-      productData = null;
+  // Try GPT Parser
+  try {
+    console.log('   🤖 Attempting GPT Parser...');
+    const gptData = await parseProduct(url);
+    
+    if (gptData) {
+      productData = gptData;
+      scrapingMethod = 'gpt';
+      console.log('   ✅ GPT Parser returned data');
     }
-  }
-  
-  // STEP 2: Try GPT Parser as fallback if FastScraper failed
-  if (!productData) {
-    try {
-      console.log('   🤖 Attempting GPT Parser...');
-      const gptData = await parseProduct(url);
-      
-      if (gptData) {
-        productData = gptData;
-        scrapingMethod = 'gpt';
-        console.log('   ✅ GPT Parser returned data');
-      }
-    } catch (error) {
-      console.log('   ❌ GPT Parser failed:', error.message);
-    }
+  } catch (error) {
+    console.log('   ❌ GPT Parser failed:', error.message);
   }
   
   // Clean variant
@@ -385,11 +376,10 @@ async function scrapeProduct(url) {
     productData.variant = cleanVariant(productData.variant);
   }
   
-  // STEP 3: Try UPCitemdb for missing dimensions (only if needed)
+  // Try UPCitemdb for missing dimensions
   if (USE_UPCITEMDB && productData && productData.name && (!productData.dimensions || !productData.weight)) {
     try {
       console.log('   📦 Attempting UPCitemdb lookup...');
-      // Add delay to avoid rate limiting
       await new Promise(resolve => setTimeout(resolve, 1000));
       const upcData = await upcItemDB.searchByName(productData.name);
       
@@ -414,7 +404,7 @@ async function scrapeProduct(url) {
     }
   }
   
-  // STEP 4: Use estimation for missing data
+  // Use estimation for missing data
   if (!productData) {
     productData = {
       name: 'Product from ' + retailer,
@@ -442,14 +432,12 @@ async function scrapeProduct(url) {
     console.log('   ⚖️ Estimated weight based on dimensions');
   }
   
-  // Calculate shipping cost
   const shippingCost = calculateShippingCost(
     productData.dimensions,
     productData.weight,
     productData.price || 100
   );
   
-  // Prepare final product object
   const product = {
     id: productId,
     url: url,
@@ -500,14 +488,12 @@ async function processBatch(urls, batchSize = MAX_CONCURRENT_SCRAPES) {
       }))
     );
     
-    // Extract successful results
     const successfulResults = batchResults.map(result => 
       result.status === 'fulfilled' ? result.value : result.reason
     );
     
     results.push(...successfulResults);
     
-    // Small delay between batches to avoid overwhelming servers
     if (i + batchSize < urls.length) {
       await new Promise(resolve => setTimeout(resolve, 2000));
     }
@@ -535,14 +521,12 @@ app.post('/api/scrape', async (req, res) => {
     
     const products = await processBatch(urls);
     
-    const fastScraperCount = products.filter(p => p.scrapingMethod?.includes('fastscraper') || p.scrapingMethod?.includes('scrapingbee') || p.scrapingMethod?.includes('direct')).length;
     const gptCount = products.filter(p => p.scrapingMethod?.includes('gpt')).length;
     const upcitemdbCount = products.filter(p => p.scrapingMethod?.includes('upcitemdb')).length;
     const estimatedCount = products.filter(p => p.scrapingMethod === 'estimation').length;
     
     console.log('\n📊 SCRAPING SUMMARY:');
     console.log(`   Total products: ${products.length}`);
-    console.log(`   FastScraper used: ${fastScraperCount}`);
     console.log(`   GPT Parser used: ${gptCount}`);
     console.log(`   UPCitemdb used: ${upcitemdbCount}`);
     console.log(`   Fully estimated: ${estimatedCount}`);
@@ -555,7 +539,6 @@ app.post('/api/scrape', async (req, res) => {
         scraped: products.length - estimatedCount,
         estimated: estimatedCount,
         scrapingMethods: {
-          fastScraper: fastScraperCount,
           gpt: gptCount,
           upcitemdb: upcitemdbCount,
           estimation: estimatedCount
