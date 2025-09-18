@@ -399,10 +399,27 @@
     <div id="manualEntryModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000;">
         <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 30px; border-radius: 15px; max-width: 600px; width: 90%;">
             <h3 style="color: #e65100; margin-bottom: 15px;">Manual Content Entry Required</h3>
-            <p style="margin-bottom: 15px; color: #666;">This retailer requires manual content entry. Please copy and paste the webpage content below:</p>
-            <div style="margin-bottom: 15px;">
-                <strong>URL:</strong> <span id="manualEntryUrl"></span>
+            <p style="margin-bottom: 15px; color: #666;"><span id="retailerName">This retailer</span> requires manual content entry. Please follow these steps:</p>
+            
+            <div style="background: #f0f8ff; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #2196f3;">
+                <h4 style="margin: 0 0 10px 0; color: #1976d2;">📋 Easy Steps:</h4>
+                <ol style="margin: 0; padding-left: 20px; color: #333;">
+                    <li>Click the "Open Product Page" button below</li>
+                    <li>On the product page, press <kbd style="background: #eee; padding: 2px 6px; border-radius: 3px;">Ctrl+A</kbd> (or <kbd style="background: #eee; padding: 2px 6px; border-radius: 3px;">Cmd+A</kbd> on Mac) to select all</li>
+                    <li>Press <kbd style="background: #eee; padding: 2px 6px; border-radius: 3px;">Ctrl+C</kbd> (or <kbd style="background: #eee; padding: 2px 6px; border-radius: 3px;">Cmd+C</kbd> on Mac) to copy</li>
+                    <li>Come back here and paste it in the box below</li>
+                </ol>
             </div>
+            
+            <div style="margin-bottom: 15px;">
+                <button class="btn" onclick="openProductPage()" style="margin-bottom: 10px;">
+                    🔗 Open Product Page
+                </button>
+                <div style="font-size: 12px; color: #666; word-break: break-all;">
+                    <strong>URL:</strong> <span id="manualEntryUrl"></span>
+                </div>
+            </div>
+            
             <textarea id="manualEntryContent" placeholder="Copy and paste the entire webpage content here..." style="width: 100%; height: 200px; padding: 10px; border: 1px solid #ddd; border-radius: 5px;"></textarea>
             <div style="margin-top: 15px; text-align: right;">
                 <button class="btn btn-secondary" onclick="closeManualEntry()">Cancel</button>
@@ -490,6 +507,28 @@
 
         function handleManualEntry(product) {
             manualEntryUrl = product.url;
+            
+            // Extract retailer name from URL
+            let retailerName = 'This retailer';
+            try {
+                const domain = new URL(product.url).hostname.toLowerCase();
+                if (domain.includes('crateandbarrel.com')) retailerName = 'Crate & Barrel';
+                else if (domain.includes('amazon.com')) retailerName = 'Amazon';
+                else if (domain.includes('wayfair.com')) retailerName = 'Wayfair';
+                else if (domain.includes('target.com')) retailerName = 'Target';
+                else if (domain.includes('walmart.com')) retailerName = 'Walmart';
+                else if (domain.includes('bestbuy.com')) retailerName = 'Best Buy';
+                else if (domain.includes('homedepot.com')) retailerName = 'Home Depot';
+                else if (domain.includes('lowes.com')) retailerName = 'Lowes';
+                else if (domain.includes('ikea.com')) retailerName = 'IKEA';
+                else if (domain.includes('potterybarn.com')) retailerName = 'Pottery Barn';
+                else if (domain.includes('westelm.com')) retailerName = 'West Elm';
+                else if (domain.includes('cb2.com')) retailerName = 'CB2';
+            } catch (e) {
+                // Keep default if URL parsing fails
+            }
+            
+            document.getElementById('retailerName').textContent = retailerName;
             document.getElementById('manualEntryUrl').textContent = product.url;
             document.getElementById('manualEntryModal').style.display = 'block';
             document.getElementById('loadingSection').style.display = 'none';
@@ -499,6 +538,12 @@
             document.getElementById('manualEntryModal').style.display = 'none';
             document.getElementById('manualEntryContent').value = '';
             document.getElementById('calculateBtn').disabled = false;
+        }
+
+        function openProductPage() {
+            if (manualEntryUrl) {
+                window.open(manualEntryUrl, '_blank');
+            }
         }
 
         async function submitManualEntry() {
