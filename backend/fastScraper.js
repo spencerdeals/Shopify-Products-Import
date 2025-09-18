@@ -645,6 +645,8 @@ app.post('/api/process-manual-content', async (req, res) => {
     }
     
     console.log(`\n🤖 Processing manual content for: ${url}`);
+    console.log(`📄 Content length: ${htmlContent.length} characters`);
+    console.log(`📄 Content preview: ${htmlContent.substring(0, 500)}...`);
     
     // Use GPT parser to extract from the provided HTML
     const { parseWithGPT } = require('./gptParser');
