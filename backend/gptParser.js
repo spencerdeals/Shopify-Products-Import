@@ -3,7 +3,7 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 const OpenAI = require('openai');
 
-const MODEL = process.env.GPT_PARSER_MODEL || 'gpt-4o-mini';
+const MODEL = process.env.GPT_PARSER_MODEL || 'gpt-4o-mini'; // Will upgrade to GPT-5 when available
 const TIMEOUT_MS = 30000;
 const MAX_AXIOS_RETRIES = 3;
 const DEFAULT_CURRENCY = (process.env.DEFAULT_CURRENCY || 'USD').toUpperCase();
@@ -37,6 +37,9 @@ function detectRetailer(url){
     if (host.includes('target')) return 'Target';
     if (host.includes('bestbuy')) return 'BestBuy';
     if (host.includes('homedepot')) return 'HomeDepot';
+    if (host.includes('crateandbarrel')) return 'CrateAndBarrel';
+    if (host.includes('ikea')) return 'IKEA';
+    if (host.includes('lunafurn')) return 'LunaFurniture';
     return 'Generic';
   }catch{ return 'Generic'; }
 }
@@ -44,10 +47,15 @@ function detectRetailer(url){
 async function fetchViaAxios(url){
   let lastErr = null;
   for (let i=0;i<MAX_AXIOS_RETRIES;i++){
-    try{
+        const waitMs = 5000*(i+1) + rnd(2000,5000); // Much longer delays for 429
       // Add random delay to avoid rate limits
       if (i > 0) {
         await sleep(Math.random() * 2000 + 1000); // 1-3 second delay on retries
+      if (res.status === 403){
+        const waitMs = 8000*(i+1) + rnd(3000,5000); // Much longer for 403
+        console.warn(`[Axios] 403. Retry ${i + 1}/3 after ${waitMs}ms`);
+        await sleep(waitMs); continue;
+      }
       }
       
       const res = await axios.get(url, {
@@ -57,7 +65,7 @@ async function fetchViaAxios(url){
           'Accept-Language': 'en-US,en;q=0.9',
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
           'Cache-Control': 'no-cache', 'Pragma': 'no-cache',
-          'Sec-Fetch-Dest': 'document',
+      const waitMs = 1000*(i+1) + rnd(500,1500);
           'Sec-Fetch-Mode': 'navigate',
           'Sec-Fetch-Site': 'none',
           'Upgrade-Insecure-Requests': '1'
@@ -65,46 +73,22 @@ async function fetchViaAxios(url){
         validateStatus: () => true,
       });
       if (res.status === 200 && res.data){
-        console.log('[GPT Parser - Axios] OK');
-        return typeof res.data === 'string' ? res.data : res.data.toString();
-      }
-      if (res.status === 429){
-        const waitMs = 5000*(i+1) + rnd(2000,5000); // Much longer delays for 429
-        console.warn(`[GPT Parser - Axios] 429. Retry ${i + 1}/3 after ${waitMs}ms`);
-        await sleep(waitMs); continue;
-      }
-      if (res.status === 403){
-        const waitMs = 8000*(i+1) + rnd(3000,5000); // Much longer for 403
-        console.warn(`[GPT Parser - Axios] 403. Retry ${i + 1}/3 after ${waitMs}ms`);
-        await sleep(waitMs); continue;
-      }
-      if (res.status >= 500 && res.status < 600){
-        const waitMs = 1000*(i+1);
-        console.warn(`[GPT Parser - Axios] ${res.status}. Retry ${i + 1}/3 after ${waitMs}ms`);
-        await sleep(waitMs); continue;
-      }
-      console.warn(`[GPT Parser - Axios] Non-OK status: ${res.status}`);
-      return null;
-    }catch(e){
-      lastErr = e;
-      const waitMs = 1000*(i+1) + rnd(500,1500);
-      console.warn(`[GPT Parser - Axios] Error ${i + 1}/3: ${e.message}. Waiting ${waitMs}ms...`);
-      await sleep(waitMs);
-    }
-  }
-  if (lastErr) console.warn('[GPT Parser - Axios] Final error:', lastErr.message);
-  return null;
-}
-
+// -------- Fetchers (Apify → Axios) --------
 function vendorPromptHints(vendor){
-  switch(vendor){
-    case 'Wayfair':
+  console.log('[GPT Parser] Starting smart HTML fetch...');
       return `For Wayfair: prefer the current price near the main buy button; ignore per-month and struck list prices.`;
-    case 'Amazon':
+  if (html) {
+    console.log('[GPT Parser] Got HTML via Apify');
+    return html;
+  }
       return `For Amazon: prefer the price near "Add to Cart"; ignore subscription/per-month and struck list prices.`;
+  if (html) {
+    console.log('[GPT Parser] Got HTML via Axios');
+  } else {
+    console.log('[GPT Parser] All fetch methods failed');
+  }
     case 'Walmart':
       return `For Walmart: prefer the main price above "Add to cart"; ignore fees and per-month financing.`;
-    default:
       return `Prefer the most prominent product price near the buy action; ignore per-month financing and struck-through prices.`;
   }
 }
@@ -114,6 +98,12 @@ async function parseWithGPT({ url, html, currencyFallback = DEFAULT_CURRENCY }){
   if (!apiKey) throw new Error('OPENAI_API_KEY is missing for gptParser.');
   if (gptCallsUsed >= MAX_GPT_CALLS_PER_RUN) throw new Error('GPT budget limit reached for this run.');
 
+    case 'CrateAndBarrel':
+      return `For Crate & Barrel: look for the main product price, ignore financing options and membership prices.`;
+    case 'IKEA':
+      return `For IKEA: prefer the main price display, ignore assembly service costs.`;
+    case 'LunaFurniture':
+      return `For Luna Furniture: look for the current selling price, ignore compare-at prices.`;
   const client = new OpenAI({ apiKey });
   const vendor = detectRetailer(url);
 
@@ -160,6 +150,8 @@ Rules:
       { role: 'user', content: `VISIBLE_TEXT:\n${visibleText}` },
       { role: 'user', content: `HTML:\n${htmlSlice}` },
     ],
+  console.log(`[GPT Parser] Making GPT call ${gptCallsUsed}/${MAX_GPT_CALLS_PER_RUN} for ${vendor}`);
+  
   });
 
   let data = {};
@@ -196,12 +188,22 @@ Rules:
   const availability = ['in_stock','out_of_stock','preorder','unknown'].includes(availabilityRaw) ? availabilityRaw : 'unknown';
 
   const breadcrumbs = Array.isArray(data.breadcrumbs)
+      // Add random delay to avoid rate limits
+      if (i > 0) {
+        await sleep(Math.random() * 2000 + 1000); // 1-3 second delay on retries
+      }
+      
     ? data.breadcrumbs.map(s => (typeof s === 'string' ? s.trim() : '')).filter(Boolean).slice(0, 10)
     : [];
 
-  if (response.usage) {
+          'User-Agent': `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${rnd(120,125)}.0.0.0 Safari/537.36`,
     console.log(`[GPT usage] prompt_tokens=${response.usage.prompt_tokens} completion_tokens=${response.usage.completion_tokens}`);
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
   }
+          'Sec-Fetch-Dest': 'document',
+          'Sec-Fetch-Mode': 'navigate',
+    console.log(`[GPT Parser] Usage: ${response.usage.prompt_tokens} prompt + ${response.usage.completion_tokens} completion tokens`);
+          'Upgrade-Insecure-Requests': '1'
 
   return {
     url, name, price, currency, image, brand, sku, availability, breadcrumbs, variant,
@@ -218,8 +220,9 @@ Rules:
 async function parseProduct(url, opts = {}){
   const { currencyFallback = DEFAULT_CURRENCY } = opts;
   await sleep(rnd(200, 600));
-  const html = await fetchViaAxios(url);
-  if (!html) throw new Error('Failed to fetch HTML for GPT parsing.');
+  console.log(`[GPT Parser] Starting product parsing for: ${url}`);
+  const html = await smartFetchHtml(url);
+  if (!html) throw new Error('All HTML fetch methods failed (Apify/Axios).');
   return parseWithGPT({ url, html, currencyFallback });
 }
 
