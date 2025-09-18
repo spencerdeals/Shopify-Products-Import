@@ -24,12 +24,12 @@ const SHIPPING_RATE_PER_CUBIC_FOOT = 8;
 // Initialize services
 const upcItemDB = new UPCItemDB(UPCITEMDB_API_KEY);
 const orderTracker = new OrderTracker();
+const USE_UPCITEMDB = !!UPCITEMDB_API_KEY;
 
 console.log('🔍 SCRAPING CONFIGURATION:');
 console.log(`1. Primary: GPT Parser - ✅ ENABLED`);
 console.log(`2. Enhancement: UPCitemdb - ${USE_UPCITEMDB ? '✅ ENABLED' : '❌ DISABLED'}`);
 console.log('⚡ STRATEGY: GPT intelligence → UPCitemdb enhancement → Smart estimation');
-console.log(`2. Enhancement: UPCitemdb - ${USE_UPCITEMDB ? '✅ ENABLED' : '❌ DISABLED'}`);
 // Middleware
 app.use(cors());
 app.use(express.json({ limit: '5mb' }));
