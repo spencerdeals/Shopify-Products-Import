@@ -125,6 +125,14 @@ class ApifyActorScraper {
       const run = await this.client.actor(actorConfig.actorId).call(input, runOptions);
       console.log(`   ✅ Actor run completed. Run ID: ${run.id}`);
       console.log(`   📊 Run status: ${run.status}`);
+      
+      // Log run details for debugging
+      if (run.status !== 'SUCCEEDED') {
+        console.log(`   ⚠️ Actor run status: ${run.status}`);
+        if (run.statusMessage) {
+          console.log(`   📋 Status message: ${run.statusMessage}`);
+        }
+      }
 
       console.log(`   📥 Fetching results from dataset: ${run.defaultDatasetId}`);
       const { items } = await this.client.dataset(run.defaultDatasetId).listItems();
@@ -132,6 +140,14 @@ class ApifyActorScraper {
       
       if (items && items.length > 0) {
         console.log(`   🔍 First item preview:`, JSON.stringify(items[0], null, 2).substring(0, 500) + '...');
+      } else {
+        console.log(`   ❌ No items in dataset - checking run logs...`);
+        try {
+          const logs = await this.client.log(run.defaultDatasetId).get();
+          console.log(`   📋 Actor logs (last 1000 chars):`, logs.substring(-1000));
+        } catch (logError) {
+          console.log(`   ❌ Could not fetch logs: ${logError.message}`);
+        }
       }
       
       if (items && items.length > 0) {
@@ -146,9 +162,21 @@ class ApifyActorScraper {
       console.error(`   ❌ Actor ${actorConfig.actorId} failed:`);
       console.error(`   📋 Error message: ${error.message}`);
       console.error(`   📋 Error type: ${error.constructor.name}`);
+      
+      // More detailed error logging
       if (error.response) {
         console.error(`   📋 HTTP status: ${error.response.status}`);
         console.error(`   📋 Response data:`, error.response.data);
+      }
+      if (error.details) {
+        console.error(`   📋 Error details:`, error.details);
+      }
+      if (error.run) {
+        console.error(`   📋 Run info:`, {
+          id: error.run.id,
+          status: error.run.status,
+          statusMessage: error.run.statusMessage
+        });
       }
       if (error.stack) {
         console.error(`   📋 Stack trace: ${error.stack.substring(0, 500)}...`);
