@@ -548,6 +548,9 @@
     <script>
         let currentProducts = [];
         let manualEntryUrl = '';
+        let pendingManualProducts = [];
+        let pendingIkeaProducts = [];
+        let currentManualIndex = 0;
 
         async function calculateImportCosts() {
             const urls = document.getElementById('productUrls').value.trim();
@@ -593,23 +596,13 @@
                 if (data.products && data.products.length > 0) {
                     currentProducts = data.products;
                     
-                    // Check for manual entry required
-                    const manualProducts = data.products.filter(p => p.manualEntryRequired);
-                    if (manualProducts.length > 0) {
-                        // Handle first manual entry product
-                        handleManualEntry(manualProducts[0]);
-                        return;
-                    }
+                    // Collect all products that need manual handling
+                    pendingManualProducts = data.products.filter(p => p.manualEntryRequired);
+                    pendingIkeaProducts = data.products.filter(p => p.ikeaComponentsRequired);
+                    currentManualIndex = 0;
                     
-                    // Check for IKEA component collection required
-                    const ikeaComponentProducts = data.products.filter(p => p.ikeaComponentsRequired);
-                    if (ikeaComponentProducts.length > 0) {
-                        // Handle first IKEA component product
-                        handleIkeaComponents(ikeaComponentProducts[0]);
-                        return;
-                    }
-                    
-                    displayResults(data.products);
+                    // Start processing manual prompts
+                    processNextManualPrompt();
                 } else {
                     throw new Error('No products found or invalid response');
                 }
@@ -632,6 +625,26 @@
             } finally {
                 document.getElementById('calculateBtn').disabled = false;
             }
+        }
+
+        function processNextManualPrompt() {
+            // Process manual entry products first
+            if (currentManualIndex < pendingManualProducts.length) {
+                const product = pendingManualProducts[currentManualIndex];
+                handleManualEntry(product);
+                return;
+            }
+            
+            // Then process IKEA component products
+            const ikeaIndex = currentManualIndex - pendingManualProducts.length;
+            if (ikeaIndex < pendingIkeaProducts.length) {
+                const product = pendingIkeaProducts[ikeaIndex];
+                handleIkeaComponents(product);
+                return;
+            }
+            
+            // All manual prompts completed - show results
+            displayResults(currentProducts);
         }
 
         function handleManualEntry(product) {
@@ -680,7 +693,10 @@
 
         function closeIkeaComponents() {
             document.getElementById('ikeaComponentModal').style.display = 'none';
-            document.getElementById('calculateBtn').disabled = false;
+            
+            // Move to next manual prompt or finish
+            currentManualIndex++;
+            processNextManualPrompt();
         }
 
         function openIkeaPage() {
@@ -741,11 +757,18 @@
                     throw new Error('No component data found');
                 }
                 
+                // Move to next manual prompt
+                currentManualIndex++;
+                processNextManualPrompt();
+                
             } catch (error) {
                 console.error('Error processing IKEA components:', error);
                 alert('Error processing components: ' + error.message);
                 document.getElementById('loadingSection').style.display = 'none';
-                document.getElementById('calculateBtn').disabled = false;
+                
+                // Move to next manual prompt even on error
+                currentManualIndex++;
+                processNextManualPrompt();
             }
         }
 
@@ -781,7 +804,10 @@
         function closeManualEntry() {
             document.getElementById('manualEntryModal').style.display = 'none';
             document.getElementById('manualEntryContent').value = '';
-            document.getElementById('calculateBtn').disabled = false;
+            
+            // Move to next manual prompt or finish
+            currentManualIndex++;
+            processNextManualPrompt();
         }
 
         function openProductPage() {
@@ -829,6 +855,10 @@
                     }
                     
                     displayResults(currentProducts);
+                    
+                    // Move to next manual prompt
+                    currentManualIndex++;
+                    processNextManualPrompt();
                 } else {
                     throw new Error('Failed to process manual content');
                 }
@@ -837,7 +867,10 @@
                 console.error('Error processing manual content:', error);
                 alert('Error processing content: ' + error.message);
                 document.getElementById('loadingSection').style.display = 'none';
-                document.getElementById('calculateBtn').disabled = false;
+                
+                // Move to next manual prompt even on error
+                currentManualIndex++;
+                processNextManualPrompt();
             }
         }
 
