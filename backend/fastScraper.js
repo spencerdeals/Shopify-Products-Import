@@ -90,6 +90,8 @@ app.get('/complete-order', (req, res) => {
 // API Routes
 app.post('/api/scrape', async (req, res) => {
   try {
+    console.log('📥 Received scrape request:', req.body);
+    
     const { urls } = req.body;
     
     if (!urls || !Array.isArray(urls) || urls.length === 0) {
@@ -164,7 +166,9 @@ app.post('/api/scrape', async (req, res) => {
           
           continue; // Skip to next URL
         }
-        if (product) {
+        
+        // Process successful product
+        if (product && hasEssentialData) {
           // Enhance with historical data if available
           if (bolHistoricalData && bolHistoricalData.initialized) {
             const productName = product.name || 'Unknown Product';
@@ -220,19 +224,16 @@ app.post('/api/scrape', async (req, res) => {
       }
     }
 
-    console.log('📊 Final API response:', JSON.stringify({
+    const response = {
       success: true,
       products: results.filter(r => !r.error),
       errors: results.filter(r => r.error),
       totalProcessed: urls.length
-    }, null, 2));
+    };
+    
+    console.log('📊 Final API response:', JSON.stringify(response, null, 2));
 
-    res.json({
-      success: true,
-      products: results.filter(r => !r.error),
-      errors: results.filter(r => r.error),
-      totalProcessed: urls.length
-    });
+    res.json(response);
 
   } catch (error) {
     console.error('❌ Scraping error:', error);
