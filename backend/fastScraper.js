@@ -9,7 +9,7 @@ require('dotenv').config();
 const UPCItemDB = require('./upcitemdb');
 const OrderTracker = require('./orderTracking');
 const ZyteScraper = require('./zyteScraper');
-const ApifyActorScraper = require('./apifyActorScraper');
+const ApifyScraper = require('./apifyScraper');
 const { parseProduct: parseWithGPT } = require('./gptParser');
 const BOLHistoricalData = require('./bolHistoricalData');
 
@@ -33,8 +33,8 @@ const SHIPPING_RATE_PER_CUBIC_FOOT = 8;
 // Initialize scrapers
 const zyteScraper = new ZyteScraper();
 const USE_ZYTE = zyteScraper.enabled;
-const apifyActorScraper = new ApifyActorScraper(process.env.APIFY_API_KEY);
-const USE_APIFY_ACTORS = apifyActorScraper.isAvailable();
+const apifyScraper = new ApifyScraper(process.env.APIFY_API_KEY);
+const USE_APIFY_ACTORS = apifyScraper.isAvailable();
 const USE_GPT_FALLBACK = !!process.env.OPENAI_API_KEY;
 
 // Confidence threshold for triggering GPT fallback
