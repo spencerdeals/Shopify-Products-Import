@@ -1024,6 +1024,7 @@ async function scrapeProduct(url) {
       productData.weight = estimatedWeight;
     } else {
       productData = { ...productData, weight: estimatedWeight };
+    }
     productData.weight = estimateWeight(productData.dimensions, productCategory);
     console.log('   ⚖️ Estimated weight based on dimensions');
   }
