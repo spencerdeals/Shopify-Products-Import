@@ -1052,6 +1052,7 @@ async function scrapeProduct(url) {
       hasDimensions: !!(productData && productData.dimensions),
       hasWeight: !!(productData && productData.weight),
       hasPrice: !!(productData && productData.price),
+      hasVariant: !!(productData && productData.variant)
       hasVariant: !!(productData && productData.variant),
       hasBOLHistory: scrapingMethod.includes('bol'),
       hasUPCitemdb: scrapingMethod.includes('upcitemdb')
@@ -1468,6 +1469,29 @@ app.post('/apps/instant-import/create-draft-order', async (req, res) => {
       details: error.response?.data?.errors || error.message
     });
   }
+});
+
+// Add API endpoint to view BOL statistics
+app.get('/api/bol-stats', async (req, res) => {
+  await bolHistory.initialize();
+  
+  const stats = {
+    initialized: bolHistory.initialized,
+    totalPatterns: bolHistory.volumePatterns.size,
+    productKeywords: bolHistory.productPatterns.size,
+    categories: {}
+  };
+  
+  // Get category breakdown
+  bolHistory.volumePatterns.forEach((volumeStats, category) => {
+    stats.categories[category] = {
+      samples: volumeStats.count,
+      avgVolume: volumeStats.average.toFixed(2) + ' ft³',
+      range: `${volumeStats.min.toFixed(1)}-${volumeStats.max.toFixed(1)} ft³`
+    };
+  });
+  
+  res.json(stats);
 });
 
 // Start server
