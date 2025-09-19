@@ -201,6 +201,14 @@ function isSDLDomain(url) {
 function categorizeProduct(name, url) {
   const text = (name + ' ' + url).toLowerCase();
   
+  // Handle category objects from Zyte (convert to string)
+  if (typeof name === 'object' && name.name) {
+    const categoryText = name.name.toLowerCase();
+    if (categoryText.includes('mattress')) return 'furniture';
+    if (categoryText.includes('bedroom')) return 'furniture';
+    if (categoryText.includes('furniture')) return 'furniture';
+  }
+  
   if (/\b(sofa|sectional|loveseat|couch|chair|recliner|ottoman|table|desk|dresser|nightstand|bookshelf|cabinet|wardrobe|armoire|bed|frame|headboard|mattress|dining|kitchen|office)\b/.test(text)) return 'furniture';
   if (/\b(tv|television|monitor|laptop|computer|tablet|phone|smartphone|camera|speaker|headphone|earbuds|router|gaming|console|xbox|playstation|nintendo)\b/.test(text)) return 'electronics';
   if (/\b(refrigerator|fridge|washer|dryer|dishwasher|microwave|oven|stove|range|freezer|ac|air.conditioner|heater|vacuum)\b/.test(text)) return 'appliances';
@@ -373,6 +381,51 @@ function isDataComplete(productData) {
          productData.dimensions.height > 0;
 }
 
+// Helper function to check if dimensions look suspicious/wrong
+function dimensionsLookSuspicious(dimensions) {
+  if (!dimensions) return true;
+  
+  const { length, width, height } = dimensions;
+  
+  // Check for missing or zero dimensions
+  if (!length || !width || !height || length <= 0 || width <= 0 || height <= 0) {
+    return true;
+  }
+  
+  // Check for unreasonably small dimensions (likely extraction errors)
+  if (length < 2 && width < 2 && height < 2) {
+    return true;
+  }
+  
+  // Check for unreasonably large dimensions (likely extraction errors)
+  if (length > 200 || width > 200 || height > 200) {
+    return true;
+  }
+  
+  return false;
+}
+
+// Smart UPCitemdb lookup for dimensions
+async function getUPCDimensions(productName) {
+  if (!USE_UPCITEMDB || !productName) return null;
+  
+  try {
+    console.log(`   🔍 UPCitemdb lookup for: "${productName.substring(0, 50)}..."`);
+    const upcData = await upcItemDB.searchByName(productName);
+    
+    if (upcData && upcData.dimensions) {
+      console.log(`   ✅ UPCitemdb found dimensions: ${upcData.dimensions.length}" × ${upcData.dimensions.width}" × ${upcData.dimensions.height}"`);
+      return upcData.dimensions;
+    }
+    
+    console.log('   ❌ UPCitemdb: No dimensions found');
+    return null;
+  } catch (error) {
+    console.log('   ❌ UPCitemdb lookup failed:', error.message);
+    return null;
+  }
+}
+
 // Merge product data from multiple sources
 function mergeProductData(primary, secondary) {
   if (!primary) return secondary;
@@ -523,6 +576,20 @@ async function scrapeProduct(url) {
   // Fill in missing data with estimations
   const productName = (productData && productData.name) ? productData.name : `Product from ${retailer}`;
   const category = productData.category || categorizeProduct(productName, url);
+  
+  // STEP 3: Smart UPCitemdb lookup for dimensions if needed
+  if (productData && productData.name && dimensionsLookSuspicious(productData.dimensions)) {
+    const upcDimensions = await getUPCDimensions(productData.name);
+    if (upcDimensions) {
+      productData.dimensions = upcDimensions;
+      console.log('   ✅ UPCitemdb provided accurate dimensions');
+      if (scrapingMethod === 'zyte') {
+        scrapingMethod = 'zyte+upcitemdb';
+      } else if (scrapingMethod === 'gpt-fallback') {
+        scrapingMethod = 'gpt+upcitemdb';
+      }
+    }
+  }
   
   if (!productData.dimensions) {
     productData.dimensions = estimateDimensions(category, productName);
@@ -715,6 +782,16 @@ Content: ${htmlContent.substring(0, 15000)}`;
         // Fill in missing data with estimations
         if (!productData.dimensions) {
           productData.dimensions = estimateDimensions(category, productData.name);
+        }
+        
+        // Smart UPCitemdb lookup for manual entry too
+        if (productData.name && dimensionsLookSuspicious(productData.dimensions)) {
+          console.log('   🔍 Checking UPCitemdb for manual entry dimensions...');
+          const upcDimensions = await getUPCDimensions(productData.name);
+          if (upcDimensions) {
+            productData.dimensions = upcDimensions;
+            console.log('   ✅ UPCitemdb provided dimensions for manual entry');
+          }
         }
         
         if (!productData.weight) {
