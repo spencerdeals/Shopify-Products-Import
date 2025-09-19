@@ -126,6 +126,13 @@ app.post('/api/scrape', async (req, res) => {
           }
         }
 
+        // Validate that we have essential product data
+        const hasEssentialData = product && product.name && product.price && product.price > 0;
+        
+        if (!hasEssentialData) {
+          console.log('⚠️ No essential product data found, triggering manual prompt');
+          product = null; // Reset to trigger manual prompt
+        }
         if (product) {
           // Enhance with historical data if available
           if (bolHistoricalData && bolHistoricalData.initialized) {
