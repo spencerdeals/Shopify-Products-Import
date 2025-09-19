@@ -787,7 +787,7 @@ async function scrapeProduct(url) {
     console.log(`   🎯 Margin (20% of total): $${margin}`);
   if (scrapingMethod === 'manual-required') {
     console.log(`   ⚠️ ${retailer} requires manual entry - both automated methods failed`);
-    return {
+    console.log(`   🌊 Ocean freight (40% of $${productData.price}): $${oceanFreight}`);
       id: productId,
       url: url,
       name: null,
