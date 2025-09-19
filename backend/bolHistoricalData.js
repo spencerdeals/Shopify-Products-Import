@@ -8,7 +8,7 @@ class BOLHistoricalData {
     this.volumePatterns = new Map(); // Category -> volume statistics
     this.productPatterns = new Map(); // Product keywords -> volume data
     this.rawData = [];
-    this.FIXED_RATE_PER_FT3 = 7.50; // Fixed at $7.50/ft³ for competitive pricing
+    this.FIXED_RATE_PER_FT3 = 8.00; // Fixed at $8.00/ft³ for historical analysis
   }
 
   async initialize() {
