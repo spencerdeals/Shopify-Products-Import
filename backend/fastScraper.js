@@ -27,6 +27,8 @@ const SHIPPING_RATE_PER_CUBIC_FOOT = 8;
 
 // Initialize scrapers
 const USE_GPT_FALLBACK = !!process.env.OPENAI_API_KEY;
+const zyteScraper = new ZyteScraper();
+const USE_ZYTE = zyteScraper.enabled;
 
 // Confidence threshold for triggering GPT fallback
 const CONFIDENCE_THRESHOLD = 0.3; // If Zyte confidence < 30%, try GPT
