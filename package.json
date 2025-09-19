@@ -2,10 +2,10 @@
   "name": "bermuda-import-calculator",
   "version": "1.0.0",
   "description": "SDL Instant Import Calculator for Bermuda shipping estimates",
-  "main": "backend/fastScraper.js",
+  "main": "backend/scrapeWithScrapingBee.js",
   "scripts": {
-    "start": "node backend/fastScraper.js",
-    "dev": "nodemon backend/fastScraper.js",
+    "start": "node backend/scrapeWithScrapingBee.js",
+    "dev": "nodemon backend/scrapeWithScrapingBee.js",
     "build": "echo 'Build completed successfully'",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
