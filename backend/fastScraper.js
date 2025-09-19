@@ -449,8 +449,14 @@ async function getUPCDimensions(productName) {
     const upcData = await upcItemDB.searchByName(productName);
     
     if (upcData && upcData.dimensions) {
-      console.log(`   ✅ UPCitemdb found dimensions: ${upcData.dimensions.length}" × ${upcData.dimensions.width}" × ${upcData.dimensions.height}"`);
-      return upcData.dimensions;
+      console.log(`   ✅ UPCitemdb found PRODUCT dimensions: ${upcData.dimensions.length}" × ${upcData.dimensions.width}" × ${upcData.dimensions.height}"`);
+      
+      // Convert product dimensions to shipping box dimensions
+      const category = categorizeProduct(productName, '');
+      const boxDimensions = estimateBoxDimensions(upcData.dimensions, category);
+      
+      console.log(`   📦 Converted to BOX dimensions: ${boxDimensions.length}" × ${boxDimensions.width}" × ${boxDimensions.height}"`);
+      return boxDimensions;
     }
     
     console.log('   ❌ UPCitemdb: No dimensions found');
@@ -632,13 +638,13 @@ async function scrapeProduct(url) {
       // IKEA Multi-Box Detection
       if (retailer === 'IKEA' && productData.name && productData.name.toLowerCase().includes('bed')) {
         console.log('   🛏️ IKEA bed detected - likely multi-box shipment');
-        console.log(`   📦 Single box: ${upcDimensions.length}" × ${upcDimensions.width}" × ${upcDimensions.height}"`);
+        console.log(`   📦 Single product: ${upcDimensions.length}" × ${upcDimensions.width}" × ${upcDimensions.height}"`);
         
         // Multiply dimensions by 4 for typical IKEA bed (4 boxes)
         productData.dimensions = {
-          length: Math.max(upcDimensions.length * 2, 80), // At least 80" for bed length
-          width: Math.max(upcDimensions.width * 2, 60),   // At least 60" for bed width  
-          height: upcDimensions.height * 4                // Stack 4 boxes high
+          length: Math.max(boxDimensions.length * 2, 80), // At least 80" for bed length
+          width: Math.max(boxDimensions.width * 2, 60),   // At least 60" for bed width  
+          height: boxDimensions.height * 4                // Stack 4 boxes high
         };
         
         console.log(`   📦 Multi-box total: ${productData.dimensions.length}" × ${productData.dimensions.width}" × ${productData.dimensions.height}"`);
