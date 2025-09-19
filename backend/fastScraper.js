@@ -598,6 +598,10 @@ async function scrapeProduct(url) {
       } else if (scrapingMethod === 'gpt-fallback') {
         scrapingMethod = 'gpt+upcitemdb';
       }
+    } else {
+      console.log('   ⚠️ UPCitemdb found no dimensions, current dimensions may be packaging size');
+      console.log(`   📦 Current dimensions: ${productData.dimensions.length}" × ${productData.dimensions.width}" × ${productData.dimensions.height}"`);
+      console.log('   🔍 Checking if dimensions look like packaging vs actual product...');
     }
   }
   
