@@ -88,6 +88,7 @@ class BOLHistoricalData {
     
     // Common product keywords to look for
     const productTerms = [
+      'mattress', 'bed', 'pillow', 'sleep', 'foam', 'spring', 'hybrid',
       'tv', 'television', 'lights', 'led', 'furniture', 'sofa', 'chair', 'table',
       'bed', 'mattress', 'dresser', 'cabinet', 'desk', 'lamp', 'mirror',
       'electronics', 'appliance', 'refrigerator', 'washer', 'dryer',
@@ -117,6 +118,9 @@ class BOLHistoricalData {
     const text = rawText.toLowerCase();
     
     // Category mapping based on keywords
+    if (keywords.some(k => ['mattress', 'bed', 'pillow', 'sleep', 'foam', 'spring'].includes(k))) {
+      return 'furniture';
+    }
     if (keywords.some(k => ['tv', 'television', 'led', 'lights', 'electronics'].includes(k))) {
       return 'electronics';
     }
