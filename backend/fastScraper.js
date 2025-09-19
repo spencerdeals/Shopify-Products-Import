@@ -869,8 +869,11 @@ async function scrapeProduct(url) {
   // Fill in missing data with estimations
   const productName = (productData && productData.name) ? productData.name : `Product from ${retailer}`;
   
-  // Handle category - convert object to string if needed
-  let category = productData.category;
+  // Handle category - safely convert object to string if needed
+  let category = null;
+  if (productData && productData.category) {
+    category = productData.category;
+  }
   if (typeof category === 'object' && category.name) {
     category = category.name; // Extract string from Zyte category object
   }
@@ -881,7 +884,7 @@ async function scrapeProduct(url) {
   console.log(`   📂 Final category: "${category}"`);
   
   // STEP 3: Smart UPCitemdb lookup for dimensions if needed
-  if (productData && productData.name && dimensionsLookSuspicious(productData.dimensions)) {
+  if (productData && productData.name && dimensionsLookSuspicious(productData ? productData.dimensions : null)) {
     const upcDimensions = await getUPCDimensions(productData.name);
     if (upcDimensions) {
       productData.dimensions = upcDimensions;
@@ -927,16 +930,26 @@ async function scrapeProduct(url) {
   }
   
   // STEP 4: Ensure we have dimensions before proceeding
-  if (!productData.dimensions) {
-    productData.dimensions = estimateDimensions(category, productName);
+  if (!productData || !productData.dimensions) {
+    const estimatedDimensions = estimateDimensions(category, productName);
+    if (productData) {
+      productData.dimensions = estimatedDimensions;
+    } else {
+      productData = { dimensions: estimatedDimensions };
+    }
     console.log('   📐 Estimated dimensions based on category:', category);
     if (scrapingMethod === 'none') {
       scrapingMethod = 'estimation';
     }
   }
   
-  if (!productData.weight) {
-    productData.weight = estimateWeight(productData.dimensions, category);
+  if (!productData || !productData.weight) {
+    const estimatedWeight = estimateWeight(productData.dimensions, category);
+    if (productData) {
+      productData.weight = estimatedWeight;
+    } else {
+      productData = { ...productData, weight: estimatedWeight };
+    }
     console.log('   ⚖️ Estimated weight based on dimensions');
   }
   
