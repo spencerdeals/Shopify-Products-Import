@@ -1934,9 +1934,9 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
             
-            const controller = new AbortController();
+            const abortController = new AbortController();
             const timeoutId = setTimeout(() => {
-                controller.abort();
+                abortController.abort();
                 console.log('🚨 Request aborted due to timeout');
             }, 30000); // 30 seconds
             
@@ -1944,7 +1944,7 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ url, htmlContent: content }),
-                    signal: controller.signal
+                    signal: abortController.signal
                         url: manualEntryUrl,
                         htmlContent: content
                     }),
