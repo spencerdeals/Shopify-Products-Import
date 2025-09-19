@@ -1254,4 +1254,780 @@
             <div class="page active" id="page1">
                 <div class="warning-box">
                     <div class="warning-header">Important: Select Correct Variants</div>
-                    <div
+                    <div class="warning-text">
+                        When adding products, make sure to select the exact size, color, and variant you want before copying the URL. The price and shipping calculations depend on the specific variant selected.
+                    </div>
+                </div>
+
+                <div class="input-group">
+                    <label for="productUrls">Product URLs (one per line)</label>
+                    <textarea id="productUrls" placeholder="Paste your product URLs here, one per line...
+
+Example:
+https://www.amazon.com/dp/B08N5WRWNW
+https://www.wayfair.com/furniture/pdp/...
+https://www.walmart.com/ip/..."></textarea>
+                </div>
+
+                <div class="button-group">
+                    <button onclick="addProducts()">Add Products</button>
+                </div>
+
+                <div class="loading" id="loading1">
+                    <div class="spinner"></div>
+                    <div class="loading-text">
+                        Fetching product information...<br>
+                        <small>This may take a few moments</small>
+                    </div>
+                </div>
+
+                <div class="error" id="error1"></div>
+
+                <div id="productList"></div>
+            </div>
+
+            <!-- PAGE 2: Review Products & Delivery Fees -->
+            <div class="page" id="page2">
+                <div class="critical-warning">
+                    <div class="warning-header">Critical: Verify All Information</div>
+                    <div class="warning-text">
+                        Please carefully verify all product prices and delivery fees before proceeding. These will be used for your final shipping calculation and order placement.
+                    </div>
+                </div>
+
+                <div id="reviewProductList"></div>
+
+                <div class="button-group">
+                    <button class="secondary-btn" onclick="goToPage(1)">← Back</button>
+                    <button onclick="goToPage(3)" id="proceedBtn" disabled>Proceed to Order →</button>
+                </div>
+            </div>
+
+            <!-- PAGE 3: Final Order -->
+            <div class="page" id="page3">
+                <div class="forwarder-address">
+                    <div class="forwarder-header">Ship to Our US Forwarder</div>
+                    <div class="forwarder-name">SDL Instant Imports</div>
+                    <div class="forwarder-details">
+                        123 Shipping Lane<br>
+                        Miami, FL 33101<br>
+                        United States<br>
+                        Phone: (305) 555-0123
+                    </div>
+                    <div class="forwarder-note">
+                        Use this address as your shipping destination when placing orders
+                    </div>
+                </div>
+
+                <div class="cost-breakdown" id="finalBreakdown">
+                    <h3>📊 Final Cost Breakdown</h3>
+                    <!-- Cost breakdown will be populated here -->
+                </div>
+
+                <div class="confirmation-checkbox">
+                    <div class="checkbox-container">
+                        <input type="checkbox" id="confirmOrder" onchange="toggleOrderButton()">
+                        <label for="confirmOrder" class="checkbox-label">
+                            <strong>I confirm that I want to proceed with this order</strong>
+                            I understand that SDL Instant Imports will purchase these items on my behalf and ship them to Bermuda via ocean freight. The total cost shown above is final and includes all fees.
+                        </label>
+                    </div>
+                </div>
+
+                <div class="input-group">
+                    <label for="customerInfo">Your Contact Information</label>
+                    <textarea id="customerInfo" placeholder="Please provide:
+- Full Name
+- Phone Number  
+- Email Address
+- Delivery Address in Bermuda
+- Any special instructions"></textarea>
+                </div>
+
+                <div class="button-group">
+                    <button class="secondary-btn" onclick="goToPage(2)">← Back</button>
+                    <button onclick="placeOrder()" id="orderBtn" disabled>Place Order</button>
+                </div>
+
+                <div class="loading" id="loading3">
+                    <div class="spinner"></div>
+                    <div class="loading-text">
+                        Placing your order...<br>
+                        <small>Please wait while we process your request</small>
+                    </div>
+                </div>
+
+                <div class="error" id="error3"></div>
+            </div>
+        </div>
+
+        <div class="info-text">
+            SDL Instant Imports - Ocean Freight Calculator v2.0<br>
+            For support, contact us at support@sdlinstantimports.com
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let products = [];
+        let currentPage = 1;
+
+        // Shipping rates and fees
+        const OCEAN_FREIGHT_RATE = 2.50; // per lb
+        const PROCESSING_FEE = 25.00; // flat fee
+        const CUSTOMS_RATE = 0.25; // 25% of product value
+        const FUEL_SURCHARGE_RATE = 0.15; // 15% of freight cost
+
+        // Product scraping function
+        async function scrapeProduct(url) {
+            try {
+                const response = await fetch('https://api.allorigins.win/raw?url=' + encodeURIComponent(url));
+                const html = await response.text();
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(html, 'text/html');
+                
+                let product = {
+                    url: url,
+                    vendor: getVendorFromUrl(url),
+                    name: '',
+                    price: 0,
+                    image: '',
+                    weight: 5, // default weight in lbs
+                    quantity: 1,
+                    deliveryFee: 0,
+                    priceConfirmed: false,
+                    variant: ''
+                };
+
+                // Amazon scraping
+                if (url.includes('amazon.com')) {
+                    product.name = doc.querySelector('#productTitle')?.textContent?.trim() || 'Amazon Product';
+                    const priceElement = doc.querySelector('.a-price-whole') || doc.querySelector('.a-offscreen');
+                    if (priceElement) {
+                        product.price = parseFloat(priceElement.textContent.replace(/[^0-9.]/g, ''));
+                    }
+                    product.image = doc.querySelector('#landingImage')?.src || doc.querySelector('.a-dynamic-image')?.src || '';
+                    
+                    // Try to get variant info
+                    const variantElement = doc.querySelector('#variation_color_name .selection') || 
+                                         doc.querySelector('#variation_size_name .selection');
+                    if (variantElement) {
+                        product.variant = variantElement.textContent.trim();
+                    }
+                }
+                
+                // Wayfair scraping
+                else if (url.includes('wayfair.com')) {
+                    product.name = doc.querySelector('[data-enzyme-id="ProductTitle"]')?.textContent?.trim() || 'Wayfair Product';
+                    const priceElement = doc.querySelector('[data-enzyme-id="PriceDisplay"]');
+                    if (priceElement) {
+                        product.price = parseFloat(priceElement.textContent.replace(/[^0-9.]/g, ''));
+                    }
+                    product.image = doc.querySelector('[data-enzyme-id="ProductImageCarousel"] img')?.src || '';
+                }
+                
+                // Walmart scraping
+                else if (url.includes('walmart.com')) {
+                    product.name = doc.querySelector('[data-automation-id="product-title"]')?.textContent?.trim() || 'Walmart Product';
+                    const priceElement = doc.querySelector('[itemprop="price"]') || doc.querySelector('[data-automation-id="product-price"]');
+                    if (priceElement) {
+                        product.price = parseFloat(priceElement.textContent.replace(/[^0-9.]/g, ''));
+                    }
+                    product.image = doc.querySelector('[data-automation-id="hero-image"] img')?.src || '';
+                }
+                
+                // Target scraping
+                else if (url.includes('target.com')) {
+                    product.name = doc.querySelector('[data-test="product-title"]')?.textContent?.trim() || 'Target Product';
+                    const priceElement = doc.querySelector('[data-test="product-price"]');
+                    if (priceElement) {
+                        product.price = parseFloat(priceElement.textContent.replace(/[^0-9.]/g, ''));
+                    }
+                    product.image = doc.querySelector('[data-test="hero-image-desktop"] img')?.src || '';
+                }
+
+                return product;
+            } catch (error) {
+                console.error('Error scraping product:', error);
+                return {
+                    url: url,
+                    vendor: getVendorFromUrl(url),
+                    name: 'Product (Manual Entry Required)',
+                    price: 0,
+                    image: '',
+                    weight: 5,
+                    quantity: 1,
+                    deliveryFee: 0,
+                    priceConfirmed: false,
+                    variant: '',
+                    error: true
+                };
+            }
+        }
+
+        function getVendorFromUrl(url) {
+            if (url.includes('amazon.com')) return 'amazon';
+            if (url.includes('wayfair.com')) return 'wayfair';
+            if (url.includes('walmart.com')) return 'walmart';
+            if (url.includes('target.com')) return 'target';
+            return 'default';
+        }
+
+        function getVendorName(vendor) {
+            const names = {
+                'amazon': 'Amazon',
+                'wayfair': 'Wayfair',
+                'walmart': 'Walmart',
+                'target': 'Target',
+                'default': 'Other Store'
+            };
+            return names[vendor] || 'Other Store';
+        }
+
+        async function addProducts() {
+            const urls = document.getElementById('productUrls').value.trim().split('\n').filter(url => url.trim());
+            
+            if (urls.length === 0) {
+                showError('error1', 'Please enter at least one product URL');
+                return;
+            }
+
+            showLoading('loading1', true);
+            hideError('error1');
+
+            try {
+                for (const url of urls) {
+                    if (url.trim()) {
+                        const product = await scrapeProduct(url.trim());
+                        products.push(product);
+                    }
+                }
+
+                displayProducts();
+                showLoading('loading1', false);
+            } catch (error) {
+                showLoading('loading1', false);
+                showError('error1', 'Error fetching product information. Please try again.');
+            }
+        }
+
+        function displayProducts() {
+            const container = document.getElementById('productList');
+            if (products.length === 0) {
+                container.innerHTML = '';
+                return;
+            }
+
+            // Group products by vendor
+            const groupedProducts = {};
+            products.forEach((product, index) => {
+                if (!groupedProducts[product.vendor]) {
+                    groupedProducts[product.vendor] = [];
+                }
+                groupedProducts[product.vendor].push({...product, index});
+            });
+
+            let html = '';
+            Object.keys(groupedProducts).forEach(vendor => {
+                html += `
+                    <div class="vendor-group ${vendor}">
+                        <div class="vendor-header ${vendor}">${getVendorName(vendor)}</div>
+                        ${groupedProducts[vendor].map(product => `
+                            <div class="product-item ${vendor} ${product.deleted ? 'deleted' : ''}" data-index="${product.index}">
+                                ${product.image ? `<img src="${product.image}" alt="Product" class="product-image" onerror="this.style.display='none'">` : ''}
+                                <div class="product-details">
+                                    <div class="product-name">
+                                        <a href="${product.url}" target="_blank">${product.name}</a>
+                                        ${product.variant ? `<span class="product-variant">${product.variant}</span>` : ''}
+                                    </div>
+                                    <div class="product-info">
+                                        <span>Weight: ${product.weight} lbs</span>
+                                        <span>Vendor: ${getVendorName(product.vendor)}</span>
+                                    </div>
+                                    
+                                    <div class="quantity-selector">
+                                        <span class="quantity-label">Quantity:</span>
+                                        <div class="quantity-controls">
+                                            <button class="qty-btn" onclick="updateQuantity(${product.index}, -1)">-</button>
+                                            <span class="qty-display">${product.quantity}</span>
+                                            <button class="qty-btn" onclick="updateQuantity(${product.index}, 1)">+</button>
+                                        </div>
+                                    </div>
+
+                                    <div class="price-input-section">
+                                        <label class="price-input-label ${product.price > 0 ? 'price-found' : 'price-missing'}">
+                                            ${product.price > 0 ? 'Price Found' : 'Price Required'} - Please verify and confirm
+                                        </label>
+                                        <div class="price-input-container">
+                                            <div class="price-input">
+                                                <span>$</span>
+                                                <input type="number" 
+                                                       value="${product.price}" 
+                                                       step="0.01" 
+                                                       min="0"
+                                                       class="${product.price > 0 ? 'has-value' : ''} ${product.priceConfirmed ? 'confirmed' : ''}"
+                                                       ${product.priceConfirmed ? 'disabled' : ''}
+                                                       onchange="updatePrice(${product.index}, this.value)">
+                                            </div>
+                                            <div class="price-buttons">
+                                                <button class="price-btn check-price-btn" onclick="checkPrice(${product.index})">
+                                                    Check Price
+                                                </button>
+                                                <button class="price-btn confirm-price-btn ${product.priceConfirmed ? 'confirmed' : ''}" 
+                                                        onclick="confirmPrice(${product.index})"
+                                                        ${product.priceConfirmed ? 'disabled' : ''}>
+                                                    ${product.priceConfirmed ? '✓ Confirmed' : 'Confirm Price'}
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div class="price-status ${product.priceConfirmed ? 'confirmed' : (product.price > 0 ? 'pending' : 'required')}">
+                                            ${product.priceConfirmed ? 'Price confirmed and locked' : (product.price > 0 ? 'Please confirm this price' : 'Price required to continue')}
+                                        </div>
+                                    </div>
+
+                                    <div class="product-cost-summary ${product.priceConfirmed ? 'visible' : ''}" id="summary-${product.index}">
+                                        <div class="cost-summary-row">
+                                            <span>Product Cost:</span>
+                                            <span>$${(product.price * product.quantity).toFixed(2)}</span>
+                                        </div>
+                                        <div class="cost-summary-row">
+                                            <span>Estimated Weight:</span>
+                                            <span>${(product.weight * product.quantity).toFixed(1)} lbs</span>
+                                        </div>
+                                        <div class="cost-summary-row">
+                                            <span>Ocean Freight:</span>
+                                            <span>$${(product.weight * product.quantity * OCEAN_FREIGHT_RATE).toFixed(2)}</span>
+                                        </div>
+                                        <div class="cost-summary-row">
+                                            <span>Customs (25%):</span>
+                                            <span>$${(product.price * product.quantity * CUSTOMS_RATE).toFixed(2)}</span>
+                                        </div>
+                                        <div class="cost-summary-row cost-summary-total">
+                                            <span>Product Total:</span>
+                                            <span>$${calculateProductTotal(product).toFixed(2)}</span>
+                                        </div>
+                                    </div>
+
+                                    <button class="delete-product-btn" onclick="deleteProduct(${product.index})">
+                                        🗑️ Remove Product
+                                    </button>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+
+            // Add continue button if we have products
+            if (products.some(p => !p.deleted)) {
+                html += `
+                    <div class="button-group" style="margin-top: 30px;">
+                        <button onclick="goToPage(2)">Continue to Review →</button>
+                    </div>
+                `;
+                container.innerHTML = html;
+            }
+        }
+
+        function updateQuantity(index, change) {
+            if (products[index].deleted) return;
+            
+            products[index].quantity = Math.max(1, products[index].quantity + change);
+            displayProducts();
+            updateProductSummary(index);
+        }
+
+        function updatePrice(index, newPrice) {
+            if (products[index].deleted) return;
+            
+            products[index].price = parseFloat(newPrice) || 0;
+            products[index].priceConfirmed = false;
+            
+            const input = event.target;
+            input.className = input.className.replace('confirmed', '');
+            if (products[index].price > 0) {
+                input.classList.add('has-value');
+            } else {
+                input.classList.remove('has-value');
+            }
+            
+            updateProductSummary(index);
+        }
+
+        function checkPrice(index) {
+            if (products[index].deleted) return;
+            
+            // Simulate checking price (in real implementation, this would re-scrape)
+            alert(`Please verify the price for this product by visiting the product page. Make sure you have selected the correct variant (size, color, etc.) before confirming the price.`);
+        }
+
+        function confirmPrice(index) {
+            if (products[index].deleted || products[index].price <= 0) return;
+            
+            products[index].priceConfirmed = true;
+            displayProducts();
+            updateProductSummary(index);
+        }
+
+        function updateProductSummary(index) {
+            const summary = document.getElementById(`summary-${index}`);
+            if (summary && products[index].priceConfirmed) {
+                summary.classList.add('visible');
+            } else if (summary) {
+                summary.classList.remove('visible');
+            }
+        }
+
+        function deleteProduct(index) {
+            if (confirm('Are you sure you want to remove this product?')) {
+                products[index].deleted = true;
+                displayProducts();
+            }
+        }
+
+        function calculateProductTotal(product) {
+            if (product.deleted) return 0;
+            
+            const productCost = product.price * product.quantity;
+            const weight = product.weight * product.quantity;
+            const freight = weight * OCEAN_FREIGHT_RATE;
+            const customs = productCost * CUSTOMS_RATE;
+            const deliveryFee = product.deliveryFee || 0;
+            
+            return productCost + freight + customs + deliveryFee;
+        }
+
+        function goToPage(pageNum) {
+            // Validation for page 2
+            if (pageNum === 2) {
+                const activeProducts = products.filter(p => !p.deleted);
+                if (activeProducts.length === 0) {
+                    showError('error1', 'Please add at least one product before continuing.');
+                    return;
+                }
+                
+                const unconfirmedProducts = activeProducts.filter(p => !p.priceConfirmed);
+                if (unconfirmedProducts.length > 0) {
+                    showError('error1', 'Please confirm prices for all products before continuing.');
+                    return;
+                }
+                
+                displayReviewPage();
+            }
+            
+            // Validation for page 3
+            if (pageNum === 3) {
+                const activeProducts = products.filter(p => !p.deleted);
+                const allFeesEntered = activeProducts.every(p => p.deliveryFee !== undefined);
+                
+                if (!allFeesEntered) {
+                    showError('error2', 'Please enter delivery fees for all vendors before proceeding.');
+                    return;
+                }
+                
+                displayFinalPage();
+            }
+
+            // Hide all pages
+            document.querySelectorAll('.page').forEach(page => {
+                page.classList.remove('active');
+            });
+
+            // Show target page
+            document.getElementById(`page${pageNum}`).classList.add('active');
+            currentPage = pageNum;
+
+            // Update progress bar
+            updateProgressBar(pageNum);
+        }
+
+        function updateProgressBar(currentStep) {
+            for (let i = 1; i <= 3; i++) {
+                const circle = document.getElementById(`step${i}`);
+                const line = document.getElementById(`line${i}`);
+                
+                if (i < currentStep) {
+                    circle.classList.remove('active');
+                    circle.classList.add('completed');
+                    if (line) line.classList.add('completed');
+                } else if (i === currentStep) {
+                    circle.classList.remove('completed');
+                    circle.classList.add('active');
+                } else {
+                    circle.classList.remove('active', 'completed');
+                    if (line) line.classList.remove('completed');
+                }
+            }
+        }
+
+        function displayReviewPage() {
+            const container = document.getElementById('reviewProductList');
+            const activeProducts = products.filter(p => !p.deleted);
+            
+            // Group by vendor for delivery fee input
+            const groupedProducts = {};
+            activeProducts.forEach(product => {
+                if (!groupedProducts[product.vendor]) {
+                    groupedProducts[product.vendor] = [];
+                }
+                groupedProducts[product.vendor].push(product);
+            });
+
+            let html = '';
+            Object.keys(groupedProducts).forEach(vendor => {
+                const vendorProducts = groupedProducts[vendor];
+                const vendorTotal = vendorProducts.reduce((sum, p) => sum + (p.price * p.quantity), 0);
+                
+                html += `
+                    <div class="vendor-group ${vendor}">
+                        <div class="vendor-header ${vendor}">${getVendorName(vendor)} - $${vendorTotal.toFixed(2)}</div>
+                        ${vendorProducts.map(product => `
+                            <div class="product-item ${vendor} confirmed">
+                                ${product.image ? `<img src="${product.image}" alt="Product" class="product-image">` : ''}
+                                <div class="product-details">
+                                    <div class="product-name">
+                                        <a href="${product.url}" target="_blank">${product.name}</a>
+                                        ${product.variant ? `<span class="product-variant">${product.variant}</span>` : ''}
+                                    </div>
+                                    <div class="product-info">
+                                        <span>Quantity: ${product.quantity}</span>
+                                        <span>Price: $${product.price.toFixed(2)} each</span>
+                                        <span>Total: $${(product.price * product.quantity).toFixed(2)}</span>
+                                        <span>Weight: ${(product.weight * product.quantity).toFixed(1)} lbs</span>
+                                    </div>
+                                </div>
+                            </div>
+                        `).join('')}
+                        
+                        <div class="delivery-fee-input ${vendor}">
+                            <label>
+                                ${getVendorName(vendor)} Delivery Fee to Forwarder
+                                <small>Enter the shipping cost from ${getVendorName(vendor)} to our Miami forwarder address</small>
+                            </label>
+                            <input type="number" 
+                                   step="0.01" 
+                                   min="0" 
+                                   placeholder="0.00"
+                                   value="${groupedProducts[vendor][0].deliveryFee || ''}"
+                                   onchange="updateDeliveryFee('${vendor}', this.value)">
+                        </div>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+            checkProceedButton();
+        }
+
+        function updateDeliveryFee(vendor, fee) {
+            const deliveryFee = parseFloat(fee) || 0;
+            products.forEach(product => {
+                if (product.vendor === vendor && !product.deleted) {
+                    product.deliveryFee = deliveryFee;
+                }
+            });
+            checkProceedButton();
+        }
+
+        function checkProceedButton() {
+            const activeProducts = products.filter(p => !p.deleted);
+            const allFeesEntered = activeProducts.every(p => p.deliveryFee !== undefined && p.deliveryFee >= 0);
+            
+            const proceedBtn = document.getElementById('proceedBtn');
+            proceedBtn.disabled = !allFeesEntered;
+        }
+
+        function displayFinalPage() {
+            const container = document.getElementById('finalBreakdown');
+            const activeProducts = products.filter(p => !p.deleted);
+            
+            let totalProductCost = 0;
+            let totalWeight = 0;
+            let totalDeliveryFees = 0;
+            let totalFreight = 0;
+            let totalCustoms = 0;
+
+            let html = '<h3>📊 Final Cost Breakdown</h3>';
+            
+            // Product breakdown
+            activeProducts.forEach(product => {
+                const productCost = product.price * product.quantity;
+                const weight = product.weight * product.quantity;
+                const freight = weight * OCEAN_FREIGHT_RATE;
+                const customs = productCost * CUSTOMS_RATE;
+                
+                totalProductCost += productCost;
+                totalWeight += weight;
+                totalDeliveryFees += product.deliveryFee || 0;
+                totalFreight += freight;
+                totalCustoms += customs;
+
+                html += `
+                    <div class="product-breakdown-item">
+                        <div class="product-breakdown-name">${product.name}</div>
+                        <div class="product-breakdown-details">
+                            <span>Qty: ${product.quantity}</span>
+                            <span>Price: $${productCost.toFixed(2)}</span>
+                            <span>Weight: ${weight.toFixed(1)} lbs</span>
+                            <span>Freight: $${freight.toFixed(2)}</span>
+                            <span>Customs: $${customs.toFixed(2)}</span>
+                            <span class="product-breakdown-total">Total: $${calculateProductTotal(product).toFixed(2)}</span>
+                        </div>
+                    </div>
+                `;
+            });
+
+            const fuelSurcharge = totalFreight * FUEL_SURCHARGE_RATE;
+            const grandTotal = totalProductCost + totalDeliveryFees + totalFreight + fuelSurcharge + totalCustoms + PROCESSING_FEE;
+
+            html += `
+                <div class="cost-item">
+                    <span class="cost-label">Product Costs:</span>
+                    <span class="cost-value">$${totalProductCost.toFixed(2)}</span>
+                </div>
+                <div class="cost-item">
+                    <span class="cost-label">US Delivery Fees:</span>
+                    <span class="cost-value">$${totalDeliveryFees.toFixed(2)}</span>
+                </div>
+                <div class="cost-item">
+                    <span class="cost-label">Ocean Freight (${totalWeight.toFixed(1)} lbs @ $${OCEAN_FREIGHT_RATE}/lb):</span>
+                    <span class="cost-value">$${totalFreight.toFixed(2)}</span>
+                </div>
+                <div class="cost-item">
+                    <span class="cost-label">Fuel Surcharge (15%):</span>
+                    <span class="cost-value">$${fuelSurcharge.toFixed(2)}</span>
+                </div>
+                <div class="cost-item">
+                    <span class="cost-label">Bermuda Customs (25%):</span>
+                    <span class="cost-value">$${totalCustoms.toFixed(2)}</span>
+                </div>
+                <div class="cost-item">
+                    <span class="cost-label">Processing Fee:</span>
+                    <span class="cost-value">$${PROCESSING_FEE.toFixed(2)}</span>
+                </div>
+                <div class="cost-item total-row">
+                    <span class="cost-label">TOTAL COST:</span>
+                    <span class="cost-value">$${grandTotal.toFixed(2)}</span>
+                </div>
+            `;
+
+            container.innerHTML = html;
+        }
+
+        function toggleOrderButton() {
+            const checkbox = document.getElementById('confirmOrder');
+            const orderBtn = document.getElementById('orderBtn');
+            const customerInfo = document.getElementById('customerInfo').value.trim();
+            
+            orderBtn.disabled = !checkbox.checked || !customerInfo;
+        }
+
+        function placeOrder() {
+            const customerInfo = document.getElementById('customerInfo').value.trim();
+            
+            if (!customerInfo) {
+                showError('error3', 'Please provide your contact information.');
+                return;
+            }
+
+            showLoading('loading3', true);
+            hideError('error3');
+
+            // Simulate order placement
+            setTimeout(() => {
+                showLoading('loading3', false);
+                
+                // Create order summary
+                const activeProducts = products.filter(p => !p.deleted);
+                const orderData = {
+                    products: activeProducts,
+                    customerInfo: customerInfo,
+                    timestamp: new Date().toISOString(),
+                    orderTotal: calculateGrandTotal()
+                };
+
+                // In a real implementation, this would send to your backend
+                console.log('Order placed:', orderData);
+                
+                alert(`Order placed successfully! 
+
+Order Total: $${calculateGrandTotal().toFixed(2)}
+
+You will receive a confirmation email shortly with order details and payment instructions.
+
+Thank you for choosing SDL Instant Imports!`);
+                
+                // Reset the form
+                resetCalculator();
+            }, 2000);
+        }
+
+        function calculateGrandTotal() {
+            const activeProducts = products.filter(p => !p.deleted);
+            let total = PROCESSING_FEE;
+            
+            activeProducts.forEach(product => {
+                total += calculateProductTotal(product);
+            });
+            
+            const totalFreight = activeProducts.reduce((sum, p) => sum + (p.weight * p.quantity * OCEAN_FREIGHT_RATE), 0);
+            total += totalFreight * FUEL_SURCHARGE_RATE;
+            
+            return total;
+        }
+
+        function resetCalculator() {
+            products = [];
+            currentPage = 1;
+            document.getElementById('productUrls').value = '';
+            document.getElementById('customerInfo').value = '';
+            document.getElementById('confirmOrder').checked = false;
+            
+            goToPage(1);
+            displayProducts();
+        }
+
+        function showLoading(elementId, show) {
+            const element = document.getElementById(elementId);
+            if (show) {
+                element.classList.add('active');
+            } else {
+                element.classList.remove('active');
+            }
+        }
+
+        function showError(elementId, message) {
+            const element = document.getElementById(elementId);
+            element.textContent = message;
+            element.classList.add('active');
+        }
+
+        function hideError(elementId) {
+            const element = document.getElementById(elementId);
+            element.classList.remove('active');
+        }
+
+        // Initialize the page
+        function initializePage() {
+            // Set up event listeners
+            document.getElementById('customerInfo').addEventListener('input', toggleOrderButton);
+            
+            // Initialize progress bar
+            updateProgressBar(1);
+        }
+
+        // Initialize the page
+        document.addEventListener('DOMContentLoaded', () => {
+            initializePage();
+        });
+
+        // Start calculator function
+        function startCalculator() {
+            document.getElementById('introPage').classList.add('hidden');
+            document.getElementById('calculatorPage').classList.add('active');
+        }
+    </script>
+</body>
+</html>
