@@ -466,6 +466,157 @@ async function getUPCDimensions(productName) {
   }
 }
 
+// IKEA Multi-Box Estimator - estimates total shipping volume for IKEA furniture
+function estimateIkeaMultiBoxShipping(singleBoxDimensions, productName, price) {
+  const name = productName.toLowerCase();
+  const volume = singleBoxDimensions.length * singleBoxDimensions.width * singleBoxDimensions.height;
+  
+  console.log(`   🛏️ IKEA Multi-Box Analysis for: "${productName.substring(0, 50)}..."`);
+  console.log(`   📦 Single box: ${singleBoxDimensions.length}" × ${singleBoxDimensions.width}" × ${singleBoxDimensions.height}" (${(volume/1728).toFixed(2)} ft³)`);
+  
+  let boxMultiplier = 1;
+  let confidence = 'low';
+  
+  // Bed frames - typically 2-4 boxes depending on size
+  if (/\b(bed|frame|headboard|footboard)\b/.test(name)) {
+    if (price > 400) {
+      boxMultiplier = 4; // King/Queen beds
+      confidence = 'high';
+    } else if (price > 200) {
+      boxMultiplier = 3; // Full/Double beds
+      confidence = 'medium';
+    } else {
+      boxMultiplier = 2; // Twin beds
+      confidence = 'medium';
+    }
+  }
+  // Wardrobes/Armoires - typically 3-6 boxes
+  else if (/\b(wardrobe|armoire|closet|pax)\b/.test(name)) {
+    if (price > 500) {
+      boxMultiplier = 6; // Large PAX systems
+      confidence = 'high';
+    } else if (price > 300) {
+      boxMultiplier = 4; // Medium wardrobes
+      confidence = 'medium';
+    } else {
+      boxMultiplier = 3; // Small wardrobes
+      confidence = 'medium';
+    }
+  }
+  // Dining sets - typically 2-3 boxes (table + chairs)
+  else if (/\b(dining|table.*chair|chair.*table)\b/.test(name)) {
+    boxMultiplier = 3;
+    confidence = 'medium';
+  }
+  // Sectional sofas - typically 2-4 boxes
+  else if (/\b(sectional|sofa.*section|corner.*sofa)\b/.test(name)) {
+    if (price > 800) {
+      boxMultiplier = 4; // Large sectionals
+      confidence = 'high';
+    } else {
+      boxMultiplier = 3; // Small sectionals
+      confidence = 'medium';
+    }
+  }
+  // Kitchen systems - typically 3-8 boxes
+  else if (/\b(kitchen|cabinet.*set|knoxhult|enhet)\b/.test(name)) {
+    if (price > 1000) {
+      boxMultiplier = 8; // Full kitchen
+      confidence = 'medium';
+    } else if (price > 500) {
+      boxMultiplier = 5; // Partial kitchen
+      confidence = 'medium';
+    } else {
+      boxMultiplier = 3; // Small kitchen set
+      confidence = 'low';
+    }
+  }
+  // Bookshelves/Storage - typically 2-3 boxes for tall units
+  else if (/\b(bookshelf|shelf.*unit|billy|hemnes.*bookcase|kallax)\b/.test(name)) {
+    if (price > 200) {
+      boxMultiplier = 3; // Tall/wide units
+      confidence = 'medium';
+    } else {
+      boxMultiplier = 2; // Standard units
+      confidence = 'medium';
+    }
+  }
+  // Desks - typically 2 boxes for larger desks
+  else if (/\b(desk|workstation|office.*table)\b/.test(name)) {
+    if (price > 300) {
+      boxMultiplier = 2; // Large desks
+      confidence = 'medium';
+    }
+  }
+  // Default for other furniture
+  else if (price > 300) {
+    boxMultiplier = 2; // Assume larger furniture ships in 2 boxes
+    confidence = 'low';
+  }
+  
+  // Calculate estimated total shipping dimensions
+  // Strategy: Stack boxes efficiently (2x2 for 4 boxes, 2x3 for 6 boxes, etc.)
+  let totalDimensions;
+  
+  if (boxMultiplier <= 2) {
+    // Side by side
+    totalDimensions = {
+      length: singleBoxDimensions.length * boxMultiplier,
+      width: singleBoxDimensions.width,
+      height: singleBoxDimensions.height
+    };
+  } else if (boxMultiplier <= 4) {
+    // 2x2 arrangement
+    totalDimensions = {
+      length: singleBoxDimensions.length * 2,
+      width: singleBoxDimensions.width * 2,
+      height: singleBoxDimensions.height
+    };
+  } else if (boxMultiplier <= 6) {
+    // 2x3 arrangement
+    totalDimensions = {
+      length: singleBoxDimensions.length * 2,
+      width: singleBoxDimensions.width * 3,
+      height: singleBoxDimensions.height
+    };
+  } else {
+    // 2x4 arrangement for 8 boxes
+    totalDimensions = {
+      length: singleBoxDimensions.length * 2,
+      width: singleBoxDimensions.width * 4,
+      height: singleBoxDimensions.height
+    };
+  }
+  
+  const totalVolume = totalDimensions.length * totalDimensions.width * totalDimensions.height;
+  
+  console.log(`   📊 IKEA Multi-Box Estimate:`);
+  console.log(`   📊   Product type: ${getIkeaProductType(name)}`);
+  console.log(`   📊   Estimated boxes: ${boxMultiplier} (confidence: ${confidence})`);
+  console.log(`   📊   Total dimensions: ${totalDimensions.length}" × ${totalDimensions.width}" × ${totalDimensions.height}"`);
+  console.log(`   📊   Total volume: ${(totalVolume/1728).toFixed(2)} ft³ (vs single box: ${(volume/1728).toFixed(2)} ft³)`);
+  console.log(`   ⚠️   This is an ESTIMATE - actual IKEA shipping may vary`);
+  
+  return {
+    dimensions: totalDimensions,
+    boxCount: boxMultiplier,
+    confidence: confidence,
+    singleBoxVolume: volume / 1728,
+    totalVolume: totalVolume / 1728,
+    estimationMethod: 'ikea-multibox'
+  };
+}
+
+function getIkeaProductType(name) {
+  if (/\b(bed|frame|headboard)\b/.test(name)) return 'Bed Frame';
+  if (/\b(wardrobe|armoire|pax)\b/.test(name)) return 'Wardrobe/Storage';
+  if (/\b(dining|table.*chair)\b/.test(name)) return 'Dining Set';
+  if (/\b(sectional|sofa.*section)\b/.test(name)) return 'Sectional Sofa';
+  if (/\b(kitchen|cabinet.*set)\b/.test(name)) return 'Kitchen System';
+  if (/\b(bookshelf|billy|kallax)\b/.test(name)) return 'Storage/Shelving';
+  if (/\b(desk|workstation)\b/.test(name)) return 'Desk/Office';
+  return 'Furniture';
+}
 // Merge product data from multiple sources
 function mergeProductData(primary, secondary) {
   if (!primary) return secondary;
@@ -634,22 +785,6 @@ async function scrapeProduct(url) {
       productData.dimensions = upcDimensions;
       console.log('   ✅ UPCitemdb provided accurate dimensions');
       
-      // IKEA Multi-Box Detection
-      if (retailer === 'IKEA' && productData.name && productData.name.toLowerCase().includes('bed')) {
-        console.log('   🛏️ IKEA bed detected - likely multi-box shipment');
-        console.log(`   📦 Single box: ${upcDimensions.length}" × ${upcDimensions.width}" × ${upcDimensions.height}"`);
-        
-        // Multiply dimensions by 4 for typical IKEA bed (4 boxes)
-        productData.dimensions = {
-          length: Math.max(upcDimensions.length * 2, 80), // At least 80" for bed length
-          width: Math.max(upcDimensions.width * 2, 60),   // At least 60" for bed width  
-          height: upcDimensions.height * 4                // Stack 4 boxes high
-        };
-        
-        console.log(`   📦 Multi-box total: ${productData.dimensions.length}" × ${productData.dimensions.width}" × ${productData.dimensions.height}"`);
-        scrapingMethod = 'zyte+upcitemdb+ikea-multibox';
-      }
-      
       if (scrapingMethod === 'zyte') {
         scrapingMethod = 'zyte+upcitemdb';
       } else if (scrapingMethod === 'gpt-fallback') {
@@ -659,6 +794,29 @@ async function scrapeProduct(url) {
       console.log('   ⚠️ UPCitemdb found no dimensions, current dimensions may be packaging size');
       console.log(`   📦 Current dimensions: ${productData.dimensions.length}" × ${productData.dimensions.width}" × ${productData.dimensions.height}"`);
       console.log('   🔍 Checking if dimensions look like packaging vs actual product...');
+    }
+  }
+  
+  // STEP 3.5: IKEA Multi-Box Estimation
+  if (retailer === 'IKEA' && productData && productData.dimensions && productData.name && productData.price) {
+    const ikeaEstimate = estimateIkeaMultiBoxShipping(productData.dimensions, productData.name, productData.price);
+    
+    if (ikeaEstimate.boxCount > 1) {
+      productData.dimensions = ikeaEstimate.dimensions;
+      productData.ikeaMultiBox = {
+        estimatedBoxes: ikeaEstimate.boxCount,
+        confidence: ikeaEstimate.confidence,
+        singleBoxVolume: ikeaEstimate.singleBoxVolume,
+        totalVolume: ikeaEstimate.totalVolume
+      };
+      
+      if (scrapingMethod.includes('upcitemdb')) {
+        scrapingMethod = scrapingMethod + '+ikea-multibox';
+      } else {
+        scrapingMethod = scrapingMethod + '+ikea-multibox';
+      }
+      
+      console.log(`   🎯 Applied IKEA multi-box estimation (${ikeaEstimate.confidence} confidence)`);
     }
   }
   
