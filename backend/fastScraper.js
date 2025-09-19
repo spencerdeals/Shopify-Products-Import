@@ -894,7 +894,11 @@ async function scrapeProduct(url) {
       }
     } else {
       console.log('   ⚠️ UPCitemdb found no dimensions, current dimensions may be packaging size');
-      console.log(`   📦 Current dimensions: ${productData.dimensions.length}" × ${productData.dimensions.width}" × ${productData.dimensions.height}"`);
+      if (productData.dimensions) {
+        console.log(`   📦 Current dimensions: ${productData.dimensions.length}" × ${productData.dimensions.width}" × ${productData.dimensions.height}"`);
+      } else {
+        console.log('   📦 No dimensions available, will estimate based on category');
+      }
       console.log('   🔍 Checking if dimensions look like packaging vs actual product...');
     }
   }
