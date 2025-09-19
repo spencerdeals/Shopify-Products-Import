@@ -353,26 +353,41 @@ function calculateShippingCost(dimensions, weight, price) {
     return Math.max(25, price * 0.15);
   }
   
-  console.log(`   🧮 Shipping calculation debug:`);
-  console.log(`   📦 Dimensions: ${dimensions.length}" × ${dimensions.width}" × ${dimensions.height}"`);
+  console.log(`   🧮 DETAILED Shipping calculation:`);
+  console.log(`   📦 Input dimensions: ${dimensions.length}" × ${dimensions.width}" × ${dimensions.height}"`);
   
   // Calculate volume in cubic feet
   const cubicInches = dimensions.length * dimensions.width * dimensions.height;
   const cubicFeet = cubicInches / 1728;
-  console.log(`   📊 Volume: ${cubicInches.toFixed(0)} cubic inches = ${cubicFeet.toFixed(3)} cubic feet`);
+  console.log(`   📊 VOLUME CALCULATION:`);
+  console.log(`   📊   ${dimensions.length} × ${dimensions.width} × ${dimensions.height} = ${cubicInches.toFixed(0)} cubic inches`);
+  console.log(`   📊   ${cubicInches.toFixed(0)} ÷ 1728 = ${cubicFeet.toFixed(3)} cubic feet`);
   
   // Base rate: $8 per cubic foot
   const baseCost = Math.max(15, cubicFeet * SHIPPING_RATE_PER_CUBIC_FOOT);
-  console.log(`   💰 Base cost: $${baseCost.toFixed(2)} (${cubicFeet.toFixed(3)} × $${SHIPPING_RATE_PER_CUBIC_FOOT})`);
+  console.log(`   💰 BASE COST CALCULATION:`);
+  console.log(`   💰   ${cubicFeet.toFixed(3)} × $${SHIPPING_RATE_PER_CUBIC_FOOT} = $${(cubicFeet * SHIPPING_RATE_PER_CUBIC_FOOT).toFixed(2)}`);
+  console.log(`   💰   Math.max(15, ${(cubicFeet * SHIPPING_RATE_PER_CUBIC_FOOT).toFixed(2)}) = $${baseCost.toFixed(2)}`);
   
   // Add surcharges
   const oversizeFee = Math.max(dimensions.length, dimensions.width, dimensions.height) > 48 ? 50 : 0;
   const valueFee = price > 500 ? price * 0.02 : 0;
   const handlingFee = 15;
-  console.log(`   📋 Fees: Oversize=$${oversizeFee}, Value=$${valueFee.toFixed(2)}, Handling=$${handlingFee}`);
+  console.log(`   📋 SURCHARGE CALCULATION:`);
+  console.log(`   📋   Oversize fee (>48"): $${oversizeFee} (max dimension: ${Math.max(dimensions.length, dimensions.width, dimensions.height)}")`);
+  console.log(`   📋   Value fee (>$500): $${valueFee.toFixed(2)} (price: $${price})`);
+  console.log(`   📋   Handling fee: $${handlingFee}`);
   
   const totalCost = baseCost + oversizeFee + valueFee + handlingFee;
-  console.log(`   🎯 Total shipping: $${totalCost.toFixed(2)}`);
+  console.log(`   🎯 TOTAL CALCULATION:`);
+  console.log(`   🎯   $${baseCost.toFixed(2)} + $${oversizeFee} + $${valueFee.toFixed(2)} + $${handlingFee} = $${totalCost.toFixed(2)}`);
+  
+  // IKEA specific debugging
+  if (dimensions.length < 30 && dimensions.width < 30 && dimensions.height < 30) {
+    console.log(`   🚨 SUSPICIOUS: All dimensions under 30" - this might be packaging for one component!`);
+    console.log(`   🚨 For furniture, expected dimensions should be 60"+ for at least one dimension`);
+  }
+  
   return Math.round(totalCost);
 }
 
