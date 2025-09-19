@@ -4,9 +4,10 @@ const rateLimit = require('express-rate-limit');
 const axios = require('axios');
 const path = require('path');
 const { URL } = require('url');
-const ZyteScraper = require('./zyteScraper');
+const ApifyScraper = require('./apifyScraper');
 require('dotenv').config();
 const UPCItemDB = require('./upcitemdb');
+// const learningSystem = require('./learningSystem');  // TODO: Re-enable with PostgreSQL later
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -14,9 +15,11 @@ const PORT = process.env.PORT || 3000;
 // Configuration
 const SHOPIFY_DOMAIN = process.env.SHOPIFY_DOMAIN || 'spencer-deals-ltd.myshopify.com';
 const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN || '';
+const SCRAPINGBEE_API_KEY = process.env.SCRAPINGBEE_API_KEY || '';
 const UPCITEMDB_API_KEY = process.env.UPCITEMDB_API_KEY || '';
 const upcItemDB = new UPCItemDB(UPCITEMDB_API_KEY);
 const USE_UPCITEMDB = !!UPCITEMDB_API_KEY;
+const APIFY_API_KEY = process.env.APIFY_API_KEY || '';
 const SCRAPING_TIMEOUT = 30000;  // 30 seconds timeout
 const MAX_CONCURRENT_SCRAPES = 2;
 const BERMUDA_DUTY_RATE = 0.265;
@@ -326,7 +329,7 @@ function estimateBoxDimensions(productDimensions, category) {
 }
 
 function calculateShippingCost(dimensions, weight, price, retailer) {
-  // Special handling for IKEA - NEW 40% METHOD
+  // Special handling for IKEA
   if (retailer === 'IKEA') {
     const oceanFreight = price * 0.40; // 40% of retail value
     const handling = 15;
@@ -396,46 +399,14 @@ function mergeProductData(primary, secondary) {
   };
 }
 
-// Check if retailer needs manual entry
-function needsManualEntry(retailer) {
-  const manualRetailers = ['Crate & Barrel', 'CB2', 'Pottery Barn', 'West Elm'];
-  return manualRetailers.includes(retailer);
-}
-
 // Main product scraping function
 async function scrapeProduct(url) {
-  const productId = generateProductId();
-  const retailer = detectRetailer(url);
-  
-  // Check if this retailer needs manual entry
-  if (needsManualEntry(retailer)) {
-    console.log(`\n📦 Processing: ${url}`);
-    console.log(`   Retailer: ${retailer}`);
-    console.log(`   🔧 Manual entry required for ${retailer}`);
-    
-    return {
-      id: productId,
-      url: url,
-      name: `Product from ${retailer}`,
-      price: null,
-      image: null,
-      category: 'general',
-      retailer: retailer,
-      dimensions: null,
-      weight: null,
-      shippingCost: 50, // Default estimate
-      scrapingMethod: 'manual-required',
-      manualEntryRequired: true,
-      dataCompleteness: {
-        hasName: false,
-        hasImage: false,
-        hasDimensions: false,
-        hasWeight: false,
-        hasPrice: false
-      }
-    };
-  }
-  
+  // AI CHECK: See if we've seen this exact product before
+  // const knownProduct = await learningSystem.getKnownProduct(url);
+  // if (knownProduct) {
+  //   console.log('   🤖 AI: Using saved product data');
+  //   return knownProduct;
+  // }
   let productData = null;
   let scrapingMethod = 'none';
   
@@ -513,8 +484,16 @@ async function scrapeProduct(url) {
   const category = productData.category || categorizeProduct(productName, url);
   
   if (!productData.dimensions) {
-    productData.dimensions = estimateDimensions(category, productName);
-    console.log('   📐 Estimated dimensions based on category:', category);
+    // Try AI estimation first
+    // const aiEstimate = await learningSystem.getSmartEstimation(category, productName, retailer);
+    // if (aiEstimate) {
+    //   productData.dimensions = aiEstimate.dimensions;
+    //   productData.weight = productData.weight || aiEstimate.weight;
+    //   console.log(`   🤖 AI: Applied learned patterns (confidence: ${(aiEstimate.confidence * 100).toFixed(0)}%)`);
+    // } else {
+      productData.dimensions = estimateDimensions(category, productName);
+      console.log('   📐 Estimated dimensions based on category:', category);
+    // }
   }
   
   if (!productData.weight) {
@@ -556,6 +535,12 @@ async function scrapeProduct(url) {
   console.log(`   📊 Data source: ${scrapingMethod}`);
   console.log(`   ✅ Product processed successfully\n`);
   
+  // Record what worked and what didn't for failure tracking
+  // await learningSystem.recordScrapingResult(url, retailer, product, scrapingMethod);
+  
+  // AI SAVE: Remember this product for next time
+  // await learningSystem.saveProduct(product);
+  
   return product;
 }
 
@@ -583,104 +568,6 @@ async function processBatch(urls, batchSize = MAX_CONCURRENT_SCRAPES) {
   return results;
 }
 
-// API endpoint for processing manual content
-app.post('/api/process-manual-content', async (req, res) => {
-  try {
-    const { url, htmlContent } = req.body;
-    
-    if (!url || !htmlContent) {
-      return res.status(400).json({ error: 'URL and HTML content required' });
-    }
-    
-    console.log(`🔧 Processing manual content for: ${url}`);
-    
-    // Use GPT parser to extract product data from HTML content
-    const { parseProduct } = require('./gptParser');
-    
-    try {
-      // Create a mock HTML structure for GPT parser
-      const mockHtml = `<html><body>${htmlContent}</body></html>`;
-      
-      // Parse with GPT
-      const productData = await parseProduct(url, { htmlContent: mockHtml });
-      
-      if (productData && productData.name && productData.price) {
-        const retailer = detectRetailer(url);
-        const category = categorizeProduct(productData.name, url);
-        
-        // Calculate shipping cost
-        const shippingCost = calculateShippingCost(
-          productData.dimensions,
-          productData.weight,
-          productData.price,
-          retailer
-        );
-        
-        const product = {
-          id: generateProductId(),
-          url: url,
-          name: productData.name,
-          price: productData.price,
-          image: productData.image,
-          category: category,
-          retailer: retailer,
-          dimensions: productData.dimensions || estimateDimensions(category, productData.name),
-          weight: productData.weight || estimateWeight(productData.dimensions || estimateDimensions(category, productData.name), category),
-          shippingCost: shippingCost,
-          scrapingMethod: 'manual-gpt',
-          dataCompleteness: {
-            hasName: !!productData.name,
-            hasImage: !!productData.image,
-            hasDimensions: !!productData.dimensions,
-            hasWeight: !!productData.weight,
-            hasPrice: !!productData.price
-          }
-        };
-        
-        console.log(`✅ Manual processing successful: ${productData.name} - $${productData.price}`);
-        
-        res.json({ success: true, product });
-      } else {
-        throw new Error('Could not extract product data from content');
-      }
-      
-    } catch (gptError) {
-      console.error('GPT parsing failed:', gptError.message);
-      
-      // Fallback: create basic product with estimation
-      const retailer = detectRetailer(url);
-      const product = {
-        id: generateProductId(),
-        url: url,
-        name: `Product from ${retailer}`,
-        price: 100, // Default price
-        image: null,
-        category: 'general',
-        retailer: retailer,
-        dimensions: estimateDimensions('general'),
-        weight: null,
-        shippingCost: 50,
-        scrapingMethod: 'manual-fallback',
-        dataCompleteness: {
-          hasName: false,
-          hasImage: false,
-          hasDimensions: false,
-          hasWeight: false,
-          hasPrice: false
-        }
-      };
-      
-      product.weight = estimateWeight(product.dimensions, 'general');
-      
-      res.json({ success: true, product });
-    }
-    
-  } catch (error) {
-    console.error('Manual processing error:', error);
-    res.status(500).json({ error: 'Failed to process manual content' });
-  }
-});
-
 // API endpoint for scraping
 app.post('/api/scrape', async (req, res) => {
   try {
@@ -707,28 +594,27 @@ app.post('/api/scrape', async (req, res) => {
     const zyteCount = products.filter(p => p.scrapingMethod?.includes('zyte')).length;
     const upcitemdbCount = products.filter(p => p.scrapingMethod?.includes('upcitemdb')).length;
     const estimatedCount = products.filter(p => p.scrapingMethod === 'estimation').length;
-    const manualCount = products.filter(p => p.manualEntryRequired).length;
     
     console.log('\n📊 SCRAPING SUMMARY:');
     console.log(`   Total products: ${products.length}`);
     console.log(`   Zyte used: ${zyteCount}`);
     console.log(`   UPCitemdb used: ${upcitemdbCount}`);
-    console.log(`   Manual entry required: ${manualCount}`);
     console.log(`   Fully estimated: ${estimatedCount}`);
-    console.log(`   Success rate: ${((products.length - estimatedCount - manualCount) / products.length * 100).toFixed(1)}%\n`);
+    console.log(`   Success rate: ${((products.length - estimatedCount) / products.length * 100).toFixed(1)}%\n`);
+    
+    // Get AI insights
+    // await learningSystem.getInsights();
     
     res.json({ 
       products,
       summary: {
         total: products.length,
-        scraped: products.length - estimatedCount - manualCount,
+        scraped: products.length - estimatedCount,
         estimated: estimatedCount,
-        manual: manualCount,
         scrapingMethods: {
           zyte: zyteCount,
           upcitemdb: upcitemdbCount,
-          estimation: estimatedCount,
-          manual: manualCount
+          estimation: estimatedCount
         }
       }
     });
@@ -825,10 +711,10 @@ app.post('/apps/instant-import/create-draft-order', async (req, res) => {
     });
     
     // Add shipping cost as a line item
-    if (totals.shippingCost > 0) {
+    if (totals.totalShippingCost > 0) {
       lineItems.push({
         title: 'Ocean Freight & Handling to Bermuda',
-        price: totals.shippingCost.toFixed(2),
+        price: totals.totalShippingCost.toFixed(2),
         quantity: 1,
         taxable: false
       });
