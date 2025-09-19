@@ -9,6 +9,10 @@ require('dotenv').config();
 const UPCItemDB = require('./upcitemdb');
 const OrderTracker = require('./orderTracking');
 const ZyteScraper = require('./zyteScraper');
+const ApifyActorScraper = require('./apifyActorScraper');
+const { parseProduct: parseWithGPT } = require('./gptParser');
+
+// Simple, working scraper approach
 const MAX_CONCURRENT = 1; // Process one at a time to avoid issues
 
 const app = express();
@@ -26,9 +30,11 @@ const BERMUDA_DUTY_RATE = 0.265;
 const SHIPPING_RATE_PER_CUBIC_FOOT = 8;
 
 // Initialize scrapers
-const USE_GPT_FALLBACK = !!process.env.OPENAI_API_KEY;
 const zyteScraper = new ZyteScraper();
 const USE_ZYTE = zyteScraper.enabled;
+const apifyActorScraper = new ApifyActorScraper(process.env.APIFY_API_KEY);
+const USE_APIFY_ACTORS = apifyActorScraper.isAvailable();
+const USE_GPT_FALLBACK = !!process.env.OPENAI_API_KEY;
 
 // Confidence threshold for triggering GPT fallback
 const CONFIDENCE_THRESHOLD = 0.3; // If Zyte confidence < 30%, try GPT
@@ -40,16 +46,15 @@ OrderTracker.create().then(tracker => {
   orderTracker = tracker;
 }).catch(error => {
   console.error('Failed to initialize order tracker:', error);
-}
-)
+});
+
 console.log('=== SERVER STARTUP ===');
 console.log(`Port: ${PORT}`);
 console.log('');
 console.log('🔍 SCRAPING CONFIGURATION:');
 console.log(`1. Primary: Zyte API - ${USE_ZYTE ? '✅ ENABLED' : '❌ DISABLED (Missing API Key)'}`);
 console.log(`2. Fallback: GPT Parser - ${USE_GPT_FALLBACK ? '✅ ENABLED' : '❌ DISABLED (Missing OpenAI Key)'}`);
-console.log(`3. UPC Database: ${USE_UPCITEMDB ? '✅ ENABLED' : '❌ DISABLED (Missing API Key)'}`);
-console.log(`4. Confidence Threshold: ${CONFIDENCE_THRESHOLD} (${CONFIDENCE_THRESHOLD * 100}%)`);
+console.log(`3. Confidence Threshold: ${CONFIDENCE_THRESHOLD} (${CONFIDENCE_THRESHOLD * 100}%)`);
 console.log('');
 
 // Middleware
@@ -348,20 +353,55 @@ function calculateShippingCost(dimensions, weight, price) {
     return Math.max(25, price * 0.15);
   }
   
+  console.log(`   🧮 DETAILED Shipping calculation:`);
+  console.log(`   📦 Input dimensions: ${dimensions.length}" × ${dimensions.width}" × ${dimensions.height}"`);
+  
   // Calculate volume in cubic feet
   const cubicInches = dimensions.length * dimensions.width * dimensions.height;
   const cubicFeet = cubicInches / 1728;
+  console.log(`   📊 VOLUME CALCULATION:`);
+  console.log(`   📊   ${dimensions.length} × ${dimensions.width} × ${dimensions.height} = ${cubicInches.toFixed(0)} cubic inches`);
+  console.log(`   📊   ${cubicInches.toFixed(0)} ÷ 1728 = ${cubicFeet.toFixed(3)} cubic feet`);
   
   // Base rate: $8 per cubic foot
   const baseCost = Math.max(15, cubicFeet * SHIPPING_RATE_PER_CUBIC_FOOT);
+  console.log(`   💰 BASE COST CALCULATION:`);
+  console.log(`   💰   ${cubicFeet.toFixed(3)} × $${SHIPPING_RATE_PER_CUBIC_FOOT} = $${(cubicFeet * SHIPPING_RATE_PER_CUBIC_FOOT).toFixed(2)}`);
+  console.log(`   💰   Math.max(15, ${(cubicFeet * SHIPPING_RATE_PER_CUBIC_FOOT).toFixed(2)}) = $${baseCost.toFixed(2)}`);
   
-  // Add surcharges
-  const oversizeFee = Math.max(dimensions.length, dimensions.width, dimensions.height) > 48 ? 50 : 0;
-  const valueFee = price > 500 ? price * 0.02 : 0;
+  // Add handling fee
   const handlingFee = 15;
+  console.log(`   📋 HANDLING FEE: $${handlingFee}`);
   
-  const totalCost = baseCost + oversizeFee + valueFee + handlingFee;
-  return Math.round(totalCost);
+  // Calculate base shipping cost
+  const baseShippingCost = baseCost + handlingFee;
+  
+  // Add 20% margin to create final shipping & handling cost
+  const totalCost = baseShippingCost * 1.20;
+  console.log(`   🎯 MARGIN CALCULATION:`);
+  console.log(`   🎯   Base: $${baseShippingCost.toFixed(2)}`);
+  console.log(`   🎯   + 20% margin: $${baseShippingCost.toFixed(2)} × 1.20 = $${totalCost.toFixed(2)}`);
+  
+  // Add 4% card processing fee (hidden in shipping)
+  // Calculate 4% of total order value (price + duty + shipping + delivery)
+  const dutyAmount = price * 0.265;
+  const deliveryFee = 25;
+  const orderSubtotal = price + dutyAmount + totalCost + deliveryFee;
+  const cardFee = orderSubtotal * 0.04;
+  const finalShippingCost = totalCost + cardFee;
+  
+  console.log(`   💳 CARD FEE CALCULATION:`);
+  console.log(`   💳   Order subtotal: $${orderSubtotal.toFixed(2)}`);
+  console.log(`   💳   Card fee (4%): $${cardFee.toFixed(2)}`);
+  console.log(`   💳   Final shipping cost: $${finalShippingCost.toFixed(2)}`);
+  
+  // IKEA specific debugging
+  if (dimensions.length < 30 && dimensions.width < 30 && dimensions.height < 30) {
+    console.log(`   🚨 SUSPICIOUS: All dimensions under 30" - this might be packaging for one component!`);
+    console.log(`   🚨 For furniture, expected dimensions should be 60"+ for at least one dimension`);
+  }
+  
+  return Math.round(finalShippingCost);
 }
 
 // Helper function to check if essential data is complete
@@ -409,8 +449,13 @@ async function getUPCDimensions(productName) {
     const upcData = await upcItemDB.searchByName(productName);
     
     if (upcData && upcData.dimensions) {
-      console.log(`   ✅ UPCitemdb found dimensions: ${upcData.dimensions.length}" × ${upcData.dimensions.width}" × ${upcData.dimensions.height}"`);
-      return upcData.dimensions;
+      console.log(`   ✅ UPCitemdb found BOX dimensions: ${upcData.dimensions.length}" × ${upcData.dimensions.width}" × ${upcData.dimensions.height}"`);
+      
+      // UPCitemdb already provides shipping box dimensions
+      const boxDimensions = upcData.dimensions;
+      
+      console.log(`   📦 Using UPCitemdb BOX dimensions: ${boxDimensions.length}" × ${boxDimensions.width}" × ${boxDimensions.height}"`);
+      return boxDimensions;
     }
     
     console.log('   ❌ UPCitemdb: No dimensions found');
@@ -486,7 +531,7 @@ async function scrapeProduct(url) {
     if (USE_GPT_FALLBACK) {
       try {
         console.log('   🤖 Trying GPT parser fallback...');
-        const gptData = await parseProduct(url);
+        const gptData = await parseWithGPT(url);
         
         // Check if GPT got essential data
         const gptHasEssentialData = gptData && gptData.name && gptData.price;
@@ -588,11 +633,32 @@ async function scrapeProduct(url) {
     if (upcDimensions) {
       productData.dimensions = upcDimensions;
       console.log('   ✅ UPCitemdb provided accurate dimensions');
+      
+      // IKEA Multi-Box Detection
+      if (retailer === 'IKEA' && productData.name && productData.name.toLowerCase().includes('bed')) {
+        console.log('   🛏️ IKEA bed detected - likely multi-box shipment');
+        console.log(`   📦 Single box: ${upcDimensions.length}" × ${upcDimensions.width}" × ${upcDimensions.height}"`);
+        
+        // Multiply dimensions by 4 for typical IKEA bed (4 boxes)
+        productData.dimensions = {
+          length: Math.max(upcDimensions.length * 2, 80), // At least 80" for bed length
+          width: Math.max(upcDimensions.width * 2, 60),   // At least 60" for bed width  
+          height: upcDimensions.height * 4                // Stack 4 boxes high
+        };
+        
+        console.log(`   📦 Multi-box total: ${productData.dimensions.length}" × ${productData.dimensions.width}" × ${productData.dimensions.height}"`);
+        scrapingMethod = 'zyte+upcitemdb+ikea-multibox';
+      }
+      
       if (scrapingMethod === 'zyte') {
         scrapingMethod = 'zyte+upcitemdb';
       } else if (scrapingMethod === 'gpt-fallback') {
         scrapingMethod = 'gpt+upcitemdb';
       }
+    } else {
+      console.log('   ⚠️ UPCitemdb found no dimensions, current dimensions may be packaging size');
+      console.log(`   📦 Current dimensions: ${productData.dimensions.length}" × ${productData.dimensions.width}" × ${productData.dimensions.height}"`);
+      console.log('   🔍 Checking if dimensions look like packaging vs actual product...');
     }
   }
   
@@ -730,85 +796,128 @@ app.post('/api/process-manual-content', async (req, res) => {
     
     console.log('✅ OpenAI API key found, proceeding with GPT parsing...');
     
-    // Use the GPT parser module
-    const gptData = await parseProduct(url, { htmlContent });
+    // Use OpenAI directly to parse the content
+    const OpenAI = require('openai');
+    const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
     
-    if (gptData && gptData.name && gptData.price) {
+    try {
+      console.log('🤖 Calling GPT parser...');
+      
       const retailer = detectRetailer(url);
-      const category = gptData.category || categorizeProduct(gptData.name, url);
-      
-      // Convert to our expected format
-      const productData = {
-        name: gptData.name,
-        price: gptData.price,
-        image: gptData.image,
-        dimensions: gptData.dimensions || gptData.package_dimensions,
-        weight: gptData.weight || gptData.package_weight_lbs,
-        brand: gptData.brand,
-        category: category,
-        inStock: gptData.inStock,
-        variant: gptData.variant
-      };
-      
-      // Fill in missing data with estimations
-      if (!productData.dimensions) {
-        productData.dimensions = estimateDimensions(category, productData.name);
-      }
-      
-      // Smart UPCitemdb lookup for manual entry too
-      if (productData.name && dimensionsLookSuspicious(productData.dimensions)) {
-        console.log('   🔍 Checking UPCitemdb for manual entry dimensions...');
-        const upcDimensions = await getUPCDimensions(productData.name);
-        if (upcDimensions) {
-          productData.dimensions = upcDimensions;
-          console.log('   ✅ UPCitemdb provided dimensions for manual entry');
-        }
-      }
-      
-      if (!productData.weight) {
-        productData.weight = estimateWeight(productData.dimensions, category);
-      }
-      
-      const shippingCost = calculateShippingCost(
-        productData.dimensions,
-        productData.weight,
-        productData.price
-      );
-      
-      const product = {
-        id: generateProductId(),
-        url: url,
-        name: productData.name,
-        price: productData.price,
-        image: productData.image || 'https://placehold.co/400x400/7CB342/FFFFFF/png?text=SDL',
-        category: category,
-        retailer: retailer,
-        dimensions: productData.dimensions,
-        weight: productData.weight,
-        shippingCost: shippingCost,
-        scrapingMethod: 'manual-gpt',
-        confidence: null,
-        variant: productData.variant,
-        dataCompleteness: {
-          hasName: !!productData.name,
-          hasImage: !!productData.image,
-          hasDimensions: !!productData.dimensions,
-          hasWeight: !!productData.weight,
-          hasPrice: !!productData.price,
-          hasVariant: !!productData.variant
-        }
-      };
-      
-      console.log('   ✅ Manual content processed successfully');
-      res.json({ success: true, product });
-      
-    } else {
-      console.log('❌ GPT extraction failed - missing required data:', {
+      const prompt = `Extract product information from this ${retailer} webpage content and return ONLY valid JSON with these fields:
+- name (string)
+- price (number, no currency symbols)
+- dimensions (object with length, width, height in inches if found)
+- sku (string if found)
+- variant (string like color/size if found)
+
+For Crate & Barrel: Extract dimensions from format like "23.8"H height 85.4"W width 37"D depth" as length=85.4, width=37, height=23.8.
+
+Content: ${htmlContent.substring(0, 15000)}`;
+
+      const response = await client.chat.completions.create({
+        model: 'gpt-4o-mini',
+        temperature: 0,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: 'You are a product data extractor. Return only valid JSON.' },
+          { role: 'user', content: prompt }
+        ],
+      });
+
+      const gptData = JSON.parse(response.choices[0].message.content || '{}');
+      console.log('📊 GPT parser result:', {
         hasName: !!gptData?.name,
         hasPrice: !!gptData?.price,
-        gptData: gptData
+        name: gptData?.name?.substring(0, 50),
+        price: gptData?.price
       });
-      throw new Error('GPT could not extract required data from manual content');
+      
+      if (gptData && gptData.name && gptData.price) {
+        const retailer = detectRetailer(url);
+        const category = gptData.category || categorizeProduct(gptData.name, url);
+        
+        // Convert to our expected format
+        const productData = {
+          name: gptData.name,
+          price: gptData.price,
+          image: gptData.image,
+          dimensions: gptData.dimensions || gptData.package_dimensions,
+          weight: gptData.weight || gptData.package_weight_lbs,
+          brand: gptData.brand,
+          category: category,
+          inStock: gptData.inStock,
+          variant: gptData.variant
+        };
+        
+        // Fill in missing data with estimations
+        if (!productData.dimensions) {
+          productData.dimensions = estimateDimensions(category, productData.name);
+        }
+        
+        // Smart UPCitemdb lookup for manual entry too
+        if (productData.name && dimensionsLookSuspicious(productData.dimensions)) {
+          console.log('   🔍 Checking UPCitemdb for manual entry dimensions...');
+          const upcDimensions = await getUPCDimensions(productData.name);
+          if (upcDimensions) {
+            productData.dimensions = upcDimensions;
+            console.log('   ✅ UPCitemdb provided dimensions for manual entry');
+          }
+        }
+        
+        if (!productData.weight) {
+          productData.weight = estimateWeight(productData.dimensions, category);
+        }
+        
+        const shippingCost = calculateShippingCost(
+          productData.dimensions,
+          productData.weight,
+          productData.price
+        );
+        
+        const product = {
+          id: generateProductId(),
+          url: url,
+          name: productData.name,
+          price: productData.price,
+          image: productData.image || 'https://placehold.co/400x400/7CB342/FFFFFF/png?text=SDL',
+          category: category,
+          retailer: retailer,
+          dimensions: productData.dimensions,
+          weight: productData.weight,
+          shippingCost: shippingCost,
+          scrapingMethod: 'manual-gpt',
+          confidence: null,
+          variant: productData.variant,
+          dataCompleteness: {
+            hasName: !!productData.name,
+            hasImage: !!productData.image,
+            hasDimensions: !!productData.dimensions,
+            hasWeight: !!productData.weight,
+            hasPrice: !!productData.price,
+            hasVariant: !!productData.variant
+          }
+        };
+        
+        console.log('   ✅ Manual content processed successfully');
+        res.json({ success: true, product });
+        
+      } else {
+        console.log('❌ GPT extraction failed - missing required data:', {
+          hasName: !!gptData?.name,
+          hasPrice: !!gptData?.price,
+          gptData: gptData
+        });
+        throw new Error('GPT could not extract required data from manual content');
+      }
+      
+    } catch (error) {
+      console.log('❌ GPT parsing error details:', error.message);
+      console.log('📄 Content sample for debugging:', htmlContent.substring(0, 1000));
+      console.log('   ❌ Manual content processing failed:', error.message);
+      res.status(400).json({ 
+        error: `GPT parsing failed: ${error.message}. Please try copying the webpage content again, including product name and price.` 
+      });
     }
     
   } catch (error) {
@@ -938,7 +1047,7 @@ app.post('/apps/instant-import/create-draft-order', async (req, res) => {
     // Add shipping cost as a line item
     if (totals.totalShippingCost > 0) {
       lineItems.push({
-        title: 'Ocean Freight & Handling to Bermuda',
+        title: 'Shipping & Handling to Bermuda',
         price: (totals.shippingCost || totals.totalShippingCost || 0).toFixed(2),
         quantity: 1,
         taxable: false

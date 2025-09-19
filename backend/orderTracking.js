@@ -7,8 +7,8 @@ class OrderTracker {
 
   static async create() {
     try {
-      // Dynamically import the ES Module
-      const libSqlClientModule = await import('@libsql/client');
+      // Import through ES module wrapper to avoid syntax errors
+      const libSqlClientModule = await import('./libsql-esm-wrapper.mjs');
       const createClient = libSqlClientModule.createClient;
       
       // Create the database client
