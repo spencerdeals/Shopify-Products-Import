@@ -9,7 +9,7 @@ require('dotenv').config();
 const UPCItemDB = require('./upcitemdb');
 const OrderTracker = require('./orderTracking');
 const ZyteScraper = require('./zyteScraper');
-const { parseProduct } = require('./gptParser');
+const gptParser = require('./gptParser');
 const ApifyActorScraper = require('./apifyActorScraper');
 const { parseProduct: parseWithGPT } = require('./gptParser');
 const BOLHistoricalData = require('./bolHistoricalData');
@@ -578,87 +578,6 @@ function estimateIkeaMultiBoxShipping(singleBoxDimensions, productName, price) {
       confidence = 'high';
     } else if (price > 300) {
       boxMultiplier = 4; // Medium wardrobes
-      confidence = 'medium';
-    } else {
-      boxMultiplier = 3; // Small wardrobes
-      confidence = 'medium';
-    }
-  }
-  // Kitchen systems - typically 4-8 boxes
-  else if (/\b(kitchen|cabinet.*set|knoxhult|enhet)\b/.test(name)) {
-    if (price > 1000) {
-      boxMultiplier = 8; // Full kitchen
-      confidence = 'high';
-    } else if (price > 500) {
-      boxMultiplier = 5; // Partial kitchen
-      confidence = 'medium';
-    } else {
-      boxMultiplier = 4; // Small kitchen set
-      confidence = 'medium';
-    }
-  }
-  // Sectional sofas - typically 2-4 boxes
-  else if (/\b(sectional|sofa.*section|corner.*sofa)\b/.test(name)) {
-    if (price > 800) {
-      boxMultiplier = 4; // Large sectionals
-      confidence = 'high';
-    } else {
-      boxMultiplier = 3; // Small sectionals
-      confidence = 'medium';
-    }
-  }
-  // Dining sets - typically 2-3 boxes (table + chairs)
-  else if (/\b(dining|table.*chair|chair.*table)\b/.test(name)) {
-    boxMultiplier = 3;
-    confidence = 'medium';
-  }
-  // Large storage/shelving - typically 2-3 boxes for tall units
-  else if (/\b(bookshelf|shelf.*unit|billy|hemnes.*bookcase|kallax)\b/.test(name) && price > 200) {
-    boxMultiplier = 3;
-    confidence = 'medium';
-  }
-  // Large desks - typically 2 boxes
-  else if (/\b(desk|workstation|office.*table)\b/.test(name) && price > 300) {
-    boxMultiplier = 2;
-    confidence = 'medium';
-  }
-  
-  if (boxMultiplier > 1) {
-    const totalVolume = volume * boxMultiplier;
-    const totalCubicFeet = totalVolume / 1728;
-    
-    // Estimate combined dimensions (assuming boxes stack/combine efficiently)
-    const avgDimension = Math.cbrt(volume);
-    const scaleFactor = Math.cbrt(boxMultiplier);
-    
-    const estimatedDimensions = {
-      length: Math.round(singleBoxDimensions.length * scaleFactor * 10) / 10,
-      width: Math.round(singleBoxDimensions.width * scaleFactor * 10) / 10,
-      height: Math.round(singleBoxDimensions.height * scaleFactor * 10) / 10
-    };
-    
-    console.log(`   📊 Multi-box estimate: ${boxMultiplier} boxes (${confidence} confidence)`);
-    console.log(`   📦 Total volume: ${totalCubicFeet.toFixed(2)} ft³`);
-    console.log(`   📏 Estimated combined dimensions: ${estimatedDimensions.length}" × ${estimatedDimensions.width}" × ${estimatedDimensions.height}"`);
-    
-    return {
-      boxCount: boxMultiplier,
-      confidence: confidence,
-      dimensions: estimatedDimensions,
-      singleBoxVolume: volume / 1728,
-      totalVolume: totalCubicFeet
-    };
-  }
-  
-  return {
-    boxCount: 1,
-    confidence: 'high',
-    dimensions: singleBoxDimensions,
-    singleBoxVolume: volume / 1728,
-    totalVolume: volume / 1728
-  };
-}
-
 function extractProductFromContent(content, url, retailer, category) {
   console.log('🔍 Extracting product data from manual content...');
   
