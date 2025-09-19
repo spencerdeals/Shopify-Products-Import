@@ -715,6 +715,76 @@ function mergeProductData(primary, secondary) {
   };
 }
 
+// Enhanced product information extraction with real dimensions
+function extractProductFromContent(content, url, retailer, category) {
+  const productData = {
+    name: null,
+    price: null,
+    image: null,
+    dimensions: null,
+    weight: null,
+    brand: null,
+    category: category,
+    inStock: true,
+    variant: null
+  };
+  
+  // Extract product name
+  const namePatterns = [
+    /<h1[^>]*>([^<]+)<\/h1>/i,
+    /<title>([^<]+)<\/title>/i,
+    /"name"\s*:\s*"([^"]+)"/i,
+    /<meta[^>]*property="og:title"[^>]*content="([^"]+)"/i
+  ];
+  
+  for (const pattern of namePatterns) {
+    const match = content.match(pattern);
+    if (match && match[1]) {
+      productData.name = match[1].trim();
+      break;
+    }
+  }
+  
+  // Extract price
+  const pricePatterns = [
+    /\$(\d+(?:,\d{3})*(?:\.\d{2})?)/g,
+    /"price"\s*:\s*"?(\d+(?:\.\d{2})?)"?/i,
+    /<span[^>]*class="[^"]*price[^"]*"[^>]*>\$?(\d+(?:,\d{3})*(?:\.\d{2})?)/i
+  ];
+  
+  for (const pattern of pricePatterns) {
+    const matches = content.match(pattern);
+    if (matches) {
+      const prices = matches.map(match => {
+        const numMatch = match.match(/(\d+(?:,\d{3})*(?:\.\d{2})?)/);
+        return numMatch ? parseFloat(numMatch[1].replace(/,/g, '')) : 0;
+      }).filter(price => price > 0);
+      
+      if (prices.length > 0) {
+        productData.price = Math.max(...prices);
+        break;
+      }
+    }
+  }
+  
+  // Extract image
+  const imagePatterns = [
+    /<img[^>]*src="([^"]+)"[^>]*>/gi,
+    /"image"\s*:\s*"([^"]+)"/i,
+    /<meta[^>]*property="og:image"[^>]*content="([^"]+)"/i
+  ];
+  
+  for (const pattern of imagePatterns) {
+    const match = content.match(pattern);
+    if (match && match[1] && !match[1].includes('logo') && !match[1].includes('icon')) {
+      productData.image = match[1];
+      break;
+    }
+  }
+  
+  return productData;
+}
+
 // Main product scraping function
 async function scrapeProduct(url) {
   const productId = generateProductId();
