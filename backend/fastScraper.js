@@ -154,6 +154,7 @@ app.post('/api/scrape', async (req, res) => {
             }
           };
           
+          console.log('📝 Created manual prompt product:', JSON.stringify(manualProduct, null, 2));
           results.push(manualProduct);
           
           // Record failure for adaptive learning
@@ -218,6 +219,13 @@ app.post('/api/scrape', async (req, res) => {
         });
       }
     }
+
+    console.log('📊 Final API response:', JSON.stringify({
+      success: true,
+      products: results.filter(r => !r.error),
+      errors: results.filter(r => r.error),
+      totalProcessed: urls.length
+    }, null, 2));
 
     res.json({
       success: true,
