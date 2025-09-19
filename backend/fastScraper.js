@@ -249,8 +249,143 @@ function estimateWeight(dimensions, category) {
 function estimateDimensions(category, name = '') {
   const text = name.toLowerCase();
   
-  // Check if dimensions are in the name
-  const dimMatch = text.match(/(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)/);
+  console.log(`   🔍 Estimating dimensions for category: ${category}, name: "${name.substring(0, 50)}..."`);
+  
+  // Enhanced dimension extraction from product name
+  const dimPatterns = [
+    // Pattern: "85-wood-outdoor-sofa" or "mallorca-85"
+    /(\d+)(?:[-\s](?:inch|in|"|wood|outdoor|sofa|chair|table|bed))/i,
+    // Pattern: "24 x 18 x 12" or "24x18x12"
+    /(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)/i,
+    // Pattern: "24W x 18D x 12H"
+    /(\d+\.?\d*)[wl]\s*[x×]\s*(\d+\.?\d*)[d]\s*[x×]\s*(\d+\.?\d*)[h]/i,
+    // Pattern: "24" wide" or "85 inch"
+    /(\d+\.?\d*)\s*(?:inch|in|"|')\s*(?:wide|long|deep|high)/i
+  ];
+  
+  let extractedDims = null;
+  
+  // Try to extract specific dimensions from name
+  for (const pattern of dimPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      if (match.length >= 4) {
+        // Full L×W×H match
+        extractedDims = {
+          length: parseFloat(match[1]),
+          width: parseFloat(match[2]),
+          height: parseFloat(match[3])
+        };
+        console.log(`   ✅ Extracted full dimensions from name: ${extractedDims.length}" × ${extractedDims.width}" × ${extractedDims.height}"`);
+        break;
+      } else if (match[1]) {
+        // Single dimension - use for primary dimension based on category
+        const primaryDim = parseFloat(match[1]);
+        if (category === 'furniture' && text.includes('sofa')) {
+          // For sofas, the number is usually the width/length
+          extractedDims = {
+            length: primaryDim,
+            width: Math.max(32, primaryDim * 0.4), // Typical sofa depth
+            height: Math.max(30, primaryDim * 0.35) // Typical sofa height
+          };
+          console.log(`   ✅ Estimated sofa dimensions from ${primaryDim}" width: ${extractedDims.length}" × ${extractedDims.width}" × ${extractedDims.height}"`);
+          break;
+        }
+      }
+    }
+  }
+  
+  if (extractedDims) {
+    // Validate dimensions are reasonable (not flat-packed)
+    if (extractedDims.length <= 120 && extractedDims.width <= 120 && extractedDims.height <= 120 &&
+        extractedDims.length >= 12 && extractedDims.width >= 12 && extractedDims.height >= 12) {
+      
+      // For furniture, assume assembled (not flat-packed) dimensions
+      if (category === 'furniture') {
+        console.log(`   📦 Using assembled furniture dimensions (not flat-packed)`);
+      }
+      
+      return {
+        length: Math.round(extractedDims.length * 10) / 10,
+        width: Math.round(extractedDims.width * 10) / 10,
+        height: Math.round(extractedDims.height * 10) / 10
+      };
+    }
+  }
+  
+  // Fallback to category-based estimation
+  console.log(`   ⚠️ No dimensions found in name, using category-based estimation`);
+  
+  // Enhanced category estimates with more realistic assembled sizes
+  const baseEstimates = {
+    'furniture': { 
+      length: 60 + Math.random() * 30,  // Larger for assembled furniture
+      width: 35 + Math.random() * 20,   // Realistic depth
+      height: 32 + Math.random() * 16   // Realistic height
+    },
+    'electronics': { 
+      length: 18 + Math.random() * 15,
+      width: 12 + Math.random() * 8,
+      height: 8 + Math.random() * 6
+    },
+    'appliances': { 
+      length: 30 + Math.random() * 12,
+      width: 30 + Math.random() * 12,
+      height: 36 + Math.random() * 20
+    },
+    'clothing': { 
+      length: 12 + Math.random() * 6,
+      width: 10 + Math.random() * 6,
+      height: 2 + Math.random() * 2
+    },
+    'books': { 
+      length: 8 + Math.random() * 3,
+      width: 5 + Math.random() * 3,
+      height: 1 + Math.random() * 2
+    },
+    'toys': { 
+      length: 12 + Math.random() * 8,
+      width: 10 + Math.random() * 8,
+      height: 8 + Math.random() * 8
+    },
+    'sports': { 
+      length: 24 + Math.random() * 12,
+      width: 18 + Math.random() * 10,
+      height: 12 + Math.random() * 8
+    },
+    'home-decor': { 
+      length: 12 + Math.random() * 12,
+      width: 10 + Math.random() * 10,
+      height: 12 + Math.random() * 12
+    },
+    'tools': { 
+      length: 18 + Math.random() * 6,
+      width: 12 + Math.random() * 6,
+      height: 6 + Math.random() * 4
+    },
+    'garden': { 
+      length: 24 + Math.random() * 12,
+      width: 18 + Math.random() * 12,
+      height: 12 + Math.random() * 12
+    },
+    'general': { 
+      length: 14 + Math.random() * 8,
+      width: 12 + Math.random() * 6,
+      height: 10 + Math.random() * 6
+    }
+  };
+  
+  const estimate = baseEstimates[category] || baseEstimates['general'];
+  
+  const finalDims = {
+    length: Math.round(estimate.length * 10) / 10,
+    width: Math.round(estimate.width * 10) / 10,
+    height: Math.round(estimate.height * 10) / 10
+  };
+  
+  console.log(`   📐 Category-based estimate: ${finalDims.length}" × ${finalDims.width}" × ${finalDims.height}"`);
+  
+  return finalDims;
   if (dimMatch) {
     const dims = {
       length: Math.max(1, parseFloat(dimMatch[1]) * 1.2),
@@ -1020,13 +1155,13 @@ async function scrapeProduct(url) {
   if (!productData || !productData.weight) {
     if (!productData) productData = {};
     const estimatedWeight = estimateWeight(productData.dimensions, category);
-    if (productData) {
+      console.log(`   📐 Final estimated dimensions: ${productData.dimensions.length}" × ${productData.dimensions.width}" × ${productData.dimensions.height}"`);
       productData.weight = estimatedWeight;
     } else {
       productData = { ...productData, weight: estimatedWeight };
     }
     productData.weight = estimateWeight(productData.dimensions, productCategory);
-    console.log('   ⚖️ Estimated weight based on dimensions');
+    console.log(`   ⚖️ Estimated weight: ${productData.weight} lbs`);
   }
   
   // Calculate shipping cost
@@ -1035,6 +1170,8 @@ async function scrapeProduct(url) {
     productData.weight,
     (productData && productData.price) ? productData.price : 100
   );
+  
+  console.log(`   💰 Final shipping cost: $${shippingCost}`);
   
   // Prepare final product object
   const product = {
@@ -1058,7 +1195,6 @@ async function scrapeProduct(url) {
       hasWeight: !!(productData && productData.weight),
       hasPrice: !!(productData && productData.price),
       hasVariant: !!(productData && productData.variant),
-      hasBOLHistory: scrapingMethod.includes('bol'),
       hasUPCitemdb: scrapingMethod.includes('upcitemdb')
     }
   };
