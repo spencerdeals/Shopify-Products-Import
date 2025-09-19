@@ -11,6 +11,7 @@ const OrderTracker = require('./orderTracking');
 const ZyteScraper = require('./zyteScraper');
 const ApifyActorScraper = require('./apifyActorScraper');
 const { parseProduct: parseWithGPT } = require('./gptParser');
+const BOLHistoricalData = require('./bolHistoricalData');
 
 // Simple, working scraper approach
 const MAX_CONCURRENT = 1; // Process one at a time to avoid issues
@@ -39,6 +40,15 @@ const USE_GPT_FALLBACK = !!process.env.OPENAI_API_KEY;
 // Confidence threshold for triggering GPT fallback
 const CONFIDENCE_THRESHOLD = 0.3; // If Zyte confidence < 30%, try GPT
 
+// Initialize BOL historical data system
+const bolHistory = new BOLHistoricalData();
+bolHistory.initialize().then(() => {
+  console.log('📚 BOL Historical Data System Ready');
+  bolHistory.getInsights();
+}).catch(error => {
+  console.error('❌ BOL History initialization failed:', error);
+});
+
 // Initialize order tracker
 let orderTracker = null;
 
@@ -54,7 +64,9 @@ console.log('');
 console.log('🔍 SCRAPING CONFIGURATION:');
 console.log(`1. Primary: Zyte API - ${USE_ZYTE ? '✅ ENABLED' : '❌ DISABLED (Missing API Key)'}`);
 console.log(`2. Fallback: GPT Parser - ${USE_GPT_FALLBACK ? '✅ ENABLED' : '❌ DISABLED (Missing OpenAI Key)'}`);
-console.log(`3. Confidence Threshold: ${CONFIDENCE_THRESHOLD} (${CONFIDENCE_THRESHOLD * 100}%)`);
+console.log(`3. BOL Historical Data - ✅ ENABLED (Volume Patterns)`);
+console.log(`4. UPCitemdb - ${USE_UPCITEMDB ? '✅ ENABLED (Premium API)' : '❌ DISABLED (Missing API Key)'}`);
+console.log(`5. Confidence Threshold: ${CONFIDENCE_THRESHOLD} (${CONFIDENCE_THRESHOLD * 100}%)`);
 console.log('');
 
 // Middleware
@@ -883,26 +895,75 @@ async function scrapeProduct(url) {
   
   console.log(`   📂 Final category: "${category}"`);
   
-  // STEP 3: Smart UPCitemdb lookup for dimensions if needed
+  // STEP 3: NEW - Check BOL Historical Data FIRST (highest priority)
+  if (productData && productData.name && (!productData.dimensions || dimensionsLookSuspicious(productData.dimensions))) {
+    console.log('   📚 Checking BOL historical data...');
+    
+    const bolEstimate = await bolHistory.getSmartEstimate(productData.name, category, retailer);
+    
+    if (bolEstimate && bolEstimate.confidence > 0.5) {
+      console.log(`   ✅ BOL History match! (confidence: ${(bolEstimate.confidence * 100).toFixed(0)}%)`);
+      console.log(`   📊 Based on ${bolEstimate.samples || 'multiple'} historical shipments`);
+      console.log(`   📏 Historical dimensions: ${bolEstimate.dimensions.length}" × ${bolEstimate.dimensions.width}" × ${bolEstimate.dimensions.height}"`);
+      
+      // Use BOL data
+      productData.dimensions = bolEstimate.dimensions;
+      if (bolEstimate.weight && !productData.weight) {
+        productData.weight = bolEstimate.weight;
+      }
+      
+      // Update scraping method
+      if (scrapingMethod === 'zyte') {
+        scrapingMethod = 'zyte+bol-history';
+      } else if (scrapingMethod === 'gpt-fallback') {
+        scrapingMethod = 'gpt+bol-history';
+      } else {
+        scrapingMethod = 'bol-history';
+      }
+    } else {
+      console.log('   ⚠️ No strong BOL history match, trying UPCitemdb...');
+      
+      // STEP 4: UPCitemdb lookup (you're paying for it, so use it!)
+      const upcDimensions = await getUPCDimensions(productData.name);
+      if (upcDimensions) {
+        productData.dimensions = upcDimensions;
+        console.log('   ✅ UPCitemdb provided accurate dimensions');
+        
+        if (scrapingMethod === 'zyte') {
+          scrapingMethod = 'zyte+upcitemdb';
+        } else if (scrapingMethod === 'gpt-fallback') {
+          scrapingMethod = 'gpt+upcitemdb';
+        } else {
+          scrapingMethod = 'upcitemdb';
+        }
+      } else {
+        console.log('   ❌ UPCitemdb found no dimensions, will use BOL category patterns...');
+        
+        // STEP 5: BOL category-level fallback
+        const categoryEstimate = await bolHistory.getSmartEstimate('', category, retailer);
+        if (categoryEstimate && categoryEstimate.dimensions) {
+          productData.dimensions = categoryEstimate.dimensions;
+          console.log('   📐 Using BOL category-level dimension estimate');
+          scrapingMethod = scrapingMethod === 'none' ? 'bol-category-estimate' : scrapingMethod + '+bol-estimate';
+        }
+      }
+    }
+  }
+  
+  // STEP 6: Smart UPCitemdb lookup for missing data (even if BOL found dimensions)
   if (productData && productData.name && dimensionsLookSuspicious(productData ? productData.dimensions : null)) {
     const upcDimensions = await getUPCDimensions(productData.name);
     if (upcDimensions) {
       productData.dimensions = upcDimensions;
-      console.log('   ✅ UPCitemdb provided accurate dimensions');
+      console.log('   ✅ UPCitemdb override - provided more accurate dimensions');
       
       if (scrapingMethod === 'zyte') {
         scrapingMethod = 'zyte+upcitemdb';
       } else if (scrapingMethod === 'gpt-fallback') {
         scrapingMethod = 'gpt+upcitemdb';
-      }
-    } else {
-      console.log('   ⚠️ UPCitemdb found no dimensions, current dimensions may be packaging size');
-      if (productData.dimensions) {
-        console.log(`   📦 Current dimensions: ${productData.dimensions.length}" × ${productData.dimensions.width}" × ${productData.dimensions.height}"`);
       } else {
-        console.log('   📦 No dimensions available, will estimate based on category');
+        scrapingMethod = scrapingMethod + '+upcitemdb';
       }
-      console.log('   🔍 Checking if dimensions look like packaging vs actual product...');
     }
   }
   
@@ -929,17 +990,27 @@ async function scrapeProduct(url) {
     }
   }
   
-  // STEP 4: Ensure we have dimensions before proceeding
+  // STEP 7: Final fallback - intelligent estimation
   if (!productData || !productData.dimensions) {
-    const estimatedDimensions = estimateDimensions(category, productName);
-    if (productData) {
-      productData.dimensions = estimatedDimensions;
+    // Try BOL category patterns one more time
+    const categoryEstimate = await bolHistory.getSmartEstimate('', category, retailer);
+    
+    if (categoryEstimate && categoryEstimate.dimensions) {
+      productData.dimensions = categoryEstimate.dimensions;
+      console.log('   📐 Using BOL category-level dimension estimate');
+      scrapingMethod = scrapingMethod === 'none' ? 'bol-category-estimate' : scrapingMethod + '+bol-estimate';
     } else {
-      productData = { dimensions: estimatedDimensions };
-    }
-    console.log('   📐 Estimated dimensions based on category:', category);
-    if (scrapingMethod === 'none') {
-      scrapingMethod = 'estimation';
+      // Final fallback to basic estimation
+      const estimatedDimensions = estimateDimensions(category, productName);
+      if (productData) {
+        productData.dimensions = estimatedDimensions;
+      } else {
+        productData = { dimensions: estimatedDimensions };
+      }
+      console.log('   📐 Estimated dimensions based on category:', category);
+      if (scrapingMethod === 'none') {
+        scrapingMethod = 'estimation';
+      }
     }
   }
   
@@ -982,6 +1053,9 @@ async function scrapeProduct(url) {
       hasWeight: !!(productData && productData.weight),
       hasPrice: !!(productData && productData.price),
       hasVariant: !!(productData && productData.variant)
+      hasVariant: !!(productData && productData.variant),
+      hasBOLHistory: scrapingMethod.includes('bol'),
+      hasUPCitemdb: scrapingMethod.includes('upcitemdb')
     }
   };
   
@@ -989,6 +1063,12 @@ async function scrapeProduct(url) {
   console.log(`   📊 Data source: ${scrapingMethod}`);
   if (confidence !== null) {
     console.log(`   🎯 Confidence: ${(confidence * 100).toFixed(1)}%`);
+  }
+  if (scrapingMethod.includes('bol')) {
+    console.log(`   📚 Enhanced with BOL historical data`);
+  }
+  if (scrapingMethod.includes('upcitemdb')) {
+    console.log(`   💎 Enhanced with UPCitemdb data`);
   }
   console.log(`   ✅ Product processed\n`);
 
