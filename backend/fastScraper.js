@@ -46,7 +46,7 @@ OrderTracker.create().then(tracker => {
   orderTracker = tracker;
 }).catch(error => {
   console.error('Failed to initialize order tracker:', error);
-}
+});
 )
 console.log('=== SERVER STARTUP ===');
 console.log(`Port: ${PORT}`);
