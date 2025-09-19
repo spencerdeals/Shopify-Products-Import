@@ -1601,6 +1601,80 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
             window.open(url, '_blank');
         }
 
+        // Apply manual data to a product
+        function applyManualData(index) {
+            const name = document.getElementById(`manual-name-${index}`).value.trim();
+            const price = parseFloat(document.getElementById(`manual-price-${index}`).value);
+            const length = parseFloat(document.getElementById(`manual-length-${index}`).value) || 24;
+            const width = parseFloat(document.getElementById(`manual-width-${index}`).value) || 18;
+            const height = parseFloat(document.getElementById(`manual-height-${index}`).value) || 12;
+            const weight = parseFloat(document.getElementById(`manual-weight-${index}`).value) || null;
+            
+            if (!name || !price || price <= 0) {
+                alert('Please enter a valid product name and price');
+                return;
+            }
+            
+            // Update the product with manual data
+            const product = currentProducts[index];
+            product.name = name;
+            product.price = price;
+            product.dimensions = { length, width, height };
+            product.weight = weight || estimateWeight({ length, width, height }, 'general');
+            product.manualPrompt = false;
+            product.manualData = true;
+            
+            // Recalculate shipping cost
+            product.shippingCost = calculateShippingCost(product.dimensions, product.weight, product.price);
+            
+            // Re-render the products
+            displayProducts(currentProducts);
+            
+            showMessage('✅ Manual product data applied successfully!', 'success');
+        }
+        
+        // Helper function to estimate weight
+        function estimateWeight(dimensions, category) {
+            const volume = dimensions.length * dimensions.width * dimensions.height;
+            return Math.max(5, Math.round(volume * 0.004));
+        }
+        
+        // Helper function to calculate shipping cost
+        function calculateShippingCost(dimensions, weight, itemPrice) {
+            const volume = dimensions.length * dimensions.width * dimensions.height;
+            const volumeWeight = volume / 166;
+            const billableWeight = Math.max(weight, volumeWeight);
+            
+            let shippingCost = 15;
+            
+            if (billableWeight <= 10) {
+                shippingCost += billableWeight * 2;
+            } else if (billableWeight <= 50) {
+                shippingCost += 20 + (billableWeight - 10) * 3;
+            } else if (billableWeight <= 150) {
+                shippingCost += 140 + (billableWeight - 50) * 4;
+            } else {
+                shippingCost += 540 + (billableWeight - 150) * 5;
+            }
+            
+            const maxDimension = Math.max(dimensions.length, dimensions.width, dimensions.height);
+            if (maxDimension > 96) {
+                shippingCost += 100;
+            } else if (maxDimension > 72) {
+                shippingCost += 50;
+            } else if (maxDimension > 48) {
+                shippingCost += 25;
+            }
+            
+            if (itemPrice > 1000) {
+                shippingCost *= 1.2;
+            } else if (itemPrice < 50) {
+                shippingCost = Math.min(shippingCost, itemPrice * 0.5);
+            }
+            
+            return Math.max(15, Math.min(Math.round(shippingCost), 800));
+        }
+
         // QUANTITY FUNCTIONS
         function updateQuantity(productId, change) {
             const currentQty = productQuantities[productId] || 1;
