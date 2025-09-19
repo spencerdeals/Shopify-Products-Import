@@ -371,6 +371,12 @@ class ZyteScraper {
 
 // Extract product information from manual content with real dimensions
 function extractProductFromContent(content, url, retailer, category) {
+  console.log('🔍 DEBUGGING MANUAL DIMENSION EXTRACTION');
+  console.log(`   Content length: ${content.length} characters`);
+  console.log(`   URL: ${url}`);
+  console.log(`   Category: ${category}`);
+  console.log(`   First 500 chars: ${content.substring(0, 500)}`);
+  
   console.log('🔍 Extracting product data from manual content...');
   
   const productData = {
@@ -420,6 +426,12 @@ function extractProductFromContent(content, url, retailer, category) {
   
   // CRITICAL: Extract REAL product dimensions from content
   console.log('🔍 Searching for product dimensions in content...');
+  
+  // Show what we're searching in
+  const searchText = content.toLowerCase();
+  console.log(`   Searching in ${searchText.length} chars of lowercase content`);
+  
+  // Test each pattern individually
   const dimPatterns = [
     // Standard dimension formats
     /(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*(?:inches?|in\.?|"|'')/i,
@@ -439,11 +451,16 @@ function extractProductFromContent(content, url, retailer, category) {
   ];
   
   for (const pattern of dimPatterns) {
+    console.log(`   Testing pattern: ${pattern}`);
     const match = content.match(pattern);
+    console.log(`   Match result: ${match ? `Found: ${match[0]}` : 'No match'}`);
+    
     if (match) {
       let length = parseFloat(match[1]);
       let width = parseFloat(match[2]);
       let height = parseFloat(match[3]);
+      
+      console.log(`   Raw dimensions: ${length} x ${width} x ${height}`);
       
       // Convert cm to inches if needed
       if (content.toLowerCase().includes('cm') || content.toLowerCase().includes('centimeter')) {
@@ -456,6 +473,8 @@ function extractProductFromContent(content, url, retailer, category) {
       // Validate dimensions are reasonable
       if (length > 0 && width > 0 && height > 0 && 
           length < 200 && width < 200 && height < 200) {
+        
+        console.log(`   ✅ Valid dimensions found: ${length}" x ${width}" x ${height}"`);
         
         // CRITICAL: Add packaging padding based on category
         const paddingFactors = {
@@ -475,6 +494,7 @@ function extractProductFromContent(content, url, retailer, category) {
         };
         
         const paddingFactor = paddingFactors[category] || 1.25;
+        console.log(`   📦 Applying ${((paddingFactor - 1) * 100).toFixed(0)}% padding for ${category}`);
         
         productData.dimensions = {
           length: Math.round(length * paddingFactor * 10) / 10,
@@ -485,7 +505,15 @@ function extractProductFromContent(content, url, retailer, category) {
         console.log(`   📐 Found product dimensions: ${length}" × ${width}" × ${height}"`);
         console.log(`   📦 Added ${((paddingFactor - 1) * 100).toFixed(0)}% packaging padding for ${category}`);
         console.log(`   📦 Final shipping dimensions: ${productData.dimensions.length}" × ${productData.dimensions.width}" × ${productData.dimensions.height}"`);
+        
+        // Calculate cubic feet for verification
+        const cubicInches = productData.dimensions.length * productData.dimensions.width * productData.dimensions.height;
+        const cubicFeet = cubicInches / 1728;
+        console.log(`   📊 Cubic feet: ${cubicFeet.toFixed(3)} ft³`);
+        
         break;
+      } else {
+        console.log(`   ❌ Invalid dimensions: ${length}" x ${width}" x ${height}" (out of range)`);
       }
     }
   }
@@ -493,11 +521,16 @@ function extractProductFromContent(content, url, retailer, category) {
   // If no dimensions found, try to extract from URL or use category-based estimation
   if (!productData.dimensions) {
     console.log('   ⚠️ No dimensions found in content, trying URL extraction...');
+    console.log(`   URL to analyze: ${url}`);
     
     // Try to extract size from URL (like "85" from "mallorca-85-wood-outdoor-sofa")
     const urlSizeMatch = url.match(/[-_](\d{2,3})[-_]/);
+    console.log(`   URL size match: ${urlSizeMatch ? urlSizeMatch[1] : 'none'}`);
+    
     if (urlSizeMatch) {
       const extractedSize = parseInt(urlSizeMatch[1]);
+      console.log(`   Extracted size from URL: ${extractedSize}"`);
+      
       if (extractedSize >= 20 && extractedSize <= 120) {
         // Use extracted size as length, estimate width/height based on category
         const categoryRatios = {
@@ -589,29 +622,15 @@ function categorizeProduct(name, url) {
   if (/\b(sofa|sectional|loveseat|couch|chair|recliner|ottoman|table|desk|dresser|nightstand|bookshelf|cabinet|wardrobe|armoire|bed|frame|headboard|mattress|dining|kitchen|office)\b/.test(text)) return 'furniture';
  if (/\b(outdoor|patio|garden|deck|poolside|backyard|exterior|weather|teak|wicker|rattan)\b/.test(text)) return 'outdoor';
  if (/\b(outdoor|patio|garden|deck|poolside|backyard|exterior|weather|teak|wicker|rattan)\b/.test(text)) return 'outdoor';
+ if (/\b(outdoor|patio|garden|deck|poolside|backyard|exterior|weather|teak|wicker|rattan)\b/.test(text)) return 'outdoor';
+ if (/\b(outdoor|patio|garden|deck|poolside|backyard|exterior|weather|teak|wicker|rattan)\b/.test(text)) return 'outdoor';
+ if (/\b(outdoor|patio|garden|deck|poolside|backyard|exterior|weather|teak|wicker|rattan)\b/.test(text)) return 'outdoor';
   if (/\b(outdoor|patio|garden|deck|poolside|backyard|exterior|weather|teak|wicker|rattan)\b/.test(text)) return 'outdoor';
   if (/\b(tv|television|monitor|laptop|computer|tablet|phone|smartphone|camera|speaker|headphone|earbuds|router|gaming|console|xbox|playstation|nintendo)\b/.test(text)) return 'electronics';
   if (/\b(lamp|light|lighting|chandelier|sconce|pendant|floor.lamp|table.lamp)\b/.test(text)) return 'lighting';
   if (/\b(rug|carpet|mat|runner)\b/.test(text)) return 'rugs';
   if (/\b(curtain|blind|shade|drape|window.treatment)\b/.test(text)) return 'window-treatments';
   if (/\b(pillow|cushion|throw|blanket|bedding|sheet|comforter|duvet)\b/.test(text)) return 'textiles';
-      
-      // For Crate & Barrel format, we need to identify which is which
-      // The format is usually Height, Width, Depth - so we need to rearrange
-      if (pattern.toString().includes('HhWwDd')) {
-        console.log('   🔄 Detected Crate & Barrel format - rearranging H/W/D to L/W/H');
-        // Rearrange: Height, Width, Depth -> Length(Width), Width(Depth), Height
-        const tempHeight = length;  // First value is height
-        const tempWidth = width;    // Second value is width (our length)
-        const tempDepth = height;   // Third value is depth (our width)
-        
-        length = tempWidth;  // Width becomes length
-        width = tempDepth;   // Depth becomes width  
-        height = tempHeight; // Height stays height
-        
-        console.log(`   📐 Rearranged to L/W/H: ${length}, ${width}, ${height}`);
-      }
-      
   if (/\b(art|artwork|painting|print|poster|frame|mirror|wall.decor)\b/.test(text)) return 'decor';
   if (/\b(vase|candle|plant|pot|planter|decorative|ornament)\b/.test(text)) return 'accessories';
   if (/\b(appliance|refrigerator|stove|oven|microwave|dishwasher|washer|dryer)\b/.test(text)) return 'appliances';
