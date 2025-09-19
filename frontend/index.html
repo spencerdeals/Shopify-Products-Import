@@ -1,15 +1,3 @@
-// Check if admin mode is requested
-if (window.location.pathname.includes('/admin') || window.location.search.includes('admin=true')) {
-    // Prompt for password
-    const password = prompt('Enter admin password:');
-    if (password === '1064') {
-        window.location.href = '/admin/import';
-    } else {
-        alert('Invalid password');
-        window.location.href = '/';
-    }
-}
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1388,7 +1376,7 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
         </div>
     </div>
 
-    <!-- Manual Entry Modal (preserved from current version) -->
+    <!-- Manual Entry Modal -->
     <div id="manualEntryModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000;">
         <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 30px; border-radius: 15px; max-width: 600px; width: 90%; max-height: 90vh; overflow-y: auto;">
             <div style="text-align: center; margin-bottom: 20px;">
@@ -1444,7 +1432,7 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
         </div>
     </div>
 
-    <!-- IKEA Component Modal (preserved from current version) -->
+    <!-- IKEA Component Modal -->
     <div id="ikeaComponentModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000;">
         <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 30px; border-radius: 15px; max-width: 700px; width: 90%; max-height: 90vh; overflow-y: auto;">
             <div style="text-align: center; margin-bottom: 20px;">
@@ -1503,6 +1491,18 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
     </div>
 
     <script type="text/javascript">
+        // Check if admin mode is requested
+        if (window.location.pathname.includes('/admin') || window.location.search.includes('admin=true')) {
+            // Prompt for password
+            const password = prompt('Enter admin password:');
+            if (password === '1064') {
+                window.location.href = '/admin-calculator';
+            } else {
+                alert('Invalid password');
+                window.location.href = '/';
+            }
+        }
+
         // Initialize variables
         let currentPage = 1;
         let scrapedProducts = [];
@@ -1512,7 +1512,7 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
         let confirmedDeliveryFees = new Set();
         let productQuantities = {};
         
-        // Manual entry variables (preserved)
+        // Manual entry variables
         let manualEntryUrl = '';
         let pendingManualProducts = [];
         let pendingIkeaProducts = [];
@@ -1838,7 +1838,7 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
                 const data = await response.json();
                 scrapedProducts = data.products || [];
                 
-                // Handle manual entry and IKEA components (preserved logic)
+                // Handle manual entry and IKEA components
                 pendingManualProducts = scrapedProducts.filter(p => p.manualEntryRequired);
                 pendingIkeaProducts = scrapedProducts.filter(p => p.ikeaComponentsRequired);
                 currentManualIndex = 0;
@@ -1860,7 +1860,7 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
             }
         }
 
-        // Manual entry processing (preserved from current version)
+        // Manual entry processing
         function processNextManualPrompt() {
             if (currentManualIndex < pendingManualProducts.length) {
                 const product = pendingManualProducts[currentManualIndex];
@@ -1938,11 +1938,10 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
             }
             
             try {
-                // Create abort controller for timeout
                 const abortController = new AbortController();
                 const timeoutId = setTimeout(() => {
                     abortController.abort();
-                }, 30000); // 30 second timeout
+                }, 30000);
                 
                 const response = await fetch('/api/process-manual-content', {
                     method: 'POST',
@@ -1969,11 +1968,7 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
                         scrapedProducts[index] = result.product;
                     }
                     
-                    // Close the modal
-                    closeManualEntryModal();
-                    
-                    currentManualIndex++;
-                    processNextManualPrompt();
+                    closeManualEntry();
                 } else {
                     throw new Error('Failed to process manual content');
                 }
@@ -1981,12 +1976,7 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
             } catch (error) {
                 console.error('Error processing manual content:', error);
                 alert('Error processing content: ' + error.message);
-                
-                // Close the modal even on error
-                closeManualEntryModal();
-                document.getElementById('loading').classList.remove('active');
-                currentManualIndex++;
-                processNextManualPrompt();
+                closeManualEntry();
             }
         }
 
@@ -2320,4 +2310,161 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
                 warningMessage += `You have ${unconfirmedDeliveryFees.length} unconfirmed delivery fee(s).\n`;
             }
             
-            if (warning
+            if (warningMessage) {
+                warningMessage += '\nDo you want to continue anyway?';
+                if (!confirm(warningMessage)) {
+                    return;
+                }
+            }
+            
+            // Calculate final totals
+            let totalProductCost = 0;
+            let totalDuty = 0;
+            let totalShipping = 0;
+            let totalDeliveryFees = 0;
+            const products = [];
+            const deliveryFees = {};
+            
+            Object.entries(vendorGroups).forEach(([vendor, vendorProducts]) => {
+                vendorProducts.forEach(product => {
+                    if (!product.deleted) {
+                        const quantity = product.quantity || 1;
+                        const productTotal = product.price * quantity;
+                        
+                        totalProductCost += productTotal;
+                        totalDuty += productTotal * 0.265;
+                        totalShipping += (product.shippingCost || 50) * quantity;
+                        
+                        products.push(product);
+                    }
+                });
+                
+                // Add delivery fee for this vendor
+                const deliveryFee = parseFloat(document.getElementById(`delivery-${vendor}`)?.value) || 0;
+                deliveryFees[vendor] = deliveryFee;
+                totalDeliveryFees += deliveryFee;
+            });
+            
+            const grandTotal = totalProductCost + totalDuty + totalShipping + totalDeliveryFees;
+            
+            finalCalculation = {
+                products,
+                deliveryFees,
+                totals: {
+                    productCost: totalProductCost,
+                    dutyAmount: totalDuty,
+                    totalShippingCost: totalShipping,
+                    deliveryFees: totalDeliveryFees,
+                    grandTotal
+                }
+            };
+            
+            displayFinalBreakdown();
+            goToPage(3);
+        }
+
+        function displayFinalBreakdown() {
+            const container = document.getElementById('costBreakdown');
+            
+            let html = '<h3>📦 Product Details</h3>';
+            
+            finalCalculation.products.forEach(product => {
+                const quantity = product.quantity || 1;
+                const totalPrice = product.price * quantity;
+                const duty = totalPrice * 0.265;
+                const shipping = (product.shippingCost || 50) * quantity;
+                const productTotal = totalPrice + duty + shipping;
+                
+                html += `
+                    <div class="product-breakdown-item">
+                        <div class="product-breakdown-name">${product.name}</div>
+                        <div class="product-breakdown-details">
+                            <span>Qty: ${quantity}</span>
+                            <span>Unit: $${product.price.toFixed(2)}</span>
+                            <span>Subtotal: $${totalPrice.toFixed(2)}</span>
+                            <span>Duty: $${duty.toFixed(2)}</span>
+                            <span>Shipping: $${shipping.toFixed(2)}</span>
+                            <span class="product-breakdown-total">Total: $${productTotal.toFixed(2)}</span>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            html += '<h3 style="margin-top: 30px;">💰 Cost Summary</h3>';
+            
+            html += `
+                <div class="cost-item">
+                    <span class="cost-label">Product Cost:</span>
+                    <span class="cost-value">$${finalCalculation.totals.productCost.toFixed(2)}</span>
+                </div>
+                <div class="cost-item">
+                    <span class="cost-label">Import Duty (26.5%):</span>
+                    <span class="cost-value">$${finalCalculation.totals.dutyAmount.toFixed(2)}</span>
+                </div>
+                <div class="cost-item">
+                    <span class="cost-label">Ocean Freight & Handling:</span>
+                    <span class="cost-value">$${finalCalculation.totals.totalShippingCost.toFixed(2)}</span>
+                </div>
+            `;
+            
+            if (finalCalculation.totals.deliveryFees > 0) {
+                html += `
+                    <div class="cost-item">
+                        <span class="cost-label">US Delivery Fees:</span>
+                        <span class="cost-value">$${finalCalculation.totals.deliveryFees.toFixed(2)}</span>
+                    </div>
+                `;
+            }
+            
+            html += `
+                <div class="cost-item total-row">
+                    <span class="cost-label">TOTAL COST:</span>
+                    <span class="cost-value">$${finalCalculation.totals.grandTotal.toFixed(2)}</span>
+                </div>
+            `;
+            
+            container.innerHTML = html;
+        }
+
+        // Enable/disable create order button based on checkbox
+        document.getElementById('confirmVariants').addEventListener('change', function() {
+            document.getElementById('createOrderBtn').disabled = !this.checked;
+        });
+
+        async function createDraftOrder() {
+            const btn = document.getElementById('createOrderBtn');
+            const originalText = btn.textContent;
+            
+            btn.disabled = true;
+            btn.textContent = 'Creating Order...';
+            
+            try {
+                // Store the order data temporarily
+                const response = await fetch('/api/store-pending-order', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        ...finalCalculation,
+                        originalUrls: document.getElementById('productUrls').value
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    // Redirect to complete order page
+                    window.location.href = `/complete-order.html?checkoutId=${result.orderId}`;
+                } else {
+                    throw new Error(result.error || 'Failed to store order');
+                }
+                
+            } catch (error) {
+                console.error('Error creating order:', error);
+                alert('Error creating order: ' + error.message);
+                btn.disabled = false;
+                btn.textContent = originalText;
+            }
+        }
+    </script>
+</body>
+</html>
