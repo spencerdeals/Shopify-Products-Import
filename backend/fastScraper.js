@@ -369,18 +369,18 @@ function calculateShippingCost(dimensions, weight, price) {
   console.log(`   💰   ${cubicFeet.toFixed(3)} × $${SHIPPING_RATE_PER_CUBIC_FOOT} = $${(cubicFeet * SHIPPING_RATE_PER_CUBIC_FOOT).toFixed(2)}`);
   console.log(`   💰   Math.max(15, ${(cubicFeet * SHIPPING_RATE_PER_CUBIC_FOOT).toFixed(2)}) = $${baseCost.toFixed(2)}`);
   
-  // Add surcharges
-  const oversizeFee = Math.max(dimensions.length, dimensions.width, dimensions.height) > 48 ? 50 : 0;
-  const valueFee = price > 500 ? price * 0.02 : 0;
+  // Add handling fee
   const handlingFee = 15;
-  console.log(`   📋 SURCHARGE CALCULATION:`);
-  console.log(`   📋   Oversize fee (>48"): $${oversizeFee} (max dimension: ${Math.max(dimensions.length, dimensions.width, dimensions.height)}")`);
-  console.log(`   📋   Value fee (>$500): $${valueFee.toFixed(2)} (price: $${price})`);
-  console.log(`   📋   Handling fee: $${handlingFee}`);
+  console.log(`   📋 HANDLING FEE: $${handlingFee}`);
   
-  const totalCost = baseCost + oversizeFee + valueFee + handlingFee;
-  console.log(`   🎯 TOTAL CALCULATION:`);
-  console.log(`   🎯   $${baseCost.toFixed(2)} + $${oversizeFee} + $${valueFee.toFixed(2)} + $${handlingFee} = $${totalCost.toFixed(2)}`);
+  // Calculate base shipping cost
+  const baseShippingCost = baseCost + handlingFee;
+  
+  // Add 20% margin to create final shipping & handling cost
+  const totalCost = baseShippingCost * 1.20;
+  console.log(`   🎯 MARGIN CALCULATION:`);
+  console.log(`   🎯   Base: $${baseShippingCost.toFixed(2)}`);
+  console.log(`   🎯   + 20% margin: $${baseShippingCost.toFixed(2)} × 1.20 = $${totalCost.toFixed(2)}`);
   
   // IKEA specific debugging
   if (dimensions.length < 30 && dimensions.width < 30 && dimensions.height < 30) {
