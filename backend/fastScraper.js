@@ -865,64 +865,7 @@ async function scrapeProduct(url) {
   
   // Fill in missing data with estimations
   const productName = (productData && productData.name) ? productData.name : `Product from ${retailer}`;
-  
-  // Handle category - convert object to string if needed
-  let category = productData.category;
-  if (typeof category === 'object' && category.name) {
-    category = category.name; // Extract string from Zyte category object
-  }
-  if (!category || typeof category !== 'string') {
-    category = categorizeProduct(productName, url);
-  }
-  
-  console.log(`   📂 Final category: "${category}"`);
-  
-  // Check if IKEA component collection is needed - MOVED HERE AFTER CATEGORY IS SET
-  if (retailer === 'IKEA' && productData && productData.name && productData.price && 
-      (!productData.dimensions || dimensionsLookSuspicious(productData.dimensions))) {
-    const needsComponents = checkIfIkeaNeedsComponents(productData.name, productData.price);
-    if (needsComponents) {
-      console.log(`   🛏️ IKEA product likely has multiple components: ${productData.name}`);
-      return {
-        id: productId,
-        url: url,
-        name: productData.name,
-        price: productData.price,
-        image: productData.image,
-        category: category,
-        retailer: retailer,
-        dimensions: productData.dimensions,
-        weight: productData.weight,
-        shippingCost: 0,
-        scrapingMethod: 'ikea-components-required',
-        confidence: confidence,
-        variant: productData.variant,
-        ikeaComponentsRequired: true,
-        estimatedComponents: needsComponents.count,
-        componentType: needsComponents.type,
-        message: `This IKEA ${needsComponents.type} likely ships in ${needsComponents.count} separate packages. Please check "What's included" and provide URLs for each component.`,
-        dataCompleteness: {
-          hasName: !!productData.name,
-          hasImage: !!productData.image,
-          hasDimensions: !!productData.dimensions,
-          hasWeight: !!productData.weight,
-          hasPrice: !!productData.price,
-          hasVariant: !!productData.variant
-        }
-      };
-    }
-  }
-  
-  // STEP 3: Smart UPCitemdb lookup for dimensions if needed
-  if (productData && productData.name && (!productData.dimensions || dimensionsLookSuspicious(productData.dimensions))) {
-    const upcDimensions = await getUPCDimensions(productData.name);
-    if (upcDimensions) {
-      productData.dimensions = upcDimensions;
-      console.log('   ✅ UPCitemdb provided accurate dimensions');
-      
-      if (scrapingMethod === 'zyte') {
-        scrapingMethod = 'zyte+upcitemdb';
-      } else if (scrapingMethod === 'gpt-fallback') {
+  const category = productData.category || categorizeProduct(productName, url);
         scrapingMethod = 'gpt+upcitemdb';
       }
     } else {
@@ -972,6 +915,63 @@ async function scrapeProduct(url) {
   if (!productData.weight) {
     productData.weight = estimateWeight(productData.dimensions, category);
     console.log('   ⚖️ Estimated weight based on dimensions');
+  }
+  
+  // IKEA Component Collection Check
+  if (retailer === 'IKEA' && productData.name && productData.price) {
+    console.log(`🛏️ Checking IKEA product: ${productData.name.substring(0, 50)}...`);
+    
+    // Check if this is a multi-component product
+    const nameCheck = productData.name.toLowerCase();
+    const priceCheck = productData.price;
+    
+    let componentType = 'product';
+    let estimatedComponents = 2;
+    
+    // Bed frames (typically 3-4 components)
+    if (/\b(bed|frame|brimnes|malm|hemnes|tarva|nordli)\b/.test(nameCheck)) {
+      componentType = 'bed frame';
+      estimatedComponents = priceCheck > 400 ? 4 : 3;
+    }
+    // Wardrobes/closets (typically 4-6 components)  
+    else if (/\b(wardrobe|closet|pax|hemnes|brimnes)\b/.test(nameCheck)) {
+      componentType = 'wardrobe';
+      estimatedComponents = priceCheck > 300 ? 6 : 4;
+    }
+    // Desks (typically 2-3 components)
+    else if (/\b(desk|table|bekant|linnmon|alex)\b/.test(nameCheck)) {
+      componentType = 'desk';
+      estimatedComponents = priceCheck > 200 ? 3 : 2;
+    }
+    // Bookcases/shelving (typically 2-4 components)
+    else if (/\b(bookcase|shelf|billy|hemnes|kallax)\b/.test(nameCheck)) {
+      componentType = 'bookcase';
+      estimatedComponents = priceCheck > 150 ? 4 : 2;
+    }
+    // Kitchen cabinets (typically 3-5 components)
+    else if (/\b(kitchen|cabinet|sektion|maximera)\b/.test(nameCheck)) {
+      componentType = 'kitchen cabinet';
+      estimatedComponents = priceCheck > 250 ? 5 : 3;
+    }
+    
+    // Trigger component collection for multi-component products
+    if (estimatedComponents > 1) {
+      console.log(`🛏️ IKEA product likely has multiple components: ${productData.name.substring(0, 50)}...`);
+      
+      return {
+        id: productId,
+        url: url,
+        name: productName,
+        price: productData.price,
+        image: productData.image || 'https://placehold.co/400x400/7CB342/FFFFFF/png?text=IKEA',
+        category: category,
+        retailer: retailer,
+        ikeaComponentsRequired: true,
+        componentType: componentType,
+        estimatedComponents: estimatedComponents,
+        scrapingMethod: scrapingMethod
+      };
+    }
   }
   
   // Calculate shipping cost
