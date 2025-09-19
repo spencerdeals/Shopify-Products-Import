@@ -814,7 +814,7 @@ async function scrapeProduct(url) {
   
   // Check if IKEA component collection is needed
   if (retailer === 'IKEA' && productData && productData.name && productData.price && 
-      (!productData.dimensions || (productData.dimensions && dimensionsLookSuspicious(productData.dimensions)))) {
+      (!productData.dimensions || dimensionsLookSuspicious(productData.dimensions))) {
     const needsComponents = checkIfIkeaNeedsComponents(productData.name, productData.price);
     if (needsComponents) {
       console.log(`   🛏️ IKEA product likely has multiple components: ${productData.name}`);
@@ -824,7 +824,7 @@ async function scrapeProduct(url) {
         name: productData.name,
         price: productData.price,
         image: productData.image,
-        category: category,
+        category: category || 'furniture',
         retailer: retailer,
         dimensions: productData.dimensions,
         weight: productData.weight,
