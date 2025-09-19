@@ -15,6 +15,7 @@ const BOLHistoricalData = require('./bolHistoricalData');
 
 // Simple, working scraper approach
 const MAX_CONCURRENT = 1; // Process one at a time to avoid issues
+const BOLHistoricalData = require('./bolHistoricalData');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -36,6 +37,15 @@ const USE_ZYTE = zyteScraper.enabled;
 const apifyActorScraper = new ApifyActorScraper(process.env.APIFY_API_KEY);
 const USE_APIFY_ACTORS = apifyActorScraper.isAvailable();
 const USE_GPT_FALLBACK = !!process.env.OPENAI_API_KEY;
+
+// Initialize BOL historical data system
+const bolHistory = new BOLHistoricalData();
+bolHistory.initialize().then(() => {
+  console.log('✅ BOL Historical Data System Ready');
+  bolHistory.getInsights();
+}).catch(error => {
+  console.error('❌ BOL History initialization failed:', error);
+});
 
 // Confidence threshold for triggering GPT fallback
 const CONFIDENCE_THRESHOLD = 0.3; // If Zyte confidence < 30%, try GPT
@@ -1052,7 +1062,6 @@ async function scrapeProduct(url) {
       hasDimensions: !!(productData && productData.dimensions),
       hasWeight: !!(productData && productData.weight),
       hasPrice: !!(productData && productData.price),
-      hasVariant: !!(productData && productData.variant)
       hasVariant: !!(productData && productData.variant),
       hasBOLHistory: scrapingMethod.includes('bol'),
       hasUPCitemdb: scrapingMethod.includes('upcitemdb')
@@ -1469,29 +1478,6 @@ app.post('/apps/instant-import/create-draft-order', async (req, res) => {
       details: error.response?.data?.errors || error.message
     });
   }
-});
-
-// Add API endpoint to view BOL statistics
-app.get('/api/bol-stats', async (req, res) => {
-  await bolHistory.initialize();
-  
-  const stats = {
-    initialized: bolHistory.initialized,
-    totalPatterns: bolHistory.volumePatterns.size,
-    productKeywords: bolHistory.productPatterns.size,
-    categories: {}
-  };
-  
-  // Get category breakdown
-  bolHistory.volumePatterns.forEach((volumeStats, category) => {
-    stats.categories[category] = {
-      samples: volumeStats.count,
-      avgVolume: volumeStats.average.toFixed(2) + ' ft³',
-      range: `${volumeStats.min.toFixed(1)}-${volumeStats.max.toFixed(1)} ft³`
-    };
-  });
-  
-  res.json(stats);
 });
 
 // Start server
