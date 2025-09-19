@@ -879,8 +879,8 @@ async function scrapeProduct(url) {
   }
   
   // Fill in missing data with estimations
-  const productName = (productData && productData.name) ? productData.name : `Product from ${retailer}`;
-  
+  const productName = (productData && productData.name) || `Product from ${retailer}`;
+  const category = (productData && productData.category) || categorizeProduct(productName, url);
   // Handle category - safely convert object to string if needed
   let category = null;
   if (productData && productData.category) {
@@ -895,7 +895,7 @@ async function scrapeProduct(url) {
   
   console.log(`   📂 Final category: "${category}"`);
   
-  // STEP 3: NEW - Check BOL Historical Data FIRST (highest priority)
+  if (!productData || !productData.dimensions) {
   if (productData && productData.name && (!productData.dimensions || dimensionsLookSuspicious(productData.dimensions))) {
     console.log('   📚 Checking BOL historical data...');
     
@@ -1006,7 +1006,8 @@ async function scrapeProduct(url) {
         productData.dimensions = estimatedDimensions;
       } else {
         productData = { dimensions: estimatedDimensions };
-      }
+      if (!productData) productData = {};
+      productData.dimensions = estimateDimensions(category, productName);
       console.log('   📐 Estimated dimensions based on category:', category);
       if (scrapingMethod === 'none') {
         scrapingMethod = 'estimation';
@@ -1015,6 +1016,7 @@ async function scrapeProduct(url) {
   }
   
   if (!productData || !productData.weight) {
+    if (!productData) productData = {};
     const estimatedWeight = estimateWeight(productData.dimensions, category);
     if (productData) {
       productData.weight = estimatedWeight;
