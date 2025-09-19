@@ -412,6 +412,65 @@ function dimensionsLookSuspicious(dimensions) {
   return false;
 }
 
+// Check if product likely ships in multiple boxes
+function isLikelyMultiBox(productName, dimensions, category, retailer) {
+  if (!dimensions || !productName) return false;
+  
+  const name = productName.toLowerCase();
+  const cubicFeet = (dimensions.length * dimensions.width * dimensions.height) / 1728;
+  
+  // IKEA furniture is almost always multi-box if under 5 cubic feet
+  if (retailer === 'IKEA' && cubicFeet < 5) {
+    if (name.includes('bed') || name.includes('frame') || name.includes('desk') || 
+        name.includes('wardrobe') || name.includes('bookshelf')) {
+      return true;
+    }
+  }
+  
+  // Other retailers - check for large furniture in small boxes
+  if (cubicFeet < 3 && (
+    name.includes('bed frame') || name.includes('bedroom set') || 
+    name.includes('dining set') || name.includes('desk') ||
+    name.includes('bookshelf') || name.includes('wardrobe')
+  )) {
+    return true;
+  }
+  
+  return false;
+}
+
+// Apply multi-box multiplier to dimensions
+function adjustForMultiBox(dimensions, productName, retailer) {
+  const name = productName.toLowerCase();
+  let multiplier = 1;
+  
+  if (retailer === 'IKEA') {
+    if (name.includes('bed') || name.includes('frame')) {
+      multiplier = 2.5; // Bed frames typically 2-3 boxes
+    } else if (name.includes('wardrobe') || name.includes('bookshelf')) {
+      multiplier = 3; // Large furniture 3-4 boxes
+    } else if (name.includes('desk')) {
+      multiplier = 2; // Desks typically 2 boxes
+    }
+  } else {
+    // Other retailers are less efficient with packaging
+    if (name.includes('bedroom set') || name.includes('dining set')) {
+      multiplier = 2; // Sets typically ship in multiple boxes
+    }
+  }
+  
+  if (multiplier > 1) {
+    console.log(`   📦 Multi-box detected: ${multiplier}x multiplier for ${retailer} ${productName.substring(0, 30)}...`);
+    return {
+      length: dimensions.length,
+      width: dimensions.width,
+      height: dimensions.height * multiplier // Increase height to simulate stacked boxes
+    };
+  }
+  
+  return dimensions;
+}
+
 // Smart UPCitemdb lookup for dimensions
 async function getUPCDimensions(productName) {
   if (!USE_UPCITEMDB || !productName) return null;
@@ -609,6 +668,21 @@ async function scrapeProduct(url) {
       console.log('   ⚠️ UPCitemdb found no dimensions, current dimensions may be packaging size');
       console.log(`   📦 Current dimensions: ${productData.dimensions.length}" × ${productData.dimensions.width}" × ${productData.dimensions.height}"`);
       console.log('   🔍 Checking if dimensions look like packaging vs actual product...');
+    }
+  }
+  
+  // Check for multi-box shipments and adjust dimensions
+  if (productData && productData.dimensions && productData.name) {
+    if (isLikelyMultiBox(productData.name, productData.dimensions, category, retailer)) {
+      const originalDimensions = { ...productData.dimensions };
+      productData.dimensions = adjustForMultiBox(productData.dimensions, productData.name, retailer);
+      
+      console.log(`   📦 Original box: ${originalDimensions.length}" × ${originalDimensions.width}" × ${originalDimensions.height}"`);
+      console.log(`   📦 Total shipping: ${productData.dimensions.length}" × ${productData.dimensions.width}" × ${productData.dimensions.height}"`);
+      
+      if (scrapingMethod.includes('upcitemdb')) {
+        scrapingMethod = scrapingMethod + '+multibox';
+      }
     }
   }
   
