@@ -595,7 +595,7 @@ async function scrapeProduct(url) {
   }
   
   // Check if manual entry is required (only after trying UPCitemdb)
-  if (scrapingMethod === 'failed-will-try-upc' && (!productData || !productData.name || productData.name.startsWith('Product from'))) {
+  if (scrapingMethod === 'failed-will-try-upc' && (!productData || !productData.name || (productData.name && productData.name.startsWith('Product from')))) {
     console.log(`   ⚠️ ${retailer} requires manual entry - both automated methods failed`);
     return {
       id: productId,
