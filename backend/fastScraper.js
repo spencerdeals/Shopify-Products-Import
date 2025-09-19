@@ -1285,7 +1285,7 @@ app.post('/apps/instant-import/create-draft-order', async (req, res) => {
     // Add duty as a line item
     if (totals.dutyAmount > 0) {
       lineItems.push({
-        title: 'Bermuda Import Duty (26.5%)',
+        title: 'Bermuda Duty + Wharfage (26.5%)',
         price: totals.dutyAmount.toFixed(2),
         quantity: 1,
         taxable: false
