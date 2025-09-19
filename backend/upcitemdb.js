@@ -4,7 +4,7 @@ const axios = require('axios');
 class UPCItemDB {
   constructor(apiKey) {
     this.apiKey = apiKey;
-    this.baseURL = 'https://api.upcitemdb.com/prod/trial';
+    this.baseURL = 'https://api.upcitemdb.com/prod/v1';
     this.enabled = !!apiKey;
     
     console.log('🔍 UPCitemdb Constructor Debug:');
@@ -16,7 +16,7 @@ class UPCItemDB {
     
     if (this.enabled) {
       console.log('✅ UPCitemdb initialized successfully');
-      console.log(`   Using API endpoint: ${this.baseURL}`);
+      console.log(`   Using API endpoint: ${this.baseURL} (PAID PLAN)`);
     } else {
       console.log('❌ UPCitemdb disabled - no API key provided');
       console.log('   Check Railway environment variables:');
@@ -32,8 +32,8 @@ class UPCItemDB {
     try {
       console.log(`🔍 UPCitemdb: Searching for "${productName.substring(0, 50)}..."`);
       
-      // Add delay to avoid rate limiting
-      await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay
+      // Reduced delay for paid plan
+      await new Promise(resolve => setTimeout(resolve, 200)); // 200ms delay
       
       const response = await axios.get(`${this.baseURL}/search`, {
         params: {
@@ -69,9 +69,7 @@ class UPCItemDB {
       
     } catch (error) {
       if (error.response?.status === 429) {
-        console.error('❌ UPCitemdb rate limited - waiting before retry...');
-        // Wait longer and don't retry immediately
-        await new Promise(resolve => setTimeout(resolve, 5000)); // 5 second wait
+        console.error('❌ UPCitemdb rate limited - check if paid plan is enabled');
       } else {
         console.error('❌ UPCitemdb search failed:', error.response?.status, error.message);
       }
