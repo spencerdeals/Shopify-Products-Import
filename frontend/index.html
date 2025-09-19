@@ -487,9 +487,70 @@
         </div>
     </div>
 
+    <!-- IKEA Component Modal -->
+    <div id="ikeaComponentModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000;">
+        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 30px; border-radius: 15px; max-width: 700px; width: 90%; max-height: 90vh; overflow-y: auto;">
+            <div style="text-align: center; margin-bottom: 20px;">
+                <div style="font-size: 48px; margin-bottom: 10px;">🛏️</div>
+                <h3 style="color: #2e7d32; margin-bottom: 10px; font-size: 24px;">IKEA Multi-Component Product</h3>
+                <div style="background: linear-gradient(135deg, #2e7d32 0%, #4caf50 100%); color: white; padding: 20px; border-radius: 12px; margin: 15px 0; box-shadow: 0 4px 15px rgba(46, 125, 50, 0.3);">
+                    <div style="font-size: 20px; font-weight: bold; margin-bottom: 8px;" id="ikeaProductName">Product Name</div>
+                    <div style="font-size: 16px; opacity: 0.95;" id="ikeaProductPrice">$0.00</div>
+                </div>
+            </div>
+            
+            <div style="background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%); padding: 20px; border-radius: 12px; margin-bottom: 20px; border: 2px solid #ff9800;">
+                <h4 style="margin: 0 0 15px 0; color: #e65100; font-size: 18px;">📦 This <span id="ikeaComponentType">product</span> likely ships in <span id="ikeaEstimatedCount">multiple</span> separate packages!</h4>
+                <p style="margin: 0 0 15px 0; color: #333; font-size: 15px;">For accurate shipping costs, we need the individual component URLs from IKEA's "What's included" section.</p>
+                <div style="background: rgba(255,255,255,0.8); padding: 12px; border-radius: 8px;">
+                    <strong style="color: #e65100;">💡 Why do we need this?</strong><br>
+                    <span style="color: #666; font-size: 14px;">IKEA furniture often ships in multiple boxes with different dimensions. Getting each component ensures accurate shipping calculations!</span>
+                </div>
+            </div>
+            
+            <div style="background: linear-gradient(135deg, #e8f5e9 0%, #f1f8e9 100%); padding: 20px; border-radius: 12px; margin-bottom: 20px; border: 2px solid #7cb342;">
+                <h4 style="margin: 0 0 15px 0; color: #2e7d32; font-size: 18px;">✨ Easy Steps:</h4>
+                <ol style="margin: 0; padding-left: 20px; color: #333;">
+                    <li style="margin-bottom: 8px; font-size: 15px;">Click "Open IKEA Page" below 👇</li>
+                    <li style="margin-bottom: 8px; font-size: 15px;">Scroll down to find <strong>"What's included"</strong> section</li>
+                    <li style="margin-bottom: 8px; font-size: 15px;">Click on each component link to open in new tabs</li>
+                    <li style="margin-bottom: 8px; font-size: 15px;">Copy each component URL and paste them below (one per line)</li>
+                    <li style="margin-bottom: 0; font-size: 15px;">We'll calculate the combined shipping cost! ✅</li>
+                </ol>
+            </div>
+            
+            <div style="text-align: center; margin-bottom: 20px;">
+                <button class="btn" onclick="openIkeaPage()" style="margin-bottom: 15px; font-size: 18px; padding: 15px 30px;">
+                    🛏️ Open IKEA Page
+                </button>
+                <div style="font-size: 13px; color: #888; word-break: break-all; background: #f8f9fa; padding: 10px; border-radius: 6px;">
+                    <strong style="color: #666;">Product URL:</strong><br>
+                    <span id="ikeaMainUrl" style="font-family: monospace;"></span>
+                </div>
+            </div>
+            
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #333; font-size: 16px;">📋 Paste component URLs here (one per line):</label>
+                <textarea id="ikeaComponentUrls" placeholder="https://www.ikea.com/us/en/p/component-1&#10;https://www.ikea.com/us/en/p/component-2&#10;https://www.ikea.com/us/en/p/component-3&#10;&#10;Paste each component URL from the 'What's included' section..." style="width: 100%; height: 150px; padding: 10px; border: 1px solid #ddd; border-radius: 5px; font-family: monospace; font-size: 12px;"></textarea>
+            </div>
+            
+            <div style="text-align: center;">
+                <button class="btn btn-secondary" onclick="closeIkeaComponents()" style="margin-right: 15px;">
+                    ← Skip (Use Estimate)
+                </button>
+                <button class="btn" onclick="submitIkeaComponents()" style="font-size: 18px; padding: 15px 30px;">
+                    🚀 Calculate Accurate Shipping
+                </button>
+            </div>
+        </div>
+    </div>
+
     <script>
         let currentProducts = [];
         let manualEntryUrl = '';
+        let pendingManualProducts = [];
+        let pendingIkeaProducts = [];
+        let currentManualIndex = 0;
 
         async function calculateImportCosts() {
             const urls = document.getElementById('productUrls').value.trim();
@@ -535,15 +596,13 @@
                 if (data.products && data.products.length > 0) {
                     currentProducts = data.products;
                     
-                    // Check for manual entry required
-                    const manualProducts = data.products.filter(p => p.manualEntryRequired);
-                    if (manualProducts.length > 0) {
-                        // Handle first manual entry product
-                        handleManualEntry(manualProducts[0]);
-                        return;
-                    }
+                    // Collect all products that need manual handling
+                    pendingManualProducts = data.products.filter(p => p.manualEntryRequired);
+                    pendingIkeaProducts = data.products.filter(p => p.ikeaComponentsRequired);
+                    currentManualIndex = 0;
                     
-                    displayResults(data.products);
+                    // Start processing manual prompts
+                    processNextManualPrompt();
                 } else {
                     throw new Error('No products found or invalid response');
                 }
@@ -566,6 +625,26 @@
             } finally {
                 document.getElementById('calculateBtn').disabled = false;
             }
+        }
+
+        function processNextManualPrompt() {
+            // Process manual entry products first
+            if (currentManualIndex < pendingManualProducts.length) {
+                const product = pendingManualProducts[currentManualIndex];
+                handleManualEntry(product);
+                return;
+            }
+            
+            // Then process IKEA component products
+            const ikeaIndex = currentManualIndex - pendingManualProducts.length;
+            if (ikeaIndex < pendingIkeaProducts.length) {
+                const product = pendingIkeaProducts[ikeaIndex];
+                handleIkeaComponents(product);
+                return;
+            }
+            
+            // All manual prompts completed - show results
+            displayResults(currentProducts);
         }
 
         function handleManualEntry(product) {
@@ -597,10 +676,138 @@
             document.getElementById('loadingSection').style.display = 'none';
         }
 
+        function handleIkeaComponents(product) {
+            document.getElementById('loadingSection').style.display = 'none';
+            document.getElementById('ikeaComponentModal').style.display = 'block';
+            
+            // Update modal content
+            document.getElementById('ikeaProductName').textContent = product.name;
+            document.getElementById('ikeaProductPrice').textContent = '$' + product.price.toFixed(2);
+            document.getElementById('ikeaComponentType').textContent = product.componentType;
+            document.getElementById('ikeaEstimatedCount').textContent = product.estimatedComponents;
+            document.getElementById('ikeaMainUrl').textContent = product.url;
+            
+            // Store product data for later
+            window.currentIkeaProduct = product;
+        }
+
+        function closeIkeaComponents() {
+            document.getElementById('ikeaComponentModal').style.display = 'none';
+            
+            // Move to next manual prompt or finish
+            currentManualIndex++;
+            processNextManualPrompt();
+        }
+
+        function openIkeaPage() {
+            if (window.currentIkeaProduct) {
+                window.open(window.currentIkeaProduct.url, '_blank');
+            }
+        }
+
+        async function submitIkeaComponents() {
+            const componentUrls = document.getElementById('ikeaComponentUrls').value.trim();
+            
+            if (!componentUrls) {
+                alert('Please enter the component URLs from IKEA');
+                return;
+            }
+            
+            const urlList = componentUrls.split('\n')
+                .map(url => url.trim())
+                .filter(url => url && url.startsWith('http'));
+            
+            if (urlList.length === 0) {
+                alert('Please enter valid IKEA component URLs');
+                return;
+            }
+            
+            document.getElementById('ikeaComponentModal').style.display = 'none';
+            document.getElementById('loadingSection').style.display = 'block';
+            document.getElementById('loadingText').textContent = 'Processing IKEA components...';
+            
+            try {
+                // Scrape all component URLs
+                const response = await fetch('/api/scrape', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ urls: urlList })
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Failed to scrape IKEA components');
+                }
+                
+                const result = await response.json();
+                
+                if (result.products && result.products.length > 0) {
+                    // Combine all component dimensions and costs
+                    const combinedProduct = combineIkeaComponents(window.currentIkeaProduct, result.products);
+                    
+                    // Replace the original product with combined data
+                    const index = currentProducts.findIndex(p => p.url === window.currentIkeaProduct.url);
+                    if (index !== -1) {
+                        currentProducts[index] = combinedProduct;
+                    }
+                    
+                    displayResults(currentProducts);
+                } else {
+                    throw new Error('No component data found');
+                }
+                
+                // Move to next manual prompt
+                currentManualIndex++;
+                processNextManualPrompt();
+                
+            } catch (error) {
+                console.error('Error processing IKEA components:', error);
+                alert('Error processing components: ' + error.message);
+                document.getElementById('loadingSection').style.display = 'none';
+                
+                // Move to next manual prompt even on error
+                currentManualIndex++;
+                processNextManualPrompt();
+            }
+        }
+
+        function combineIkeaComponents(mainProduct, components) {
+            let totalShippingCost = 0;
+            let totalVolume = 0;
+            let componentNames = [];
+            
+            components.forEach(component => {
+                totalShippingCost += component.shippingCost || 0;
+                if (component.dimensions) {
+                    const volume = (component.dimensions.length * component.dimensions.width * component.dimensions.height) / 1728;
+                    totalVolume += volume;
+                }
+                if (component.name && !component.name.includes('Failed')) {
+                    componentNames.push(component.name);
+                }
+            });
+            
+            return {
+                ...mainProduct,
+                shippingCost: totalShippingCost,
+                scrapingMethod: 'ikea-components',
+                ikeaComponents: {
+                    count: components.length,
+                    totalVolume: totalVolume,
+                    componentNames: componentNames
+                },
+                name: mainProduct.name + ` (${components.length} components)`,
+                message: `Combined shipping for ${components.length} IKEA components`
+            };
+        }
         function closeManualEntry() {
             document.getElementById('manualEntryModal').style.display = 'none';
             document.getElementById('manualEntryContent').value = '';
-            document.getElementById('calculateBtn').disabled = false;
+            
+            // Move to next manual prompt or finish
+            currentManualIndex++;
+            processNextManualPrompt();
         }
 
         function openProductPage() {
@@ -648,6 +855,10 @@
                     }
                     
                     displayResults(currentProducts);
+                    
+                    // Move to next manual prompt
+                    currentManualIndex++;
+                    processNextManualPrompt();
                 } else {
                     throw new Error('Failed to process manual content');
                 }
@@ -656,7 +867,10 @@
                 console.error('Error processing manual content:', error);
                 alert('Error processing content: ' + error.message);
                 document.getElementById('loadingSection').style.display = 'none';
-                document.getElementById('calculateBtn').disabled = false;
+                
+                // Move to next manual prompt even on error
+                currentManualIndex++;
+                processNextManualPrompt();
             }
         }
 

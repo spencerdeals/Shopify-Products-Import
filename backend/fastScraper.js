@@ -46,8 +46,8 @@ OrderTracker.create().then(tracker => {
   orderTracker = tracker;
 }).catch(error => {
   console.error('Failed to initialize order tracker:', error);
-}
-)
+});
+
 console.log('=== SERVER STARTUP ===');
 console.log(`Port: ${PORT}`);
 console.log('');
@@ -382,15 +382,91 @@ function calculateShippingCost(dimensions, weight, price) {
   console.log(`   🎯   Base: $${baseShippingCost.toFixed(2)}`);
   console.log(`   🎯   + 20% margin: $${baseShippingCost.toFixed(2)} × 1.20 = $${totalCost.toFixed(2)}`);
   
+  // Add 4% card processing fee (hidden in shipping)
+  // Calculate 4% of total order value (price + duty + shipping + delivery)
+  const dutyAmount = price * 0.265;
+  const deliveryFee = 25;
+  const orderSubtotal = price + dutyAmount + totalCost + deliveryFee;
+  const cardFee = orderSubtotal * 0.04;
+  const finalShippingCost = totalCost + cardFee;
+  
+  console.log(`   💳 CARD FEE CALCULATION:`);
+  console.log(`   💳   Order subtotal: $${orderSubtotal.toFixed(2)}`);
+  console.log(`   💳   Card fee (4%): $${cardFee.toFixed(2)}`);
+  console.log(`   💳   Final shipping cost: $${finalShippingCost.toFixed(2)}`);
+  
   // IKEA specific debugging
   if (dimensions.length < 30 && dimensions.width < 30 && dimensions.height < 30) {
     console.log(`   🚨 SUSPICIOUS: All dimensions under 30" - this might be packaging for one component!`);
     console.log(`   🚨 For furniture, expected dimensions should be 60"+ for at least one dimension`);
   }
   
-  return Math.round(totalCost);
+  return Math.round(finalShippingCost);
 }
 
+// Check if IKEA product needs component collection
+function checkIfIkeaNeedsComponents(productName, price) {
+  const name = productName.toLowerCase();
+  
+  // Bed frames - typically 2-4 components
+  if (/\b(bed|frame|headboard|footboard)\b/.test(name)) {
+    if (price > 400) {
+      return { count: 4, type: 'bed frame' }; // King/Queen beds
+    } else if (price > 200) {
+      return { count: 3, type: 'bed frame' }; // Full/Double beds
+    } else {
+      return { count: 2, type: 'bed frame' }; // Twin beds
+    }
+  }
+  
+  // Wardrobes/PAX - typically 3-6 components
+  if (/\b(wardrobe|armoire|closet|pax)\b/.test(name)) {
+    if (price > 500) {
+      return { count: 6, type: 'wardrobe system' }; // Large PAX systems
+    } else if (price > 300) {
+      return { count: 4, type: 'wardrobe' }; // Medium wardrobes
+    } else {
+      return { count: 3, type: 'wardrobe' }; // Small wardrobes
+    }
+  }
+  
+  // Kitchen systems - typically 4-8 components
+  if (/\b(kitchen|cabinet.*set|knoxhult|enhet)\b/.test(name)) {
+    if (price > 1000) {
+      return { count: 8, type: 'kitchen system' }; // Full kitchen
+    } else if (price > 500) {
+      return { count: 5, type: 'kitchen set' }; // Partial kitchen
+    } else {
+      return { count: 4, type: 'kitchen unit' }; // Small kitchen set
+    }
+  }
+  
+  // Sectional sofas - typically 2-4 components
+  if (/\b(sectional|sofa.*section|corner.*sofa)\b/.test(name)) {
+    if (price > 800) {
+      return { count: 4, type: 'sectional sofa' }; // Large sectionals
+    } else {
+      return { count: 3, type: 'sectional sofa' }; // Small sectionals
+    }
+  }
+  
+  // Dining sets - typically 2-3 components (table + chairs)
+  if (/\b(dining|table.*chair|chair.*table)\b/.test(name)) {
+    return { count: 3, type: 'dining set' };
+  }
+  
+  // Large storage/shelving - typically 2-3 components for tall units
+  if (/\b(bookshelf|shelf.*unit|billy|hemnes.*bookcase|kallax)\b/.test(name) && price > 200) {
+    return { count: 3, type: 'storage unit' };
+  }
+  
+  // Large desks - typically 2 components
+  if (/\b(desk|workstation|office.*table)\b/.test(name) && price > 300) {
+    return { count: 2, type: 'desk system' };
+  }
+  
+  return null; // Single component item
+}
 // Helper function to check if essential data is complete
 function isDataComplete(productData) {
   return productData && 
@@ -436,8 +512,13 @@ async function getUPCDimensions(productName) {
     const upcData = await upcItemDB.searchByName(productName);
     
     if (upcData && upcData.dimensions) {
-      console.log(`   ✅ UPCitemdb found dimensions: ${upcData.dimensions.length}" × ${upcData.dimensions.width}" × ${upcData.dimensions.height}"`);
-      return upcData.dimensions;
+      console.log(`   ✅ UPCitemdb found BOX dimensions: ${upcData.dimensions.length}" × ${upcData.dimensions.width}" × ${upcData.dimensions.height}"`);
+      
+      // UPCitemdb already provides shipping box dimensions
+      const boxDimensions = upcData.dimensions;
+      
+      console.log(`   📦 Using UPCitemdb BOX dimensions: ${boxDimensions.length}" × ${boxDimensions.width}" × ${boxDimensions.height}"`);
+      return boxDimensions;
     }
     
     console.log('   ❌ UPCitemdb: No dimensions found');
@@ -448,6 +529,157 @@ async function getUPCDimensions(productName) {
   }
 }
 
+// IKEA Multi-Box Estimator - estimates total shipping volume for IKEA furniture
+function estimateIkeaMultiBoxShipping(singleBoxDimensions, productName, price) {
+  const name = productName.toLowerCase();
+  const volume = singleBoxDimensions.length * singleBoxDimensions.width * singleBoxDimensions.height;
+  
+  console.log(`   🛏️ IKEA Multi-Box Analysis for: "${productName.substring(0, 50)}..."`);
+  console.log(`   📦 Single box: ${singleBoxDimensions.length}" × ${singleBoxDimensions.width}" × ${singleBoxDimensions.height}" (${(volume/1728).toFixed(2)} ft³)`);
+  
+  let boxMultiplier = 1;
+  let confidence = 'low';
+  
+  // Bed frames - typically 2-4 boxes depending on size
+  if (/\b(bed|frame|headboard|footboard)\b/.test(name)) {
+    if (price > 400) {
+      boxMultiplier = 4; // King/Queen beds
+      confidence = 'high';
+    } else if (price > 200) {
+      boxMultiplier = 3; // Full/Double beds
+      confidence = 'medium';
+    } else {
+      boxMultiplier = 2; // Twin beds
+      confidence = 'medium';
+    }
+  }
+  // Wardrobes/Armoires - typically 3-6 boxes
+  else if (/\b(wardrobe|armoire|closet|pax)\b/.test(name)) {
+    if (price > 500) {
+      boxMultiplier = 6; // Large PAX systems
+      confidence = 'high';
+    } else if (price > 300) {
+      boxMultiplier = 4; // Medium wardrobes
+      confidence = 'medium';
+    } else {
+      boxMultiplier = 3; // Small wardrobes
+      confidence = 'medium';
+    }
+  }
+  // Dining sets - typically 2-3 boxes (table + chairs)
+  else if (/\b(dining|table.*chair|chair.*table)\b/.test(name)) {
+    boxMultiplier = 3;
+    confidence = 'medium';
+  }
+  // Sectional sofas - typically 2-4 boxes
+  else if (/\b(sectional|sofa.*section|corner.*sofa)\b/.test(name)) {
+    if (price > 800) {
+      boxMultiplier = 4; // Large sectionals
+      confidence = 'high';
+    } else {
+      boxMultiplier = 3; // Small sectionals
+      confidence = 'medium';
+    }
+  }
+  // Kitchen systems - typically 3-8 boxes
+  else if (/\b(kitchen|cabinet.*set|knoxhult|enhet)\b/.test(name)) {
+    if (price > 1000) {
+      boxMultiplier = 8; // Full kitchen
+      confidence = 'medium';
+    } else if (price > 500) {
+      boxMultiplier = 5; // Partial kitchen
+      confidence = 'medium';
+    } else {
+      boxMultiplier = 3; // Small kitchen set
+      confidence = 'low';
+    }
+  }
+  // Bookshelves/Storage - typically 2-3 boxes for tall units
+  else if (/\b(bookshelf|shelf.*unit|billy|hemnes.*bookcase|kallax)\b/.test(name)) {
+    if (price > 200) {
+      boxMultiplier = 3; // Tall/wide units
+      confidence = 'medium';
+    } else {
+      boxMultiplier = 2; // Standard units
+      confidence = 'medium';
+    }
+  }
+  // Desks - typically 2 boxes for larger desks
+  else if (/\b(desk|workstation|office.*table)\b/.test(name)) {
+    if (price > 300) {
+      boxMultiplier = 2; // Large desks
+      confidence = 'medium';
+    }
+  }
+  // Default for other furniture
+  else if (price > 300) {
+    boxMultiplier = 2; // Assume larger furniture ships in 2 boxes
+    confidence = 'low';
+  }
+  
+  // Calculate estimated total shipping dimensions
+  // Strategy: Stack boxes efficiently (2x2 for 4 boxes, 2x3 for 6 boxes, etc.)
+  let totalDimensions;
+  
+  if (boxMultiplier <= 2) {
+    // Side by side
+    totalDimensions = {
+      length: singleBoxDimensions.length * boxMultiplier,
+      width: singleBoxDimensions.width,
+      height: singleBoxDimensions.height
+    };
+  } else if (boxMultiplier <= 4) {
+    // 2x2 arrangement
+    totalDimensions = {
+      length: singleBoxDimensions.length * 2,
+      width: singleBoxDimensions.width * 2,
+      height: singleBoxDimensions.height
+    };
+  } else if (boxMultiplier <= 6) {
+    // 2x3 arrangement
+    totalDimensions = {
+      length: singleBoxDimensions.length * 2,
+      width: singleBoxDimensions.width * 3,
+      height: singleBoxDimensions.height
+    };
+  } else {
+    // 2x4 arrangement for 8 boxes
+    totalDimensions = {
+      length: singleBoxDimensions.length * 2,
+      width: singleBoxDimensions.width * 4,
+      height: singleBoxDimensions.height
+    };
+  }
+  
+  const totalVolume = totalDimensions.length * totalDimensions.width * totalDimensions.height;
+  
+  console.log(`   📊 IKEA Multi-Box Estimate:`);
+  console.log(`   📊   Product type: ${getIkeaProductType(name)}`);
+  console.log(`   📊   Estimated boxes: ${boxMultiplier} (confidence: ${confidence})`);
+  console.log(`   📊   Total dimensions: ${totalDimensions.length}" × ${totalDimensions.width}" × ${totalDimensions.height}"`);
+  console.log(`   📊   Total volume: ${(totalVolume/1728).toFixed(2)} ft³ (vs single box: ${(volume/1728).toFixed(2)} ft³)`);
+  console.log(`   ⚠️   This is an ESTIMATE - actual IKEA shipping may vary`);
+  
+  return {
+    dimensions: totalDimensions,
+    boxCount: boxMultiplier,
+    confidence: confidence,
+    singleBoxVolume: volume / 1728,
+    totalVolume: totalVolume / 1728,
+    estimationMethod: 'ikea-multibox'
+  };
+}
+
+function getIkeaProductType(name) {
+  if (/\b(bed|frame|headboard)\b/.test(name)) return 'Bed Frame';
+  if (/\b(wardrobe|armoire|pax)\b/.test(name)) return 'Wardrobe/Storage';
+  if (/\b(dining|table.*chair)\b/.test(name)) return 'Dining Set';
+  if (/\b(sectional|sofa.*section)\b/.test(name)) return 'Sectional Sofa';
+  if (/\b(kitchen|cabinet.*set)\b/.test(name)) return 'Kitchen System';
+  if (/\b(bookshelf|billy|kallax)\b/.test(name)) return 'Storage/Shelving';
+  if (/\b(desk|workstation)\b/.test(name)) return 'Desk/Office';
+  return 'Furniture';
+}
 // Merge product data from multiple sources
 function mergeProductData(primary, secondary) {
   if (!primary) return secondary;
@@ -544,58 +776,14 @@ async function scrapeProduct(url) {
         console.log('   🚨 Both automated methods failed - requiring manual entry');
         scrapingMethod = 'manual-required';
       }
-      // Both Zyte and GPT failed - but still try to extract basic info for UPCitemdb
-      console.log('   🚨 Both automated methods failed - will try UPCitemdb with retailer name');
-      productData = {
-        name: `Product from ${retailer}`, // Use retailer name for UPCitemdb search
-        price: null,
-        image: null,
-        dimensions: null,
-        weight: null,
-        brand: null,
-        category: null,
-        inStock: true,
-        variant: null
-      };
-      scrapingMethod = 'failed-will-try-upc';
-    }
-    // Still try UPCitemdb with retailer name
-    productData = {
-      name: `Product from ${retailer}`,
-      price: null,
-      image: null,
-      dimensions: null,
-      weight: null,
-      brand: null,
-      category: null,
-      inStock: true,
-      variant: null
-    };
-    scrapingMethod = 'failed-will-try-upc';
-  }
-  
-  // STEP 3: ALWAYS try UPCitemdb for box dimensions, even with failed scrapes
-  if (USE_UPCITEMDB && productData && productData.name) {
-    console.log('   📦 ALWAYS trying UPCitemdb for box dimensions...');
-    const upcDimensions = await getUPCDimensions(productData.name);
-    if (upcDimensions) {
-      productData.dimensions = upcDimensions;
-      console.log('   ✅ UPCitemdb provided box dimensions');
-      
-      if (scrapingMethod === 'failed-will-try-upc') {
-        scrapingMethod = 'upcitemdb-only';
-      } else if (scrapingMethod === 'zyte') {
-        scrapingMethod = 'zyte+upcitemdb';
-      } else if (scrapingMethod === 'gpt-fallback') {
-        scrapingMethod = 'gpt+upcitemdb';
-      }
     } else {
-      console.log('   ❌ UPCitemdb found no dimensions');
+      console.log('   ⚠️ No GPT fallback available (missing OpenAI API key)');
+      scrapingMethod = 'manual-required';
     }
   }
   
-  // Check if manual entry is required (only after trying UPCitemdb)
-  if (scrapingMethod === 'failed-will-try-upc' && (!productData || !productData.name || (productData.name && productData.name.startsWith('Product from')))) {
+  // Check if manual entry is required
+  if (scrapingMethod === 'manual-required') {
     console.log(`   ⚠️ ${retailer} requires manual entry - both automated methods failed`);
     return {
       id: productId,
@@ -624,6 +812,41 @@ async function scrapeProduct(url) {
     };
   }
   
+  // Check if IKEA component collection is needed
+  if (retailer === 'IKEA' && productData && productData.name && productData.price) {
+    const needsComponents = checkIfIkeaNeedsComponents(productData.name, productData.price);
+    if (needsComponents) {
+      console.log(`   🛏️ IKEA product likely has multiple components: ${productData.name}`);
+      return {
+        id: productId,
+        url: url,
+        name: productData.name,
+        price: productData.price,
+        image: productData.image,
+        category: category,
+        retailer: retailer,
+        dimensions: productData.dimensions,
+        weight: productData.weight,
+        shippingCost: 0,
+        scrapingMethod: 'ikea-components-required',
+        confidence: confidence,
+        variant: productData.variant,
+        ikeaComponentsRequired: true,
+        estimatedComponents: needsComponents.count,
+        componentType: needsComponents.type,
+        message: `This IKEA ${needsComponents.type} likely ships in ${needsComponents.count} separate packages. Please check "What's included" and provide URLs for each component.`,
+        dataCompleteness: {
+          hasName: !!productData.name,
+          hasImage: !!productData.image,
+          hasDimensions: !!productData.dimensions,
+          hasWeight: !!productData.weight,
+          hasPrice: !!productData.price,
+          hasVariant: !!productData.variant
+        }
+      };
+    }
+  }
+  
   // Ensure we always have valid productData for successful scrapes
   if (!productData) {
     productData = {
@@ -640,10 +863,10 @@ async function scrapeProduct(url) {
   }
   
   // Fill in missing data with estimations
-  const productName = (productData && productData.name) || `Product from ${retailer}`;
+  const productName = (productData && productData.name) ? productData.name : `Product from ${retailer}`;
   
   // Handle category - convert object to string if needed
-  let category = productData && productData.category;
+  let category = productData.category;
   if (typeof category === 'object' && category.name) {
     category = category.name; // Extract string from Zyte category object
   }
@@ -653,21 +876,46 @@ async function scrapeProduct(url) {
   
   console.log(`   📂 Final category: "${category}"`);
   
-  // STEP 4: Handle IKEA Multi-Box Detection if we got UPCitemdb dimensions
-  if (productData.dimensions && retailer === 'IKEA' && productData.name && productData.name.toLowerCase().includes('bed')) {
-    console.log('   🛏️ IKEA bed detected - likely multi-box shipment');
-    console.log(`   📦 Single box: ${productData.dimensions.length}" × ${productData.dimensions.width}" × ${productData.dimensions.height}"`);
+  // STEP 3: Smart UPCitemdb lookup for dimensions if needed
+  if (productData && productData.name && dimensionsLookSuspicious(productData.dimensions)) {
+    const upcDimensions = await getUPCDimensions(productData.name);
+    if (upcDimensions) {
+      productData.dimensions = upcDimensions;
+      console.log('   ✅ UPCitemdb provided accurate dimensions');
+      
+      if (scrapingMethod === 'zyte') {
+        scrapingMethod = 'zyte+upcitemdb';
+      } else if (scrapingMethod === 'gpt-fallback') {
+        scrapingMethod = 'gpt+upcitemdb';
+      }
+    } else {
+      console.log('   ⚠️ UPCitemdb found no dimensions, current dimensions may be packaging size');
+      console.log(`   📦 Current dimensions: ${productData.dimensions.length}" × ${productData.dimensions.width}" × ${productData.dimensions.height}"`);
+      console.log('   🔍 Checking if dimensions look like packaging vs actual product...');
+    }
+  }
+  
+  // STEP 3.5: IKEA Multi-Box Estimation
+  if (retailer === 'IKEA' && productData && productData.dimensions && productData.name && productData.price) {
+    const ikeaEstimate = estimateIkeaMultiBoxShipping(productData.dimensions, productData.name, productData.price);
     
-    // Multiply dimensions by 4 for typical IKEA bed (4 boxes)
-    const originalDimensions = { ...productData.dimensions };
-    productData.dimensions = {
-      length: Math.max(originalDimensions.length * 2, 80), // At least 80" for bed length
-      width: Math.max(originalDimensions.width * 2, 60),   // At least 60" for bed width  
-      height: originalDimensions.height * 4                // Stack 4 boxes high
-    };
-    
-    console.log(`   📦 Multi-box total: ${productData.dimensions.length}" × ${productData.dimensions.width}" × ${productData.dimensions.height}"`);
-    scrapingMethod = scrapingMethod + '+ikea-multibox';
+    if (ikeaEstimate.boxCount > 1) {
+      productData.dimensions = ikeaEstimate.dimensions;
+      productData.ikeaMultiBox = {
+        estimatedBoxes: ikeaEstimate.boxCount,
+        confidence: ikeaEstimate.confidence,
+        singleBoxVolume: ikeaEstimate.singleBoxVolume,
+        totalVolume: ikeaEstimate.totalVolume
+      };
+      
+      if (scrapingMethod.includes('upcitemdb')) {
+        scrapingMethod = scrapingMethod + '+ikea-multibox';
+      } else {
+        scrapingMethod = scrapingMethod + '+ikea-multibox';
+      }
+      
+      console.log(`   🎯 Applied IKEA multi-box estimation (${ikeaEstimate.confidence} confidence)`);
+    }
   }
   
   if (!productData.dimensions) {
@@ -687,7 +935,7 @@ async function scrapeProduct(url) {
   const shippingCost = calculateShippingCost(
     productData.dimensions,
     productData.weight,
-    productData.price || 100
+    (productData && productData.price) ? productData.price : 100
   );
   
   // Prepare final product object
@@ -695,8 +943,8 @@ async function scrapeProduct(url) {
     id: productId,
     url: url,
     name: productName,
-    price: productData.price || null,
-    image: productData.image || 'https://placehold.co/400x400/7CB342/FFFFFF/png?text=SDL',
+    price: (productData && productData.price) ? productData.price : null,
+    image: (productData && productData.image) ? productData.image : 'https://placehold.co/400x400/7CB342/FFFFFF/png?text=SDL',
     category: category,
     retailer: retailer,
     dimensions: productData.dimensions,
@@ -704,14 +952,14 @@ async function scrapeProduct(url) {
     shippingCost: shippingCost,
     scrapingMethod: scrapingMethod,
     confidence: confidence,
-    variant: productData.variant || null,
+    variant: (productData && productData.variant) ? productData.variant : null,
     dataCompleteness: {
-      hasName: !!productData.name,
-      hasImage: !!productData.image,
-      hasDimensions: !!productData.dimensions,
-      hasWeight: !!productData.weight,
-      hasPrice: !!productData.price,
-      hasVariant: !!productData.variant
+      hasName: !!(productData && productData.name),
+      hasImage: !!(productData && productData.image),
+      hasDimensions: !!(productData && productData.dimensions),
+      hasWeight: !!(productData && productData.weight),
+      hasPrice: !!(productData && productData.price),
+      hasVariant: !!(productData && productData.variant)
     }
   };
   
