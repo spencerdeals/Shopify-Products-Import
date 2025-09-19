@@ -13,7 +13,7 @@
 
         html, body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            background: white;
+            background: #f5f5f5;
             width: 100%;
             height: 100%;
             margin: 0;
@@ -2308,4 +2308,233 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
                 warningMessage += `You have ${unconfirmedDeliveryFees.length} unconfirmed delivery fee(s).\n`;
             }
             
-            if (warning
+            if (warningMessage) {
+                warningMessage += '\nUnconfirmed values may cause delays. Continue anyway?';
+                if (!confirm(warningMessage)) return;
+            }
+            
+            // Collect delivery fees
+            const deliveryFees = {};
+            Object.keys(vendorGroups).forEach(vendor => {
+                const input = document.getElementById(`delivery-${vendor}`);
+                deliveryFees[vendor] = parseFloat(input?.value) || 0;
+            });
+            
+            // Calculate totals
+            const calculation = calculateTotals(deliveryFees);
+            finalCalculation = calculation;
+            
+            displayFinalBreakdown(calculation);
+            goToPage(3);
+        }
+
+        function calculateTotals(deliveryFees) {
+            let totalItemCost = 0;
+            let totalShippingCost = 0;
+            let totalDeliveryFees = 0;
+            const activeProducts = [];
+            
+            scrapedProducts.forEach((product, index) => {
+                if (product.deleted) return;
+                
+                const vendor = product.retailer || 'Unknown';
+                const productId = `${vendor.replace(/\s+/g, '')}-${vendorGroups[vendor].indexOf(product)}`;
+                const priceInput = document.getElementById(`price-${productId}`);
+                const quantity = productQuantities[productId] || 1;
+                
+                if (priceInput) {
+                    product.price = parseFloat(priceInput.value) || 0;
+                    product.quantity = quantity;
+                }
+                
+                if (product.price > 0) {
+                    totalItemCost += product.price * quantity;
+                    totalShippingCost += (product.shippingCost || 0) * quantity;
+                    activeProducts.push(product);
+                }
+            });
+            
+            Object.values(deliveryFees).forEach(fee => {
+                totalDeliveryFees += fee;
+            });
+            
+            const dutyAmount = totalItemCost * 0.265;
+            const subtotal = totalItemCost + dutyAmount + totalDeliveryFees + totalShippingCost;
+            const margin = subtotal * 0.20; // 20% margin
+            const totalShippingAndHandling = totalShippingCost + margin;
+            const grandTotal = totalItemCost + dutyAmount + totalDeliveryFees + totalShippingAndHandling;
+            
+            return {
+                products: activeProducts,
+                deletedCount: scrapedProducts.filter(p => p.deleted).length,
+                deliveryFees,
+                totals: {
+                    totalItemCost,
+                    dutyAmount,
+                    totalDeliveryFees,
+                    totalShippingAndHandling,
+                    grandTotal
+                },
+                originalUrls: document.getElementById('productUrls').value
+            };
+        }
+
+        function displayFinalBreakdown(calculation) {
+            const container = document.getElementById('costBreakdown');
+            const { totals, products, deletedCount } = calculation;
+            
+            let html = '';
+            let totalItems = 0;
+            
+            if (products.length > 0) {
+                html += '<h3>Product-by-Product Breakdown</h3>';
+                
+                products.forEach(product => {
+                    const quantity = product.quantity || 1;
+                    const totalPrice = product.price * quantity;
+                    const duty = totalPrice * 0.265;
+                    const shipping = (product.shippingCost || 50) * quantity;
+                    const subtotal = totalPrice + duty + shipping;
+                    const margin = subtotal * 0.20;
+                    const shippingAndHandling = shipping + margin;
+                    const totalLanded = totalPrice + duty + shippingAndHandling;
+                    
+                    totalItems += quantity;
+                    
+                    html += `
+                        <div class="product-breakdown-item">
+                            <div class="product-breakdown-name">
+                                ${product.name} ${product.variant ? `<span class="product-variant">🎨 ${product.variant}</span>` : ''}
+                                ${quantity > 1 ? `<strong>(Qty: ${quantity})</strong>` : ''}
+                            </div>
+                            <div class="product-breakdown-details">
+                                <span>Price: $${totalPrice.toFixed(2)}</span>
+                                <span>Duty: $${duty.toFixed(2)}</span>
+                                <span>Shipping & Handling: $${shippingAndHandling.toFixed(2)}</span>
+                                <span class="product-breakdown-total">Total: $${totalLanded.toFixed(2)}</span>
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                if (deletedCount > 0) {
+                    html += `<div style="font-style: italic; color: #666; margin-top: 10px;">
+                        ${deletedCount} product(s) removed from order
+                    </div>`;
+                }
+            }
+            
+            html += `
+                <h3 style="margin-top: 30px;">Order Total Summary</h3>
+                <div class="cost-item">
+                    <span class="cost-label">Total Item Cost (${totalItems} items):</span>
+                    <span class="cost-value">$${totals.totalItemCost.toFixed(2)}</span>
+                </div>
+                <div class="cost-item">
+                    <span class="cost-label">Bermuda Import Duty (26.5%):</span>
+                    <span class="cost-value">$${totals.dutyAmount.toFixed(2)}</span>
+                </div>
+                <div class="cost-item">
+                    <span class="cost-label">USA Delivery Fees:</span>
+                    <span class="cost-value">$${totals.totalDeliveryFees.toFixed(2)}</span>
+                </div>
+                <div class="cost-item">
+                    <span class="cost-label">Shipping & Handling to Bermuda:</span>
+                    <span class="cost-value">$${totals.totalShippingAndHandling.toFixed(2)}</span>
+                </div>
+                <div class="cost-item total-row">
+                    <span class="cost-label">Total Landed Cost:</span>
+                    <span class="cost-value">$${totals.grandTotal.toFixed(2)}</span>
+                </div>
+            `;
+            
+            container.innerHTML = html;
+        }
+
+        // Handle confirmation checkbox
+        document.getElementById('confirmVariants').addEventListener('change', function() {
+            document.getElementById('createOrderBtn').disabled = !this.checked;
+        });
+
+        async function createDraftOrder() {
+            if (!finalCalculation) return;
+            
+            const btn = document.getElementById('createOrderBtn');
+            btn.disabled = true;
+            btn.textContent = 'Creating order...';
+            
+            try {
+                const response = await fetch('/api/store-pending-order', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        ...finalCalculation,
+                        timestamp: new Date().toISOString()
+                    })
+                });
+                
+                if (!response.ok) throw new Error('Failed to store order data');
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    window.location.href = `/complete-order.html?checkoutId=${result.orderId}`;
+                } else {
+                    throw new Error('Failed to create order');
+                }
+                
+            } catch (error) {
+                console.error('Error creating order:', error);
+                alert('Failed to create order: ' + error.message);
+                btn.disabled = false;
+                btn.textContent = 'Confirm & Create Order';
+            }
+        }
+        
+        function closeManualEntryModal() {
+            const modal = document.getElementById('manualEntryModal');
+            if (modal) {
+                modal.style.display = 'none';
+                
+                // Clear the textarea
+                const textarea = document.getElementById('manualEntryContent');
+                if (textarea) {
+                    textarea.value = '';
+                }
+            }
+        }
+        
+        // Add pulse animation
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes pulse {
+                0% { box-shadow: 0 0 0 0 rgba(124, 179, 66, 0.7); }
+                70% { box-shadow: 0 0 0 10px rgba(124, 179, 66, 0); }
+                100% { box-shadow: 0 0 0 0 rgba(124, 179, 66, 0); }
+            }
+        `;
+        document.head.appendChild(style);
+
+        // Create placeholder image function
+        function createPlaceholderImage(retailer) {
+            const retailerColors = {
+                'Amazon': { bg: 'f8f9fa', text: '232f3e', accent: 'ff9900' },
+                'Wayfair': { bg: 'f5f3ff', text: '7b2cbf', accent: '9d4edd' },
+                'Target': { bg: 'fff5f5', text: 'cc0000', accent: 'ff6b6b' },
+                'Walmart': { bg: 'f0f8ff', text: '004c91', accent: '0071ce' },
+                'Best Buy': { bg: 'fff8e1', text: '003d7a', accent: 'ffb400' },
+                'Home Depot': { bg: 'fff3e0', text: 'f96302', accent: 'ff8c42' },
+                'Lowes': { bg: 'f0f4ff', text: '004990', accent: '0066cc' },
+                'IKEA': { bg: 'fff9c4', text: '003399', accent: 'ffcc00' },
+                'Crate & Barrel': { bg: 'f8f6f0', text: '666666', accent: 'daa520' },
+                'Pottery Barn': { bg: 'f5f5dc', text: '654321', accent: 'cd853f' },
+                'West Elm': { bg: 'f0f8f0', text: '2d5016', accent: '7cb342' },
+                'CB2': { bg: 'f8f8f8', text: '333333', accent: '666666' }
+            };
+            
+            const colors = retailerColors[retailer] || { bg: 'f8f9fa', text: '999999', accent: 'cccccc' };
+            return `https://placehold.co/400x300/${colors.bg}/${colors.text}/png?text=📦%0A%0AProduct+Image%0ANot+Available%0A%0A✅+Price+%26+shipping%0Acalculated+correctly`;
+        }
+    </script>
+</body>
+</html>
