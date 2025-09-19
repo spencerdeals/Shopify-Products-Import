@@ -4,7 +4,7 @@ const axios = require('axios');
 class UPCItemDB {
   constructor(apiKey) {
     this.apiKey = apiKey;
-    this.baseURL = 'https://api.upcitemdb.com/prod/trial';
+    this.baseURL = 'https://api.upcitemdb.com/prod/v1';
     this.enabled = !!apiKey;
     
     console.log('🔍 UPCitemdb Constructor Debug:');
@@ -16,7 +16,7 @@ class UPCItemDB {
     
     if (this.enabled) {
       console.log('✅ UPCitemdb initialized successfully');
-      console.log(`   Using API endpoint: ${this.baseURL}`);
+      console.log(`   Using API endpoint: ${this.baseURL} (DEV PLAN - 2000 searches/day)`);
     } else {
       console.log('❌ UPCitemdb disabled - no API key provided');
       console.log('   Check Railway environment variables:');
@@ -32,18 +32,26 @@ class UPCItemDB {
     try {
       console.log(`🔍 UPCitemdb: Searching for "${productName.substring(0, 50)}..."`);
       
+      // Minimal delay for DEV plan
+      await new Promise(resolve => setTimeout(resolve, 100)); // 100ms delay
+      
+      // Try different authentication methods for paid API
+      const authHeaders = {
+        'user_key': this.apiKey,
+        'key_type': '3scale',
+        'Content-Type': 'application/json'
+      };
+      
+      console.log('🔑 Using auth headers:', { user_key: this.apiKey.substring(0, 8) + '...', key_type: '3scale' });
+      
       const response = await axios.get(`${this.baseURL}/search`, {
         params: {
           s: productName,
           match_mode: '0', // Best match
           type: 'product'
         },
-        headers: {
-          'user_key': this.apiKey,
-          'key_type': 'upc',
-          'Content-Type': 'application/json'
-        },
-        timeout: 10000
+        headers: authHeaders,
+        timeout: 15000 // Increased timeout
       });
 
       if (response.data && response.data.items && response.data.items.length > 0) {
@@ -65,7 +73,11 @@ class UPCItemDB {
       return null;
       
     } catch (error) {
-      console.error('❌ UPCitemdb search failed:', error.response?.status, error.message);
+      if (error.response?.status === 429) {
+        console.error('❌ UPCitemdb rate limited - DEV plan limit reached (2000/day)');
+      } else {
+        console.error('❌ UPCitemdb search failed:', error.response?.status, error.message);
+      }
       return null;
     }
   }
