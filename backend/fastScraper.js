@@ -301,7 +301,7 @@ function categorizeProduct(name, url) {
 }
 
 function estimateDimensions(category, productName) {
-  const name = productName.toLowerCase();
+  const name = (productName || '').toLowerCase();
   
   // Extract any dimensions from the product name first
   const dimensionMatch = name.match(/(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)/);
