@@ -1,555 +1,282 @@
-// backend/zyteScraper.js - Fixed Zyte API Integration
+// gptParser.js
+// Trimmed tokens + multi-source fetch + richer fields + package dims support.
+
 const axios = require('axios');
+const cheerio = require('cheerio');
+const OpenAI = require('openai');
+const { ApifyClient } = require('apify-client');
 
-class ZyteScraper {
-  constructor() {
-    this.apiKey = process.env.ZYTE_API_KEY;
-    this.enabled = !!this.apiKey;
-    this.baseURL = 'https://api.zyte.com/v1/extract';
-    
-    console.log('🕷️ ZyteScraper Constructor:');
-    console.log(`   API Key: ${this.apiKey ? '✅ SET' : '❌ MISSING'}`);
-    console.log(`   API Key (first 8 chars): ${this.apiKey ? this.apiKey.substring(0, 8) + '...' : 'N/A'}`);
-    console.log(`   Status: ${this.enabled ? '✅ ENABLED (v2.0)' : '❌ DISABLED'}`);
-    
-    if (!this.enabled) {
-      console.log('   ⚠️ Set ZYTE_API_KEY environment variable to enable Zyte scraping');
-    } else {
-      console.log('   🎯 Ready to use Zyte API for web scraping');
-    }
+const MODEL = process.env.GPT_PARSER_MODEL || 'gpt-4o-mini';
+const TIMEOUT_MS = 30000;
+const MAX_AXIOS_RETRIES = 3;
+const DEFAULT_CURRENCY = (process.env.DEFAULT_CURRENCY || 'USD').toUpperCase();
+const ALLOWED_CURRENCIES = ['USD','BMD','CAD','GBP','EUR'];
+const MAX_GPT_CALLS_PER_RUN = parseInt(process.env.MAX_GPT_CALLS_PER_RUN || '100', 10);
+
+let gptCallsUsed = 0;
+
+function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
+function rnd(min,max){ return Math.floor(Math.random()*(max-min+1))+min; }
+function htmlToVisibleText(html){
+  const $ = cheerio.load(html);
+  $('script,style,noscript').remove();
+  return $('body').text().replace(/\s+/g,' ').trim();
+}
+function coerceNumber(n){
+  if (typeof n === 'number') return n;
+  if (typeof n === 'string'){
+    const cleaned = n.replace(/[^0-9.\-]/g,'');
+    const val = Number(cleaned);
+    return Number.isFinite(val) ? val : null;
   }
+  return null;
+}
+function detectRetailer(url){
+  try{
+    const host = new URL(url).hostname.toLowerCase();
+    if (host.includes('wayfair')) return 'Wayfair';
+    if (host.includes('amazon')) return 'Amazon';
+    if (host.includes('walmart')) return 'Walmart';
+    if (host.includes('target')) return 'Target';
+    if (host.includes('bestbuy')) return 'BestBuy';
+    if (host.includes('homedepot')) return 'HomeDepot';
+    return 'Generic';
+  }catch{ return 'Generic'; }
+}
 
-  async scrapeProduct(url) {
-    if (!this.enabled) {
-      throw new Error('Zyte not configured - missing API key');
-    }
-
-    const retailer = this.detectRetailer(url);
-    console.log(`🕷️ Zyte scraping ${retailer}: ${url.substring(0, 60)}...`);
-
-    try {
-      console.log('   📤 Sending request to Zyte API...');
-      
-      // Use Basic Auth with API key as username, empty password
-      const response = await axios.post(this.baseURL, {
-        url: url,
-        httpResponseBody: true,
-        product: true,
-        productOptions: {
-          extractFrom: 'httpResponseBody'
-        }
-      }, {
-        auth: {
-          username: this.apiKey,
-          password: ''
+// -------- Fetchers (Bee → Apify → Axios) --------
+async function fetchViaScrapingBee(url){
+  const key = process.env.SCRAPINGBEE_API_KEY;
+  if (!key) return null;
+  const countries = ['CA','US','GB'];
+  for (const country of countries){
+    try{
+      const res = await axios.get('https://app.scrapingbee.com/api/v1', {
+        timeout: TIMEOUT_MS,
+        params: {
+          api_key: key, url,
+          render_js: 'true',
+          country_code: country,
+          block_resources: 'false',
+          // wait param optional via env if you add it to Bee plan
         },
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        timeout: 45000
+        validateStatus: () => true,
       });
-
-      console.log('✅ Zyte request completed successfully');
-      console.log('📊 Response status:', response.status);
-      console.log('📊 Response headers:', Object.keys(response.headers || {}));
-      
-      if (!response.data) {
-        throw new Error('No data received from Zyte API');
+      if (res.status >= 200 && res.status < 300 && res.data) {
+        console.log(`[ScrapingBee] OK via ${country}`);
+        return typeof res.data === 'string' ? res.data : res.data.toString();
       }
-      
-      // Parse the Zyte response
-      const productData = this.parseZyteResponse(response.data, url, retailer);
-      
-      console.log('📦 Zyte extraction results:', {
-        hasName: !!productData.name,
-        hasPrice: !!productData.price,
-        hasImage: !!productData.image,
-        hasDimensions: !!productData.dimensions,
-        hasVariant: !!productData.variant
-      });
-
-      return productData;
-
-    } catch (error) {
-      return this.handleZyteError(error);
+      console.warn(`[ScrapingBee] Non-2xx ${res.status} via ${country}`);
+      if (res.status !== 429 && (res.status < 500 || res.status >= 600)) return null;
+    }catch(e){
+      console.warn('[ScrapingBee] Error:', e.message);
     }
   }
+  return null;
+}
 
-  handleZyteError(error) {
-    console.error('❌ Zyte scraping failed:', error.message);
-    
-    if (error.response) {
-      console.error('Response status:', error.response.status);
-      console.error('Response data:', error.response.data);
-      
-      if (error.response.status === 401) {
-        console.error('❌ Authentication failed - check Zyte API key');
-      } else if (error.response.status === 403) {
-        console.error('❌ Access forbidden - check Zyte subscription');
-      } else if (error.response.status >= 500) {
-        console.error('❌ Zyte server error - try again later');
-      }
-    }
-    
-    throw error;
-  }
-
-  parseZyteResponse(data, url, retailer) {
-    console.log('🔍 Parsing Zyte response...');
-    
-    const productData = {
-      name: null,
-      price: null,
-      image: null,
-      dimensions: null,
-      weight: null,
-      brand: null,
-      category: null,
-      inStock: true,
-      variant: null
+async function fetchViaApifySnapshot(url){
+  const token = process.env.APIFY_API_KEY;
+  if (!token) return null;
+  try{
+    const client = new ApifyClient({ token });
+    const input = {
+      startUrls: [{ url }],
+      maxRequestsPerCrawl: 1,
+      proxyConfiguration: { useApifyProxy: true },
+      pageFunction: `
+        async function pageFunction(context) {
+          const { page, request } = context;
+          await page.waitForTimeout(2500);
+          const html = await page.content();
+          return { url: request.url, html };
+        }
+      `,
     };
-
-    // Priority 1: Extract from Zyte's automatic product extraction
-    if (data.product) {
-      const product = data.product;
-      
-      // Product name
-      productData.name = product.name || product.title || null;
-      if (productData.name) {
-        productData.name = productData.name.trim().substring(0, 200);
-        console.log('   📝 Product name:', productData.name.substring(0, 50) + '...');
-      }
-
-      // Price - handle multiple formats
-      if (product.price) {
-        let priceValue = product.price;
-        if (typeof priceValue === 'object' && priceValue.value) {
-          priceValue = priceValue.value;
-        }
-        productData.price = parseFloat(String(priceValue).replace(/[^0-9.]/g, ''));
-        if (productData.price > 0 && productData.price < 100000) {
-          console.log('   💰 Price: $' + productData.price);
-        } else {
-          productData.price = null;
-        }
-      } else if (product.regularPrice) {
-        productData.price = parseFloat(String(product.regularPrice).replace(/[^0-9.]/g, ''));
-        console.log('   💰 Regular Price: $' + productData.price);
-      }
-
-      // Images - handle multiple formats
-      if (product.images && product.images.length > 0) {
-        const firstImage = product.images[0];
-        productData.image = typeof firstImage === 'object' ? firstImage.url : firstImage;
-        console.log('   🖼️ Image: Found');
-      } else if (product.mainImage) {
-        productData.image = typeof product.mainImage === 'object' ? product.mainImage.url : product.mainImage;
-        console.log('   🖼️ Image: Found (main)');
-      }
-
-      // Brand
-      productData.brand = product.brand || null;
-
-      // Category/Breadcrumbs
-      if (product.breadcrumbs && product.breadcrumbs.length > 0) {
-        productData.category = product.breadcrumbs[product.breadcrumbs.length - 1].name || 
-                              product.breadcrumbs[product.breadcrumbs.length - 1];
-      }
-
-      // Availability
-      if (product.availability) {
-        const availability = String(product.availability).toLowerCase();
-        productData.inStock = !availability.includes('out of stock') && 
-                             !availability.includes('unavailable') &&
-                             !availability.includes('sold out');
-      }
-
-      // Variants - Enhanced extraction
-      if (product.variants && product.variants.length > 0) {
-        const selectedVariant = product.variants.find(v => v.selected) || product.variants[0];
-        if (selectedVariant) {
-          const variantParts = [];
-          
-          // Smart variant detection - check what the value actually represents
-          if (selectedVariant.color) {
-            const colorValue = selectedVariant.color.toLowerCase();
-          }
-          // Collect ALL variant properties from selected variant
-          this.extractVariantProperties(selectedVariant, variantParts);
-          
-          if (variantParts.length > 0) {
-            productData.variant = variantParts.join(', ');
-            console.log('   🎨 Variant:', productData.variant);
-          }
-        }
-      } else if (product.color || product.size || product.style || product.material || product.finish) {
-        // Direct variant properties from product level
-        const variantParts = [];
-        this.extractVariantProperties(product, variantParts);
-        
-        if (variantParts.length > 0) {
-          productData.variant = variantParts.join(', ');
-          console.log('   🎨 Direct Variant:', productData.variant);
-        }
-      }
+    const run = await client.actor('apify/web-scraper').call(input, { timeout: 90000, memory: 1024, waitSecs: 60 });
+    const { items } = await client.dataset(run.defaultDatasetId).listItems();
+    if (items && items[0] && items[0].html){
+      console.log('[Apify snapshot] OK');
+      return items[0].html;
     }
-
-    // Priority 2: Parse from browser HTML if structured data is incomplete
-    if (data.httpResponseBody && (!productData.name || !productData.price)) {
-      console.log('   🔍 Falling back to HTML parsing...');
-      const htmlData = this.parseHTML(data.httpResponseBody, url, retailer);
-      
-      // Merge data - prefer structured data but fill gaps with HTML parsing
-      productData.name = productData.name || htmlData.name;
-      productData.price = productData.price || htmlData.price;
-      productData.image = productData.image || htmlData.image;
-      productData.dimensions = productData.dimensions || htmlData.dimensions;
-      productData.weight = productData.weight || htmlData.weight;
-      // For variants, prefer HTML parsing as it's more accurate
-      productData.variant = htmlData.variant || productData.variant;
-    }
-
-    return productData;
-  }
-
-  extractVariantProperties(obj, variantParts) {
-    for (const [prop, value] of Object.entries(obj)) {
-      if (value && typeof value === 'string' && value.trim()) {
-        const trimmedValue = value.trim();
-        if (trimmedValue.length >= 2 && trimmedValue.length <= 50) {
-          // Smart categorization based on actual content
-          const lowerValue = trimmedValue.toLowerCase();
-          
-          if (this.isColorValue(lowerValue)) {
-            variantParts.push(`Color: ${trimmedValue}`);
-          } else if (this.isSizeValue(lowerValue)) {
-            variantParts.push(`Size: ${trimmedValue}`);
-          } else if (prop === 'material' || this.isMaterialValue(lowerValue)) {
-            variantParts.push(`Material: ${trimmedValue}`);
-          } else if (prop === 'style' || prop === 'type') {
-            variantParts.push(`Style: ${trimmedValue}`);
-          } else if (prop === 'finish') {
-            variantParts.push(`Finish: ${trimmedValue}`);
-          } else if (prop === 'pattern') {
-            variantParts.push(`Pattern: ${trimmedValue}`);
-          } else {
-            // Default to the property name
-            const propName = prop.charAt(0).toUpperCase() + prop.slice(1);
-            variantParts.push(`${propName}: ${trimmedValue}`);
-          }
-        }
-      }
-    }
-  }
-
-  isColorValue(value) {
-    const colorKeywords = /\b(black|white|brown|gray|grey|blue|red|green|yellow|beige|tan|navy|cream|ivory|khaki|charcoal|burgundy|maroon|olive|teal|coral|sage|taupe|mocha|espresso|latte|camel|sand|stone|slate|pewter|bronze|copper|gold|silver|rose|blush|mint|seafoam|turquoise|aqua|lavender|purple|violet|magenta|pink|orange|peach|apricot|rust|terracotta|denim|indigo|rattan|wicker|natural|antique|vintage|distressed|weathered|aged)\b/i;
-    return colorKeywords.test(value);
-  }
-
-  isSizeValue(value) {
-    const sizeKeywords = /\b(twin|full|queen|king|california|cal|single|double|xl|extra|small|medium|large|xs|s|m|l|xl|xxl|xxxl|\d+['"]\s*x\s*\d+['"']|\d+\s*x\s*\d+|\d+['"]\s*wide|\d+['"]\s*deep|\d+['"]\s*high|\d+\s*inch|\d+\s*ft|\d+\s*cm|\d+\s*mm)\b/i;
-    return sizeKeywords.test(value);
-  }
-
-  isMaterialValue(value) {
-    const materialKeywords = /\b(wood|wooden|metal|steel|iron|aluminum|plastic|fabric|cotton|linen|polyester|leather|velvet|suede|silk|wool|bamboo|rattan|wicker|glass|ceramic|marble|granite|stone|concrete|oak|pine|cherry|maple|walnut|mahogany|teak|cedar|birch|ash|poplar|acacia|mango|sheesham|rosewood)\b/i;
-    return materialKeywords.test(value);
-  }
-
-  parseHTML(html, url, retailer) {
-    const $ = cheerio.load(html);
-    
-    const productData = {
-      name: null,
-      price: null,
-      image: null,
-      dimensions: null,
-      weight: null,
-      variant: null
-    };
-
-    // Extract product name from HTML
-    const titleSelectors = this.getTitleSelectors(retailer);
-    for (const selector of titleSelectors) {
-      const element = $(selector).first();
-      if (element.length && element.text().trim()) {
-        productData.name = element.text().trim().replace(/\s+/g, ' ').substring(0, 200);
-        console.log('   📝 HTML Product name:', productData.name.substring(0, 50) + '...');
-        break;
-      }
-    }
-
-    // Extract price from HTML
-    const priceSelectors = this.getPriceSelectors(retailer);
-    for (const selector of priceSelectors) {
-      const element = $(selector).first();
-      if (element.length) {
-        const priceText = element.text().replace(/[^0-9.]/g, '');
-        const price = parseFloat(priceText);
-        if (price > 0 && price < 100000) {
-          productData.price = price;
-          console.log('   💰 HTML Price: $' + productData.price);
-          break;
-        }
-      }
-    }
-
-    // Extract main image
-    const imageSelectors = this.getImageSelectors(retailer);
-    for (const selector of imageSelectors) {
-      const element = $(selector).first();
-      if (element.length) {
-        let imgSrc = element.attr('src') || element.attr('data-src') || element.attr('data-original');
-        if (imgSrc && imgSrc.startsWith('http')) {
-          productData.image = imgSrc;
-          console.log('   🖼️ HTML Image: Found');
-          break;
-        }
-      }
-    }
-
-    // Extract variant information
-    const variantSelectors = this.getVariantSelectors(retailer);
-    const allVariants = [];
-    
-    for (const selector of variantSelectors) {
-      const elements = $(selector);
-      elements.each((i, el) => {
-        const variantText = $(el).text().trim();
-        if (variantText.length >= 2 && variantText.length <= 50 && 
-            !variantText.toLowerCase().includes('select') &&
-            !variantText.toLowerCase().includes('choose') &&
-            !allVariants.includes(variantText)) {
-          allVariants.push(variantText);
-        }
-      });
-    }
-    
-    // Combine all found variants
-    if (allVariants.length > 0) {
-      productData.variant = allVariants.join(', ');
-      console.log('   🎨 HTML Variants:', productData.variant);
-    }
-
-    // Extract dimensions from text
-    const bodyText = $.text();
-    const dimMatch = bodyText.match(/(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*(?:inches?|in\.?|")/i);
-    if (dimMatch) {
-      productData.dimensions = {
-        length: parseFloat(dimMatch[1]),
-        width: parseFloat(dimMatch[2]),
-        height: parseFloat(dimMatch[3])
-      };
-      console.log('   📏 HTML Dimensions:', `${productData.dimensions.length}" × ${productData.dimensions.width}" × ${productData.dimensions.height}"`);
-    }
-
-    return productData;
-  }
-
-  getTitleSelectors(retailer) {
-    const common = [
-      'h1[data-testid*="title"]',
-      'h1[data-testid*="name"]',
-      'h1.product-title',
-      'h1.ProductTitle',
-      'h1',
-      '.product-title h1',
-      '.product-name h1'
-    ];
-
-    const specific = {
-      'Amazon': [
-        '#productTitle',
-        'h1.a-size-large',
-        'h1[data-automation-id="product-title"]'
-      ],
-      'Wayfair': [
-        'h1[data-testid="product-title"]',
-        'h1.ProductTitle'
-      ],
-      'Target': [
-        'h1[data-test="product-title"]',
-        'h1.ProductTitle'
-      ],
-      'Walmart': [
-        'h1[data-automation-id="product-title"]',
-        'h1.prod-ProductTitle'
-      ],
-      'Best Buy': [
-        'h1.sr-only',
-        'h1.heading-5'
-      ]
-    };
-
-    return [...(specific[retailer] || []), ...common];
-  }
-
-  getPriceSelectors(retailer) {
-    const common = [
-      '.price',
-      '[class*="price"]',
-      '.current-price',
-      '.sale-price',
-      '[data-testid*="price"]'
-    ];
-
-    const specific = {
-      'Amazon': [
-        '.a-price-whole',
-        '.a-price .a-offscreen',
-        '.a-price-range .a-price .a-offscreen'
-      ],
-      'Wayfair': [
-        '.MoneyPrice',
-        '[data-testid="price"]'
-      ],
-      'Target': [
-        '[data-test="product-price"]',
-        '.h-text-red'
-      ],
-      'Walmart': [
-        '[data-automation-id="product-price"]',
-        '.price-current'
-      ],
-      'Best Buy': [
-        '.pricing-price__value',
-        '.sr-only:contains("current price")'
-      ]
-    };
-
-    return [...(specific[retailer] || []), ...common];
-  }
-
-  getImageSelectors(retailer) {
-    const common = [
-      '.product-image img',
-      'img[class*="product"]',
-      '.hero-image img',
-      'img[data-testid*="image"]'
-    ];
-
-    const specific = {
-      'Amazon': [
-        '#landingImage',
-        '.a-dynamic-image',
-        'img[data-old-hires]',
-        '.imgTagWrapper img'
-      ],
-      'Wayfair': [
-        'img[data-testid="product-image"]',
-        '.ProductImages img'
-      ],
-      'Target': [
-        '.ProductImages img',
-        'img[data-test="product-image"]'
-      ],
-      'Walmart': [
-        'img[data-automation-id="product-image"]',
-        '.prod-hero-image img'
-      ],
-      'Best Buy': [
-        '.product-image img',
-        '.hero-image img'
-      ]
-    };
-
-    return [...(specific[retailer] || []), ...common];
-  }
-
-  getVariantSelectors(retailer) {
-    const common = [
-      '.selected',
-      '.selected-option',
-      '.selected-variant',
-      '[aria-selected="true"]',
-      '.variant-selected'
-    ];
-
-    const specific = {
-      'Amazon': [
-        '.a-button-selected .a-button-text',
-        '.a-dropdown-prompt',
-        '#variation_color_name .selection',
-        '#variation_size_name .selection',
-        '#variation_style_name .selection',
-        '.swatches .a-button-selected span'
-      ],
-      'Wayfair': [
-        '.SelectedOption',
-        '.option-selected',
-        '.selected-swatch',
-        '[data-testid="selected-option"]',
-        '.ProductOptionPills .selected',
-        '.OptionPill.selected'
-      ],
-      'Target': [
-        '.selected-variant',
-        '.h-text-bold',
-        '[data-test="selected-variant"]',
-        '.swatch--selected'
-      ],
-      'Walmart': [
-        '.selected-variant-value',
-        '[data-selected="true"]',
-        '.variant-pill--selected'
-      ],
-      'Best Buy': [
-        '.selected-variation',
-        '.variation-selected'
-      ],
-      'IKEA': [
-        '.range-revamp-pip-selected',
-        '.pip-selected',
-        '.range-revamp-color-image.selected',
-        '.range-revamp-size-option.selected',
-        '[aria-pressed="true"]'
-      ],
-      'Crate & Barrel': [
-        '.selected-swatch',
-        '.swatch.selected',
-        '.option-selected',
-        '.variant-selected',
-        '[data-selected="true"]',
-        '.color-swatch.selected',
-        '.size-option.selected'
-      ],
-      'Luna Furniture': [
-        '.product-form__input:checked + label',
-        '.variant-input:checked + label',
-        '.swatch.selected',
-        '.option-value.selected',
-        '.variant-option.selected',
-        '.product-option.selected'
-      ]
-    };
-
-    return [...(specific[retailer] || []), ...common];
-  }
-
-  detectRetailer(url) {
-    try {
-      const domain = new URL(url).hostname.toLowerCase();
-      if (domain.includes('amazon.com')) return 'Amazon';
-      if (domain.includes('wayfair.com')) return 'Wayfair';
-      if (domain.includes('target.com')) return 'Target';
-      if (domain.includes('walmart.com')) return 'Walmart';
-      if (domain.includes('bestbuy.com')) return 'Best Buy';
-      if (domain.includes('homedepot.com')) return 'Home Depot';
-      if (domain.includes('lowes.com')) return 'Lowes';
-      if (domain.includes('costco.com')) return 'Costco';
-      if (domain.includes('macys.com')) return 'Macys';
-      if (domain.includes('ikea.com')) return 'IKEA';
-      if (domain.includes('crateandbarrel.com')) return 'Crate & Barrel';
-      if (domain.includes('potterybarn.com')) return 'Pottery Barn';
-      if (domain.includes('ashleyfurniture.com')) return 'Ashley Furniture';
-      if (domain.includes('roomstogo.com')) return 'Rooms To Go';
-      if (domain.includes('livingspaces.com')) return 'Living Spaces';
-      return 'Unknown';
-    } catch (e) {
-      return 'Unknown';
-    }
+    return null;
+  }catch(e){
+    console.warn('[Apify snapshot] Error:', e.message);
+    return null;
   }
 }
 
-module.exports = ZyteScraper;
+async function fetchViaAxios(url){
+  let lastErr = null;
+  for (let i=0;i<MAX_AXIOS_RETRIES;i++){
+    try{
+      const res = await axios.get(url, {
+        timeout: TIMEOUT_MS,
+        headers: {
+          'User-Agent': `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${rnd(118,126)} Safari/537.36`,
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Cache-Control': 'no-cache', 'Pragma': 'no-cache',
+        },
+        validateStatus: () => true,
+      });
+      if (res.status === 200 && res.data){
+        console.log('[Axios] OK');
+        return typeof res.data === 'string' ? res.data : res.data.toString();
+      }
+      if (res.status === 429){
+        const waitMs = 1500*(i+1) + rnd(0,1500);
+        console.warn(`[Axios] 429. Retry ${i + 1}/3 after ${waitMs}ms`);
+        await sleep(waitMs); continue;
+      }
+      if (res.status >= 500 && res.status < 600){
+        const waitMs = 1000*(i+1);
+        console.warn(`[Axios] ${res.status}. Retry ${i + 1}/3 after ${waitMs}ms`);
+        await sleep(waitMs); continue;
+      }
+      console.warn(`[Axios] Non-OK status: ${res.status}`);
+      return null;
+    }catch(e){
+      lastErr = e;
+      const waitMs = 800*(i+1);
+      console.warn(`[Axios] Error ${i + 1}/3: ${e.message}. Waiting ${waitMs}ms...`);
+      await sleep(waitMs);
+    }
+  }
+  if (lastErr) console.warn('[Axios] Final error:', lastErr.message);
+  return null;
+}
+
+async function smartFetchHtml(url){
+  let html = await fetchViaScrapingBee(url);
+  if (html) return html;
+  html = await fetchViaApifySnapshot(url);
+  if (html) return html;
+  html = await fetchViaAxios(url);
+  return html;
+}
+// ------------------------------------------------
+
+function vendorPromptHints(vendor){
+  switch(vendor){
+    case 'Wayfair':
+      return `For Wayfair: prefer the current price near the main buy button; ignore per-month and struck list prices.`;
+    case 'Amazon':
+      return `For Amazon: prefer the price near "Add to Cart"; ignore subscription/per-month and struck list prices.`;
+    case 'Walmart':
+      return `For Walmart: prefer the main price above "Add to cart"; ignore fees and per-month financing.`;
+    default:
+      return `Prefer the most prominent product price near the buy action; ignore per-month financing and struck-through prices.`;
+  }
+}
+
+async function parseWithGPT({ url, html, currencyFallback = DEFAULT_CURRENCY }){
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error('OPENAI_API_KEY is missing for gptParser.');
+  if (gptCallsUsed >= MAX_GPT_CALLS_PER_RUN) throw new Error('GPT budget limit reached for this run.');
+
+  const client = new OpenAI({ apiKey });
+  const vendor = detectRetailer(url);
+
+  // Trim context to control tokens
+  const visibleText = htmlToVisibleText(html).slice(0, 20000);
+  const htmlSlice = html.slice(0, 20000);
+
+  const system = `
+You are a precise e-commerce product extractor.
+Return STRICT JSON with fields:
+- url (string)
+- name (string)
+- price (number, no currency symbols)
+- currency (ISO code)
+- image (string URL)
+- brand (string, optional)
+- sku (string, optional)
+- availability (in_stock | out_of_stock | preorder | unknown)
+- breadcrumbs (array of strings, optional)
+- package_dimensions (object with length,width,height in inches, optional)
+- package_weight_lbs (number, optional)
+
+Rules:
+- ${vendorPromptHints(vendor)}
+- If currency is unclear, use "${currencyFallback}".
+- "price" must be > 0 and realistic.
+- Prefer selling price (not list/was/per-month).
+- If you see an explicit "Package Dimensions" or "Box Dimensions", include them.
+- "image" should be the main product image URL if visible.
+`.trim();
+
+  const user = `URL: ${url}\nExtract product data from the provided HTML and visible text.\nReturn ONLY JSON, no explanations.`;
+
+  gptCallsUsed += 1;
+  const response = await client.chat.completions.create({
+    model: MODEL,
+    temperature: 0,
+    response_format: { type: 'json_object' },
+    messages: [
+      { role: 'system', content: system },
+      { role: 'user', content: user },
+      { role: 'user', content: `VISIBLE_TEXT:\n${visibleText}` },
+      { role: 'user', content: `HTML:\n${htmlSlice}` },
+    ],
+  });
+
+  let data = {};
+  try { data = JSON.parse(response.choices[0].message.content || '{}'); }
+  catch (e) { throw new Error(`LLM returned invalid JSON: ${e.message}`); }
+
+  let currency = (typeof data.currency === 'string' ? data.currency.toUpperCase().trim() : '') || currencyFallback;
+  if (!ALLOWED_CURRENCIES.includes(currency)) currency = currencyFallback;
+
+  const price = coerceNumber(data.price);
+  const name = typeof data.name === 'string' ? data.name.trim() : null;
+  const image = typeof data.image === 'string' && data.image.startsWith('http') ? data.image : null;
+  const brand = typeof data.brand === 'string' && data.brand.trim() ? data.brand.trim() : null;
+  const sku = typeof data.sku === 'string' && data.sku.trim() ? data.sku.trim() : null;
+
+  // Optional package dims normalization
+  let pkgDims = null;
+  if (data.package_dimensions && typeof data.package_dimensions === 'object') {
+    const l = coerceNumber(data.package_dimensions.length);
+    const w = coerceNumber(data.package_dimensions.width);
+    const h = coerceNumber(data.package_dimensions.height);
+    if ([l, w, h].every(Number.isFinite)) {
+      pkgDims = { length: l, width: w, height: h };
+    }
+  }
+  const pkgWeight = data.package_weight_lbs != null ? coerceNumber(data.package_weight_lbs) : null;
+
+  if (!name || !price || price <= 0 || price > 200000) {
+    throw new Error('GPT parse missing/invalid required fields (name/price).');
+  }
+
+  const availabilityRaw = (data.availability || '').toString().toLowerCase();
+  const availability = ['in_stock','out_of_stock','preorder','unknown'].includes(availabilityRaw) ? availabilityRaw : 'unknown';
+
+  const breadcrumbs = Array.isArray(data.breadcrumbs)
+    ? data.breadcrumbs.map(s => (typeof s === 'string' ? s.trim() : '')).filter(Boolean).slice(0, 10)
+    : [];
+
+  if (response.usage) {
+    console.log(`[GPT usage] prompt_tokens=${response.usage.prompt_tokens} completion_tokens=${response.usage.completion_tokens}`);
+  }
+
+  return {
+    url, name, price, currency, image, brand, sku, availability, breadcrumbs,
+    package_dimensions: pkgDims,
+    package_weight_lbs: pkgWeight,
+    dimensions: null, weight: null, // keep placeholders for other parts of pipeline
+    category: breadcrumbs[breadcrumbs.length - 1] || null,
+    inStock: availability === 'in_stock',
+    _meta: { vendor, model: MODEL, gptCallsUsed },
+  };
+}
+
+async function parseProduct(url, opts = {}){
+  const { currencyFallback = DEFAULT_CURRENCY } = opts;
+  await sleep(rnd(200, 600));
+  const html = await smartFetchHtml(url);
+  if (!html) throw new Error('All HTML fetch methods failed (Bee/Apify/Axios).');
+  return parseWithGPT({ url, html, currencyFallback });
+}
+
+module.exports = { parseProduct };
