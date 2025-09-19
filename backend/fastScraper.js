@@ -173,16 +173,34 @@ app.post('/api/scrape', async (req, res) => {
         } else {
           console.log('❌ All scraping methods failed for:', url);
           
+          // Manual prompt fallback - ask user for product info
+          const manualProduct = {
+            url: url,
+            name: null,
+            price: null,
+            image: null,
+            dimensions: null,
+            weight: null,
+            retailer: detectRetailer(url),
+            scrapeMethod: 'manual_required',
+            manualPrompt: true,
+            promptMessage: 'Unable to automatically extract product information. Please provide details manually.',
+            promptFields: {
+              name: 'Product Name',
+              price: 'Price (USD)',
+              length: 'Length (inches)',
+              width: 'Width (inches)', 
+              height: 'Height (inches)',
+              weight: 'Weight (lbs) - optional'
+            }
+          };
+          
+          results.push(manualProduct);
+          
           // Record failure for adaptive learning
           if (adaptiveScraper) {
             await adaptiveScraper.recordScrapingAttempt(url, detectRetailer(url), false, null, ['all_methods_failed']);
           }
-          
-          results.push({
-            url: url,
-            error: 'Unable to extract product information',
-            retailer: detectRetailer(url)
-          });
         }
 
       } catch (error) {
