@@ -46,8 +46,8 @@ OrderTracker.create().then(tracker => {
   orderTracker = tracker;
 }).catch(error => {
   console.error('Failed to initialize order tracker:', error);
-});
-
+}
+)
 console.log('=== SERVER STARTUP ===');
 console.log(`Port: ${PORT}`);
 console.log('');
@@ -382,26 +382,13 @@ function calculateShippingCost(dimensions, weight, price) {
   console.log(`   🎯   Base: $${baseShippingCost.toFixed(2)}`);
   console.log(`   🎯   + 20% margin: $${baseShippingCost.toFixed(2)} × 1.20 = $${totalCost.toFixed(2)}`);
   
-  // Add 4% card processing fee (hidden in shipping)
-  // Calculate 4% of total order value (price + duty + shipping + delivery)
-  const dutyAmount = price * 0.265;
-  const deliveryFee = 25;
-  const orderSubtotal = price + dutyAmount + totalCost + deliveryFee;
-  const cardFee = orderSubtotal * 0.04;
-  const finalShippingCost = totalCost + cardFee;
-  
-  console.log(`   💳 CARD FEE CALCULATION:`);
-  console.log(`   💳   Order subtotal: $${orderSubtotal.toFixed(2)}`);
-  console.log(`   💳   Card fee (4%): $${cardFee.toFixed(2)}`);
-  console.log(`   💳   Final shipping cost: $${finalShippingCost.toFixed(2)}`);
-  
   // IKEA specific debugging
   if (dimensions.length < 30 && dimensions.width < 30 && dimensions.height < 30) {
     console.log(`   🚨 SUSPICIOUS: All dimensions under 30" - this might be packaging for one component!`);
     console.log(`   🚨 For furniture, expected dimensions should be 60"+ for at least one dimension`);
   }
   
-  return Math.round(finalShippingCost);
+  return Math.round(totalCost);
 }
 
 // Helper function to check if essential data is complete
@@ -449,13 +436,8 @@ async function getUPCDimensions(productName) {
     const upcData = await upcItemDB.searchByName(productName);
     
     if (upcData && upcData.dimensions) {
-      console.log(`   ✅ UPCitemdb found BOX dimensions: ${upcData.dimensions.length}" × ${upcData.dimensions.width}" × ${upcData.dimensions.height}"`);
-      
-      // UPCitemdb already provides shipping box dimensions
-      const boxDimensions = upcData.dimensions;
-      
-      console.log(`   📦 Using UPCitemdb BOX dimensions: ${boxDimensions.length}" × ${boxDimensions.width}" × ${boxDimensions.height}"`);
-      return boxDimensions;
+      console.log(`   ✅ UPCitemdb found dimensions: ${upcData.dimensions.length}" × ${upcData.dimensions.width}" × ${upcData.dimensions.height}"`);
+      return upcData.dimensions;
     }
     
     console.log('   ❌ UPCitemdb: No dimensions found');
