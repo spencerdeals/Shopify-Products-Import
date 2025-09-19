@@ -353,19 +353,26 @@ function calculateShippingCost(dimensions, weight, price) {
     return Math.max(25, price * 0.15);
   }
   
+  console.log(`   🧮 Shipping calculation debug:`);
+  console.log(`   📦 Dimensions: ${dimensions.length}" × ${dimensions.width}" × ${dimensions.height}"`);
+  
   // Calculate volume in cubic feet
   const cubicInches = dimensions.length * dimensions.width * dimensions.height;
   const cubicFeet = cubicInches / 1728;
+  console.log(`   📊 Volume: ${cubicInches.toFixed(0)} cubic inches = ${cubicFeet.toFixed(3)} cubic feet`);
   
   // Base rate: $8 per cubic foot
   const baseCost = Math.max(15, cubicFeet * SHIPPING_RATE_PER_CUBIC_FOOT);
+  console.log(`   💰 Base cost: $${baseCost.toFixed(2)} (${cubicFeet.toFixed(3)} × $${SHIPPING_RATE_PER_CUBIC_FOOT})`);
   
   // Add surcharges
   const oversizeFee = Math.max(dimensions.length, dimensions.width, dimensions.height) > 48 ? 50 : 0;
   const valueFee = price > 500 ? price * 0.02 : 0;
   const handlingFee = 15;
+  console.log(`   📋 Fees: Oversize=$${oversizeFee}, Value=$${valueFee.toFixed(2)}, Handling=$${handlingFee}`);
   
   const totalCost = baseCost + oversizeFee + valueFee + handlingFee;
+  console.log(`   🎯 Total shipping: $${totalCost.toFixed(2)}`);
   return Math.round(totalCost);
 }
 
