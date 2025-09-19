@@ -60,13 +60,13 @@ class ZyteScraper {
       const productData = this.parseZyteResponse(response.data, url, retailer);
       
       console.log('📦 Zyte extraction results:', {
-        hasName: !!productData.name,
-        hasPrice: !!productData.price,
-        hasImage: !!productData.image,
-        hasDimensions: !!productData.dimensions,
-        hasWeight: !!productData.weight,
-        hasVariant: !!productData.variant,
-        confidence: productData.confidence
+        'hasName': !!productData.name,
+        'hasPrice': !!productData.price,
+        'hasImage': !!productData.image,
+        'hasDimensions': !!productData.dimensions,
+        'hasWeight': !!productData.weight,
+        'hasVariant': !!productData.variant,
+        'confidence': productData.confidence
       });
 
       return productData;

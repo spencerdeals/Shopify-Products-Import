@@ -349,12 +349,12 @@ class ApifyActorScraper {
     result.variant = item.variant || item.color || item.size || null;
     
     console.log('   📊 Cleaned data quality:', {
-      hasName: !!result.name,
-      hasPrice: !!result.price,
-      hasImage: !!result.image,
-      hasDimensions: !!result.dimensions,
-      hasWeight: !!result.weight,
-      hasVariant: !!result.variant
+      'hasName': !!result.name,
+      'hasPrice': !!result.price,
+      'hasImage': !!result.image,
+      'hasDimensions': !!result.dimensions,
+      'hasWeight': !!result.weight,
+      'hasVariant': !!result.variant
     });
     
     return {
