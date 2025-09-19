@@ -9,7 +9,6 @@ require('dotenv').config();
 const UPCItemDB = require('./upcitemdb');
 const OrderTracker = require('./orderTracking');
 const ZyteScraper = require('./zyteScraper');
-const ApifyActorScraper = require('./apifyActorScraper');
 
 // Simple, working scraper approach
 const MAX_CONCURRENT = 1; // Process one at a time to avoid issues
@@ -31,8 +30,6 @@ const SHIPPING_RATE_PER_CUBIC_FOOT = 8;
 // Initialize scrapers
 const zyteScraper = new ZyteScraper();
 const USE_ZYTE = zyteScraper.enabled;
-const apifyActorScraper = new ApifyActorScraper(process.env.APIFY_API_KEY);
-const USE_APIFY_ACTORS = apifyActorScraper.isAvailable();
 const USE_GPT_FALLBACK = !!process.env.OPENAI_API_KEY;
 
 // Confidence threshold for triggering GPT fallback
@@ -53,7 +50,8 @@ console.log('');
 console.log('🔍 SCRAPING CONFIGURATION:');
 console.log(`1. Primary: Zyte API - ${USE_ZYTE ? '✅ ENABLED' : '❌ DISABLED (Missing API Key)'}`);
 console.log(`2. Fallback: GPT Parser - ${USE_GPT_FALLBACK ? '✅ ENABLED' : '❌ DISABLED (Missing OpenAI Key)'}`);
-console.log(`3. Confidence Threshold: ${CONFIDENCE_THRESHOLD} (${CONFIDENCE_THRESHOLD * 100}%)`);
+console.log(`3. UPC Database: ${USE_UPCITEMDB ? '✅ ENABLED' : '❌ DISABLED (Missing API Key)'}`);
+console.log(`4. Confidence Threshold: ${CONFIDENCE_THRESHOLD} (${CONFIDENCE_THRESHOLD * 100}%)`);
 console.log('');
 
 // Middleware
