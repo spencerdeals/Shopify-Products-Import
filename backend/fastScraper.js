@@ -16,7 +16,7 @@ const { parseProduct: parseWithGPT } = require('./gptParser');
 const MAX_CONCURRENT = 1; // Process one at a time to avoid issues
 
 const app = express();
-const PORT = process.env.PORT || 8080;
+const PORT = process.env.PORT || 3000;
 
 // Configuration
 const SHOPIFY_DOMAIN = process.env.SHOPIFY_DOMAIN || 'spencer-deals-ltd.myshopify.com';
