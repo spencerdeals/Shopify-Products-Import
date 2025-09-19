@@ -131,7 +131,37 @@ app.post('/api/scrape', async (req, res) => {
         
         if (!hasEssentialData) {
           console.log('⚠️ No essential product data found, triggering manual prompt');
-          product = null; // Reset to trigger manual prompt
+          
+          // Create manual prompt product instead of setting to null
+          const manualProduct = {
+            url: url,
+            name: null,
+            price: null,
+            image: null,
+            dimensions: null,
+            weight: null,
+            retailer: detectRetailer(url),
+            scrapeMethod: 'manual_required',
+            manualPrompt: true,
+            promptMessage: 'Unable to automatically extract product information. Please provide details manually.',
+            promptFields: {
+              name: 'Product Name',
+              price: 'Price (USD)',
+              length: 'Length (inches)',
+              width: 'Width (inches)', 
+              height: 'Height (inches)',
+              weight: 'Weight (lbs) - optional'
+            }
+          };
+          
+          results.push(manualProduct);
+          
+          // Record failure for adaptive learning
+          if (adaptiveScraper) {
+            await adaptiveScraper.recordScrapingAttempt(url, detectRetailer(url), false, null, ['no_essential_data']);
+          }
+          
+          continue; // Skip to next URL
         }
         if (product) {
           // Enhance with historical data if available
@@ -176,37 +206,6 @@ app.post('/api/scrape', async (req, res) => {
           // Record scraping attempt for adaptive learning
           if (adaptiveScraper) {
             await adaptiveScraper.recordScrapingAttempt(url, product.retailer, true, product);
-          }
-        } else {
-          console.log('❌ All scraping methods failed for:', url);
-          
-          // Manual prompt fallback - ask user for product info
-          const manualProduct = {
-            url: url,
-            name: null,
-            price: null,
-            image: null,
-            dimensions: null,
-            weight: null,
-            retailer: detectRetailer(url),
-            scrapeMethod: 'manual_required',
-            manualPrompt: true,
-            promptMessage: 'Unable to automatically extract product information. Please provide details manually.',
-            promptFields: {
-              name: 'Product Name',
-              price: 'Price (USD)',
-              length: 'Length (inches)',
-              width: 'Width (inches)', 
-              height: 'Height (inches)',
-              weight: 'Weight (lbs) - optional'
-            }
-          };
-          
-          results.push(manualProduct);
-          
-          // Record failure for adaptive learning
-          if (adaptiveScraper) {
-            await adaptiveScraper.recordScrapingAttempt(url, detectRetailer(url), false, null, ['all_methods_failed']);
           }
         }
 
