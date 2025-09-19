@@ -595,7 +595,7 @@ async function scrapeProduct(url) {
   }
   
   // Check if manual entry is required (only after trying UPCitemdb)
-  if (scrapingMethod === 'failed-will-try-upc' && (!productData.name || productData.name.startsWith('Product from'))) {
+  if (scrapingMethod === 'failed-will-try-upc' && (!productData || !productData.name || productData.name.startsWith('Product from'))) {
     console.log(`   ⚠️ ${retailer} requires manual entry - both automated methods failed`);
     return {
       id: productId,
@@ -640,7 +640,7 @@ async function scrapeProduct(url) {
   }
   
   // Fill in missing data with estimations
-  const productName = (productData && productData.name) ? productData.name : `Product from ${retailer}`;
+  const productName = productData.name || `Product from ${retailer}`;
   
   // Handle category - convert object to string if needed
   let category = productData.category;
@@ -687,7 +687,7 @@ async function scrapeProduct(url) {
   const shippingCost = calculateShippingCost(
     productData.dimensions,
     productData.weight,
-    (productData && productData.price) ? productData.price : 100
+    productData.price || 100
   );
   
   // Prepare final product object
@@ -695,8 +695,8 @@ async function scrapeProduct(url) {
     id: productId,
     url: url,
     name: productName,
-    price: (productData && productData.price) ? productData.price : null,
-    image: (productData && productData.image) ? productData.image : 'https://placehold.co/400x400/7CB342/FFFFFF/png?text=SDL',
+    price: productData.price || null,
+    image: productData.image || 'https://placehold.co/400x400/7CB342/FFFFFF/png?text=SDL',
     category: category,
     retailer: retailer,
     dimensions: productData.dimensions,
@@ -704,14 +704,14 @@ async function scrapeProduct(url) {
     shippingCost: shippingCost,
     scrapingMethod: scrapingMethod,
     confidence: confidence,
-    variant: (productData && productData.variant) ? productData.variant : null,
+    variant: productData.variant || null,
     dataCompleteness: {
-      hasName: !!(productData && productData.name),
-      hasImage: !!(productData && productData.image),
-      hasDimensions: !!(productData && productData.dimensions),
-      hasWeight: !!(productData && productData.weight),
-      hasPrice: !!(productData && productData.price),
-      hasVariant: !!(productData && productData.variant)
+      hasName: !!productData.name,
+      hasImage: !!productData.image,
+      hasDimensions: !!productData.dimensions,
+      hasWeight: !!productData.weight,
+      hasPrice: !!productData.price,
+      hasVariant: !!productData.variant
     }
   };
   
