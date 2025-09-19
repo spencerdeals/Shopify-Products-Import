@@ -891,6 +891,7 @@ async function scrapeProduct(url) {
   if (retailer === 'IKEA' && productData && productData.name && productData.price) {
     const needsComponents = checkIfIkeaNeedsComponents(productData.name, productData.price);
     if (needsComponents) {
+      const category = productData?.category || categorizeProduct(productData.name, url);
       console.log(`   🛏️ IKEA product likely has multiple components: ${productData.name}`);
       return {
         id: productId,
@@ -1051,6 +1052,7 @@ async function scrapeProduct(url) {
   // STEP 7: Final fallback - intelligent estimation
   if (!productData || !productData.dimensions) {
     // Try BOL category patterns one more time
+    const category = productData?.category || categorizeProduct(productName, url);
     const categoryEstimate = await bolHistory.getSmartEstimate('', category, retailer);
     
     if (categoryEstimate && categoryEstimate.dimensions) {
@@ -1059,6 +1061,7 @@ async function scrapeProduct(url) {
       scrapingMethod = scrapingMethod === 'none' ? 'bol-category-estimate' : scrapingMethod + '+bol-estimate';
     } else {
       // Final fallback to basic estimation
+      const productName = (productData && productData.name) || `Product from ${retailer}`;
       const estimatedDimensions = estimateDimensions(category, productName);
       if (productData) {
         productData.dimensions = estimatedDimensions;
@@ -1074,6 +1077,7 @@ async function scrapeProduct(url) {
   
   if (!productData || !productData.weight) {
     if (!productData) productData = {};
+    const category = productData?.category || categorizeProduct(productName, url);
     const estimatedWeight = estimateWeight(productData.dimensions, category);
     console.log(`   📐 Final estimated dimensions: ${productData.dimensions.length}" × ${productData.dimensions.width}" × ${productData.dimensions.height}"`);
     productData.weight = estimatedWeight;
