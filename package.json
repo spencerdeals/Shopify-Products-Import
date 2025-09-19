@@ -5,8 +5,7 @@
   "main": "backend/fastScraper.js",
   "scripts": {
     "start": "node backend/fastScraper.js",
-    "dev": "nodemon backend/fastScraper.js",
-    "build": "echo 'Build completed successfully'",
+    "dev": "nodemon backend/fastScraper.js || node backend/fastScraper.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
