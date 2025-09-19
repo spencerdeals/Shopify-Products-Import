@@ -4,16 +4,10 @@ const rateLimit = require('express-rate-limit');
 const axios = require('axios');
 const path = require('path');
 const { URL } = require('url');
-const { parseProduct } = require('./boxEstimator');
+const ApifyScraper = require('./apifyScraper');
 require('dotenv').config();
 const UPCItemDB = require('./upcitemdb');
-const OrderTracker = require('./orderTracking');
-const ZyteScraper = require('./zyteScraper');
-const ApifyActorScraper = require('./apifyActorScraper');
-const { parseProduct: parseWithGPT } = require('./gptParser');
-
-// Simple, working scraper approach
-const MAX_CONCURRENT = 1; // Process one at a time to avoid issues
+// const learningSystem = require('./learningSystem');  // TODO: Re-enable with PostgreSQL later
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -21,41 +15,43 @@ const PORT = process.env.PORT || 3000;
 // Configuration
 const SHOPIFY_DOMAIN = process.env.SHOPIFY_DOMAIN || 'spencer-deals-ltd.myshopify.com';
 const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN || '';
+const SCRAPINGBEE_API_KEY = process.env.SCRAPINGBEE_API_KEY || '';
 const UPCITEMDB_API_KEY = process.env.UPCITEMDB_API_KEY || '';
 const upcItemDB = new UPCItemDB(UPCITEMDB_API_KEY);
 const USE_UPCITEMDB = !!UPCITEMDB_API_KEY;
-const SCRAPING_TIMEOUT = 30000;
+const APIFY_API_KEY = process.env.APIFY_API_KEY || '';
+const SCRAPING_TIMEOUT = 30000;  // 30 seconds timeout
 const MAX_CONCURRENT_SCRAPES = 2;
 const BERMUDA_DUTY_RATE = 0.265;
-const SHIPPING_RATE_PER_CUBIC_FOOT = 8;
+const USE_SCRAPINGBEE = !!SCRAPINGBEE_API_KEY;
+const SHIPPING_RATE_PER_CUBIC_FOOT = 8; // $8 per cubic foot as discussed
 
-// Initialize scrapers
-const zyteScraper = new ZyteScraper();
-const USE_ZYTE = zyteScraper.enabled;
-const apifyActorScraper = new ApifyActorScraper(process.env.APIFY_API_KEY);
-const USE_APIFY_ACTORS = apifyActorScraper.isAvailable();
-const USE_GPT_FALLBACK = !!process.env.OPENAI_API_KEY;
-
-// Confidence threshold for triggering GPT fallback
-const CONFIDENCE_THRESHOLD = 0.3; // If Zyte confidence < 30%, try GPT
-
-// Initialize order tracker
-let orderTracker = null;
-
-OrderTracker.create().then(tracker => {
-  orderTracker = tracker;
-}).catch(error => {
-  console.error('Failed to initialize order tracker:', error);
-});
+// Initialize Apify scraper
+const apifyScraper = new ApifyScraper(APIFY_API_KEY);
+const USE_APIFY = apifyScraper.isAvailable();
 
 console.log('=== SERVER STARTUP ===');
 console.log(`Port: ${PORT}`);
+console.log(`Shopify Domain: ${SHOPIFY_DOMAIN}`);
 console.log('');
 console.log('🔍 SCRAPING CONFIGURATION:');
-console.log(`1. Primary: Zyte API - ${USE_ZYTE ? '✅ ENABLED' : '❌ DISABLED (Missing API Key)'}`);
-console.log(`2. Fallback: GPT Parser - ${USE_GPT_FALLBACK ? '✅ ENABLED' : '❌ DISABLED (Missing OpenAI Key)'}`);
-console.log(`3. Confidence Threshold: ${CONFIDENCE_THRESHOLD} (${CONFIDENCE_THRESHOLD * 100}%)`);
+console.log(`1. Primary: Apify - ${USE_APIFY ? '✅ ENABLED (All Retailers)' : '❌ DISABLED (Missing API Key)'}`);
+console.log(`2. Fallback: ScrapingBee - ${USE_SCRAPINGBEE ? '✅ ENABLED' : '❌ DISABLED (Missing API Key)'}`);
+console.log(`3. Dimension Data: UPCitemdb - ${USE_UPCITEMDB ? '✅ ENABLED' : '❌ DISABLED (Missing API Key)'}`);
 console.log('');
+console.log('📊 SCRAPING STRATEGY:');
+if (USE_APIFY && USE_SCRAPINGBEE && USE_UPCITEMDB) {
+  console.log('✅ OPTIMAL: Apify → ScrapingBee → UPCitemdb → AI Estimation');
+} else if (USE_APIFY && USE_SCRAPINGBEE) {
+  console.log('⚠️  GOOD: Apify → ScrapingBee → AI Estimation (No UPCitemdb)');
+} else if (USE_APIFY && !USE_SCRAPINGBEE) {
+  console.log('⚠️  LIMITED: Apify → AI Estimation (No ScrapingBee fallback)');
+} else if (!USE_APIFY && USE_SCRAPINGBEE) {
+  console.log('⚠️  LIMITED: ScrapingBee → AI Estimation (No Apify primary)');
+} else {
+  console.log('❌ MINIMAL: AI Estimation only (No scrapers configured)');
+}
+console.log('=====================');
 
 // Middleware
 app.use(cors());
@@ -66,6 +62,7 @@ app.set('trust proxy', true);
 
 // Serve frontend static files
 app.use(express.static(path.join(__dirname, '../frontend')));
+app.use(express.static(path.join(__dirname, '../web')));
 
 // CRITICAL: Health check MUST be before rate limiter
 app.get('/health', (req, res) => {
@@ -74,40 +71,39 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     port: PORT,
     scraping: {
-      primary: USE_ZYTE ? 'Zyte API' : 'None',
-      fallback: process.env.OPENAI_API_KEY ? 'GPT Parser' : 'None',
-      dimensions: USE_UPCITEMDB ? 'UPCitemdb' : 'None'
+      primary: USE_APIFY ? 'Apify' : 'None',
+      fallback: USE_SCRAPINGBEE ? 'ScrapingBee' : 'None',
+      dimensions: USE_UPCITEMDB ? 'UPCitemdb' : 'None',
+      strategy: USE_APIFY && USE_SCRAPINGBEE && USE_UPCITEMDB ? 'Optimal' : 
+                USE_APIFY && USE_SCRAPINGBEE ? 'Good' :
+                USE_APIFY || USE_SCRAPINGBEE ? 'Limited' : 'Minimal'
     },
     shopifyConfigured: !!SHOPIFY_ACCESS_TOKEN
   });
 });
 
-// Admin authentication middleware
-function requireAdmin(req, res, next) {
-  const auth = req.headers.authorization;
-  if (!auth || !auth.startsWith('Basic ')) {
-    res.set('WWW-Authenticate', 'Basic realm="Admin Area"');
-    return res.status(401).send('Authentication required');
+// Test endpoint for UPCitemdb
+app.get('/test-upc', async (req, res) => {
+  if (!USE_UPCITEMDB) {
+    return res.json({ 
+      success: false, 
+      message: 'UPCitemdb not configured' 
+    });
   }
   
-  const credentials = Buffer.from(auth.slice(6), 'base64').toString();
-  const [username, password] = credentials.split(':');
-  
-  if (username === 'admin' && password === '1064') {
-    next();
-  } else {
-    res.set('WWW-Authenticate', 'Basic realm="Admin Area"');
-    res.status(401).send('Invalid credentials');
+  try {
+    const testProduct = await upcItemDB.searchByName('Apple iPhone 15 Pro');
+    res.json({
+      success: true,
+      testProduct: testProduct,
+      message: testProduct ? 'UPCitemdb is working!' : 'UPCitemdb connected but no results for test query'
+    });
+  } catch (error) {
+    res.json({
+      success: false,
+      error: error.message
+    });
   }
-}
-
-// Admin routes
-app.get('/admin', requireAdmin, (req, res) => {
-  res.sendFile(path.join(__dirname, '../frontend/admin.html'));
-});
-
-app.get('/admin-calculator', requireAdmin, (req, res) => {
-  res.sendFile(path.join(__dirname, '../frontend/admin-calculator.html'));
 });
 
 // Root route - serve frontend HTML
@@ -116,12 +112,14 @@ app.get('/', (req, res) => {
   res.sendFile(frontendPath, (err) => {
     if (err) {
       console.error('Error serving frontend:', err);
+      // Fallback to API info if frontend not found
       res.json({
         message: 'Frontend not found - API is running',
         endpoints: {
           health: '/health',
           scrape: 'POST /api/scrape',
-          createOrder: 'POST /apps/instant-import/create-draft-order'
+          createOrder: 'POST /apps/instant-import/create-draft-order',
+          testUpc: '/test-upc'
         }
       });
     }
@@ -172,7 +170,6 @@ function detectRetailer(url) {
     if (domain.includes('crateandbarrel.com')) return 'Crate & Barrel';
     if (domain.includes('westelm.com')) return 'West Elm';
     if (domain.includes('potterybarn.com')) return 'Pottery Barn';
-    if (domain.includes('lunafurn.com')) return 'Luna Furniture';
     return 'Unknown Retailer';
   } catch (e) {
     return 'Unknown Retailer';
@@ -200,14 +197,6 @@ function isSDLDomain(url) {
 
 function categorizeProduct(name, url) {
   const text = (name + ' ' + url).toLowerCase();
-  
-  // Handle category objects from Zyte (convert to string)
-  if (typeof name === 'object' && name.name) {
-    const categoryText = name.name.toLowerCase();
-    if (categoryText.includes('mattress')) return 'furniture';
-    if (categoryText.includes('bedroom')) return 'furniture';
-    if (categoryText.includes('furniture')) return 'furniture';
-  }
   
   if (/\b(sofa|sectional|loveseat|couch|chair|recliner|ottoman|table|desk|dresser|nightstand|bookshelf|cabinet|wardrobe|armoire|bed|frame|headboard|mattress|dining|kitchen|office)\b/.test(text)) return 'furniture';
   if (/\b(tv|television|monitor|laptop|computer|tablet|phone|smartphone|camera|speaker|headphone|earbuds|router|gaming|console|xbox|playstation|nintendo)\b/.test(text)) return 'electronics';
@@ -347,126 +336,48 @@ function estimateBoxDimensions(productDimensions, category) {
   };
 }
 
-function calculateShippingCost(dimensions, weight, price) {
+function calculateShippingCost(dimensions, weight, price, retailer) {
+  // Special handling for IKEA
+  if (retailer === 'IKEA') {
+    const oceanFreight = price * 0.40; // 40% of retail value
+    const handling = 15;
+    const subtotal = price + oceanFreight + handling;
+    const margin = subtotal * 0.20; // 20% margin on total cost
+    const totalShipping = oceanFreight + handling + margin;
+    
+    console.log(`   🛏️ IKEA Special Calculation:
+      Product: $${price}
+      Ocean Freight (40%): $${oceanFreight.toFixed(2)}
+      Handling: $${handling}
+      Subtotal: $${subtotal.toFixed(2)}
+      Margin (20%): $${margin.toFixed(2)}
+      Total Shipping: $${totalShipping.toFixed(2)}
+      (Subject to manual review)`);
+    
+    return Math.round(totalShipping);
+  }
+  
   if (!dimensions) {
     // No dimensions available, use a default based on price
     return Math.max(25, price * 0.15);
   }
   
-  console.log(`   🧮 DETAILED Shipping calculation:`);
-  console.log(`   📦 Input dimensions: ${dimensions.length}" × ${dimensions.width}" × ${dimensions.height}"`);
-  
   // Calculate volume in cubic feet
   const cubicInches = dimensions.length * dimensions.width * dimensions.height;
   const cubicFeet = cubicInches / 1728;
-  console.log(`   📊 VOLUME CALCULATION:`);
-  console.log(`   📊   ${dimensions.length} × ${dimensions.width} × ${dimensions.height} = ${cubicInches.toFixed(0)} cubic inches`);
-  console.log(`   📊   ${cubicInches.toFixed(0)} ÷ 1728 = ${cubicFeet.toFixed(3)} cubic feet`);
   
   // Base rate: $8 per cubic foot
   const baseCost = Math.max(15, cubicFeet * SHIPPING_RATE_PER_CUBIC_FOOT);
-  console.log(`   💰 BASE COST CALCULATION:`);
-  console.log(`   💰   ${cubicFeet.toFixed(3)} × $${SHIPPING_RATE_PER_CUBIC_FOOT} = $${(cubicFeet * SHIPPING_RATE_PER_CUBIC_FOOT).toFixed(2)}`);
-  console.log(`   💰   Math.max(15, ${(cubicFeet * SHIPPING_RATE_PER_CUBIC_FOOT).toFixed(2)}) = $${baseCost.toFixed(2)}`);
   
-  // Add handling fee
+  // Add surcharges
+  const oversizeFee = Math.max(dimensions.length, dimensions.width, dimensions.height) > 48 ? 50 : 0;
+  const valueFee = price > 500 ? price * 0.02 : 0;
   const handlingFee = 15;
-  console.log(`   📋 HANDLING FEE: $${handlingFee}`);
   
-  // Calculate base shipping cost
-  const baseShippingCost = baseCost + handlingFee;
-  
-  // Add 20% margin to create final shipping & handling cost
-  const totalCost = baseShippingCost * 1.20;
-  console.log(`   🎯 MARGIN CALCULATION:`);
-  console.log(`   🎯   Base: $${baseShippingCost.toFixed(2)}`);
-  console.log(`   🎯   + 20% margin: $${baseShippingCost.toFixed(2)} × 1.20 = $${totalCost.toFixed(2)}`);
-  
-  // Add 4% card processing fee (hidden in shipping)
-  // Calculate 4% of total order value (price + duty + shipping + delivery)
-  const dutyAmount = price * 0.265;
-  const deliveryFee = 25;
-  const orderSubtotal = price + dutyAmount + totalCost + deliveryFee;
-  const cardFee = orderSubtotal * 0.04;
-  const finalShippingCost = totalCost + cardFee;
-  
-  console.log(`   💳 CARD FEE CALCULATION:`);
-  console.log(`   💳   Order subtotal: $${orderSubtotal.toFixed(2)}`);
-  console.log(`   💳   Card fee (4%): $${cardFee.toFixed(2)}`);
-  console.log(`   💳   Final shipping cost: $${finalShippingCost.toFixed(2)}`);
-  
-  // IKEA specific debugging
-  if (dimensions.length < 30 && dimensions.width < 30 && dimensions.height < 30) {
-    console.log(`   🚨 SUSPICIOUS: All dimensions under 30" - this might be packaging for one component!`);
-    console.log(`   🚨 For furniture, expected dimensions should be 60"+ for at least one dimension`);
-  }
-  
-  return Math.round(finalShippingCost);
+  const totalCost = baseCost + oversizeFee + valueFee + handlingFee;
+  return Math.round(totalCost);
 }
 
-// Check if IKEA product needs component collection
-function checkIfIkeaNeedsComponents(productName, price) {
-  const name = productName.toLowerCase();
-  
-  // Bed frames - typically 2-4 components
-  if (/\b(bed|frame|headboard|footboard|brimnes)\b/.test(name)) {
-    if (price > 400) {
-      return { count: 4, type: 'bed frame' }; // King/Queen beds
-    } else if (price > 200) {
-      return { count: 3, type: 'bed frame' }; // Full/Double beds
-    } else {
-      return { count: 2, type: 'bed frame' }; // Twin beds
-    }
-  }
-  
-  // Wardrobes/PAX - typically 3-6 components
-  if (/\b(wardrobe|armoire|closet|pax)\b/.test(name)) {
-    if (price > 500) {
-      return { count: 6, type: 'wardrobe system' }; // Large PAX systems
-    } else if (price > 300) {
-      return { count: 4, type: 'wardrobe' }; // Medium wardrobes
-    } else {
-      return { count: 3, type: 'wardrobe' }; // Small wardrobes
-    }
-  }
-  
-  // Kitchen systems - typically 4-8 components
-  if (/\b(kitchen|cabinet.*set|knoxhult|enhet)\b/.test(name)) {
-    if (price > 1000) {
-      return { count: 8, type: 'kitchen system' }; // Full kitchen
-    } else if (price > 500) {
-      return { count: 5, type: 'kitchen set' }; // Partial kitchen
-    } else {
-      return { count: 4, type: 'kitchen unit' }; // Small kitchen set
-    }
-  }
-  
-  // Sectional sofas - typically 2-4 components
-  if (/\b(sectional|sofa.*section|corner.*sofa)\b/.test(name)) {
-    if (price > 800) {
-      return { count: 4, type: 'sectional sofa' }; // Large sectionals
-    } else {
-      return { count: 3, type: 'sectional sofa' }; // Small sectionals
-    }
-  }
-  
-  // Dining sets - typically 2-3 components (table + chairs)
-  if (/\b(dining|table.*chair|chair.*table)\b/.test(name)) {
-    return { count: 3, type: 'dining set' };
-  }
-  
-  // Large storage/shelving - typically 2-3 components for tall units
-  if (/\b(bookshelf|shelf.*unit|billy|hemnes.*bookcase|kallax)\b/.test(name) && price > 200) {
-    return { count: 3, type: 'storage unit' };
-  }
-  
-  // Large desks - typically 2 components
-  if (/\b(desk|workstation|office.*table)\b/.test(name) && price > 300) {
-    return { count: 2, type: 'desk system' };
-  }
-  
-  return null; // Single component item
-}
 // Helper function to check if essential data is complete
 function isDataComplete(productData) {
   return productData && 
@@ -479,207 +390,6 @@ function isDataComplete(productData) {
          productData.dimensions.height > 0;
 }
 
-// Helper function to check if dimensions look suspicious/wrong
-function dimensionsLookSuspicious(dimensions) {
-  if (!dimensions) return true;
-  
-  const { length, width, height } = dimensions;
-  
-  // Check for missing or zero dimensions
-  if (!length || !width || !height || length <= 0 || width <= 0 || height <= 0) {
-    return true;
-  }
-  
-  // Check for unreasonably small dimensions (likely extraction errors)
-  if (length < 2 && width < 2 && height < 2) {
-    return true;
-  }
-  
-  // Check for unreasonably large dimensions (likely extraction errors)
-  if (length > 200 || width > 200 || height > 200) {
-    return true;
-  }
-  
-  return false;
-}
-
-// Smart UPCitemdb lookup for dimensions
-async function getUPCDimensions(productName) {
-  if (!USE_UPCITEMDB || !productName) return null;
-  
-  try {
-    console.log(`   🔍 UPCitemdb lookup for: "${productName.substring(0, 50)}..."`);
-    const upcData = await upcItemDB.searchByName(productName);
-    
-    if (upcData && upcData.dimensions) {
-      console.log(`   ✅ UPCitemdb found BOX dimensions: ${upcData.dimensions.length}" × ${upcData.dimensions.width}" × ${upcData.dimensions.height}"`);
-      
-      // UPCitemdb already provides shipping box dimensions
-      const boxDimensions = upcData.dimensions;
-      
-      console.log(`   📦 Using UPCitemdb BOX dimensions: ${boxDimensions.length}" × ${boxDimensions.width}" × ${boxDimensions.height}"`);
-      return boxDimensions;
-    }
-    
-    console.log('   ❌ UPCitemdb: No dimensions found');
-    return null;
-  } catch (error) {
-    console.log('   ❌ UPCitemdb lookup failed:', error.message);
-    return null;
-  }
-}
-
-// IKEA Multi-Box Estimator - estimates total shipping volume for IKEA furniture
-function estimateIkeaMultiBoxShipping(singleBoxDimensions, productName, price) {
-  const name = productName.toLowerCase();
-  const volume = singleBoxDimensions.length * singleBoxDimensions.width * singleBoxDimensions.height;
-  
-  console.log(`   🛏️ IKEA Multi-Box Analysis for: "${productName.substring(0, 50)}..."`);
-  console.log(`   📦 Single box: ${singleBoxDimensions.length}" × ${singleBoxDimensions.width}" × ${singleBoxDimensions.height}" (${(volume/1728).toFixed(2)} ft³)`);
-  
-  let boxMultiplier = 1;
-  let confidence = 'low';
-  
-  // Bed frames - typically 2-4 boxes depending on size
-  if (/\b(bed|frame|headboard|footboard)\b/.test(name)) {
-    if (price > 400) {
-      boxMultiplier = 4; // King/Queen beds
-      confidence = 'high';
-    } else if (price > 200) {
-      boxMultiplier = 3; // Full/Double beds
-      confidence = 'medium';
-    } else {
-      boxMultiplier = 2; // Twin beds
-      confidence = 'medium';
-    }
-  }
-  // Wardrobes/Armoires - typically 3-6 boxes
-  else if (/\b(wardrobe|armoire|closet|pax)\b/.test(name)) {
-    if (price > 500) {
-      boxMultiplier = 6; // Large PAX systems
-      confidence = 'high';
-    } else if (price > 300) {
-      boxMultiplier = 4; // Medium wardrobes
-      confidence = 'medium';
-    } else {
-      boxMultiplier = 3; // Small wardrobes
-      confidence = 'medium';
-    }
-  }
-  // Dining sets - typically 2-3 boxes (table + chairs)
-  else if (/\b(dining|table.*chair|chair.*table)\b/.test(name)) {
-    boxMultiplier = 3;
-    confidence = 'medium';
-  }
-  // Sectional sofas - typically 2-4 boxes
-  else if (/\b(sectional|sofa.*section|corner.*sofa)\b/.test(name)) {
-    if (price > 800) {
-      boxMultiplier = 4; // Large sectionals
-      confidence = 'high';
-    } else {
-      boxMultiplier = 3; // Small sectionals
-      confidence = 'medium';
-    }
-  }
-  // Kitchen systems - typically 3-8 boxes
-  else if (/\b(kitchen|cabinet.*set|knoxhult|enhet)\b/.test(name)) {
-    if (price > 1000) {
-      boxMultiplier = 8; // Full kitchen
-      confidence = 'medium';
-    } else if (price > 500) {
-      boxMultiplier = 5; // Partial kitchen
-      confidence = 'medium';
-    } else {
-      boxMultiplier = 3; // Small kitchen set
-      confidence = 'low';
-    }
-  }
-  // Bookshelves/Storage - typically 2-3 boxes for tall units
-  else if (/\b(bookshelf|shelf.*unit|billy|hemnes.*bookcase|kallax)\b/.test(name)) {
-    if (price > 200) {
-      boxMultiplier = 3; // Tall/wide units
-      confidence = 'medium';
-    } else {
-      boxMultiplier = 2; // Standard units
-      confidence = 'medium';
-    }
-  }
-  // Desks - typically 2 boxes for larger desks
-  else if (/\b(desk|workstation|office.*table)\b/.test(name)) {
-    if (price > 300) {
-      boxMultiplier = 2; // Large desks
-      confidence = 'medium';
-    }
-  }
-  // Default for other furniture
-  else if (price > 300) {
-    boxMultiplier = 2; // Assume larger furniture ships in 2 boxes
-    confidence = 'low';
-  }
-  
-  // Calculate estimated total shipping dimensions
-  // Strategy: Stack boxes efficiently (2x2 for 4 boxes, 2x3 for 6 boxes, etc.)
-  let totalDimensions;
-  
-  if (boxMultiplier <= 2) {
-    // Side by side
-    totalDimensions = {
-      length: singleBoxDimensions.length * boxMultiplier,
-      width: singleBoxDimensions.width,
-      height: singleBoxDimensions.height
-    };
-  } else if (boxMultiplier <= 4) {
-    // 2x2 arrangement
-    totalDimensions = {
-      length: singleBoxDimensions.length * 2,
-      width: singleBoxDimensions.width * 2,
-      height: singleBoxDimensions.height
-    };
-  } else if (boxMultiplier <= 6) {
-    // 2x3 arrangement
-    totalDimensions = {
-      length: singleBoxDimensions.length * 2,
-      width: singleBoxDimensions.width * 3,
-      height: singleBoxDimensions.height
-    };
-  } else {
-    // 2x4 arrangement for 8 boxes
-    totalDimensions = {
-      length: singleBoxDimensions.length * 2,
-      width: singleBoxDimensions.width * 4,
-      height: singleBoxDimensions.height
-    };
-  }
-  
-  const totalVolume = totalDimensions.length * totalDimensions.width * totalDimensions.height;
-  
-  console.log(`   📊 IKEA Multi-Box Estimate:`);
-  console.log(`   📊   Product type: ${getIkeaProductType(name)}`);
-  console.log(`   📊   Estimated boxes: ${boxMultiplier} (confidence: ${confidence})`);
-  console.log(`   📊   Total dimensions: ${totalDimensions.length}" × ${totalDimensions.width}" × ${totalDimensions.height}"`);
-  console.log(`   📊   Total volume: ${(totalVolume/1728).toFixed(2)} ft³ (vs single box: ${(volume/1728).toFixed(2)} ft³)`);
-  console.log(`   ⚠️   This is an ESTIMATE - actual IKEA shipping may vary`);
-  
-  return {
-    dimensions: totalDimensions,
-    boxCount: boxMultiplier,
-    confidence: confidence,
-    singleBoxVolume: volume / 1728,
-    totalVolume: totalVolume / 1728,
-    estimationMethod: 'ikea-multibox'
-  };
-}
-
-function getIkeaProductType(name) {
-  if (/\b(bed|frame|headboard)\b/.test(name)) return 'Bed Frame';
-  if (/\b(wardrobe|armoire|pax)\b/.test(name)) return 'Wardrobe/Storage';
-  if (/\b(dining|table.*chair)\b/.test(name)) return 'Dining Set';
-  if (/\b(sectional|sofa.*section)\b/.test(name)) return 'Sectional Sofa';
-  if (/\b(kitchen|cabinet.*set)\b/.test(name)) return 'Kitchen System';
-  if (/\b(bookshelf|billy|kallax)\b/.test(name)) return 'Storage/Shelving';
-  if (/\b(desk|workstation)\b/.test(name)) return 'Desk/Office';
-  return 'Furniture';
-}
 // Merge product data from multiple sources
 function mergeProductData(primary, secondary) {
   if (!primary) return secondary;
@@ -693,166 +403,44 @@ function mergeProductData(primary, secondary) {
     weight: primary.weight || secondary.weight,
     brand: primary.brand || secondary.brand,
     category: primary.category || secondary.category,
-    inStock: primary.inStock !== undefined ? primary.inStock : secondary.inStock,
-    variant: primary.variant || secondary.variant
+    inStock: primary.inStock !== undefined ? primary.inStock : secondary.inStock
   };
 }
 
-// Main product scraping function
-async function scrapeProduct(url) {
-  const productId = generateProductId();
-  const retailer = detectRetailer(url);
-  
-  let productData = null;
-  let scrapingMethod = 'none';
-  let confidence = null;
-  
-  console.log(`\n📦 Processing: ${url}`);
-  console.log(`   Retailer: ${retailer}`);
-  
-  // STEP 1: Try Zyte API first
+// ScrapingBee scraping function - ENHANCED WITH AI EXTRACTION
+async function scrapeWithScrapingBee(url) {
+  if (!USE_SCRAPINGBEE) {
+    throw new Error('ScrapingBee not configured');
+  }
+
   try {
-    console.log('   🕷️ Using Zyte API...');
-    productData = await zyteScraper.scrapeProduct(url);
-    confidence = productData?.confidence || null;
-    scrapingMethod = 'zyte';
+    console.log('🐝 Starting ScrapingBee AI extraction for:', url);
     
-    if (confidence !== null) {
-      console.log(`   📊 Zyte confidence: ${(confidence * 100).toFixed(1)}%`);
-    }
-    
-    // Check if we got essential data - name AND price are required
-    const hasEssentialData = productData && productData.name && productData.price;
-    
-    // Check if confidence is too low (likely blocked/failed)
-    const lowConfidence = confidence !== null && confidence < CONFIDENCE_THRESHOLD;
-    
-    if (!hasEssentialData || lowConfidence) {
-      if (!hasEssentialData) {
-        console.log(`   ⚠️ Missing essential data (name: ${!!productData?.name}, price: ${!!productData?.price}), trying GPT fallback...`);
-      }
-      if (lowConfidence) {
-        console.log(`   ⚠️ Low confidence (${(confidence * 100).toFixed(1)}% < ${CONFIDENCE_THRESHOLD * 100}%), trying GPT fallback...`);
-      }
-      throw new Error(`Zyte failed: ${!hasEssentialData ? 'missing essential data' : 'low confidence'}`);
-    }
-    
-    console.log('   ✅ Zyte API success with good confidence');
-  } catch (error) {
-    console.log('   ❌ Zyte API failed:', error.message);
-    
-    // STEP 2: Try GPT parser as fallback
-    if (USE_GPT_FALLBACK) {
-      try {
-        console.log('   🤖 Trying GPT parser fallback...');
-        const gptData = await parseWithGPT(url);
-        
-        // Check if GPT got essential data
-        const gptHasEssentialData = gptData && gptData.name && gptData.price;
-        
-        if (gptHasEssentialData) {
-          // Convert GPT parser format to our expected format
-          productData = {
-            name: gptData.name,
-            price: gptData.price,
-            image: gptData.image,
-            dimensions: gptData.dimensions || gptData.package_dimensions,
-            weight: gptData.weight || gptData.package_weight_lbs,
-            brand: gptData.brand,
-            category: gptData.category,
-            inStock: gptData.inStock,
-            variant: gptData.variant
-          };
-          scrapingMethod = 'gpt-fallback';
-          console.log('   ✅ GPT parser fallback success!');
-        } else {
-          console.log('   ❌ GPT parser also missing essential data');
-          throw new Error(`GPT parser failed: missing essential data (name: ${!!gptData?.name}, price: ${!!gptData?.price})`);
-        }
-      } catch (gptError) {
-        console.log('   ❌ GPT parser fallback failed:', gptError.message);
-        
-        // Both Zyte and GPT failed - require manual entry
-        console.log('   🚨 Both automated methods failed - requiring manual entry');
-        scrapingMethod = 'manual-required';
-      }
-    } else {
-      console.log('   ⚠️ No GPT fallback available (missing OpenAI API key)');
-      scrapingMethod = 'manual-required';
-    const shippingCost = oceanFreight + handlingFee + margin;
-    }
-  }
-  
-    console.log(`   🎯 Subtotal: $${subtotal}`);
-    console.log(`   🎯 Margin (20% of total): $${margin}`);
-  if (scrapingMethod === 'manual-required') {
-    console.log(`   ⚠️ ${retailer} requires manual entry - both automated methods failed`);
-    console.log(`   🌊 Ocean freight (40% of $${productData.price}): $${oceanFreight}`);
-      id: productId,
-      url: url,
-      name: null,
-      price: null,
-      image: null,
-      category: 'general',
-      retailer: retailer,
-      dimensions: null,
-      weight: null,
-      shippingCost: 0,
-      scrapingMethod: 'manual-required',
-      confidence: null,
-      variant: null,
-      manualEntryRequired: true,
-      message: `${retailer} requires manual entry. Please copy and paste the webpage content.`,
-      dataCompleteness: {
-        hasName: false,
-        hasImage: false,
-        hasDimensions: false,
-        hasWeight: false,
-        hasPrice: false,
-        hasVariant: false
-      }
-    };
-  }
-  
-  // Check if IKEA component collection is needed
-  if (retailer === 'IKEA' && productData && productData.name && productData.price && 
-      (!productData.dimensions || dimensionsLookSuspicious(productData.dimensions))) {
-    const needsComponents = checkIfIkeaNeedsComponents(productData.name, productData.price);
-    if (needsComponents) {
-      console.log(`   🛏️ IKEA product likely has multiple components: ${productData.name}`);
-      return {
-        id: productId,
+    // Try basic scraping first, then AI extraction if needed
+    const response = await axios({
+      method: 'GET',
+      url: 'https://app.scrapingbee.com/api/v1/',
+      params: {
+        api_key: SCRAPINGBEE_API_KEY,
         url: url,
-        name: productData.name,
-        price: productData.price,
-        image: productData.image,
-        category: category || 'furniture',
-        retailer: retailer,
-        dimensions: productData.dimensions,
-        weight: productData.weight,
-        shippingCost: 0,
-        scrapingMethod: 'ikea-components-required',
-        confidence: confidence,
-        variant: productData.variant,
-        ikeaComponentsRequired: true,
-        estimatedComponents: needsComponents.count,
-        componentType: needsComponents.type,
-        message: `This IKEA ${needsComponents.type} likely ships in ${needsComponents.count} separate packages. Please check "What's included" and provide URLs for each component.`,
-        dataCompleteness: {
-          hasName: !!productData.name,
-          hasImage: !!productData.image,
-          hasDimensions: !!productData.dimensions,
-          hasWeight: !!productData.weight,
-          hasPrice: !!productData.price,
-          hasVariant: !!productData.variant
-        }
-      };
+        premium_proxy: 'false',  // Try without premium first
+        country_code: 'us',
+        render_js: 'false',      // Disable JS to reduce errors
+        block_resources: 'true', // Block images/css
+        wait: '2000'
+      },
+      timeout: SCRAPING_TIMEOUT
+    });
+
+    console.log('✅ ScrapingBee basic scraping completed');
+    
+    // Parse the HTML response manually
+    const html = response.data;
+    if (!html || typeof html !== 'string') {
+      throw new Error('No HTML content received');
     }
-  }
-  
-  // Ensure we always have valid productData for successful scrapes
-  if (!productData) {
-    productData = {
+    
+    const productData = {
       name: null,
       price: null,
       image: null,
@@ -860,58 +448,267 @@ async function scrapeProduct(url) {
       weight: null,
       brand: null,
       category: null,
-      inStock: true,
-      variant: null
+      inStock: true
     };
+
+    // Extract product name from HTML
+    const titlePatterns = [
+      /<h1[^>]*>([^<]+)<\/h1>/i,
+      /<title[^>]*>([^<]+)<\/title>/i,
+      /class="[^"]*product[^"]*title[^"]*"[^>]*>([^<]+)</i,
+      /data-testid="[^"]*title[^"]*"[^>]*>([^<]+)</i
+    ];
+    
+    for (const pattern of titlePatterns) {
+      const match = html.match(pattern);
+      if (match && match[1].trim()) {
+        productData.name = match[1].trim().replace(/&[^;]+;/g, '').substring(0, 200);
+        console.log('   📝 Extracted title:', productData.name.substring(0, 50) + '...');
+        break;
+      }
+    }
+
+    // Extract price from HTML
+    const pricePatterns = [
+      /\$(\d+(?:,\d{3})*(?:\.\d{2})?)/g,
+      /price[^>]*>[\s\S]*?\$(\d+(?:,\d{3})*(?:\.\d{2})?)/i,
+      /MoneyPrice[^>]*>[\s\S]*?\$(\d+(?:,\d{3})*(?:\.\d{2})?)/i,
+      /"price":\s*"?\$?(\d+(?:,\d{3})*(?:\.\d{2})?)"?/i
+    ];
+    
+    for (const pattern of pricePatterns) {
+      const matches = [...html.matchAll(pattern)];
+      for (const match of matches) {
+        const price = parseFloat(match[1].replace(/,/g, ''));
+        if (price > 0 && price < 100000) {
+          productData.price = price;
+          console.log('   💰 Extracted price: $' + productData.price);
+          break;
+        }
+      }
+      if (productData.price) break;
+    }
+
+    // Extract dimensions from HTML
+    const dimPatterns = [
+      /(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*(?:inches?|in\.?|")/i,
+      /dimensions?[^>]*>[\s\S]*?(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)/i,
+      /L:\s*(\d+(?:\.\d+)?).*W:\s*(\d+(?:\.\d+)?).*H:\s*(\d+(?:\.\d+)?)/i
+    ];
+    
+    for (const pattern of dimPatterns) {
+      const match = html.match(pattern);
+      if (match) {
+        productData.dimensions = {
+          length: parseFloat(match[1]),
+          width: parseFloat(match[2]),
+          height: parseFloat(match[3])
+        };
+        console.log('   📏 Extracted dimensions:', productData.dimensions);
+        break;
+      }
+    }
+
+    // Extract weight from HTML
+    const weightPatterns = [
+      /(\d+(?:\.\d+)?)\s*(?:pounds?|lbs?)/i,
+      /weight[^>]*>[\s\S]*?(\d+(?:\.\d+)?)\s*(?:pounds?|lbs?)/i,
+      /(\d+(?:\.\d+)?)\s*(?:kilograms?|kgs?)/i
+    ];
+    
+    for (const pattern of weightPatterns) {
+      const match = html.match(pattern);
+      if (match) {
+        let weight = parseFloat(match[1]);
+        // Convert to pounds if needed
+        if (/kg/i.test(match[0])) weight *= 2.205;
+        
+        productData.weight = Math.round(weight * 10) / 10;
+        console.log('   ⚖️ Extracted weight:', productData.weight + ' lbs');
+        break;
+      }
+    }
+
+    // Extract image URL
+    const imagePatterns = [
+      /src="([^"]+)"[^>]*(?:class="[^"]*product[^"]*image|data-testid="[^"]*image)/i,
+      /<img[^>]+src="([^"]+)"[^>]*product/i,
+      /property="og:image"[^>]+content="([^"]+)"/i
+    ];
+    
+    for (const pattern of imagePatterns) {
+      const match = html.match(pattern);
+      if (match && match[1].startsWith('http')) {
+        productData.image = match[1];
+        break;
+      }
+    }
+
+    // Check availability  
+    const outOfStockKeywords = /out of stock|unavailable|sold out|not available/i;
+    productData.inStock = !outOfStockKeywords.test(html);
+
+    console.log('📦 ScrapingBee results:', {
+      hasName: !!productData.name,
+      hasPrice: !!productData.price,
+      hasImage: !!productData.image,
+      hasDimensions: !!productData.dimensions,
+      hasWeight: !!productData.weight
+    });
+
+    return productData;
+
+  } catch (error) {
+    console.error('❌ ScrapingBee extraction failed:', error.message);
+    if (error.response) {
+      console.error('Response status:', error.response.status);
+      console.error('Response data:', error.response.data);
+      if (error.response.status === 500) {
+        console.error('Server Error - ScrapingBee may be having issues');
+      }
+    }
+    throw error;
+  }
+}
+
+// Main product scraping function
+async function scrapeProduct(url) {
+  // AI CHECK: See if we've seen this exact product before
+  // const knownProduct = await learningSystem.getKnownProduct(url);
+  // if (knownProduct) {
+  //   console.log('   🤖 AI: Using saved product data');
+  //   return knownProduct;
+  // }
+  
+  const productId = generateProductId();
+  const retailer = detectRetailer(url);
+  
+  let productData = null;
+  let scrapingMethod = 'none';
+  
+  console.log(`\n📦 Processing: ${url}`);
+  console.log(`   Retailer: ${retailer}`);
+  
+  // STEP 1: Always try Apify first for all retailers
+  if (USE_APIFY) {
+    try {
+      console.log('   🔄 Attempting Apify scrape...');
+      
+      // Use the universal scrapeProduct method from apifyScraper
+      productData = await apifyScraper.scrapeProduct(url);
+      
+      if (productData) {
+        scrapingMethod = 'apify';
+        console.log('   ✅ Apify returned data');
+        
+        // Check if data is complete
+        if (!isDataComplete(productData)) {
+          console.log('   ⚠️ Apify data incomplete, will try ScrapingBee for missing fields');
+        }
+      }
+    } catch (error) {
+      console.log('   ❌ Apify failed:', error.message);
+      productData = null;
+    }
+  }
+  
+  // STEP 2: If Apify failed or returned incomplete data, try ScrapingBee with AI
+  if (USE_SCRAPINGBEE && (!productData || !isDataComplete(productData))) {
+    try {
+      console.log('   🐝 Attempting ScrapingBee AI extraction...');
+      const scrapingBeeData = await scrapeWithScrapingBee(url);
+      
+      if (scrapingBeeData) {
+        if (!productData) {
+          // Apify failed completely, use ScrapingBee data
+          productData = scrapingBeeData;
+          scrapingMethod = 'scrapingbee';
+          console.log('   ✅ Using ScrapingBee AI data (Apify failed)');
+        } else {
+          // Merge data - keep Apify data but fill in missing fields from ScrapingBee
+          const mergedData = mergeProductData(productData, scrapingBeeData);
+          
+          // Log what was supplemented
+          if (!productData.name && scrapingBeeData.name) {
+            console.log('   ✅ ScrapingBee AI provided missing name');
+          }
+          if (!productData.price && scrapingBeeData.price) {
+            console.log('   ✅ ScrapingBee AI provided missing price');
+          }
+          if (!productData.image && scrapingBeeData.image) {
+            console.log('   ✅ ScrapingBee AI provided missing image');
+          }
+          if (!productData.dimensions && scrapingBeeData.dimensions) {
+            console.log('   ✅ ScrapingBee AI provided missing dimensions');
+          }
+          
+          productData = mergedData;
+          scrapingMethod = 'apify+scrapingbee';
+        }
+      }
+    } catch (error) {
+      console.log('   ❌ ScrapingBee AI extraction failed:', error.message);
+    }
+  }
+  
+  // STEP 3: Try UPCitemdb if we have a product name but missing dimensions
+  if (USE_UPCITEMDB && productData && productData.name && (!productData.dimensions || !productData.weight)) {
+    try {
+      console.log('   📦 Attempting UPCitemdb lookup...');
+      const upcData = await upcItemDB.searchByName(productData.name);
+      
+      if (upcData) {
+        // UPCitemdb returns PRODUCT dimensions, convert to BOX dimensions
+        if (!productData.dimensions && upcData.dimensions) {
+          const category = productData.category || categorizeProduct(productData.name || '', url);
+          productData.dimensions = estimateBoxDimensions(upcData.dimensions, category);
+          console.log('   ✅ UPCitemdb provided product dimensions, converted to box dimensions');
+        }
+        if (!productData.weight && upcData.weight) {
+          productData.weight = upcData.weight;
+          console.log('   ✅ UPCitemdb provided weight');
+        }
+        if (!productData.image && upcData.image) {
+          productData.image = upcData.image;
+          console.log('   ✅ UPCitemdb provided image');
+        }
+        scrapingMethod = scrapingMethod === 'estimation' ? 'upcitemdb' : scrapingMethod + '+upcitemdb';
+      }
+    } catch (error) {
+      console.log('   ❌ UPCitemdb lookup failed:', error.message);
+    }
+  }
+  
+  // STEP 4: Use intelligent estimation for any missing data
+  if (!productData) {
+    // All methods failed completely
+    productData = {
+      name: 'Product from ' + retailer,
+      price: null,
+      image: null,
+      dimensions: null,
+      weight: null,
+      category: null
+    };
+    scrapingMethod = 'estimation';
+    console.log('   ⚠️ All methods failed, using estimation');
   }
   
   // Fill in missing data with estimations
-  const productName = (productData && productData.name) ? productData.name : `Product from ${retailer}`;
+  const productName = productData.name || `Product from ${retailer}`;
   const category = productData.category || categorizeProduct(productName, url);
-        scrapingMethod = 'gpt+upcitemdb';
-      }
-    } else {
-      if (productData.dimensions) {
-        console.log('   ⚠️ UPCitemdb found no dimensions, current dimensions may be packaging size');
-        console.log(`   📦 Current dimensions: ${productData.dimensions.length}" × ${productData.dimensions.width}" × ${productData.dimensions.height}"`);
-        console.log('   🔍 Checking if dimensions look like packaging vs actual product...');
-      } else {
-        console.log('   ⚠️ UPCitemdb found no dimensions, and no dimensions available from scraping');
-      }
-    }
-  }
-  
-  // STEP 3.5: IKEA Multi-Box Estimation
-  if (retailer === 'IKEA' && productData && productData.dimensions && 
-      productData.dimensions.length && productData.dimensions.width && productData.dimensions.height &&
-      productData.name && productData.price) {
-    const ikeaEstimate = estimateIkeaMultiBoxShipping(productData.dimensions, productData.name, productData.price);
-    
-    if (ikeaEstimate.boxCount > 1) {
-      productData.dimensions = ikeaEstimate.dimensions;
-      productData.ikeaMultiBox = {
-        estimatedBoxes: ikeaEstimate.boxCount,
-        confidence: ikeaEstimate.confidence,
-        singleBoxVolume: ikeaEstimate.singleBoxVolume,
-        totalVolume: ikeaEstimate.totalVolume
-      };
-      
-      if (scrapingMethod.includes('upcitemdb')) {
-        scrapingMethod = scrapingMethod + '+ikea-multibox';
-      } else {
-        scrapingMethod = scrapingMethod + '+ikea-multibox';
-      }
-      
-      console.log(`   🎯 Applied IKEA multi-box estimation (${ikeaEstimate.confidence} confidence)`);
-    }
-  }
   
   if (!productData.dimensions) {
-    productData.dimensions = estimateDimensions(category, productName);
-    console.log('   📐 Estimated dimensions based on category:', category);
-    if (scrapingMethod === 'none') {
-      scrapingMethod = 'estimation';
-    }
+    // Try AI estimation first
+    // const aiEstimate = await learningSystem.getSmartEstimation(category, productName, retailer);
+    // if (aiEstimate) {
+    //   productData.dimensions = aiEstimate.dimensions;
+    //   productData.weight = productData.weight || aiEstimate.weight;
+    //   console.log(`   🤖 AI: Applied learned patterns (confidence: ${(aiEstimate.confidence * 100).toFixed(0)}%)`);
+    // } else {
+      productData.dimensions = estimateDimensions(category, productName);
+      console.log('   📐 Estimated dimensions based on category:', category);
+    // }
   }
   
   if (!productData.weight) {
@@ -919,71 +716,12 @@ async function scrapeProduct(url) {
     console.log('   ⚖️ Estimated weight based on dimensions');
   }
   
-  // IKEA Component Collection Check
-  if (retailer === 'IKEA' && productData.name && productData.price) {
-    console.log(`🛏️ Checking IKEA product: ${productData.name.substring(0, 50)}...`);
-    
-    // Check if this is a multi-component product
-    const nameCheck = productData.name.toLowerCase();
-    const priceCheck = productData.price;
-    
-    let componentType = 'product';
-    let estimatedComponents = 2;
-    
-    // Bed frames (typically 3-4 components)
-    if (/\b(bed|frame|brimnes|malm|hemnes|tarva|nordli)\b/.test(nameCheck)) {
-      componentType = 'bed frame';
-      estimatedComponents = priceCheck > 400 ? 4 : 3;
-    }
-    // Wardrobes/closets (typically 4-6 components)  
-    else if (/\b(wardrobe|closet|pax|hemnes|brimnes)\b/.test(nameCheck)) {
-      componentType = 'wardrobe';
-      estimatedComponents = priceCheck > 300 ? 6 : 4;
-    }
-    // Desks (typically 2-3 components)
-    else if (/\b(desk|table|bekant|linnmon|alex)\b/.test(nameCheck)) {
-      componentType = 'desk';
-      estimatedComponents = priceCheck > 200 ? 3 : 2;
-    }
-    // Bookcases/shelving (typically 2-4 components)
-    else if (/\b(bookcase|shelf|billy|hemnes|kallax)\b/.test(nameCheck)) {
-      componentType = 'bookcase';
-      estimatedComponents = priceCheck > 150 ? 4 : 2;
-    }
-    // Kitchen cabinets (typically 3-5 components)
-    else if (/\b(kitchen|cabinet|sektion|maximera)\b/.test(nameCheck)) {
-      componentType = 'kitchen cabinet';
-      estimatedComponents = priceCheck > 250 ? 5 : 3;
-    }
-    
-    // Trigger component collection for multi-component products
-    if (estimatedComponents > 1) {
-      console.log(`🛏️ IKEA product likely has multiple components: ${productData.name.substring(0, 50)}...`);
-      console.log(`   ⚠️ IKEA estimate - manual review may adjust pricing upward`);
-      
-      return {
-        id: productId,
-        url: url,
-        name: productName,
-        price: productData.price,
-        image: productData.image || 'https://placehold.co/400x400/7CB342/FFFFFF/png?text=IKEA',
-        category: category,
-        retailer: retailer,
-        ikeaComponentsRequired: true,
-        componentType: componentType,
-        estimatedComponents: estimatedComponents,
-        requiresManualReview: true,
-        estimateNote: 'Conservative estimate - final pricing subject to manual review',
-        scrapingMethod: scrapingMethod
-      };
-    }
-  }
-  
   // Calculate shipping cost
   const shippingCost = calculateShippingCost(
     productData.dimensions,
     productData.weight,
-    (productData && productData.price) ? productData.price : 100
+    productData.price || 100,
+    retailer
   );
   
   // Prepare final product object
@@ -991,38 +729,38 @@ async function scrapeProduct(url) {
     id: productId,
     url: url,
     name: productName,
-    price: (productData && productData.price) ? productData.price : null,
-    image: (productData && productData.image) ? productData.image : 'https://placehold.co/400x400/7CB342/FFFFFF/png?text=SDL',
+    price: productData.price,
+    image: productData.image || 'https://placehold.co/400x400/7CB342/FFFFFF/png?text=SDL',
     category: category,
     retailer: retailer,
     dimensions: productData.dimensions,
     weight: productData.weight,
     shippingCost: shippingCost,
     scrapingMethod: scrapingMethod,
-    confidence: confidence,
-    variant: (productData && productData.variant) ? productData.variant : null,
     dataCompleteness: {
-      hasName: !!(productData && productData.name),
-      hasImage: !!(productData && productData.image),
-      hasDimensions: !!(productData && productData.dimensions),
-      hasWeight: !!(productData && productData.weight),
-      hasPrice: !!(productData && productData.price),
-      hasVariant: !!(productData && productData.variant)
+      hasName: !!productData.name,
+      hasImage: !!productData.image,
+      hasDimensions: !!productData.dimensions,
+      hasWeight: !!productData.weight,
+      hasPrice: !!productData.price
     }
   };
   
   console.log(`   💰 Shipping cost: $${shippingCost}`);
   console.log(`   📊 Data source: ${scrapingMethod}`);
-  if (confidence !== null) {
-    console.log(`   🎯 Confidence: ${(confidence * 100).toFixed(1)}%`);
-  }
-  console.log(`   ✅ Product processed\n`);
-
+  console.log(`   ✅ Product processed successfully\n`);
+  
+  // Record what worked and what didn't for failure tracking
+  // await learningSystem.recordScrapingResult(url, retailer, product, scrapingMethod);
+  
+  // AI SAVE: Remember this product for next time
+  // await learningSystem.saveProduct(product);
+  
   return product;
 }
 
 // Batch processing with concurrency control
-async function processBatch(urls, batchSize = MAX_CONCURRENT) {
+async function processBatch(urls, batchSize = MAX_CONCURRENT_SCRAPES) {
   const results = [];
   for (let i = 0; i < urls.length; i += batchSize) {
     const batch = urls.slice(i, i + batchSize);
@@ -1063,170 +801,45 @@ app.post('/api/scrape', async (req, res) => {
     }
     
     console.log(`\n🚀 Starting batch scrape for ${urls.length} products...`);
+    console.log('   Strategy: Apify → ScrapingBee AI → UPCitemdb → Estimation\n');
     
     const products = await processBatch(urls);
-    console.log(`\n✅ Completed scraping ${products.length} products\n`);
+    
+    // Log summary
+    const apifyCount = products.filter(p => p.scrapingMethod?.includes('apify')).length;
+    const scrapingBeeCount = products.filter(p => p.scrapingMethod?.includes('scrapingbee')).length;
+    const upcitemdbCount = products.filter(p => p.scrapingMethod?.includes('upcitemdb')).length;
+    const estimatedCount = products.filter(p => p.scrapingMethod === 'estimation').length;
+    
+    console.log('\n📊 SCRAPING SUMMARY:');
+    console.log(`   Total products: ${products.length}`);
+    console.log(`   Apify used: ${apifyCount}`);
+    console.log(`   ScrapingBee AI used: ${scrapingBeeCount}`);
+    console.log(`   UPCitemdb used: ${upcitemdbCount}`);
+    console.log(`   Fully estimated: ${estimatedCount}`);
+    console.log(`   Success rate: ${((products.length - estimatedCount) / products.length * 100).toFixed(1)}%\n`);
+    
+    // Get AI insights
+    // await learningSystem.getInsights();
     
     res.json({ 
-      products
+      products,
+      summary: {
+        total: products.length,
+        scraped: products.length - estimatedCount,
+        estimated: estimatedCount,
+        scrapingMethods: {
+          apify: apifyCount,
+          scrapingBee: scrapingBeeCount,
+          upcitemdb: upcitemdbCount,
+          estimation: estimatedCount
+        }
+      }
     });
     
   } catch (error) {
     console.error('Scraping error:', error);
     res.status(500).json({ error: 'Failed to scrape products' });
-  }
-});
-
-// API endpoint for manual webpage processing
-app.post('/api/process-manual-content', async (req, res) => {
-  try {
-    const { url, htmlContent } = req.body;
-    
-    if (!url || !htmlContent) {
-      return res.status(400).json({ error: 'URL and HTML content required' });
-    }
-    
-    console.log(`\n🤖 Processing manual content for: ${url}`);
-    console.log(`📄 Content length: ${htmlContent.length} characters`);
-    console.log(`📄 Content preview: ${htmlContent.substring(0, 500)}...`);
-    
-    // Check if OpenAI API key is available
-    if (!process.env.OPENAI_API_KEY) {
-      console.log('❌ OpenAI API key not found');
-      return res.status(500).json({ 
-        error: 'GPT processing not available - missing OpenAI API key' 
-      });
-    }
-    
-    console.log('✅ OpenAI API key found, proceeding with GPT parsing...');
-    
-    // Use OpenAI directly to parse the content
-    const OpenAI = require('openai');
-    const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-    
-    try {
-      console.log('🤖 Calling GPT parser...');
-      
-      const retailer = detectRetailer(url);
-      const prompt = `Extract product information from this ${retailer} webpage content and return ONLY valid JSON with these fields:
-- name (string)
-- price (number, no currency symbols)
-- dimensions (object with length, width, height in inches if found)
-- sku (string if found)
-- variant (string like color/size if found)
-
-For Crate & Barrel: Extract dimensions from format like "23.8"H height 85.4"W width 37"D depth" as length=85.4, width=37, height=23.8.
-
-Content: ${htmlContent.substring(0, 15000)}`;
-
-      const response = await client.chat.completions.create({
-        model: 'gpt-4o-mini',
-        temperature: 0,
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: 'You are a product data extractor. Return only valid JSON.' },
-          { role: 'user', content: prompt }
-        ],
-      });
-
-      const gptData = JSON.parse(response.choices[0].message.content || '{}');
-      console.log('📊 GPT parser result:', {
-        hasName: !!gptData?.name,
-        hasPrice: !!gptData?.price,
-        name: gptData?.name?.substring(0, 50),
-        price: gptData?.price
-      });
-      
-      if (gptData && gptData.name && gptData.price) {
-        const retailer = detectRetailer(url);
-        const category = gptData.category || categorizeProduct(gptData.name, url);
-        
-        // Convert to our expected format
-        const productData = {
-          name: gptData.name,
-          price: gptData.price,
-          image: gptData.image,
-          dimensions: gptData.dimensions || gptData.package_dimensions,
-          weight: gptData.weight || gptData.package_weight_lbs,
-          brand: gptData.brand,
-          category: category,
-          inStock: gptData.inStock,
-          variant: gptData.variant
-        };
-        
-        // Fill in missing data with estimations
-        if (!productData.dimensions) {
-          productData.dimensions = estimateDimensions(category, productData.name);
-        }
-        
-        // Smart UPCitemdb lookup for manual entry too
-        if (productData.name && dimensionsLookSuspicious(productData.dimensions)) {
-          console.log('   🔍 Checking UPCitemdb for manual entry dimensions...');
-          const upcDimensions = await getUPCDimensions(productData.name);
-          if (upcDimensions) {
-            productData.dimensions = upcDimensions;
-            console.log('   ✅ UPCitemdb provided dimensions for manual entry');
-          }
-        }
-        
-        if (!productData.weight) {
-          productData.weight = estimateWeight(productData.dimensions, category);
-        }
-        
-        const shippingCost = calculateShippingCost(
-          productData.dimensions,
-          productData.weight,
-          productData.price
-        );
-        
-        const product = {
-          id: generateProductId(),
-          url: url,
-          name: productData.name,
-          price: productData.price,
-          image: productData.image || 'https://placehold.co/400x400/7CB342/FFFFFF/png?text=SDL',
-          category: category,
-          retailer: retailer,
-          dimensions: productData.dimensions,
-          weight: productData.weight,
-          shippingCost: shippingCost,
-          scrapingMethod: 'manual-gpt',
-          confidence: null,
-          variant: productData.variant,
-          dataCompleteness: {
-            hasName: !!productData.name,
-            hasImage: !!productData.image,
-            hasDimensions: !!productData.dimensions,
-            hasWeight: !!productData.weight,
-            hasPrice: !!productData.price,
-            hasVariant: !!productData.variant
-          }
-        };
-        
-        console.log('   ✅ Manual content processed successfully');
-        res.json({ success: true, product });
-        
-      } else {
-        console.log('❌ GPT extraction failed - missing required data:', {
-          hasName: !!gptData?.name,
-          hasPrice: !!gptData?.price,
-          gptData: gptData
-        });
-        throw new Error('GPT could not extract required data from manual content');
-      }
-      
-    } catch (error) {
-      console.log('❌ GPT parsing error details:', error.message);
-      console.log('📄 Content sample for debugging:', htmlContent.substring(0, 1000));
-      console.log('   ❌ Manual content processing failed:', error.message);
-      res.status(400).json({ 
-        error: `GPT parsing failed: ${error.message}. Please try copying the webpage content again, including product name and price.` 
-      });
-    }
-    
-  } catch (error) {
-    console.error('Manual content processing error:', error);
-    res.status(500).json({ error: 'Failed to process manual content' });
   }
 });
 
@@ -1259,39 +872,6 @@ app.get('/api/get-pending-order/:orderId', (req, res) => {
     console.log(`❌ Order ${req.params.orderId} not found`);
     res.status(404).json({ error: 'Order not found or expired' });
   }
-});
-
-// Order tracking endpoints
-app.post('/api/orders/:orderId/start-tracking', async (req, res) => {
-  if (!orderTracker) {
-    return res.status(500).json({ error: 'Order tracking not available' });
-  }
-  
-  const { orderId } = req.params;
-  const { retailerOrders } = req.body;
-  
-  const result = await orderTracker.startTracking(orderId, retailerOrders);
-  res.json(result);
-});
-
-app.get('/api/orders/:orderId/tracking-status', async (req, res) => {
-  if (!orderTracker) {
-    return res.status(500).json({ error: 'Order tracking not available' });
-  }
-  
-  const { orderId } = req.params;
-  const status = await orderTracker.getTrackingStatus(orderId);
-  res.json(status);
-});
-
-app.post('/api/orders/:orderId/stop-tracking', async (req, res) => {
-  if (!orderTracker) {
-    return res.status(500).json({ error: 'Order tracking not available' });
-  }
-  
-  const { orderId } = req.params;
-  const result = await orderTracker.stopTracking(orderId);
-  res.json(result);
 });
 
 // Shopify Draft Order Creation
@@ -1351,8 +931,8 @@ app.post('/apps/instant-import/create-draft-order', async (req, res) => {
     // Add shipping cost as a line item
     if (totals.totalShippingCost > 0) {
       lineItems.push({
-        title: 'Shipping & Handling to Bermuda',
-        price: (totals.shippingCost || totals.totalShippingCost || 0).toFixed(2),
+        title: 'Ocean Freight & Handling to Bermuda',
+        price: totals.totalShippingCost.toFixed(2),
         quantity: 1,
         taxable: false
       });
@@ -1416,6 +996,5 @@ app.post('/apps/instant-import/create-draft-order', async (req, res) => {
 app.listen(PORT, () => {
   console.log(`\n🚀 Server running on port ${PORT}`);
   console.log(`📍 Frontend: http://localhost:${PORT}`);
-  console.log(`📍 API Health: http://localhost:${PORT}/health`);
-  console.log(`📍 Admin Panel: http://localhost:${PORT}/admin (admin:1064)`);
+  console.log(`📍 API Health: http://localhost:${PORT}/health\n`);
 });
