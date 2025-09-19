@@ -449,13 +449,12 @@ async function getUPCDimensions(productName) {
     const upcData = await upcItemDB.searchByName(productName);
     
     if (upcData && upcData.dimensions) {
-      console.log(`   ✅ UPCitemdb found PRODUCT dimensions: ${upcData.dimensions.length}" × ${upcData.dimensions.width}" × ${upcData.dimensions.height}"`);
+      console.log(`   ✅ UPCitemdb found BOX dimensions: ${upcData.dimensions.length}" × ${upcData.dimensions.width}" × ${upcData.dimensions.height}"`);
       
-      // Convert product dimensions to shipping box dimensions
-      const category = categorizeProduct(productName, '');
-      const boxDimensions = estimateBoxDimensions(upcData.dimensions, category);
+      // UPCitemdb already provides shipping box dimensions
+      const boxDimensions = upcData.dimensions;
       
-      console.log(`   📦 Converted to BOX dimensions: ${boxDimensions.length}" × ${boxDimensions.width}" × ${boxDimensions.height}"`);
+      console.log(`   📦 Using UPCitemdb BOX dimensions: ${boxDimensions.length}" × ${boxDimensions.width}" × ${boxDimensions.height}"`);
       return boxDimensions;
     }
     
@@ -542,13 +541,13 @@ async function scrapeProduct(url) {
           productData = {
             name: gptData.name,
             price: gptData.price,
-            image: gptData.image,
+          console.log(`   📦 Single box: ${upcDimensions.length}" × ${upcDimensions.width}" × ${upcDimensions.height}"`);
             dimensions: gptData.dimensions || gptData.package_dimensions,
             weight: gptData.weight || gptData.package_weight_lbs,
             brand: gptData.brand,
-            category: gptData.category,
-            inStock: gptData.inStock,
-            variant: gptData.variant
+            length: Math.max(upcDimensions.length * 2, 80), // At least 80" for bed length
+            width: Math.max(upcDimensions.width * 2, 60),   // At least 60" for bed width  
+            height: upcDimensions.height * 4                // Stack 4 boxes high
           };
           scrapingMethod = 'gpt-fallback';
           console.log('   ✅ GPT parser fallback success!');
