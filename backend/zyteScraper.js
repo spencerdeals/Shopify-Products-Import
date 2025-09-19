@@ -145,37 +145,34 @@ class ZyteScraper {
       } else if (product.mainImage) {
         productData.image = typeof product.mainImage === 'object' ? product.mainImage.url : product.mainImage;
         console.log('   🖼️ Image: Found (main)');
-      // Variants - Clean extraction focusing on meaningful data
-      const variantParts = [];
-      
-      // Try variants array first
+      }
+
+      // Brand
+      productData.brand = product.brand || null;
+
+      // Category
+      if (product.breadcrumbs && product.breadcrumbs.length > 0) {
+        productData.category = product.breadcrumbs[product.breadcrumbs.length - 1].name || 
+                              product.breadcrumbs[product.breadcrumbs.length - 1];
+      }
+
+      // Availability
+      if (product.availability) {
+        const availability = String(product.availability).toLowerCase();
+        productData.inStock = !availability.includes('out of stock') && 
+                             !availability.includes('unavailable') &&
+                             !availability.includes('sold out');
+      }
+
+      // Variants
       if (product.variants && product.variants.length > 0) {
         const selectedVariant = product.variants.find(v => v.selected) || product.variants[0];
         if (selectedVariant) {
+          const variantParts = [];
           this.extractVariantProperties(selectedVariant, variantParts);
-        }
-      }
-      
-      // If no good variants from array, try direct properties
-      if (variantParts.length === 0) {
-        // Check for direct variant properties
-        const directVariants = {};
-        if (product.color && typeof product.color === 'string') directVariants.color = product.color;
-        if (product.size && typeof product.size === 'string') directVariants.size = product.size;
-        if (product.style && typeof product.style === 'string') directVariants.style = product.style;
-        if (product.material && typeof product.material === 'string') directVariants.material = product.material;
-        if (product.finish && typeof product.finish === 'string') directVariants.finish = product.finish;
-        
-        this.extractVariantProperties(directVariants, variantParts);
-      }
-      
-      // Set final variant
-      if (variantParts.length > 0) {
-        productData.variant = variantParts.join(', ');
-        console.log('   🎨 Variant:', productData.variant);
-      } else {
-        console.log('   🎨 No clean variants found');
-      }
+          
+          if (variantParts.length > 0) {
+            productData.variant = variantParts.join(', ');
             console.log('   🎨 Variant:', productData.variant);
           }
         }
@@ -245,6 +242,7 @@ class ZyteScraper {
           // Skip raw data dumps and focus on meaningful variants
           if (this.isRawDataDump(trimmedValue)) {
             return; // Skip this property entirely
+          }
           
           const lowerValue = trimmedValue.toLowerCase();
           const lowerProp = prop.toLowerCase();
