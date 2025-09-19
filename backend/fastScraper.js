@@ -175,23 +175,20 @@ function detectRetailer(url) {
     if (domain.includes('amazon.com')) return 'Amazon';
     if (domain.includes('wayfair.com')) return 'Wayfair';
     if (domain.includes('target.com')) return 'Target';
-    if (domain.includes('bestbuy.com')) return 'Best Buy';
     if (domain.includes('walmart.com')) return 'Walmart';
+    if (domain.includes('bestbuy.com')) return 'Best Buy';
     if (domain.includes('homedepot.com')) return 'Home Depot';
     if (domain.includes('lowes.com')) return 'Lowes';
     if (domain.includes('costco.com')) return 'Costco';
     if (domain.includes('macys.com')) return 'Macys';
     if (domain.includes('ikea.com')) return 'IKEA';
-    if (domain.includes('overstock.com')) return 'Overstock';
-    if (domain.includes('bedbathandbeyond.com')) return 'Bed Bath & Beyond';
-    if (domain.includes('cb2.com')) return 'CB2';
     if (domain.includes('crateandbarrel.com')) return 'Crate & Barrel';
+    if (domain.includes('cb2.com')) return 'CB2';
     if (domain.includes('westelm.com')) return 'West Elm';
     if (domain.includes('potterybarn.com')) return 'Pottery Barn';
-    if (domain.includes('lunafurn.com')) return 'Luna Furniture';
-    return 'Unknown Retailer';
+    return 'Unknown';
   } catch (e) {
-    return 'Unknown Retailer';
+    return 'Unknown';
   }
 }
 
