@@ -737,8 +737,8 @@ app.post('/api/process-manual-content', async (req, res) => {
     console.log('✅ OpenAI API key found, proceeding with GPT parsing...');
     
     // Use the GPT parser module
-    // Import GPT parser dynamically to avoid circular dependency
-    const { parseProduct } = require('./gptParser');
+    const gptParser = require('./gptParser');
+    const parseProduct = gptParser.parseProduct;
     const gptData = await parseProduct(url, { htmlContent });
     
     if (gptData && gptData.name && gptData.price) {
