@@ -32,6 +32,9 @@ class UPCItemDB {
     try {
       console.log(`🔍 UPCitemdb: Searching for "${productName.substring(0, 50)}..."`);
       
+      // Add delay to avoid rate limiting
+      await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay
+      
       const response = await axios.get(`${this.baseURL}/search`, {
         params: {
           s: productName,
@@ -43,7 +46,7 @@ class UPCItemDB {
           'key_type': 'upc',
           'Content-Type': 'application/json'
         },
-        timeout: 10000
+        timeout: 15000 // Increased timeout
       });
 
       if (response.data && response.data.items && response.data.items.length > 0) {
@@ -65,7 +68,13 @@ class UPCItemDB {
       return null;
       
     } catch (error) {
-      console.error('❌ UPCitemdb search failed:', error.response?.status, error.message);
+      if (error.response?.status === 429) {
+        console.error('❌ UPCitemdb rate limited - waiting before retry...');
+        // Wait longer and don't retry immediately
+        await new Promise(resolve => setTimeout(resolve, 5000)); // 5 second wait
+      } else {
+        console.error('❌ UPCitemdb search failed:', error.response?.status, error.message);
+      }
       return null;
     }
   }

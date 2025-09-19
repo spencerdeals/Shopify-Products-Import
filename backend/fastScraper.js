@@ -575,7 +575,17 @@ async function scrapeProduct(url) {
   
   // Fill in missing data with estimations
   const productName = (productData && productData.name) ? productData.name : `Product from ${retailer}`;
-  const category = productData.category || categorizeProduct(productName, url);
+  
+  // Handle category - convert object to string if needed
+  let category = productData.category;
+  if (typeof category === 'object' && category.name) {
+    category = category.name; // Extract string from Zyte category object
+  }
+  if (!category || typeof category !== 'string') {
+    category = categorizeProduct(productName, url);
+  }
+  
+  console.log(`   📂 Final category: "${category}"`);
   
   // STEP 3: Smart UPCitemdb lookup for dimensions if needed
   if (productData && productData.name && dimensionsLookSuspicious(productData.dimensions)) {
