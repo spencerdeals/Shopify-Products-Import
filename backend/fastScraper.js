@@ -122,341 +122,6 @@ app.get('/admin-calculator', requireAdmin, (req, res) => {
   res.sendFile(path.join(__dirname, '../frontend/admin-calculator.html'));
 });
 
-// Admin Import Calculator - serve the admin version
-app.get('/admin/import', requireAdmin, (req, res) => {
-  res.sendFile(path.join(__dirname, '../frontend/admin-import.html'));
-});
-
-// Admin mode redirect - when accessing with /admin path
-app.get('/pages/imports/admin', (req, res) => {
-  // Serve the admin authentication prompt
-  res.send(`
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Admin Login - SDL Import Calculator</title>
-        <style>
-            body {
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                min-height: 100vh;
-                display: flex;
-                justify-content: center;
-                align-items: center;
-                margin: 0;
-            }
-            .login-box {
-                background: white;
-                padding: 40px;
-                border-radius: 20px;
-                box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-                max-width: 400px;
-                width: 90%;
-                text-align: center;
-            }
-            h1 {
-                color: #333;
-                margin-bottom: 30px;
-            }
-            input {
-                width: 100%;
-                padding: 12px;
-                margin-bottom: 20px;
-                border: 2px solid #e0e0e0;
-                border-radius: 8px;
-                font-size: 16px;
-                box-sizing: border-box;
-            }
-            button {
-                background: linear-gradient(135deg, #7cb342 0%, #2e7d32 100%);
-                color: white;
-                border: none;
-                padding: 15px 30px;
-                border-radius: 8px;
-                font-size: 16px;
-                font-weight: 600;
-                cursor: pointer;
-                width: 100%;
-            }
-            button:hover {
-                transform: translateY(-2px);
-                box-shadow: 0 10px 25px rgba(124, 179, 66, 0.3);
-            }
-        </style>
-    </head>
-    <body>
-        <div class="login-box">
-            <h1>🔐 Admin Access Required</h1>
-            <input type="password" id="password" placeholder="Enter admin password" autofocus>
-            <button type="button" onclick="checkPassword()">Access Admin Calculator</button>
-        </div>
-        <script>
-            function checkPassword() {
-                const password = document.getElementById('password').value;
-                if (password === '1064') {
-                    window.location.href = '/admin/import';
-                } else {
-                    alert('Invalid password');
-                    document.getElementById('password').value = '';
-                    document.getElementById('password').focus();
-                }
-            }
-            document.getElementById('password').addEventListener('keypress', function(e) {
-                if (e.key === 'Enter') {
-                    checkPassword();
-                }
-            });
-        </script>
-    </body>
-    </html>
-  `);
-});
-
-// Quick Draft Order for Admin (no customer info needed)
-app.post('/api/admin/quick-draft-order', requireAdmin, async (req, res) => {
-  try {
-    const { products, deliveryFees, totals, originalUrls, profitMargin } = req.body;
-    
-    if (!SHOPIFY_ACCESS_TOKEN) {
-      return res.status(500).json({ error: 'Shopify not configured. Please check API credentials.' });
-    }
-    
-    // Create line items for the draft order
-    const lineItems = [];
-    
-    // Add each product as a line item with admin-adjusted prices
-    products.forEach(product => {
-      if (product.price && product.price > 0) {
-        lineItems.push({
-          title: product.name,
-          price: product.price.toFixed(2),
-          quantity: product.quantity || 1,
-          properties: [
-            { name: 'Source URL', value: product.url || 'Manual Entry' },
-            { name: 'Retailer', value: product.retailer },
-            { name: 'Category', value: product.category },
-            { name: 'Admin Adjusted', value: 'Yes' },
-            { name: 'Cubic Feet', value: product.cubicFeet ? product.cubicFeet.toFixed(3) : 'N/A' }
-          ]
-        });
-      }
-    });
-    
-    // Add duty as a line item
-    if (totals.dutyAmount > 0) {
-      lineItems.push({
-        title: 'Bermuda Duty + Wharfage (26.5%)',
-        price: totals.dutyAmount.toFixed(2),
-        quantity: 1,
-        taxable: false
-      });
-    }
-    
-    // Add delivery fees
-    Object.entries(deliveryFees || {}).forEach(([vendor, fee]) => {
-      if (fee > 0) {
-        lineItems.push({
-          title: `${vendor} US Delivery Fee`,
-          price: fee.toFixed(2),
-          quantity: 1,
-          taxable: false
-        });
-      }
-    });
-    
-    // Add shipping with margin included
-    if (totals.totalShippingCost > 0) {
-      lineItems.push({
-        title: 'Shipping & Handling to Bermuda',
-        price: totals.totalShippingCost.toFixed(2),
-        quantity: 1,
-        taxable: false
-      });
-    }
-    
-    // Create the draft order without customer info (walk-in customer)
-    const draftOrderData = {
-      draft_order: {
-        line_items: lineItems,
-        customer: {
-          email: 'walkin@spencerdeals.bm',
-          first_name: 'Walk-In',
-          last_name: 'Customer'
-        },
-        note: `In-Store Import Quote\nProfit Margin: ${profitMargin}%\nAdmin Created: ${new Date().toLocaleString()}\n\nOriginal URLs:\n${originalUrls}`,
-        tags: 'import-calculator, in-store, admin-created',
-        tax_exempt: true,
-        send_receipt: false,
-        send_fulfillment_receipt: false
-      }
-    };
-    
-    console.log(`📝 Creating admin draft order...`);
-    
-    const shopifyResponse = await axios.post(
-      `https://${SHOPIFY_DOMAIN}/admin/api/2023-10/draft_orders.json`,
-      draftOrderData,
-      {
-        headers: {
-          'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN,
-          'Content-Type': 'application/json'
-        }
-      }
-    );
-    
-    const draftOrder = shopifyResponse.data.draft_order;
-    console.log(`✅ Admin draft order ${draftOrder.name} created`);
-    
-    res.json({
-      success: true,
-      draftOrderId: draftOrder.id,
-      draftOrderNumber: draftOrder.name,
-      adminUrl: `https://${SHOPIFY_DOMAIN}/admin/draft_orders/${draftOrder.id}`,
-      totalAmount: totals.grandTotal,
-      profit: totals.totalProfit
-    });
-    
-  } catch (error) {
-    console.error('Admin draft order error:', error.response?.data || error);
-    res.status(500).json({ 
-      error: 'Failed to create draft order. Please try again.',
-      details: error.response?.data?.errors || error.message
-    });
-  }
-});
-
-// Add manual product endpoint for admin
-app.post('/api/admin/add-manual-product', requireAdmin, async (req, res) => {
-  try {
-    const { name, price, dimensions, weight, category, retailer } = req.body;
-    
-    // Calculate shipping based on provided dimensions
-    const cubicInches = dimensions.length * dimensions.width * dimensions.height;
-    const cubicFeet = cubicInches / 1728;
-    
-    console.log(`   🧮 Manual product shipping calculation:`);
-    console.log(`   📦 Dimensions: ${dimensions.length}" × ${dimensions.width}" × ${dimensions.height}"`);
-    console.log(`   📊 Volume: ${cubicFeet.toFixed(3)} ft³`);
-    
-    // Use the same shipping calculation logic as the main calculator
-    const baseCost = Math.max(15, cubicFeet * SHIPPING_RATE_PER_CUBIC_FOOT);
-    const handlingFee = 15;
-    
-    // Calculate base shipping cost
-    const baseShippingCost = baseCost + handlingFee;
-    
-    // Calculate total landed cost before margin
-    const dutyAmount = price * 0.265;
-    const deliveryFee = 25;
-    const landedCostBeforeMargin = price + dutyAmount + baseShippingCost + deliveryFee;
-    
-    // Calculate 20% margin on total landed cost
-    const margin = landedCostBeforeMargin * 0.20;
-    const shippingCost = baseShippingCost + margin;
-    
-    console.log(`   💰 Shipping cost (with margin): $${shippingCost.toFixed(2)}`);
-    
-    const product = {
-      id: generateProductId(),
-      url: 'manual-entry',
-      name: name,
-      price: price,
-      image: 'https://placehold.co/400x400/7CB342/FFFFFF/png?text=Manual+Entry',
-      category: category || categorizeProduct(name, ''),
-      retailer: retailer || 'Manual Entry',
-      dimensions: dimensions,
-      weight: weight || estimateWeight(dimensions, category || 'general'),
-      shippingCost: shippingCost,
-      cubicFeet: cubicFeet,
-      scrapingMethod: 'manual-admin',
-      confidence: 1.0,
-      isManual: true,
-      dataCompleteness: {
-        hasName: true,
-        hasImage: false,
-        hasDimensions: true,
-        hasWeight: !!weight,
-        hasPrice: true,
-        hasVariant: false,
-        hasUPCitemdb: false
-      }
-    };
-    
-    // Try to use BOL historical data for validation
-    if (bolHistory.initialized) {
-      const bolEstimate = await bolHistory.getVolumeEstimate(name, product.category, retailer);
-      if (bolEstimate.volume && bolEstimate.confidence > 0.5) {
-        console.log(`   📚 BOL History comparison: ${bolEstimate.volume.toFixed(3)} ft³ (confidence: ${(bolEstimate.confidence * 100).toFixed(0)}%)`);
-        product.bolComparison = {
-          volume: bolEstimate.volume,
-          difference: Math.abs(cubicFeet - bolEstimate.volume),
-          confidence: bolEstimate.confidence
-        };
-      }
-    }
-    
-    res.json({ success: true, product });
-    
-  } catch (error) {
-    console.error('Manual product error:', error);
-    res.status(500).json({ error: 'Failed to add manual product' });
-  }
-});
-
-// Add endpoint to get BOL statistics for admin view
-app.get('/api/admin/bol-stats', requireAdmin, async (req, res) => {
-  await bolHistory.initialize();
-  
-  const stats = {
-    initialized: bolHistory.initialized,
-    totalPatterns: bolHistory.volumePatterns.size,
-    productKeywords: bolHistory.productPatterns.size,
-    categories: {}
-  };
-  
-  // Get category breakdown
-  bolHistory.volumePatterns.forEach((volumeStats, category) => {
-    stats.categories[category] = {
-      samples: volumeStats.count,
-      avgVolume: volumeStats.average.toFixed(2) + ' ft³',
-      avgShipping: '$' + (volumeStats.average * SHIPPING_RATE_PER_CUBIC_FOOT).toFixed(2),
-      range: `${volumeStats.min.toFixed(1)}-${volumeStats.max.toFixed(1)} ft³`
-    };
-  });
-  
-  res.json(stats);
-});
-
-// Export quote as JSON for PDF generation
-app.post('/api/admin/export-quote', requireAdmin, async (req, res) => {
-  try {
-    const { products, totals, profitMargin, customer } = req.body;
-    
-    const quoteData = {
-      quoteNumber: 'Q-' + Date.now(),
-      date: new Date().toISOString(),
-      customer: customer || { name: 'Walk-In Customer' },
-      products: products.map(p => ({
-        name: p.name,
-        quantity: p.quantity || 1,
-        price: p.price,
-        dimensions: p.dimensions,
-        cubicFeet: p.cubicFeet,
-        shipping: p.shippingCost,
-        total: (p.price * (p.quantity || 1)) + p.shippingCost
-      })),
-      totals: totals,
-      profitMargin: profitMargin,
-      validUntil: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() // Valid for 7 days
-    };
-    
-    res.json(quoteData);
-  } catch (error) {
-    console.error('Export quote error:', error);
-    res.status(500).json({ error: 'Failed to export quote' });
-  }
-});
-
 // Root route - serve frontend HTML
 app.get('/', (req, res) => {
   const frontendPath = path.join(__dirname, '../frontend', 'index.html');
@@ -1233,7 +898,7 @@ async function scrapeProduct(url) {
         name: productData.name,
         price: productData.price,
         image: productData.image,
-        category: categorizeProduct(productData.name, url),
+        category: category,
         retailer: retailer,
         dimensions: productData.dimensions,
         weight: productData.weight,
@@ -1274,7 +939,7 @@ async function scrapeProduct(url) {
   
   // Fill in missing data with estimations
   const productName = (productData && productData.name) || `Product from ${retailer}`;
-  
+  const productCategory = productData?.category || categorizeProduct(productName, url);
   // Handle category - safely convert object to string if needed
   let category = null;
   if (productData && productData.category) {
@@ -1289,7 +954,6 @@ async function scrapeProduct(url) {
   
   console.log(`   📂 Final category: "${category}"`);
   
-  // Check BOL historical data for dimensions
   if (productData && productData.name && (!productData.dimensions || dimensionsLookSuspicious(productData.dimensions))) {
     console.log('   📚 Checking BOL historical data...');
     
@@ -1396,8 +1060,11 @@ async function scrapeProduct(url) {
     } else {
       // Final fallback to basic estimation
       const estimatedDimensions = estimateDimensions(category, productName);
-      if (!productData) productData = {};
-      productData.dimensions = estimatedDimensions;
+      if (productData) {
+        productData.dimensions = estimatedDimensions;
+      } else {
+        productData = { dimensions: estimatedDimensions };
+      }
       console.log('   📐 Estimated dimensions based on category:', category);
       if (scrapingMethod === 'none') {
         scrapingMethod = 'estimation';
@@ -1889,5 +1556,4 @@ app.listen(PORT, () => {
   console.log(`📍 Frontend: http://localhost:${PORT}`);
   console.log(`📍 API Health: http://localhost:${PORT}/health`);
   console.log(`📍 Admin Panel: http://localhost:${PORT}/admin (admin:1064)`);
-  console.log(`📍 Admin Import Calculator: http://localhost:${PORT}/admin/import (admin:1064)`);
 });
