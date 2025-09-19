@@ -558,6 +558,7 @@ async function scrapeProduct(url) {
         variant: null
       };
       scrapingMethod = 'failed-will-try-upc';
+    }
     // Still try UPCitemdb with retailer name
     productData = {
       name: `Product from ${retailer}`,
