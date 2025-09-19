@@ -1957,6 +1957,9 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
                         scrapedProducts[index] = result.product;
                     }
                     
+                    // Close the modal
+                    closeManualEntryModal();
+                    
                     currentManualIndex++;
                     processNextManualPrompt();
                 } else {
@@ -1966,6 +1969,9 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
             } catch (error) {
                 console.error('Error processing manual content:', error);
                 alert('Error processing content: ' + error.message);
+                
+                // Close the modal even on error
+                closeManualEntryModal();
                 document.getElementById('loading').classList.remove('active');
                 currentManualIndex++;
                 processNextManualPrompt();
@@ -2489,6 +2495,12 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
             const modal = document.getElementById('manualEntryModal');
             if (modal) {
                 modal.style.display = 'none';
+                
+                // Clear the textarea
+                const textarea = document.getElementById('manualEntryContent');
+                if (textarea) {
+                    textarea.value = '';
+                }
             }
         }
         
