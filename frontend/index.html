@@ -1930,14 +1930,20 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
             document.getElementById('loadingText').textContent = 'Processing manual content...';
             
             try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
+                
                 const response = await fetch('/api/process-manual-content', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         url: manualEntryUrl,
                         htmlContent: content
-                    })
+                    }),
+                    signal: controller.signal
                 });
+                
+                clearTimeout(timeoutId);
                 
                 if (!response.ok) {
                     const errorData = await response.json();

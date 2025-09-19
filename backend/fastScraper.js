@@ -1062,7 +1062,7 @@ app.post('/api/process-manual-content', async (req, res) => {
     
     console.log(`\n🤖 Processing manual content for: ${url}`);
     console.log(`📄 Content length: ${htmlContent.length} characters`);
-    console.log(`📄 Content preview: ${htmlContent.substring(0, 500)}...`);
+    console.log(`📄 Content preview: ${htmlContent.substring(0, 200)}...`);
     
     // Check if OpenAI API key is available
     if (!process.env.OPENAI_API_KEY) {
@@ -1082,6 +1082,10 @@ app.post('/api/process-manual-content', async (req, res) => {
       console.log('🤖 Calling GPT parser...');
       
       const retailer = detectRetailer(url);
+      
+      // Trim content to avoid token limits
+      const trimmedContent = htmlContent.substring(0, 15000);
+      
       const prompt = `Extract product information from this ${retailer} webpage content and return ONLY valid JSON with these fields:
 - name (string)
 - price (number, no currency symbols)
@@ -1091,11 +1095,12 @@ app.post('/api/process-manual-content', async (req, res) => {
 
 For Crate & Barrel: Extract dimensions from format like "23.8"H height 85.4"W width 37"D depth" as length=85.4, width=37, height=23.8.
 
-Content: ${htmlContent.substring(0, 15000)}`;
+Content: ${trimmedContent}`;
 
       const response = await client.chat.completions.create({
         model: 'gpt-4o-mini',
-        temperature: 0,
+        temperature: 0.1,
+        max_tokens: 500,
         response_format: { type: 'json_object' },
         messages: [
           { role: 'system', content: 'You are a product data extractor. Return only valid JSON.' },
@@ -1191,7 +1196,7 @@ Content: ${htmlContent.substring(0, 15000)}`;
       
     } catch (error) {
       console.log('❌ GPT parsing error details:', error.message);
-      console.log('📄 Content sample for debugging:', htmlContent.substring(0, 1000));
+      console.log('📄 Content sample for debugging:', htmlContent.substring(0, 500));
       console.log('   ❌ Manual content processing failed:', error.message);
       res.status(400).json({ 
         error: `GPT parsing failed: ${error.message}. Please try copying the webpage content again, including product name and price.` 
