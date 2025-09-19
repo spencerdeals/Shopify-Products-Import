@@ -813,7 +813,8 @@ async function scrapeProduct(url) {
   }
   
   // Check if IKEA component collection is needed
-  if (retailer === 'IKEA' && productData && productData.name && productData.price) {
+  if (retailer === 'IKEA' && productData && productData.name && productData.price && 
+      (!productData.dimensions || dimensionsLookSuspicious(productData.dimensions))) {
     const needsComponents = checkIfIkeaNeedsComponents(productData.name, productData.price);
     if (needsComponents) {
       console.log(`   🛏️ IKEA product likely has multiple components: ${productData.name}`);
@@ -823,7 +824,7 @@ async function scrapeProduct(url) {
         name: productData.name,
         price: productData.price,
         image: productData.image,
-        category: category,
+        category: typeof category === 'object' && category.name ? category.name : (category || 'furniture'),
         retailer: retailer,
         dimensions: productData.dimensions,
         weight: productData.weight,
@@ -896,7 +897,9 @@ async function scrapeProduct(url) {
   }
   
   // STEP 3.5: IKEA Multi-Box Estimation
-  if (retailer === 'IKEA' && productData && productData.dimensions && productData.name && productData.price) {
+  if (retailer === 'IKEA' && productData && productData.dimensions && 
+      productData.dimensions.length && productData.dimensions.width && productData.dimensions.height &&
+      productData.name && productData.price) {
     const ikeaEstimate = estimateIkeaMultiBoxShipping(productData.dimensions, productData.name, productData.price);
     
     if (ikeaEstimate.boxCount > 1) {
