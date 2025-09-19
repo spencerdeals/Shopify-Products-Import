@@ -182,7 +182,6 @@ class ZyteScraper {
       // Price - handle multiple formats
       if (product.price) {
         let priceValue = product.price;
-        const gptResult = await gptParser.parseProduct(url);
         if (typeof priceValue === 'object' && priceValue.value) {
           priceValue = priceValue.value;
         }
@@ -291,4 +290,126 @@ class ZyteScraper {
       }
     }
   }
+}
+
+function estimateDimensions(category, name = '') {
+  const text = name.toLowerCase();
+  
+  // Check if dimensions are in the name
+  const dimMatch = text.match(/(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)/);
+  if (dimMatch) {
+    const dims = {
+      length: Math.max(1, parseFloat(dimMatch[1]) * 1.2),
+      width: Math.max(1, parseFloat(dimMatch[2]) * 1.2), 
+      height: Math.max(1, parseFloat(dimMatch[3]) * 1.2)
+    };
+    
+    if (dims.length <= 120 && dims.width <= 120 && dims.height <= 120) {
+      return dims;
+    }
+  }
+  
+  // Special handling for high-end furniture retailers
+  if (text.includes('crate') || text.includes('barrel') || text.includes('west elm') || 
+      text.includes('pottery barn') || text.includes('cb2')) {
+    
+    // Extract size from product name/URL
+    const sizeMatch = text.match(/(\d+)[-\s]*(inch|in|"|')/i);
+    if (sizeMatch) {
+      const size = parseInt(sizeMatch[1]);
+      if (size > 20 && size < 120) {
+        return {
+          length: size,
+          width: Math.round(size * 0.4), // 40% of length
+          height: Math.round(size * 0.35) // 35% of length
+        };
+      }
+    }
+    
+    // Default for high-end outdoor furniture
+    if (text.includes('outdoor') || text.includes('patio') || text.includes('sofa')) {
+      return {
+        length: 85, // Reasonable outdoor sofa length
+        width: 35,  // Reasonable depth
+        height: 32  // Reasonable height
+      };
+    }
+  }
+  
+  // Enhanced category estimates with more realistic sizes
+  const baseEstimates = {
+    'high-end-furniture': {
+      length: 72,  // Fixed reasonable size
+      width: 32,   // Fixed reasonable size  
+      height: 30   // Fixed reasonable size
+    },
+    'furniture': {
+      length: 48,  // Fixed reasonable size
+      width: 30,   // Fixed reasonable size
+      height: 36   // Fixed reasonable size
+    },
+    'outdoor': {
+      length: 78,  // Fixed reasonable size
+      width: 34,   // Fixed reasonable size
+      height: 32   // Fixed reasonable size
+    },
+    'electronics': {
+      length: 24,  // Fixed reasonable size
+      width: 16,   // Fixed reasonable size
+      height: 12   // Fixed reasonable size
+    },
+    'appliances': {
+      length: 30,  // Fixed reasonable size
+      width: 30,   // Fixed reasonable size
+      height: 48   // Fixed reasonable size
+    },
+    'clothing': {
+      length: 14,  // Fixed reasonable size
+      width: 12,   // Fixed reasonable size
+      height: 3    // Fixed reasonable size
+    },
+    'books': {
+      length: 10,  // Fixed reasonable size
+      width: 7,    // Fixed reasonable size
+      height: 2    // Fixed reasonable size
+    },
+    'toys': {
+      length: 16,  // Fixed reasonable size
+      width: 14,   // Fixed reasonable size
+      height: 12   // Fixed reasonable size
+    },
+    'sports': {
+      length: 30,  // Fixed reasonable size
+      width: 24,   // Fixed reasonable size
+      height: 16   // Fixed reasonable size
+    },
+    'home-decor': {
+      length: 18,  // Fixed reasonable size
+      width: 15,   // Fixed reasonable size
+      height: 18   // Fixed reasonable size
+    },
+    'tools': {
+      length: 20,  // Fixed reasonable size
+      width: 15,   // Fixed reasonable size
+      height: 8    // Fixed reasonable size
+    },
+    'garden': {
+      length: 30,  // Fixed reasonable size
+      width: 24,   // Fixed reasonable size
+      height: 18   // Fixed reasonable size
+    },
+    'general': {
+      length: 18,  // Fixed reasonable size
+      width: 15,   // Fixed reasonable size
+      height: 12   // Fixed reasonable size
+    }
+  };
+  
+  const estimate = baseEstimates[category] || baseEstimates['general'];
+  
+  return {
+    length: estimate.length,
+    width: estimate.width,
+    height: estimate.height
+  };
 }
