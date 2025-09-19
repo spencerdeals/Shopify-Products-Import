@@ -540,18 +540,7 @@ class ZyteScraper {
       if (domain.includes('costco.com')) return 'Costco';
       if (domain.includes('macys.com')) return 'Macys';
       if (domain.includes('ikea.com')) return 'IKEA';
-    'outdoor': {
-      // More reasonable outdoor furniture dimensions
-      length: 85 + Math.random() * 10, // Based on product name "85-wood-outdoor-sofa"
-      width: 35 + Math.random() * 5,
-      height: 32 + Math.random() * 4
-    },
-    'general': { 
-      length: 14 + Math.random() * 8,
- if (/\b(outdoor|patio|garden|deck|poolside|backyard|exterior|weather|teak|wicker|rattan)\b/.test(text)) return 'outdoor';
-      width: 12 + Math.random() * 6,
-      height: 10 + Math.random() * 6
-    }
+      if (domain.includes('crateandbarrel.com')) return 'Crate & Barrel';
       if (domain.includes('potterybarn.com')) return 'Pottery Barn';
       if (domain.includes('ashleyfurniture.com')) return 'Ashley Furniture';
       if (domain.includes('roomstogo.com')) return 'Rooms To Go';
