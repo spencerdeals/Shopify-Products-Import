@@ -13,6 +13,7 @@ const { parseProduct } = require('./gptParser');
 const ApifyActorScraper = require('./apifyActorScraper');
 const { parseProduct: parseWithGPT } = require('./gptParser');
 const BOLHistoricalData = require('./bolHistoricalData');
+const AdaptiveScraper = require('./adaptiveScraper');
 
 // Simple, working scraper approach
 const MAX_CONCURRENT = 1; // Process one at a time to avoid issues
@@ -783,6 +784,120 @@ function extractProductFromContent(content, url, retailer, category) {
   }
   
   return productData;
+}
+
+// Enhanced product scraping with three-tier system
+async function scrapeProductEnhanced(url) {
+  const retailer = detectRetailer(url);
+  console.log(`🕷️ Enhanced scraping for ${retailer}: ${url.substring(0, 60)}...`);
+  
+  let product = null;
+  let method = 'none';
+  let confidence = 0;
+  
+  try {
+    // Tier 1: Try Zyte first (fastest, most reliable)
+    if (zyteScraper && zyteScraper.enabled) {
+      try {
+        console.log('   🎯 Trying Zyte API...');
+        product = await zyteScraper.scrapeProduct(url);
+        method = 'zyte';
+        confidence = product.confidence || 0.8;
+        
+        // Record success for adaptive learning
+        await adaptiveScraper.recordScrapingAttempt(url, retailer, true, product);
+        
+        console.log(`   ✅ Zyte success (confidence: ${(confidence * 100).toFixed(0)}%)`);
+      } catch (error) {
+        console.log(`   ❌ Zyte failed: ${error.message}`);
+        await adaptiveScraper.recordScrapingAttempt(url, retailer, false, null, ['zyte_failed']);
+      }
+    }
+    
+    // Tier 2: Try GPT parsing if Zyte failed
+    if (!product) {
+      try {
+        console.log('   🤖 Trying GPT parsing...');
+        product = await parseWithGPT(url);
+        method = 'gpt';
+        confidence = 0.7;
+        
+        // Record success
+        await adaptiveScraper.recordScrapingAttempt(url, retailer, true, product);
+        
+        console.log('   ✅ GPT parsing success');
+      } catch (error) {
+        console.log(`   ❌ GPT parsing failed: ${error.message}`);
+        await adaptiveScraper.recordScrapingAttempt(url, retailer, false, null, ['gpt_failed']);
+      }
+    }
+    
+    // Tier 3: Manual content prompt for blocked sites
+    if (!product) {
+      console.log('   📝 Both automated methods failed - requesting manual content');
+      
+      // Check if this is a known blocked retailer
+      const blockedRetailers = ['Crate & Barrel', 'CB2', 'West Elm', 'Pottery Barn'];
+      const isBlocked = blockedRetailers.includes(retailer);
+      
+      return {
+        requiresManualContent: true,
+        url: url,
+        retailer: retailer,
+        isBlocked: isBlocked,
+        message: isBlocked 
+          ? `${retailer} blocks automated scraping. Please copy and paste the product page content.`
+          : 'Automated scraping failed. Please copy and paste the product page content.',
+        method: 'manual_required',
+        confidence: 0
+      };
+    }
+    
+    // Enhance product with smart estimates if needed
+    if (product && !product.dimensions) {
+      console.log('   📐 No dimensions found, using smart estimation...');
+      
+      const category = categorizeProduct(product.name, url);
+      const smartEstimate = await bolHistory.getSmartEstimate(product.name, category, retailer);
+      
+      if (smartEstimate && smartEstimate.confidence > 0.5) {
+        product.dimensions = smartEstimate.dimensions;
+        product.weight = estimateWeight(product.dimensions, category);
+        product.estimationSource = `BOL data (${smartEstimate.samples} samples, ${(smartEstimate.confidence * 100).toFixed(0)}% confidence)`;
+        console.log(`   🎯 Applied BOL-based estimate: ${smartEstimate.reasoning}`);
+      } else {
+        product.dimensions = estimateDimensions(category, product.name);
+        product.weight = estimateWeight(product.dimensions, category);
+        product.estimationSource = `Category-based estimate (${category})`;
+        console.log(`   📦 Applied category-based estimate for: ${category}`);
+      }
+    }
+    
+    // Calculate shipping cost
+    if (product && product.dimensions) {
+      product.shippingCost = calculateShippingCost(
+        product.dimensions,
+        product.weight || estimateWeight(product.dimensions, categorizeProduct(product.name, url)),
+        product.price || 100
+      );
+    }
+    
+    // Add metadata
+    product.method = method;
+    product.confidence = confidence;
+    product.retailer = retailer;
+    product.url = url;
+    
+    return product;
+    
+  } catch (error) {
+    console.error('❌ Enhanced scraping failed:', error);
+    
+    // Record failure
+    await adaptiveScraper.recordScrapingAttempt(url, retailer, false, null, ['enhanced_scraping_failed']);
+    
+    throw error;
+  }
 }
 
 // Main product scraping function
