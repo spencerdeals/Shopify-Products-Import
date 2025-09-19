@@ -909,17 +909,16 @@
                 'Home Depot': { bg: 'fff3e0', text: 'f96302', accent: 'ff8c42' },
                 'Lowes': { bg: 'f0f4ff', text: '004990', accent: '0066cc' },
                 'IKEA': { bg: 'fff9c4', text: '003399', accent: 'ffcc00' },
-                'Crate & Barrel': { bg: 'f8f6f0', text: '8b4513', accent: 'daa520' },
+                'Crate & Barrel': { bg: 'f8f6f0', text: '666666', accent: 'daa520' },
                 'Pottery Barn': { bg: 'f5f5dc', text: '654321', accent: 'cd853f' },
                 'West Elm': { bg: 'f0f8f0', text: '2d5016', accent: '7cb342' },
                 'CB2': { bg: 'f8f8f8', text: '333333', accent: '666666' }
             };
             
-            const colors = retailerColors[retailer] || { bg: 'f8f9fa', text: '666666', accent: '7cb342' };
+            const colors = retailerColors[retailer] || { bg: 'f8f9fa', text: '999999', accent: 'cccccc' };
             
-            // Create a gentle placeholder with vendor name
-            const encodedRetailer = encodeURIComponent(retailer);
-            return `https://placehold.co/400x300/${colors.bg}/${colors.text}/png?text=${encodedRetailer}%0A%0A📦%0A%0AImage+not+available%0AImport+cost+calculated`;
+            // Create a very gentle, non-alarming placeholder
+            return `https://placehold.co/400x300/${colors.bg}/${colors.text}/png?text=📦%0A%0AProduct+Image%0ANot+Available%0A%0A✅+Price+%26+shipping%0Acalculated+correctly`;
         }
     </script>
 </body>
