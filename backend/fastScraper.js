@@ -29,7 +29,7 @@ const SCRAPING_TIMEOUT = 30000;
 const MAX_CONCURRENT_SCRAPES = 2;
 const BERMUDA_DUTY_RATE = 0.265;
 const SHIPPING_RATE_PER_CUBIC_FOOT = 8;
-
+const SHIPPING_RATE_PER_CUBIC_FOOT = 6; // $6 per cubic foot for competitive pricing
 // Initialize scrapers
 const zyteScraper = new ZyteScraper();
 const USE_ZYTE = zyteScraper.enabled;
