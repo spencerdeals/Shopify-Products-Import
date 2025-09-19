@@ -1923,32 +1923,23 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
             if (!content) {
                 alert('Please paste the webpage content');
                 return;
-            document.getElementById('loadingText').textContent = 'Processing manual content...';
+            }
             
             try {
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
+                // Create abort controller for timeout
+                const abortController = new AbortController();
+                const timeoutId = setTimeout(() => {
+                    abortController.abort();
+                }, 30000); // 30 second timeout
                 
-            // Create AbortController for timeout
-            // Create AbortController for timeout
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
-            
-            const abortController = new AbortController();
-            const timeoutId = setTimeout(() => {
-                abortController.abort();
-                console.log('🚨 Request aborted due to timeout');
-            }, 30000); // 30 seconds
-            
                 const response = await fetch('/api/process-manual-content', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ url, htmlContent: content }),
-                    signal: abortController.signal
+                    signal: abortController.signal,
+                    body: JSON.stringify({
                         url: manualEntryUrl,
                         htmlContent: content
-                    }),
-                    signal: controller.signal
+                    })
                 });
                 
                 clearTimeout(timeoutId);
@@ -2019,8 +2010,6 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ urls: urlList })
                 });
-                
-                clearTimeout(timeoutId);
                 
                 if (!response.ok) {
                     throw new Error('Failed to scrape IKEA components');
@@ -2489,12 +2478,6 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
                 }
                 
             } catch (error) {
-                clearTimeout(timeoutId);
-                if (error.name === 'AbortError') {
-                    statusDiv.innerHTML = '<div class="error">❌ Request timed out after 30 seconds. Try copying just the product name, price, and key details instead of the entire page.</div>';
-                } else {
-                    statusDiv.innerHTML = `<div class="error">❌ ${error.message}</div>`;
-                }
                 console.error('Error creating order:', error);
                 alert('Failed to create order: ' + error.message);
                 btn.disabled = false;
