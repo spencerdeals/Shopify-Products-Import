@@ -83,7 +83,7 @@ class BOLHistoricalData {
   }
 
   extractProductKeywords(rawText) {
-    const text = rawText.toLowerCase();
+    const text = (rawText || '').toLowerCase();
     const keywords = [];
     
     // Common product keywords to look for

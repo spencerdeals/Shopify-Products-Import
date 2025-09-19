@@ -132,8 +132,6 @@ class ZyteScraper {
         if (htmlPrice) {
           productData.price = htmlPrice;
           console.log('   💰 HTML Price: $' + productData.price);
-        } else {
-          console.log('   ⚠️ Using Zyte price as fallback: $' + product.price);
         }
       }
 

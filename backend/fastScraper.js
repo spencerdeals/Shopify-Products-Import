@@ -39,6 +39,9 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, '../frontend')));
 
+// Trust proxy for rate limiting
+app.set('trust proxy', 1);
+
 // Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -126,10 +129,14 @@ app.post('/api/scrape', async (req, res) => {
         if (product) {
           // Enhance with historical data if available
           if (bolHistoricalData && bolHistoricalData.initialized) {
+            const productName = product.name || 'Unknown Product';
+            const productCategory = categorizeProduct(productName, url);
+            const retailer = detectRetailer(url);
+            
             const smartEstimate = await bolHistoricalData.getSmartEstimate(
-              product.name, 
-              categorizeProduct(product.name, url), 
-              detectRetailer(url)
+              productName,
+              productCategory,
+              retailer
             );
             
             if (smartEstimate && smartEstimate.confidence > 0.5) {
@@ -142,7 +149,7 @@ app.post('/api/scrape', async (req, res) => {
 
           // Fill in missing data
           if (!product.dimensions) {
-            const category = categorizeProduct(product.name, url);
+            const category = categorizeProduct(product.name || 'Unknown Product', url);
             product.dimensions = estimateDimensions(category, product.name);
             product.weight = estimateWeight(product.dimensions, category);
           }
