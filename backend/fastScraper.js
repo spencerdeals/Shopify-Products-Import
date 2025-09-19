@@ -896,6 +896,7 @@ async function scrapeProduct(url) {
   console.log(`   📂 Final category: "${category}"`);
   
   if (!productData || !productData.dimensions) {
+  }
   if (productData && productData.name && (!productData.dimensions || dimensionsLookSuspicious(productData.dimensions))) {
     console.log('   📚 Checking BOL historical data...');
     
@@ -1006,6 +1007,7 @@ async function scrapeProduct(url) {
         productData.dimensions = estimatedDimensions;
       } else {
         productData = { dimensions: estimatedDimensions };
+      }
       if (!productData) productData = {};
       productData.dimensions = estimateDimensions(category, productName);
       console.log('   📐 Estimated dimensions based on category:', category);
