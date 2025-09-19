@@ -1053,8 +1053,6 @@ async function scrapeProduct(url) {
       hasWeight: !!(productData && productData.weight),
       hasPrice: !!(productData && productData.price),
       hasVariant: !!(productData && productData.variant),
-      hasVariant: !!(productData && productData.variant)
-      hasVariant: !!(productData && productData.variant),
       hasBOLHistory: scrapingMethod.includes('bol'),
       hasUPCitemdb: scrapingMethod.includes('upcitemdb')
     }
