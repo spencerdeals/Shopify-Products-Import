@@ -779,10 +779,12 @@ async function scrapeProduct(url) {
     } else {
       console.log('   ⚠️ No GPT fallback available (missing OpenAI API key)');
       scrapingMethod = 'manual-required';
+    const shippingCost = oceanFreight + handlingFee + margin;
     }
   }
   
-  // Check if manual entry is required
+    console.log(`   🎯 Subtotal: $${subtotal}`);
+    console.log(`   🎯 Margin (20% of total): $${margin}`);
   if (scrapingMethod === 'manual-required') {
     console.log(`   ⚠️ ${retailer} requires manual entry - both automated methods failed`);
     return {
