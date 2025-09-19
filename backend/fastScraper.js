@@ -249,79 +249,26 @@ function estimateWeight(dimensions, category) {
 function estimateDimensions(category, name = '') {
   const text = name.toLowerCase();
   
-  console.log(`   🔍 Estimating dimensions for category: ${category}, name: "${name.substring(0, 50)}..."`);
-  
-  // Enhanced dimension extraction from product name
-  const dimPatterns = [
-    // Pattern: "85-wood-outdoor-sofa" or "mallorca-85"
-    /(\d+)(?:[-\s](?:inch|in|"|wood|outdoor|sofa|chair|table|bed))/i,
-    // Pattern: "24 x 18 x 12" or "24x18x12"
-    /(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)/i,
-    // Pattern: "24W x 18D x 12H"
-    /(\d+\.?\d*)[wl]\s*[x×]\s*(\d+\.?\d*)[d]\s*[x×]\s*(\d+\.?\d*)[h]/i,
-    // Pattern: "24" wide" or "85 inch"
-    /(\d+\.?\d*)\s*(?:inch|in|"|')\s*(?:wide|long|deep|high)/i
-  ];
-  
-  let extractedDims = null;
-  
-  // Try to extract specific dimensions from name
-  for (const pattern of dimPatterns) {
-    const match = text.match(pattern);
-    if (match) {
-      if (match.length >= 4) {
-        // Full L×W×H match
-        extractedDims = {
-          length: parseFloat(match[1]),
-          width: parseFloat(match[2]),
-          height: parseFloat(match[3])
-        };
-        console.log(`   ✅ Extracted full dimensions from name: ${extractedDims.length}" × ${extractedDims.width}" × ${extractedDims.height}"`);
-        break;
-      } else if (match[1]) {
-        // Single dimension - use for primary dimension based on category
-        const primaryDim = parseFloat(match[1]);
-        if (category === 'furniture' && text.includes('sofa')) {
-          // For sofas, the number is usually the width/length
-          extractedDims = {
-            length: primaryDim,
-            width: Math.max(32, primaryDim * 0.4), // Typical sofa depth
-            height: Math.max(30, primaryDim * 0.35) // Typical sofa height
-          };
-          console.log(`   ✅ Estimated sofa dimensions from ${primaryDim}" width: ${extractedDims.length}" × ${extractedDims.width}" × ${extractedDims.height}"`);
-          break;
-        }
-      }
+  // Check if dimensions are in the name
+  const dimMatch = text.match(/(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)\s*[x×]\s*(\d+\.?\d*)/);
+  if (dimMatch) {
+    const dims = {
+      length: Math.max(1, parseFloat(dimMatch[1]) * 1.2),
+      width: Math.max(1, parseFloat(dimMatch[2]) * 1.2), 
+      height: Math.max(1, parseFloat(dimMatch[3]) * 1.2)
+    };
+    
+    if (dims.length <= 120 && dims.width <= 120 && dims.height <= 120) {
+      return dims;
     }
   }
   
-  if (extractedDims) {
-    // Validate dimensions are reasonable (not flat-packed)
-    if (extractedDims.length <= 120 && extractedDims.width <= 120 && extractedDims.height <= 120 &&
-        extractedDims.length >= 12 && extractedDims.width >= 12 && extractedDims.height >= 12) {
-      
-      // For furniture, assume assembled (not flat-packed) dimensions
-      if (category === 'furniture') {
-        console.log(`   📦 Using assembled furniture dimensions (not flat-packed)`);
-      }
-      
-      return {
-        length: Math.round(extractedDims.length * 10) / 10,
-        width: Math.round(extractedDims.width * 10) / 10,
-        height: Math.round(extractedDims.height * 10) / 10
-      };
-    }
-  }
-  
-  // Fallback to category-based estimation
-  console.log(`   ⚠️ No dimensions found in name, using category-based estimation`);
-  
-  // Enhanced category estimates with more realistic assembled sizes
+  // Enhanced category estimates with more realistic sizes
   const baseEstimates = {
     'furniture': { 
-      length: 60 + Math.random() * 30,  // Larger for assembled furniture
-      width: 35 + Math.random() * 20,   // Realistic depth
-      height: 32 + Math.random() * 16   // Realistic height
+      length: 48 + Math.random() * 30,
+      width: 30 + Math.random() * 20,  
+      height: 36 + Math.random() * 24
     },
     'electronics': { 
       length: 18 + Math.random() * 15,
@@ -377,15 +324,11 @@ function estimateDimensions(category, name = '') {
   
   const estimate = baseEstimates[category] || baseEstimates['general'];
   
-  const finalDims = {
+  return {
     length: Math.round(estimate.length * 10) / 10,
     width: Math.round(estimate.width * 10) / 10,
     height: Math.round(estimate.height * 10) / 10
   };
-  
-  console.log(`   📐 Category-based estimate: ${finalDims.length}" × ${finalDims.width}" × ${finalDims.height}"`);
-  
-  return finalDims;
 }
 
 // Convert product dimensions to shipping box dimensions
@@ -540,7 +483,6 @@ function checkIfIkeaNeedsComponents(productName, price) {
   
   return null; // Single component item
 }
-
 // Helper function to check if essential data is complete
 function isDataComplete(productData) {
   return productData && 
@@ -754,7 +696,6 @@ function getIkeaProductType(name) {
   if (/\b(desk|workstation)\b/.test(name)) return 'Desk/Office';
   return 'Furniture';
 }
-
 // Merge product data from multiple sources
 function mergeProductData(primary, secondary) {
   if (!primary) return secondary;
@@ -954,6 +895,8 @@ async function scrapeProduct(url) {
   
   console.log(`   📂 Final category: "${category}"`);
   
+  if (!productData || !productData.dimensions) {
+  }
   if (productData && productData.name && (!productData.dimensions || dimensionsLookSuspicious(productData.dimensions))) {
     console.log('   📚 Checking BOL historical data...');
     
@@ -1065,7 +1008,9 @@ async function scrapeProduct(url) {
       } else {
         productData = { dimensions: estimatedDimensions };
       }
-      console.log('   📐 Estimated dimensions based on category:', category);
+      if (!productData) productData = {};
+      productData.dimensions = estimateDimensions(productCategory, productName);
+      console.log('   📐 Estimated dimensions based on category:', productCategory);
       if (scrapingMethod === 'none') {
         scrapingMethod = 'estimation';
       }
@@ -1075,9 +1020,13 @@ async function scrapeProduct(url) {
   if (!productData || !productData.weight) {
     if (!productData) productData = {};
     const estimatedWeight = estimateWeight(productData.dimensions, category);
-    console.log(`   📐 Final estimated dimensions: ${productData.dimensions.length}" × ${productData.dimensions.width}" × ${productData.dimensions.height}"`);
-    productData.weight = estimatedWeight;
-    console.log(`   ⚖️ Estimated weight: ${productData.weight} lbs`);
+    if (productData) {
+      productData.weight = estimatedWeight;
+    } else {
+      productData = { ...productData, weight: estimatedWeight };
+    }
+    productData.weight = estimateWeight(productData.dimensions, productCategory);
+    console.log('   ⚖️ Estimated weight based on dimensions');
   }
   
   // Calculate shipping cost
@@ -1087,8 +1036,6 @@ async function scrapeProduct(url) {
     (productData && productData.price) ? productData.price : 100
   );
   
-  console.log(`   💰 Final shipping cost: $${shippingCost}`);
-  
   // Prepare final product object
   const product = {
     id: productId,
@@ -1096,7 +1043,7 @@ async function scrapeProduct(url) {
     name: productName,
     price: (productData && productData.price) ? productData.price : null,
     image: (productData && productData.image) ? productData.image : 'https://placehold.co/400x400/7CB342/FFFFFF/png?text=SDL',
-    category: category,
+    category: productCategory,
     retailer: retailer,
     dimensions: productData.dimensions,
     weight: productData.weight,
@@ -1111,6 +1058,7 @@ async function scrapeProduct(url) {
       hasWeight: !!(productData && productData.weight),
       hasPrice: !!(productData && productData.price),
       hasVariant: !!(productData && productData.variant),
+      hasBOLHistory: scrapingMethod.includes('bol'),
       hasUPCitemdb: scrapingMethod.includes('upcitemdb')
     }
   };
