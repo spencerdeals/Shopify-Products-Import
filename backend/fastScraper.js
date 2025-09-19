@@ -409,7 +409,7 @@ function checkIfIkeaNeedsComponents(productName, price) {
   const name = productName.toLowerCase();
   
   // Bed frames - typically 2-4 components
-  if (/\b(bed|frame|headboard|footboard)\b/.test(name)) {
+  if (/\b(bed|frame|headboard|footboard|brimnes)\b/.test(name)) {
     if (price > 400) {
       return { count: 4, type: 'bed frame' }; // King/Queen beds
     } else if (price > 200) {
@@ -876,6 +876,42 @@ async function scrapeProduct(url) {
   }
   
   console.log(`   📂 Final category: "${category}"`);
+  
+  // Check if IKEA component collection is needed - MOVED HERE AFTER CATEGORY IS SET
+  if (retailer === 'IKEA' && productData && productData.name && productData.price && 
+      (!productData.dimensions || dimensionsLookSuspicious(productData.dimensions))) {
+    const needsComponents = checkIfIkeaNeedsComponents(productData.name, productData.price);
+    if (needsComponents) {
+      console.log(`   🛏️ IKEA product likely has multiple components: ${productData.name}`);
+      return {
+        id: productId,
+        url: url,
+        name: productData.name,
+        price: productData.price,
+        image: productData.image,
+        category: category,
+        retailer: retailer,
+        dimensions: productData.dimensions,
+        weight: productData.weight,
+        shippingCost: 0,
+        scrapingMethod: 'ikea-components-required',
+        confidence: confidence,
+        variant: productData.variant,
+        ikeaComponentsRequired: true,
+        estimatedComponents: needsComponents.count,
+        componentType: needsComponents.type,
+        message: `This IKEA ${needsComponents.type} likely ships in ${needsComponents.count} separate packages. Please check "What's included" and provide URLs for each component.`,
+        dataCompleteness: {
+          hasName: !!productData.name,
+          hasImage: !!productData.image,
+          hasDimensions: !!productData.dimensions,
+          hasWeight: !!productData.weight,
+          hasPrice: !!productData.price,
+          hasVariant: !!productData.variant
+        }
+      };
+    }
+  }
   
   // STEP 3: Smart UPCitemdb lookup for dimensions if needed
   if (productData && productData.name && (!productData.dimensions || dimensionsLookSuspicious(productData.dimensions))) {
