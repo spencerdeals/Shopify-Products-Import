@@ -640,10 +640,10 @@ async function scrapeProduct(url) {
   }
   
   // Fill in missing data with estimations
-  const productName = productData.name || `Product from ${retailer}`;
+  const productName = (productData && productData.name) || `Product from ${retailer}`;
   
   // Handle category - convert object to string if needed
-  let category = productData.category;
+  let category = productData && productData.category;
   if (typeof category === 'object' && category.name) {
     category = category.name; // Extract string from Zyte category object
   }
