@@ -1,3 +1,15 @@
+// Check if admin mode is requested
+if (window.location.pathname.includes('/admin') || window.location.search.includes('admin=true')) {
+    // Prompt for password
+    const password = prompt('Enter admin password:');
+    if (password === '1064') {
+        window.location.href = '/admin/import';
+    } else {
+        alert('Invalid password');
+        window.location.href = '/';
+    }
+}
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
