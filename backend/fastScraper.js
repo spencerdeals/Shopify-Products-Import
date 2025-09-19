@@ -959,6 +959,7 @@ async function scrapeProduct(url) {
     // Trigger component collection for multi-component products
     if (estimatedComponents > 1) {
       console.log(`🛏️ IKEA product likely has multiple components: ${productData.name.substring(0, 50)}...`);
+      console.log(`   ⚠️ IKEA estimate - manual review may adjust pricing upward`);
       
       return {
         id: productId,
@@ -971,6 +972,8 @@ async function scrapeProduct(url) {
         ikeaComponentsRequired: true,
         componentType: componentType,
         estimatedComponents: estimatedComponents,
+        requiresManualReview: true,
+        estimateNote: 'Conservative estimate - final pricing subject to manual review',
         scrapingMethod: scrapingMethod
       };
     }
