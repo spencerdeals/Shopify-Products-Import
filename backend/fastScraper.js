@@ -1062,6 +1062,7 @@ async function scrapeProduct(url) {
       hasDimensions: !!(productData && productData.dimensions),
       hasWeight: !!(productData && productData.weight),
       hasPrice: !!(productData && productData.price),
+      hasVariant: !!(productData && productData.variant)
       hasVariant: !!(productData && productData.variant),
       hasBOLHistory: scrapingMethod.includes('bol'),
       hasUPCitemdb: scrapingMethod.includes('upcitemdb')
@@ -1478,6 +1479,41 @@ app.post('/apps/instant-import/create-draft-order', async (req, res) => {
       details: error.response?.data?.errors || error.message
     });
   }
+});
+
+// Add API endpoint to view BOL statistics
+app.get('/api/bol-stats', async (req, res) => {
+  await bolHistory.initialize();
+  
+  const stats = {
+    initialized: bolHistory.initialized,
+    totalRecords: bolHistory.rawData.length,
+    recordsWithVolume: bolHistory.rawData.filter(r => r.volume_ft3 || r.volume_ft3_estimated).length,
+    productKeywords: bolHistory.productPatterns.size,
+    categories: {},
+    topProducts: []
+  };
+  
+  // Get category breakdown
+  for (let [category, data] of bolHistory.volumePatterns.entries()) {
+    stats.categories[category] = {
+      count: data.count,
+      avgVolume: data.average,
+      avgShippingCost: Math.round(data.average * 8)
+    };
+  }
+  
+  // Get top products
+  stats.topProducts = Array.from(bolHistory.productPatterns.entries())
+    .map(([keyword, dataPoints]) => ({
+      keyword: keyword,
+      samples: dataPoints.length,
+      avgVolume: dataPoints.reduce((sum, dp) => sum + dp.volume, 0) / dataPoints.length
+    }))
+    .sort((a, b) => b.samples - a.samples)
+    .slice(0, 10);
+  
+  res.json(stats);
 });
 
 // Start server
