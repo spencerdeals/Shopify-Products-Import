@@ -16,7 +16,7 @@ class UPCItemDB {
     
     if (this.enabled) {
       console.log('✅ UPCitemdb initialized successfully');
-      console.log(`   Using API endpoint: ${this.baseURL} (PAID PLAN)`);
+      console.log(`   Using API endpoint: ${this.baseURL} (DEV PLAN - 2000 searches/day)`);
     } else {
       console.log('❌ UPCitemdb disabled - no API key provided');
       console.log('   Check Railway environment variables:');
@@ -32,8 +32,8 @@ class UPCItemDB {
     try {
       console.log(`🔍 UPCitemdb: Searching for "${productName.substring(0, 50)}..."`);
       
-      // Reduced delay for paid plan
-      await new Promise(resolve => setTimeout(resolve, 200)); // 200ms delay
+      // Minimal delay for DEV plan
+      await new Promise(resolve => setTimeout(resolve, 100)); // 100ms delay
       
       const response = await axios.get(`${this.baseURL}/search`, {
         params: {
@@ -69,7 +69,7 @@ class UPCItemDB {
       
     } catch (error) {
       if (error.response?.status === 429) {
-        console.error('❌ UPCitemdb rate limited - check if paid plan is enabled');
+        console.error('❌ UPCitemdb rate limited - DEV plan limit reached (2000/day)');
       } else {
         console.error('❌ UPCitemdb search failed:', error.response?.status, error.message);
       }
