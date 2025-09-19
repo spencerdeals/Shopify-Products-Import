@@ -1029,7 +1029,7 @@ app.post('/apps/instant-import/create-draft-order', async (req, res) => {
     // Add shipping cost as a line item
     if (totals.totalShippingCost > 0) {
       lineItems.push({
-        title: 'Ocean Freight & Handling to Bermuda',
+        title: 'Shipping & Handling to Bermuda',
         price: (totals.shippingCost || totals.totalShippingCost || 0).toFixed(2),
         quantity: 1,
         taxable: false
