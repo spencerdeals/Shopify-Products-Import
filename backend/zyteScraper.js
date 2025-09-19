@@ -1,5 +1,6 @@
 // backend/zyteScraper.js - Fixed Zyte API Integration
 const axios = require('axios');
+const cheerio = require('cheerio');
 
 class ZyteScraper {
   constructor() {
@@ -9,13 +10,12 @@ class ZyteScraper {
     
     console.log('🕷️ ZyteScraper Constructor:');
     console.log(`   API Key: ${this.apiKey ? '✅ SET' : '❌ MISSING'}`);
-    console.log(`   API Key (first 8 chars): ${this.apiKey ? this.apiKey.substring(0, 8) + '...' : 'N/A'}`);
-    console.log(`   Status: ${this.enabled ? '✅ ENABLED (v2.0)' : '❌ DISABLED'}`);
+    console.log(`   Status: ${this.enabled ? '✅ ENABLED (v4.0 - Fixed Price Parsing)' : '❌ DISABLED'}`);
     
     if (!this.enabled) {
       console.log('   ⚠️ Set ZYTE_API_KEY environment variable to enable Zyte scraping');
     } else {
-      console.log('   🎯 Ready to use Zyte API for web scraping');
+      console.log('   🎯 Ready to use Zyte API with automatic product extraction and smart price parsing');
     }
   }
 
@@ -28,9 +28,8 @@ class ZyteScraper {
     console.log(`🕷️ Zyte scraping ${retailer}: ${url.substring(0, 60)}...`);
 
     try {
-      console.log('   📤 Sending request to Zyte API...');
+      console.log('   📤 Sending request to Zyte API with automatic extraction...');
       
-      // Use Basic Auth with API key as username, empty password
       const response = await axios.post(this.baseURL, {
         url: url,
         httpResponseBody: true,
@@ -51,13 +50,11 @@ class ZyteScraper {
 
       console.log('✅ Zyte request completed successfully');
       console.log('📊 Response status:', response.status);
-      console.log('📊 Response headers:', Object.keys(response.headers || {}));
       
       if (!response.data) {
         throw new Error('No data received from Zyte API');
       }
       
-      // Parse the Zyte response
       const productData = this.parseZyteResponse(response.data, url, retailer);
       
       console.log('📦 Zyte extraction results:', {
@@ -65,37 +62,21 @@ class ZyteScraper {
         hasPrice: !!productData.price,
         hasImage: !!productData.image,
         hasDimensions: !!productData.dimensions,
-        hasVariant: !!productData.variant
+        hasWeight: !!productData.weight,
+        hasVariant: !!productData.variant,
+        confidence: productData.confidence
       });
 
       return productData;
 
     } catch (error) {
-      return this.handleZyteError(error);
+      console.error('❌ Zyte scraping failed:', error.message);
+      throw error;
     }
-  }
-
-  handleZyteError(error) {
-    console.error('❌ Zyte scraping failed:', error.message);
-    
-    if (error.response) {
-      console.error('Response status:', error.response.status);
-      console.error('Response data:', error.response.data);
-      
-      if (error.response.status === 401) {
-        console.error('❌ Authentication failed - check Zyte API key');
-      } else if (error.response.status === 403) {
-        console.error('❌ Access forbidden - check Zyte subscription');
-      } else if (error.response.status >= 500) {
-        console.error('❌ Zyte server error - try again later');
-      }
-    }
-    
-    throw error;
   }
 
   parseZyteResponse(data, url, retailer) {
-    console.log('🔍 Parsing Zyte response...');
+    console.log('🔍 Parsing Zyte response with automatic extraction...');
     
     const productData = {
       name: null,
@@ -106,11 +87,13 @@ class ZyteScraper {
       brand: null,
       category: null,
       inStock: true,
-      variant: null
+      variant: null,
+      confidence: null
     };
 
     // Priority 1: Extract from Zyte's automatic product extraction
     if (data.product) {
+      console.log('   ✅ Using Zyte automatic extraction data');
       const product = data.product;
       
       // Product name
@@ -120,24 +103,41 @@ class ZyteScraper {
         console.log('   📝 Product name:', productData.name.substring(0, 50) + '...');
       }
 
-      // Price - handle multiple formats
+      // Price - handle multiple formats with validation
       if (product.price) {
         let priceValue = product.price;
         if (typeof priceValue === 'object' && priceValue.value) {
           priceValue = priceValue.value;
         }
-        productData.price = parseFloat(String(priceValue).replace(/[^0-9.]/g, ''));
-        if (productData.price > 0 && productData.price < 100000) {
+        
+        if (typeof priceValue === 'string') {
+          const priceMatch = priceValue.match(/[\d,]+\.?\d*/);
+          if (priceMatch) {
+            const price = parseFloat(priceMatch[0].replace(/,/g, ''));
+            if (price > 0 && price < 100000) {
+              productData.price = price;
+              console.log('   💰 Price: $' + productData.price);
+            }
+          }
+        } else if (typeof priceValue === 'number' && priceValue > 0 && priceValue < 100000) {
+          productData.price = priceValue;
           console.log('   💰 Price: $' + productData.price);
-        } else {
-          productData.price = null;
         }
-      } else if (product.regularPrice) {
-        productData.price = parseFloat(String(product.regularPrice).replace(/[^0-9.]/g, ''));
-        console.log('   💰 Regular Price: $' + productData.price);
       }
 
-      // Images - handle multiple formats
+      // If Zyte price is invalid, try HTML parsing
+      if (!productData.price && data.httpResponseBody) {
+        console.log('   🔍 Zyte price invalid, falling back to HTML parsing...');
+        const htmlPrice = this.extractPriceFromHTML(data.httpResponseBody, retailer);
+        if (htmlPrice) {
+          productData.price = htmlPrice;
+          console.log('   💰 HTML Price: $' + productData.price);
+        } else {
+          console.log('   ⚠️ Using Zyte price as fallback: $' + product.price);
+        }
+      }
+
+      // Images
       if (product.images && product.images.length > 0) {
         const firstImage = product.images[0];
         productData.image = typeof firstImage === 'object' ? firstImage.url : firstImage;
@@ -150,7 +150,7 @@ class ZyteScraper {
       // Brand
       productData.brand = product.brand || null;
 
-      // Category/Breadcrumbs
+      // Category
       if (product.breadcrumbs && product.breadcrumbs.length > 0) {
         productData.category = product.breadcrumbs[product.breadcrumbs.length - 1].name || 
                               product.breadcrumbs[product.breadcrumbs.length - 1];
@@ -164,17 +164,11 @@ class ZyteScraper {
                              !availability.includes('sold out');
       }
 
-      // Variants - Enhanced extraction
+      // Variants
       if (product.variants && product.variants.length > 0) {
         const selectedVariant = product.variants.find(v => v.selected) || product.variants[0];
         if (selectedVariant) {
           const variantParts = [];
-          
-          // Smart variant detection - check what the value actually represents
-          if (selectedVariant.color) {
-            const colorValue = selectedVariant.color.toLowerCase();
-          }
-          // Collect ALL variant properties from selected variant
           this.extractVariantProperties(selectedVariant, variantParts);
           
           if (variantParts.length > 0) {
@@ -182,34 +176,62 @@ class ZyteScraper {
             console.log('   🎨 Variant:', productData.variant);
           }
         }
-      } else if (product.color || product.size || product.style || product.material || product.finish) {
-        // Direct variant properties from product level
-        const variantParts = [];
-        this.extractVariantProperties(product, variantParts);
-        
-        if (variantParts.length > 0) {
-          productData.variant = variantParts.join(', ');
-          console.log('   🎨 Direct Variant:', productData.variant);
-        }
       }
     }
 
-    // Priority 2: Parse from browser HTML if structured data is incomplete
+    // Priority 2: Parse from HTML if structured data is incomplete
     if (data.httpResponseBody && (!productData.name || !productData.price)) {
       console.log('   🔍 Falling back to HTML parsing...');
       const htmlData = this.parseHTML(data.httpResponseBody, url, retailer);
       
-      // Merge data - prefer structured data but fill gaps with HTML parsing
       productData.name = productData.name || htmlData.name;
       productData.price = productData.price || htmlData.price;
       productData.image = productData.image || htmlData.image;
       productData.dimensions = productData.dimensions || htmlData.dimensions;
       productData.weight = productData.weight || htmlData.weight;
-      // For variants, prefer HTML parsing as it's more accurate
       productData.variant = htmlData.variant || productData.variant;
     }
 
+    // Calculate confidence
+    const hasEssentials = !!(productData.name && productData.price);
+    const hasExtras = !!(productData.image && (productData.variant || productData.brand));
+    
+    if (hasEssentials && hasExtras) {
+      productData.confidence = 0.9;
+    } else if (hasEssentials) {
+      productData.confidence = 0.7;
+    } else {
+      productData.confidence = 0.3;
+    }
+
     return productData;
+  }
+
+  extractPriceFromHTML(html, retailer) {
+    console.log('   🔍 Searching for price in HTML...');
+    const $ = cheerio.load(html);
+    
+    const priceSelectors = this.getPriceSelectors(retailer);
+    
+    for (const selector of priceSelectors) {
+      const elements = $(selector);
+      console.log(`   🔍 Found ${elements.length} elements for selector: ${selector}`);
+      
+      elements.each((i, el) => {
+        const priceText = $(el).text().trim();
+        const priceMatch = priceText.match(/[\d,]+\.?\d*/);
+        if (priceMatch) {
+          const price = parseFloat(priceMatch[0].replace(/,/g, ''));
+          if (price > 0 && price < 100000) {
+            console.log(`   💰 Found valid price: $${price} from selector: ${selector}`);
+            return price;
+          }
+        }
+      });
+    }
+    
+    console.log('   ❌ No valid price found in HTML');
+    return null;
   }
 
   extractVariantProperties(obj, variantParts) {
@@ -217,7 +239,6 @@ class ZyteScraper {
       if (value && typeof value === 'string' && value.trim()) {
         const trimmedValue = value.trim();
         if (trimmedValue.length >= 2 && trimmedValue.length <= 50) {
-          // Smart categorization based on actual content
           const lowerValue = trimmedValue.toLowerCase();
           
           if (this.isColorValue(lowerValue)) {
@@ -230,10 +251,7 @@ class ZyteScraper {
             variantParts.push(`Style: ${trimmedValue}`);
           } else if (prop === 'finish') {
             variantParts.push(`Finish: ${trimmedValue}`);
-          } else if (prop === 'pattern') {
-            variantParts.push(`Pattern: ${trimmedValue}`);
           } else {
-            // Default to the property name
             const propName = prop.charAt(0).toUpperCase() + prop.slice(1);
             variantParts.push(`${propName}: ${trimmedValue}`);
           }
@@ -256,3 +274,149 @@ class ZyteScraper {
     const materialKeywords = /\b(wood|wooden|metal|steel|iron|aluminum|plastic|fabric|cotton|linen|polyester|leather|velvet|suede|silk|wool|bamboo|rattan|wicker|glass|ceramic|marble|granite|stone|concrete|oak|pine|cherry|maple|walnut|mahogany|teak|cedar|birch|ash|poplar|acacia|mango|sheesham|rosewood)\b/i;
     return materialKeywords.test(value);
   }
+
+  parseHTML(html, url, retailer) {
+    const $ = cheerio.load(html);
+    
+    const productData = {
+      name: null,
+      price: null,
+      image: null,
+      dimensions: null,
+      weight: null,
+      variant: null
+    };
+
+    // Extract product name
+    const titleSelectors = this.getTitleSelectors(retailer);
+    for (const selector of titleSelectors) {
+      const element = $(selector).first();
+      if (element.length && element.text().trim()) {
+        productData.name = element.text().trim().replace(/\s+/g, ' ').substring(0, 200);
+        break;
+      }
+    }
+
+    // Extract price
+    const priceSelectors = this.getPriceSelectors(retailer);
+    for (const selector of priceSelectors) {
+      const element = $(selector).first();
+      if (element.length) {
+        const priceText = element.text().replace(/[^0-9.]/g, '');
+        const price = parseFloat(priceText);
+        if (price > 0 && price < 100000) {
+          productData.price = price;
+          break;
+        }
+      }
+    }
+
+    // Extract image
+    const imageSelectors = this.getImageSelectors(retailer);
+    for (const selector of imageSelectors) {
+      const element = $(selector).first();
+      if (element.length) {
+        let imgSrc = element.attr('src') || element.attr('data-src') || element.attr('data-original');
+        if (imgSrc && imgSrc.startsWith('http')) {
+          productData.image = imgSrc;
+          break;
+        }
+      }
+    }
+
+    return productData;
+  }
+
+  getTitleSelectors(retailer) {
+    const specific = {
+      'Crate & Barrel': [
+        'h1.product-name',
+        '.pdp-product-name h1',
+        '.product-details h1',
+        'h1[data-testid="product-name"]'
+      ],
+      'Amazon': [
+        '#productTitle',
+        'h1.a-size-large'
+      ],
+      'Wayfair': [
+        'h1[data-testid="product-title"]',
+        'h1.ProductTitle'
+      ]
+    };
+
+    const common = [
+      'h1',
+      '.product-title',
+      '.product-name',
+      '[class*="title"]'
+    ];
+
+    return [...(specific[retailer] || []), ...common];
+  }
+
+  getPriceSelectors(retailer) {
+    const specific = {
+      'Crate & Barrel': [
+        '.price-current',
+        '.product-price .price',
+        '.pdp-price .price-current',
+        '[data-testid="price"]',
+        '.price-block .price',
+        '.current-price'
+      ],
+      'Amazon': [
+        '.a-price .a-offscreen',
+        '.a-price-whole'
+      ],
+      'Wayfair': [
+        '.MoneyPrice',
+        '[data-testid="price"]'
+      ]
+    };
+
+    const common = [
+      '.price',
+      '[class*="price"]',
+      '.current-price',
+      '.sale-price'
+    ];
+
+    return [...(specific[retailer] || []), ...common];
+  }
+
+  getImageSelectors(retailer) {
+    const common = [
+      '.product-image img',
+      'img[class*="product"]',
+      '.hero-image img'
+    ];
+
+    return common;
+  }
+
+  detectRetailer(url) {
+    try {
+      const domain = new URL(url).hostname.toLowerCase();
+      if (domain.includes('amazon.com')) return 'Amazon';
+      if (domain.includes('wayfair.com')) return 'Wayfair';
+      if (domain.includes('target.com')) return 'Target';
+      if (domain.includes('walmart.com')) return 'Walmart';
+      if (domain.includes('bestbuy.com')) return 'Best Buy';
+      if (domain.includes('homedepot.com')) return 'Home Depot';
+      if (domain.includes('lowes.com')) return 'Lowes';
+      if (domain.includes('costco.com')) return 'Costco';
+      if (domain.includes('macys.com')) return 'Macys';
+      if (domain.includes('ikea.com')) return 'IKEA';
+      if (domain.includes('crateandbarrel.com')) return 'Crate & Barrel';
+      if (domain.includes('cb2.com')) return 'CB2';
+      if (domain.includes('westelm.com')) return 'West Elm';
+      if (domain.includes('potterybarn.com')) return 'Pottery Barn';
+      return 'Unknown';
+    } catch (e) {
+      return 'Unknown';
+    }
+  }
+}
+
+module.exports = ZyteScraper;
