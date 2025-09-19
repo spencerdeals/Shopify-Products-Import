@@ -955,6 +955,12 @@
                                 ${product.weight ? ` • ${product.weight} lbs` : ''}
                             </div>
                         ` : ''}
+                        
+                        ${product.variant ? `
+                            <div style="background: #ff9800; color: white; padding: 8px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; margin-top: 10px; display: inline-block;">
+                                🎨 ${product.variant}
+                            </div>
+                        ` : ''}
                     </div>
                 `;
             });
