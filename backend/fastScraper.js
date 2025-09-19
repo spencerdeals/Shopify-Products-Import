@@ -376,24 +376,28 @@ function calculateShippingCost(dimensions, weight, price) {
   // Calculate base shipping cost
   const baseShippingCost = baseCost + handlingFee;
   
-  // Add 20% margin to create final shipping & handling cost
-  const totalCost = baseShippingCost * 1.20;
-  console.log(`   🎯 MARGIN CALCULATION:`);
-  console.log(`   🎯   Base: $${baseShippingCost.toFixed(2)}`);
-  console.log(`   🎯   + 20% margin: $${baseShippingCost.toFixed(2)} × 1.20 = $${totalCost.toFixed(2)}`);
-  
-  // Add 4% card processing fee (hidden in shipping)
-  // Calculate 4% of total order value (price + duty + shipping + delivery)
+  // Calculate total landed cost before margin
   const dutyAmount = price * 0.265;
   const deliveryFee = 25;
-  const orderSubtotal = price + dutyAmount + totalCost + deliveryFee;
-  const cardFee = orderSubtotal * 0.04;
-  const finalShippingCost = totalCost + cardFee;
+  const landedCostBeforeMargin = price + dutyAmount + baseShippingCost + deliveryFee;
   
-  console.log(`   💳 CARD FEE CALCULATION:`);
-  console.log(`   💳   Order subtotal: $${orderSubtotal.toFixed(2)}`);
-  console.log(`   💳   Card fee (4%): $${cardFee.toFixed(2)}`);
-  console.log(`   💳   Final shipping cost: $${finalShippingCost.toFixed(2)}`);
+  // Calculate 20% margin on total landed cost
+  const margin = landedCostBeforeMargin * 0.20;
+  console.log(`   🎯 MARGIN CALCULATION (20% of total landed cost):`);
+  console.log(`   🎯   Product: $${price.toFixed(2)}`);
+  console.log(`   🎯   Duty (26.5%): $${dutyAmount.toFixed(2)}`);
+  console.log(`   🎯   Base Shipping: $${baseShippingCost.toFixed(2)}`);
+  console.log(`   🎯   Delivery: $${deliveryFee.toFixed(2)}`);
+  console.log(`   🎯   Landed Cost Before Margin: $${landedCostBeforeMargin.toFixed(2)}`);
+  console.log(`   🎯   20% Margin: $${landedCostBeforeMargin.toFixed(2)} × 0.20 = $${margin.toFixed(2)}`);
+  
+  // Add margin to shipping cost (margin is hidden in shipping)
+  const finalShippingCost = baseShippingCost + margin;
+  
+  console.log(`   💰 FINAL SHIPPING COST:`);
+  console.log(`   💰   Base Shipping: $${baseShippingCost.toFixed(2)}`);
+  console.log(`   💰   + Margin: $${margin.toFixed(2)}`);
+  console.log(`   💰   = Final Shipping: $${finalShippingCost.toFixed(2)}`);
   
   // IKEA specific debugging
   if (dimensions.length < 30 && dimensions.width < 30 && dimensions.height < 30) {
