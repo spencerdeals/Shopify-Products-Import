@@ -17,6 +17,7 @@ class ZyteScraper {
     } else {
       console.log('   🎯 Ready to use Zyte API for web scraping');
     }
+ if (/\b(outdoor|patio|garden|deck|poolside|backyard|exterior|weather|teak|wicker|rattan)\b/.test(text)) return 'outdoor';
   }
 
   async scrapeProduct(url) {
@@ -178,7 +179,7 @@ class ZyteScraper {
       // Price - handle multiple formats
       if (product.price) {
         let priceValue = product.price;
-        if (typeof priceValue === 'object' && priceValue.value) {
+      const gptResult = await gptParser.parseProduct(url);
           priceValue = priceValue.value;
         }
         productData.price = parseFloat(String(priceValue).replace(/[^0-9.]/g, ''));
