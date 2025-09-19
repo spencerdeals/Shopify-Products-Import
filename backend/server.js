@@ -68,7 +68,62 @@ class ZyteScraper {
         hasVariant: !!productData.variant
       });
 
-      return productData;
+      // Fill in missing data with estimations
+      const productName = productData.name || `Product from ${retailer}`;
+      const category = productData.category || categorizeProduct(productName, url);
+      
+      console.log(`   🏷️ Product category: ${category}`);
+      
+      if (!productData.dimensions) {
+        // Try AI estimation first
+        // const aiEstimate = await learningSystem.getSmartEstimation(category, productName, retailer);
+        // if (aiEstimate) {
+        //   productData.dimensions = aiEstimate.dimensions;
+        //   productData.weight = productData.weight || aiEstimate.weight;
+        //   console.log(`   🤖 AI: Applied learned patterns (confidence: ${(aiEstimate.confidence * 100).toFixed(0)}%)`);
+        // } else {
+          productData.dimensions = estimateDimensions(category, productName);
+          console.log(`   📐 Used category-based estimation for: ${category}`);
+        // }
+      }
+      
+      if (!productData.weight) {
+        productData.weight = estimateWeight(productData.dimensions, category);
+        console.log(`   ⚖️ Estimated weight: ${productData.weight} lbs`);
+      }
+      
+      // Calculate shipping cost
+      const shippingCost = calculateShippingCost(
+        productData.dimensions,
+        productData.weight,
+        productData.price || 100
+      );
+      
+      // SAFEGUARD: Final shipping cost validation
+      const itemPrice = productData.price || 100;
+      const shippingPercentage = (shippingCost / itemPrice) * 100;
+      
+      if (shippingPercentage > 60) {
+        console.log(`   🚨 WARNING: Shipping cost is ${shippingPercentage.toFixed(0)}% of item price - may need manual review`);
+      }
+      
+      // Prepare final product object
+      const product = {
+        name: productData.name,
+        price: productData.price,
+        image: productData.image,
+        dimensions: productData.dimensions,
+        weight: productData.weight,
+        brand: productData.brand,
+        category: category,
+        inStock: productData.inStock,
+        variant: productData.variant,
+        shippingCost: shippingCost,
+        retailer: retailer,
+        url: url
+      };
+
+      return product;
 
     } catch (error) {
       return this.handleZyteError(error);
@@ -224,23 +279,4 @@ class ZyteScraper {
             variantParts.push(`Color: ${trimmedValue}`);
           } else if (this.isSizeValue(lowerValue)) {
             variantParts.push(`Size: ${trimmedValue}`);
-          } else if (prop === 'material' || this.isMaterialValue(lowerValue)) {
-            variantParts.push(`Material: ${trimmedValue}`);
-          } else if (prop === 'style' || prop === 'type') {
-            variantParts.push(`Style: ${trimmedValue}`);
-          } else if (prop === 'finish') {
-            variantParts.push(`Finish: ${trimmedValue}`);
-          } else if (prop === 'pattern') {
-            variantParts.push(`Pattern: ${trimmedValue}`);
-          } else {
-            // Default to the property name
-            const propName = prop.charAt(0).toUpperCase() + prop.slice(1);
-            variantParts.push(`${propName}: ${trimmedValue}`);
-          }
-        }
-      }
-    }
-  }
-
-  isColorValue(value) {
-    const colorKeywords = /\b(black|white|brown|gray|grey|blue|red|green|yellow|beige|tan|navy|cream|ivory|khaki|charcoal|burgundy|maroon|olive|teal|coral|sage|taupe|mocha|espresso|latte|camel|sand|stone|slate|pewter|bronze|copper|gold|silver|rose|blush|mint|seafoam|turquoise|aqua|lavender|purple|violet|magenta|pink|orange|peach|apricot|rust
+          } else if (prop === 'material'
