@@ -17,7 +17,6 @@ class ZyteScraper {
     } else {
       console.log('   🎯 Ready to use Zyte API for web scraping');
     }
- if (/\b(outdoor|patio|garden|deck|poolside|backyard|exterior|weather|teak|wicker|rattan)\b/.test(text)) return 'outdoor';
   }
 
   async scrapeProduct(url) {
@@ -282,6 +281,20 @@ class ZyteScraper {
             variantParts.push(`Size: ${trimmedValue}`);
           } else if (prop === 'material'
 
+function categorizeProduct(name, url) {
+  const text = (name + ' ' + url).toLowerCase();
+  
+  // High-end furniture stores get special treatment
+  if (/crateandbarrel|westelm|potterybarn|cb2|restorationhardware/i.test(url)) {
+    if (/\b(sofa|sectional|loveseat|couch|chair|recliner|ottoman|table|desk|dresser|nightstand|bookshelf|cabinet|wardrobe|armoire|bed|frame|headboard|mattress|dining|kitchen|office)\b/.test(text)) {
+      return 'high-end-furniture';
+    }
+  }
+  
+  if (/\b(outdoor|patio|garden|deck|poolside|backyard|exterior|weather|teak|wicker|rattan)\b/.test(text)) return 'outdoor';
+  if (/\b(sofa|sectional|loveseat|couch|chair|recliner|ottoman|table|desk|dresser|nightstand|bookshelf|cabinet|wardrobe|armoire|bed|frame|headboard|mattress|dining|kitchen|office)\b/.test(text)) return 'furniture';
+  if (/\b(tv|television|monitor|laptop|computer|tablet|phone|smartphone|camera|speaker|headphone|earbuds|router|gaming|console|xbox|playstation|nintendo)\b/.test(text)) return 'electronics';
+
 function estimateDimensions(category, name = '') {
   const text = name.toLowerCase();
   
@@ -299,76 +312,99 @@ function estimateDimensions(category, name = '') {
     }
   }
   
-  // Extract size hints from product name/URL
-  const sizeMatch = text.match(/(\d+)[-\s]?(inch|in|"|ft|foot)/i);
-  const numberMatch = text.match(/(\d+)/);
+  // Special handling for high-end furniture retailers
+  if (text.includes('crate') || text.includes('barrel') || text.includes('west elm') || 
+      text.includes('pottery barn') || text.includes('cb2')) {
+    
+    // Extract size from product name/URL
+    const sizeMatch = text.match(/(\d+)[-\s]*(inch|in|"|')/i);
+    if (sizeMatch) {
+      const size = parseInt(sizeMatch[1]);
+      if (size > 20 && size < 120) {
+        return {
+          length: size,
+          width: Math.round(size * 0.4), // 40% of length
+          height: Math.round(size * 0.35) // 35% of length
+        };
+      }
+    }
+    
+    // Default for high-end outdoor furniture
+    if (text.includes('outdoor') || text.includes('patio') || text.includes('sofa')) {
+      return {
+        length: 85, // Reasonable outdoor sofa length
+        width: 35,  // Reasonable depth
+        height: 32  // Reasonable height
+      };
+    }
+  }
   
-  // Realistic category estimates - NO RANDOM DIMENSIONS
+  // Enhanced category estimates with more realistic sizes
   const baseEstimates = {
     'high-end-furniture': {
-      length: sizeMatch ? Math.min(120, parseFloat(sizeMatch[1])) : 72,
-      width: 32,
-      height: 30
+      length: 72,  // Fixed reasonable size
+      width: 32,   // Fixed reasonable size  
+      height: 30   // Fixed reasonable size
+    },
+    'furniture': {
+      length: 48,  // Fixed reasonable size
+      width: 30,   // Fixed reasonable size
+      height: 36   // Fixed reasonable size
     },
     'outdoor': {
-      length: sizeMatch ? Math.min(120, parseFloat(sizeMatch[1])) : 78,
-      width: 34,
-      height: 32
+      length: 78,  // Fixed reasonable size
+      width: 34,   // Fixed reasonable size
+      height: 32   // Fixed reasonable size
     },
-    'furniture': { 
-      length: sizeMatch ? Math.min(120, parseFloat(sizeMatch[1])) : 60,
-      width: 28,
-      height: 32
+    'electronics': {
+      length: 24,  // Fixed reasonable size
+      width: 16,   // Fixed reasonable size
+      height: 12   // Fixed reasonable size
     },
-    'electronics': { 
-      length: numberMatch ? Math.min(65, parseFloat(numberMatch[1])) : 24,
-      width: 16,
-      height: 8
+    'appliances': {
+      length: 30,  // Fixed reasonable size
+      width: 30,   // Fixed reasonable size
+      height: 48   // Fixed reasonable size
     },
-    'appliances': { 
-      length: 30,
-      width: 28,
-      height: 48
+    'clothing': {
+      length: 14,  // Fixed reasonable size
+      width: 12,   // Fixed reasonable size
+      height: 3    // Fixed reasonable size
     },
-    'clothing': { 
-      length: 14,
-      width: 12,
-      height: 3
+    'books': {
+      length: 10,  // Fixed reasonable size
+      width: 7,    // Fixed reasonable size
+      height: 2    // Fixed reasonable size
     },
-    'books': { 
-      length: 9,
-      width: 6,
-      height: 2
+    'toys': {
+      length: 16,  // Fixed reasonable size
+      width: 14,   // Fixed reasonable size
+      height: 12   // Fixed reasonable size
     },
-    'toys': { 
-      length: 16,
-      width: 12,
-      height: 10
+    'sports': {
+      length: 30,  // Fixed reasonable size
+      width: 24,   // Fixed reasonable size
+      height: 16   // Fixed reasonable size
     },
-    'sports': { 
-      length: 30,
-      width: 20,
-      height: 14
+    'home-decor': {
+      length: 18,  // Fixed reasonable size
+      width: 15,   // Fixed reasonable size
+      height: 18   // Fixed reasonable size
     },
-    'home-decor': { 
-      length: 18,
-      width: 14,
-      height: 16
+    'tools': {
+      length: 20,  // Fixed reasonable size
+      width: 15,   // Fixed reasonable size
+      height: 8    // Fixed reasonable size
     },
-    'tools': { 
-      length: 20,
-      width: 14,
-      height: 8
+    'garden': {
+      length: 30,  // Fixed reasonable size
+      width: 24,   // Fixed reasonable size
+      height: 18   // Fixed reasonable size
     },
-    'garden': { 
-      length: 28,
-      width: 20,
-      height: 16
-    },
-    'general': { 
-      length: 18,
-      width: 14,
-      height: 12
+    'general': {
+      length: 18,  // Fixed reasonable size
+      width: 15,   // Fixed reasonable size
+      height: 12   // Fixed reasonable size
     }
   };
   
