@@ -185,9 +185,7 @@ function detectRetailer(url) {
     if (domain.includes('westelm.com')) return 'West Elm';
     if (domain.includes('potterybarn.com')) return 'Pottery Barn';
     if (domain.includes('lunafurn.com')) return 'Luna Furniture';
-    return
-  }
-} 'Unknown Retailer';
+    return 'Unknown Retailer';
   } catch (e) {
     return 'Unknown Retailer';
   }
@@ -388,84 +386,6 @@ function estimateDimensions(category, name = '') {
   console.log(`   📐 Category-based estimate: ${finalDims.length}" × ${finalDims.width}" × ${finalDims.height}"`);
   
   return finalDims;
-  if (dimMatch) {
-    const dims = {
-      length: Math.max(1, parseFloat(dimMatch[1]) * 1.2),
-      width: Math.max(1, parseFloat(dimMatch[2]) * 1.2), 
-      height: Math.max(1, parseFloat(dimMatch[3]) * 1.2)
-    };
-    
-    if (dims.length <= 120 && dims.width <= 120 && dims.height <= 120) {
-      return dims;
-    }
-  }
-  
-  // Enhanced category estimates with more realistic sizes
-  const baseEstimates = {
-    'furniture': { 
-      length: 48 + Math.random() * 30,
-      width: 30 + Math.random() * 20,  
-      height: 36 + Math.random() * 24
-    },
-    'electronics': { 
-      length: 18 + Math.random() * 15,
-      width: 12 + Math.random() * 8,
-      height: 8 + Math.random() * 6
-    },
-    'appliances': { 
-      length: 30 + Math.random() * 12,
-      width: 30 + Math.random() * 12,
-      height: 36 + Math.random() * 20
-    },
-    'clothing': { 
-      length: 12 + Math.random() * 6,
-      width: 10 + Math.random() * 6,
-      height: 2 + Math.random() * 2
-    },
-    'books': { 
-      length: 8 + Math.random() * 3,
-      width: 5 + Math.random() * 3,
-      height: 1 + Math.random() * 2
-    },
-    'toys': { 
-      length: 12 + Math.random() * 8,
-      width: 10 + Math.random() * 8,
-      height: 8 + Math.random() * 8
-    },
-    'sports': { 
-      length: 24 + Math.random() * 12,
-      width: 18 + Math.random() * 10,
-      height: 12 + Math.random() * 8
-    },
-    'home-decor': { 
-      length: 12 + Math.random() * 12,
-      width: 10 + Math.random() * 10,
-      height: 12 + Math.random() * 12
-    },
-    'tools': { 
-      length: 18 + Math.random() * 6,
-      width: 12 + Math.random() * 6,
-      height: 6 + Math.random() * 4
-    },
-    'garden': { 
-      length: 24 + Math.random() * 12,
-      width: 18 + Math.random() * 12,
-      height: 12 + Math.random() * 12
-    },
-    'general': { 
-      length: 14 + Math.random() * 8,
-      width: 12 + Math.random() * 6,
-      height: 10 + Math.random() * 6
-    }
-  };
-  
-  const estimate = baseEstimates[category] || baseEstimates['general'];
-  
-  return {
-    length: Math.round(estimate.length * 10) / 10,
-    width: Math.round(estimate.width * 10) / 10,
-    height: Math.round(estimate.height * 10) / 10
-  };
 }
 
 // Convert product dimensions to shipping box dimensions
@@ -620,6 +540,7 @@ function checkIfIkeaNeedsComponents(productName, price) {
   
   return null; // Single component item
 }
+
 // Helper function to check if essential data is complete
 function isDataComplete(productData) {
   return productData && 
@@ -833,6 +754,7 @@ function getIkeaProductType(name) {
   if (/\b(desk|workstation)\b/.test(name)) return 'Desk/Office';
   return 'Furniture';
 }
+
 // Merge product data from multiple sources
 function mergeProductData(primary, secondary) {
   if (!primary) return secondary;
@@ -1032,8 +954,6 @@ async function scrapeProduct(url) {
   
   console.log(`   📂 Final category: "${category}"`);
   
-  if (!productData || !productData.dimensions) {
-  }
   if (productData && productData.name && (!productData.dimensions || dimensionsLookSuspicious(productData.dimensions))) {
     console.log('   📚 Checking BOL historical data...');
     
@@ -1145,9 +1065,7 @@ async function scrapeProduct(url) {
       } else {
         productData = { dimensions: estimatedDimensions };
       }
-      if (!productData) productData = {};
-      productData.dimensions = estimateDimensions(productCategory, productName);
-      console.log('   📐 Estimated dimensions based on category:', productCategory);
+      console.log('   📐 Estimated dimensions based on category:', category);
       if (scrapingMethod === 'none') {
         scrapingMethod = 'estimation';
       }
@@ -1157,12 +1075,8 @@ async function scrapeProduct(url) {
   if (!productData || !productData.weight) {
     if (!productData) productData = {};
     const estimatedWeight = estimateWeight(productData.dimensions, category);
-      console.log(`   📐 Final estimated dimensions: ${productData.dimensions.length}" × ${productData.dimensions.width}" × ${productData.dimensions.height}"`);
-      productData.weight = estimatedWeight;
-    } else {
-      productData = { ...productData, weight: estimatedWeight };
-    }
-    productData.weight = estimateWeight(productData.dimensions, productCategory);
+    console.log(`   📐 Final estimated dimensions: ${productData.dimensions.length}" × ${productData.dimensions.width}" × ${productData.dimensions.height}"`);
+    productData.weight = estimatedWeight;
     console.log(`   ⚖️ Estimated weight: ${productData.weight} lbs`);
   }
   
@@ -1182,7 +1096,7 @@ async function scrapeProduct(url) {
     name: productName,
     price: (productData && productData.price) ? productData.price : null,
     image: (productData && productData.image) ? productData.image : 'https://placehold.co/400x400/7CB342/FFFFFF/png?text=SDL',
-    category: productCategory,
+    category: category,
     retailer: retailer,
     dimensions: productData.dimensions,
     weight: productData.weight,
