@@ -9,8 +9,6 @@ require('dotenv').config();
 const UPCItemDB = require('./upcitemdb');
 const OrderTracker = require('./orderTracking');
 const ZyteScraper = require('./zyteScraper');
-
-// Simple, working scraper approach
 const MAX_CONCURRENT = 1; // Process one at a time to avoid issues
 
 const app = express();
@@ -28,8 +26,6 @@ const BERMUDA_DUTY_RATE = 0.265;
 const SHIPPING_RATE_PER_CUBIC_FOOT = 8;
 
 // Initialize scrapers
-const zyteScraper = new ZyteScraper();
-const USE_ZYTE = zyteScraper.enabled;
 const USE_GPT_FALLBACK = !!process.env.OPENAI_API_KEY;
 
 // Confidence threshold for triggering GPT fallback
@@ -488,10 +484,7 @@ async function scrapeProduct(url) {
     if (USE_GPT_FALLBACK) {
       try {
         console.log('   🤖 Trying GPT parser fallback...');
-        // Import GPT parser dynamically to avoid circular dependency
-        const gptParser = require('./gptParser');
-        const parseWithGPT = gptParser.parseProduct;
-        const gptData = await parseWithGPT(url);
+        const gptData = await parseProduct(url);
         
         // Check if GPT got essential data
         const gptHasEssentialData = gptData && gptData.name && gptData.price;
@@ -736,8 +729,7 @@ app.post('/api/process-manual-content', async (req, res) => {
     console.log('✅ OpenAI API key found, proceeding with GPT parsing...');
     
     // Use the GPT parser module
-    const gptParser = require('./gptParser');
-    const gptData = await gptParser.parseProduct(url, { htmlContent });
+    const gptData = await parseProduct(url, { htmlContent });
     
     if (gptData && gptData.name && gptData.price) {
       const retailer = detectRetailer(url);
