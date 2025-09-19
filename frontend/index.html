@@ -1512,6 +1512,11 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
             document.getElementById('calculatorPage').classList.add('active');
         }
 
+        function startCalculator() {
+            document.getElementById('introPage').classList.add('hidden');
+            document.getElementById('calculatorPage').classList.add('active');
+        }
+
         // Check if URL is from SDL
         function isSDLDomain(url) {
             try {
