@@ -615,6 +615,23 @@ async function scrapeProduct(url) {
     if (upcDimensions) {
       productData.dimensions = upcDimensions;
       console.log('   ✅ UPCitemdb provided accurate dimensions');
+      
+      // IKEA Multi-Box Detection
+      if (retailer === 'IKEA' && productData.name && productData.name.toLowerCase().includes('bed')) {
+        console.log('   🛏️ IKEA bed detected - likely multi-box shipment');
+        console.log(`   📦 Single box: ${upcDimensions.length}" × ${upcDimensions.width}" × ${upcDimensions.height}"`);
+        
+        // Multiply dimensions by 4 for typical IKEA bed (4 boxes)
+        productData.dimensions = {
+          length: Math.max(upcDimensions.length * 2, 80), // At least 80" for bed length
+          width: Math.max(upcDimensions.width * 2, 60),   // At least 60" for bed width  
+          height: upcDimensions.height * 4                // Stack 4 boxes high
+        };
+        
+        console.log(`   📦 Multi-box total: ${productData.dimensions.length}" × ${productData.dimensions.width}" × ${productData.dimensions.height}"`);
+        scrapingMethod = 'zyte+upcitemdb+ikea-multibox';
+      }
+      
       if (scrapingMethod === 'zyte') {
         scrapingMethod = 'zyte+upcitemdb';
       } else if (scrapingMethod === 'gpt-fallback') {
