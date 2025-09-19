@@ -9,6 +9,7 @@ require('dotenv').config();
 const UPCItemDB = require('./upcitemdb');
 const OrderTracker = require('./orderTracking');
 const ZyteScraper = require('./zyteScraper');
+const { parseProduct } = require('./gptParser');
 const ApifyActorScraper = require('./apifyActorScraper');
 const { parseProduct: parseWithGPT } = require('./gptParser');
 const BOLHistoricalData = require('./bolHistoricalData');
@@ -50,6 +51,9 @@ bolHistory.initialize().then(() => {
 });
 
 // Initialize order tracker
+const adaptiveScraper = new AdaptiveScraper();
+const bolData = new BOLHistoricalData();
+
 let orderTracker = null;
 
 OrderTracker.create().then(tracker => {
