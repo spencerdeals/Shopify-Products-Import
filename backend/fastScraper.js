@@ -15,6 +15,7 @@ const BOLHistoricalData = require('./bolHistoricalData');
 
 // Simple, working scraper approach
 const MAX_CONCURRENT = 1; // Process one at a time to avoid issues
+const BOLHistoricalData = require('./bolHistoricalData');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -36,6 +37,15 @@ const USE_ZYTE = zyteScraper.enabled;
 const apifyActorScraper = new ApifyActorScraper(process.env.APIFY_API_KEY);
 const USE_APIFY_ACTORS = apifyActorScraper.isAvailable();
 const USE_GPT_FALLBACK = !!process.env.OPENAI_API_KEY;
+
+// Initialize BOL historical data system
+const bolHistory = new BOLHistoricalData();
+bolHistory.initialize().then(() => {
+  console.log('✅ BOL Historical Data System Ready');
+  bolHistory.getInsights();
+}).catch(error => {
+  console.error('❌ BOL History initialization failed:', error);
+});
 
 // Confidence threshold for triggering GPT fallback
 const CONFIDENCE_THRESHOLD = 0.3; // If Zyte confidence < 30%, try GPT
