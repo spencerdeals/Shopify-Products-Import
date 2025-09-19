@@ -544,14 +544,57 @@ async function scrapeProduct(url) {
         console.log('   🚨 Both automated methods failed - requiring manual entry');
         scrapingMethod = 'manual-required';
       }
+      // Both Zyte and GPT failed - but still try to extract basic info for UPCitemdb
+      console.log('   🚨 Both automated methods failed - will try UPCitemdb with retailer name');
+      productData = {
+        name: `Product from ${retailer}`, // Use retailer name for UPCitemdb search
+        price: null,
+        image: null,
+        dimensions: null,
+        weight: null,
+        brand: null,
+        category: null,
+        inStock: true,
+        variant: null
+      };
+      scrapingMethod = 'failed-will-try-upc';
+    // Still try UPCitemdb with retailer name
+    productData = {
+      name: `Product from ${retailer}`,
+      price: null,
+      image: null,
+      dimensions: null,
+      weight: null,
+      brand: null,
+      category: null,
+      inStock: true,
+      variant: null
+    };
+    scrapingMethod = 'failed-will-try-upc';
+  }
+  
+  // STEP 3: ALWAYS try UPCitemdb for box dimensions, even with failed scrapes
+  if (USE_UPCITEMDB && productData && productData.name) {
+    console.log('   📦 ALWAYS trying UPCitemdb for box dimensions...');
+    const upcDimensions = await getUPCDimensions(productData.name);
+    if (upcDimensions) {
+      productData.dimensions = upcDimensions;
+      console.log('   ✅ UPCitemdb provided box dimensions');
+      
+      if (scrapingMethod === 'failed-will-try-upc') {
+        scrapingMethod = 'upcitemdb-only';
+      } else if (scrapingMethod === 'zyte') {
+        scrapingMethod = 'zyte+upcitemdb';
+      } else if (scrapingMethod === 'gpt-fallback') {
+        scrapingMethod = 'gpt+upcitemdb';
+      }
     } else {
-      console.log('   ⚠️ No GPT fallback available (missing OpenAI API key)');
-      scrapingMethod = 'manual-required';
+      console.log('   ❌ UPCitemdb found no dimensions');
     }
   }
   
-  // Check if manual entry is required
-  if (scrapingMethod === 'manual-required') {
+  // Check if manual entry is required (only after trying UPCitemdb)
+  if (scrapingMethod === 'failed-will-try-upc' && (!productData.name || productData.name.startsWith('Product from'))) {
     console.log(`   ⚠️ ${retailer} requires manual entry - both automated methods failed`);
     return {
       id: productId,
@@ -609,39 +652,21 @@ async function scrapeProduct(url) {
   
   console.log(`   📂 Final category: "${category}"`);
   
-  // STEP 3: Smart UPCitemdb lookup for dimensions if needed
-  if (productData && productData.name && dimensionsLookSuspicious(productData.dimensions)) {
-    const upcDimensions = await getUPCDimensions(productData.name);
-    if (upcDimensions) {
-      productData.dimensions = upcDimensions;
-      console.log('   ✅ UPCitemdb provided accurate dimensions');
-      
-      // IKEA Multi-Box Detection
-      if (retailer === 'IKEA' && productData.name && productData.name.toLowerCase().includes('bed')) {
-        console.log('   🛏️ IKEA bed detected - likely multi-box shipment');
-        console.log(`   📦 Single box: ${upcDimensions.length}" × ${upcDimensions.width}" × ${upcDimensions.height}"`);
-        
-        // Multiply dimensions by 4 for typical IKEA bed (4 boxes)
-        productData.dimensions = {
-          length: Math.max(upcDimensions.length * 2, 80), // At least 80" for bed length
-          width: Math.max(upcDimensions.width * 2, 60),   // At least 60" for bed width  
-          height: upcDimensions.height * 4                // Stack 4 boxes high
-        };
-        
-        console.log(`   📦 Multi-box total: ${productData.dimensions.length}" × ${productData.dimensions.width}" × ${productData.dimensions.height}"`);
-        scrapingMethod = 'zyte+upcitemdb+ikea-multibox';
-      }
-      
-      if (scrapingMethod === 'zyte') {
-        scrapingMethod = 'zyte+upcitemdb';
-      } else if (scrapingMethod === 'gpt-fallback') {
-        scrapingMethod = 'gpt+upcitemdb';
-      }
-    } else {
-      console.log('   ⚠️ UPCitemdb found no dimensions, current dimensions may be packaging size');
-      console.log(`   📦 Current dimensions: ${productData.dimensions.length}" × ${productData.dimensions.width}" × ${productData.dimensions.height}"`);
-      console.log('   🔍 Checking if dimensions look like packaging vs actual product...');
-    }
+  // STEP 4: Handle IKEA Multi-Box Detection if we got UPCitemdb dimensions
+  if (productData.dimensions && retailer === 'IKEA' && productData.name && productData.name.toLowerCase().includes('bed')) {
+    console.log('   🛏️ IKEA bed detected - likely multi-box shipment');
+    console.log(`   📦 Single box: ${productData.dimensions.length}" × ${productData.dimensions.width}" × ${productData.dimensions.height}"`);
+    
+    // Multiply dimensions by 4 for typical IKEA bed (4 boxes)
+    const originalDimensions = { ...productData.dimensions };
+    productData.dimensions = {
+      length: Math.max(originalDimensions.length * 2, 80), // At least 80" for bed length
+      width: Math.max(originalDimensions.width * 2, 60),   // At least 60" for bed width  
+      height: originalDimensions.height * 4                // Stack 4 boxes high
+    };
+    
+    console.log(`   📦 Multi-box total: ${productData.dimensions.length}" × ${productData.dimensions.width}" × ${productData.dimensions.height}"`);
+    scrapingMethod = scrapingMethod + '+ikea-multibox';
   }
   
   if (!productData.dimensions) {
