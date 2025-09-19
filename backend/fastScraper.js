@@ -814,7 +814,7 @@ async function scrapeProduct(url) {
   
   // Check if IKEA component collection is needed
   if (retailer === 'IKEA' && productData && productData.name && productData.price && 
-      (!productData.dimensions || dimensionsLookSuspicious(productData.dimensions))) {
+      (!productData.dimensions || (productData.dimensions && dimensionsLookSuspicious(productData.dimensions)))) {
     const needsComponents = checkIfIkeaNeedsComponents(productData.name, productData.price);
     if (needsComponents) {
       console.log(`   🛏️ IKEA product likely has multiple components: ${productData.name}`);
@@ -824,7 +824,7 @@ async function scrapeProduct(url) {
         name: productData.name,
         price: productData.price,
         image: productData.image,
-        category: typeof category === 'object' && category.name ? category.name : (category || 'furniture'),
+        category: category,
         retailer: retailer,
         dimensions: productData.dimensions,
         weight: productData.weight,
@@ -878,7 +878,7 @@ async function scrapeProduct(url) {
   console.log(`   📂 Final category: "${category}"`);
   
   // STEP 3: Smart UPCitemdb lookup for dimensions if needed
-  if (productData && productData.name && dimensionsLookSuspicious(productData.dimensions)) {
+  if (productData && productData.name && (!productData.dimensions || dimensionsLookSuspicious(productData.dimensions))) {
     const upcDimensions = await getUPCDimensions(productData.name);
     if (upcDimensions) {
       productData.dimensions = upcDimensions;
@@ -890,9 +890,13 @@ async function scrapeProduct(url) {
         scrapingMethod = 'gpt+upcitemdb';
       }
     } else {
-      console.log('   ⚠️ UPCitemdb found no dimensions, current dimensions may be packaging size');
-      console.log(`   📦 Current dimensions: ${productData.dimensions.length}" × ${productData.dimensions.width}" × ${productData.dimensions.height}"`);
-      console.log('   🔍 Checking if dimensions look like packaging vs actual product...');
+      if (productData.dimensions) {
+        console.log('   ⚠️ UPCitemdb found no dimensions, current dimensions may be packaging size');
+        console.log(`   📦 Current dimensions: ${productData.dimensions.length}" × ${productData.dimensions.width}" × ${productData.dimensions.height}"`);
+        console.log('   🔍 Checking if dimensions look like packaging vs actual product...');
+      } else {
+        console.log('   ⚠️ UPCitemdb found no dimensions, and no dimensions available from scraping');
+      }
     }
   }
   
