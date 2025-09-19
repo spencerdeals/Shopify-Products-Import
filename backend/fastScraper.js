@@ -735,128 +735,86 @@ app.post('/api/process-manual-content', async (req, res) => {
     
     console.log('✅ OpenAI API key found, proceeding with GPT parsing...');
     
-    // Use OpenAI directly to parse the content
-    const OpenAI = require('openai');
-    const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    // Use the GPT parser module
+    const { parseProduct } = require('./gptParser');
+    const gptData = await parseProduct(url, { htmlContent });
     
-    try {
-      console.log('🤖 Calling GPT parser...');
-      
+    if (gptData && gptData.name && gptData.price) {
       const retailer = detectRetailer(url);
-      const prompt = `Extract product information from this ${retailer} webpage content and return ONLY valid JSON with these fields:
-- name (string)
-- price (number, no currency symbols)
-- dimensions (object with length, width, height in inches if found)
-- sku (string if found)
-- variant (string like color/size if found)
-
-For Crate & Barrel: Extract dimensions from format like "23.8"H height 85.4"W width 37"D depth" as length=85.4, width=37, height=23.8.
-
-Content: ${htmlContent.substring(0, 15000)}`;
-
-      const response = await client.chat.completions.create({
-        model: 'gpt-4o-mini',
-        temperature: 0,
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: 'You are a product data extractor. Return only valid JSON.' },
-          { role: 'user', content: prompt }
-        ],
-      });
-
-      const gptData = JSON.parse(response.choices[0].message.content || '{}');
-      console.log('📊 GPT parser result:', {
-        hasName: !!gptData?.name,
-        hasPrice: !!gptData?.price,
-        name: gptData?.name?.substring(0, 50),
-        price: gptData?.price
-      });
+      const category = gptData.category || categorizeProduct(gptData.name, url);
       
-      if (gptData && gptData.name && gptData.price) {
-        const retailer = detectRetailer(url);
-        const category = gptData.category || categorizeProduct(gptData.name, url);
-        
-        // Convert to our expected format
-        const productData = {
-          name: gptData.name,
-          price: gptData.price,
-          image: gptData.image,
-          dimensions: gptData.dimensions || gptData.package_dimensions,
-          weight: gptData.weight || gptData.package_weight_lbs,
-          brand: gptData.brand,
-          category: category,
-          inStock: gptData.inStock,
-          variant: gptData.variant
-        };
-        
-        // Fill in missing data with estimations
-        if (!productData.dimensions) {
-          productData.dimensions = estimateDimensions(category, productData.name);
-        }
-        
-        // Smart UPCitemdb lookup for manual entry too
-        if (productData.name && dimensionsLookSuspicious(productData.dimensions)) {
-          console.log('   🔍 Checking UPCitemdb for manual entry dimensions...');
-          const upcDimensions = await getUPCDimensions(productData.name);
-          if (upcDimensions) {
-            productData.dimensions = upcDimensions;
-            console.log('   ✅ UPCitemdb provided dimensions for manual entry');
-          }
-        }
-        
-        if (!productData.weight) {
-          productData.weight = estimateWeight(productData.dimensions, category);
-        }
-        
-        const shippingCost = calculateShippingCost(
-          productData.dimensions,
-          productData.weight,
-          productData.price
-        );
-        
-        const product = {
-          id: generateProductId(),
-          url: url,
-          name: productData.name,
-          price: productData.price,
-          image: productData.image || 'https://placehold.co/400x400/7CB342/FFFFFF/png?text=SDL',
-          category: category,
-          retailer: retailer,
-          dimensions: productData.dimensions,
-          weight: productData.weight,
-          shippingCost: shippingCost,
-          scrapingMethod: 'manual-gpt',
-          confidence: null,
-          variant: productData.variant,
-          dataCompleteness: {
-            hasName: !!productData.name,
-            hasImage: !!productData.image,
-            hasDimensions: !!productData.dimensions,
-            hasWeight: !!productData.weight,
-            hasPrice: !!productData.price,
-            hasVariant: !!productData.variant
-          }
-        };
-        
-        console.log('   ✅ Manual content processed successfully');
-        res.json({ success: true, product });
-        
-      } else {
-        console.log('❌ GPT extraction failed - missing required data:', {
-          hasName: !!gptData?.name,
-          hasPrice: !!gptData?.price,
-          gptData: gptData
-        });
-        throw new Error('GPT could not extract required data from manual content');
+      // Convert to our expected format
+      const productData = {
+        name: gptData.name,
+        price: gptData.price,
+        image: gptData.image,
+        dimensions: gptData.dimensions || gptData.package_dimensions,
+        weight: gptData.weight || gptData.package_weight_lbs,
+        brand: gptData.brand,
+        category: category,
+        inStock: gptData.inStock,
+        variant: gptData.variant
+      };
+      
+      // Fill in missing data with estimations
+      if (!productData.dimensions) {
+        productData.dimensions = estimateDimensions(category, productData.name);
       }
       
-    } catch (error) {
-      console.log('❌ GPT parsing error details:', error.message);
-      console.log('📄 Content sample for debugging:', htmlContent.substring(0, 1000));
-      console.log('   ❌ Manual content processing failed:', error.message);
-      res.status(400).json({ 
-        error: `GPT parsing failed: ${error.message}. Please try copying the webpage content again, including product name and price.` 
+      // Smart UPCitemdb lookup for manual entry too
+      if (productData.name && dimensionsLookSuspicious(productData.dimensions)) {
+        console.log('   🔍 Checking UPCitemdb for manual entry dimensions...');
+        const upcDimensions = await getUPCDimensions(productData.name);
+        if (upcDimensions) {
+          productData.dimensions = upcDimensions;
+          console.log('   ✅ UPCitemdb provided dimensions for manual entry');
+        }
+      }
+      
+      if (!productData.weight) {
+        productData.weight = estimateWeight(productData.dimensions, category);
+      }
+      
+      const shippingCost = calculateShippingCost(
+        productData.dimensions,
+        productData.weight,
+        productData.price
+      );
+      
+      const product = {
+        id: generateProductId(),
+        url: url,
+        name: productData.name,
+        price: productData.price,
+        image: productData.image || 'https://placehold.co/400x400/7CB342/FFFFFF/png?text=SDL',
+        category: category,
+        retailer: retailer,
+        dimensions: productData.dimensions,
+        weight: productData.weight,
+        shippingCost: shippingCost,
+        scrapingMethod: 'manual-gpt',
+        confidence: null,
+        variant: productData.variant,
+        dataCompleteness: {
+          hasName: !!productData.name,
+          hasImage: !!productData.image,
+          hasDimensions: !!productData.dimensions,
+          hasWeight: !!productData.weight,
+          hasPrice: !!productData.price,
+          hasVariant: !!productData.variant
+        }
+      };
+      
+      console.log('   ✅ Manual content processed successfully');
+      res.json({ success: true, product });
+      
+    } else {
+      console.log('❌ GPT extraction failed - missing required data:', {
+        hasName: !!gptData?.name,
+        hasPrice: !!gptData?.price,
+        gptData: gptData
       });
+      throw new Error('GPT could not extract required data from manual content');
     }
     
   } catch (error) {
