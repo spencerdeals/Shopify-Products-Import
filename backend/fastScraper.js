@@ -9,7 +9,6 @@ require('dotenv').config();
 const UPCItemDB = require('./upcitemdb');
 const OrderTracker = require('./orderTracking');
 const ZyteScraper = require('./zyteScraper');
-const ApifyActorScraper = require('./apifyActorScraper');
 
 // Simple, working scraper approach
 const MAX_CONCURRENT = 1; // Process one at a time to avoid issues
@@ -491,7 +490,8 @@ async function scrapeProduct(url) {
       try {
         console.log('   🤖 Trying GPT parser fallback...');
         // Import GPT parser dynamically to avoid circular dependency
-        const { parseProduct: parseWithGPT } = require('./gptParser');
+        const gptParser = require('./gptParser');
+        const parseWithGPT = gptParser.parseProduct;
         const gptData = await parseWithGPT(url);
         
         // Check if GPT got essential data
@@ -738,8 +738,7 @@ app.post('/api/process-manual-content', async (req, res) => {
     
     // Use the GPT parser module
     const gptParser = require('./gptParser');
-    const parseProduct = gptParser.parseProduct;
-    const gptData = await parseProduct(url, { htmlContent });
+    const gptData = await gptParser.parseProduct(url, { htmlContent });
     
     if (gptData && gptData.name && gptData.price) {
       const retailer = detectRetailer(url);
