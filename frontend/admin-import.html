@@ -1,0 +1,766 @@
+<!-- Create new file: frontend/admin-import.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SDL Admin Import Calculator - In-Store Mode</title>
+    <style>
+        /* Include all the styles from your regular index.html */
+        /* Plus these admin-specific styles: */
+        
+        .admin-header {
+            background: linear-gradient(135deg, #ff6b6b 0%, #c92a2a 100%);
+            color: white;
+            padding: 15px;
+            text-align: center;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(201, 42, 42, 0.3);
+        }
+        
+        .admin-header h2 {
+            margin: 0;
+            font-size: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+        
+        .admin-controls {
+            background: linear-gradient(135deg, #fff5f5 0%, #ffe3e3 100%);
+            border: 2px solid #ff6b6b;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .margin-control {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+        
+        .margin-slider {
+            flex: 1;
+            height: 8px;
+            border-radius: 4px;
+            background: #e0e0e0;
+            outline: none;
+            -webkit-appearance: none;
+        }
+        
+        .margin-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 25px;
+            height: 25px;
+            border-radius: 50%;
+            background: #ff6b6b;
+            cursor: pointer;
+        }
+        
+        .margin-display {
+            background: white;
+            padding: 8px 15px;
+            border-radius: 4px;
+            font-weight: 700;
+            color: #c92a2a;
+            font-size: 18px;
+            min-width: 60px;
+            text-align: center;
+            border: 2px solid #ff6b6b;
+        }
+        
+        .dimensions-override {
+            background: rgba(255, 255, 255, 0.95);
+            border: 2px solid #ff6b6b;
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 15px;
+        }
+        
+        .dimensions-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+            margin-top: 10px;
+        }
+        
+        .dimension-field {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .dimension-field label {
+            font-size: 11px;
+            color: #666;
+            margin-bottom: 4px;
+            font-weight: 600;
+        }
+        
+        .dimension-field input {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+        
+        .cubic-feet-display {
+            background: linear-gradient(135deg, #7cb342 0%, #2e7d32 100%);
+            color: white;
+            padding: 10px 15px;
+            border-radius: 6px;
+            font-weight: 700;
+            text-align: center;
+            margin-top: 10px;
+            font-size: 14px;
+        }
+        
+        .profit-display {
+            background: linear-gradient(135deg, #4caf50 0%, #2e7d32 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            box-shadow: 0 4px 15px rgba(76, 175, 80, 0.3);
+        }
+        
+        .profit-display h3 {
+            margin: 0 0 15px 0;
+            font-size: 18px;
+        }
+        
+        .profit-breakdown {
+            display: grid;
+            gap: 10px;
+        }
+        
+        .profit-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .profit-row:last-child {
+            border-bottom: none;
+            font-size: 20px;
+            font-weight: 700;
+            margin-top: 10px;
+            padding-top: 15px;
+            border-top: 2px solid rgba(255, 255, 255, 0.4);
+        }
+        
+        .manual-product-btn {
+            background: linear-gradient(135deg, #9c27b0 0%, #6a1b9a 100%);
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-bottom: 20px;
+        }
+        
+        .manual-product-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(156, 39, 176, 0.3);
+        }
+        
+        .export-pdf-btn {
+            background: linear-gradient(135deg, #2196f3 0%, #1976d2 100%);
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        
+        .export-pdf-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(33, 150, 243, 0.3);
+        }
+        
+        .quick-order-btn {
+            background: linear-gradient(135deg, #ff6b6b 0%, #c92a2a 100%);
+            color: white;
+            padding: 18px 40px;
+            border: none;
+            border-radius: 8px;
+            font-size: 18px;
+            font-weight: 700;
+            cursor: pointer;
+            box-shadow: 0 5px 20px rgba(201, 42, 42, 0.3);
+        }
+        
+        .quick-order-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(201, 42, 42, 0.4);
+        }
+        
+        .admin-badge {
+            background: #ff6b6b;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            margin-left: 5px;
+        }
+        
+        @media (max-width: 768px) {
+            .dimensions-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="calculator-page active">
+        <div class="calculator-content">
+            <!-- Admin Header -->
+            <div class="admin-header">
+                <h2>
+                    <span>🔐</span>
+                    ADMIN MODE - In-Store Calculator
+                    <span>🔐</span>
+                </h2>
+            </div>
+
+            <h1>Instant Imports <span class="admin-badge">ADMIN</span></h1>
+            <p class="subtitle">Full control mode with profit tracking and manual overrides</p>
+            
+            <!-- Global Margin Control -->
+            <div class="admin-controls">
+                <h3 style="margin-top: 0; color: #c92a2a;">💰 Global Profit Margin</h3>
+                <div class="margin-control">
+                    <label style="font-weight: 600; min-width: 100px;">Margin %:</label>
+                    <input type="range" 
+                           class="margin-slider" 
+                           id="profitMargin" 
+                           min="0" 
+                           max="100" 
+                           value="20" 
+                           step="1"
+                           oninput="updateMarginDisplay()">
+                    <div class="margin-display" id="marginDisplay">20%</div>
+                </div>
+                <small style="color: #666;">This margin is applied to the total landed cost (product + duty + shipping + delivery)</small>
+            </div>
+            
+            <div class="progress-bar">
+                <div class="progress-step">
+                    <div class="progress-circle active" id="step1">1</div>
+                    <span>Add Products</span>
+                </div>
+                <div class="progress-line" id="line1"></div>
+                <div class="progress-step">
+                    <div class="progress-circle" id="step2">2</div>
+                    <span>Review & Adjust</span>
+                </div>
+                <div class="progress-line" id="line2"></div>
+                <div class="progress-step">
+                    <div class="progress-circle" id="step3">3</div>
+                    <span>Quick Order</span>
+                </div>
+            </div>
+
+            <!-- PAGE 1: Add Products -->
+            <div class="page active" id="page1">
+                <button class="manual-product-btn" onclick="showManualProductForm()">
+                    ➕ Add Manual Product (No URL)
+                </button>
+                
+                <form id="urlForm">
+                    <div class="input-group">
+                        <label for="productUrls">Product URLs (One per line) - Optional</label>
+                        <textarea 
+                            id="productUrls" 
+                            name="productUrls" 
+                            placeholder="Paste URLs here OR use manual product entry above for in-store items"
+                        ></textarea>
+                    </div>
+
+                    <div class="button-group">
+                        <div></div>
+                        <button type="submit">Continue to Review →</button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- PAGE 2: Review Products with Admin Controls -->
+            <div class="page" id="page2">
+                <h2>Review & Adjust Products</h2>
+                
+                <div id="vendorGroups"></div>
+                
+                <div class="loading" id="loading">
+                    <div class="spinner"></div>
+                    <div class="loading-text">Processing products...</div>
+                </div>
+
+                <div class="error" id="error"></div>
+
+                <div class="button-group">
+                    <button type="button" class="secondary-btn" onclick="goToPage(1)">← Back</button>
+                    <button type="button" id="continueToFinal" onclick="calculateAndProceed()">Calculate Total →</button>
+                </div>
+            </div>
+
+            <!-- PAGE 3: Final with Profit Display -->
+            <div class="page" id="page3">
+                <h2>Final Cost & Profit Breakdown</h2>
+                
+                <div class="profit-display">
+                    <h3>💰 Profit Analysis</h3>
+                    <div class="profit-breakdown" id="profitBreakdown">
+                        <!-- Profit details will be inserted here -->
+                    </div>
+                </div>
+                
+                <div class="cost-breakdown" id="costBreakdown"></div>
+                
+                <div style="display: flex; gap: 15px; margin: 20px 0;">
+                    <button class="export-pdf-btn" onclick="exportToPDF()">
+                        📄 Export Quote PDF
+                    </button>
+                </div>
+
+                <div class="button-group">
+                    <button type="button" class="secondary-btn" onclick="goToPage(2)">← Back to Review</button>
+                    <button type="button" class="quick-order-btn" onclick="createQuickDraftOrder()">
+                        🚀 Create Draft Order Now
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Manual Product Modal -->
+    <div id="manualProductModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000;">
+        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 30px; border-radius: 15px; max-width: 500px; width: 90%;">
+            <h3 style="margin-top: 0; color: #9c27b0;">➕ Add Manual Product</h3>
+            
+            <div style="margin-bottom: 15px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 600;">Product Name</label>
+                <input type="text" id="manualName" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
+            </div>
+            
+            <div style="margin-bottom: 15px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 600;">Price ($)</label>
+                <input type="number" id="manualPrice" step="0.01" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
+            </div>
+            
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 15px;">
+                <div>
+                    <label style="display: block; margin-bottom: 5px; font-size: 12px; font-weight: 600;">Length (in)</label>
+                    <input type="number" id="manualLength" step="0.1" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
+                </div>
+                <div>
+                    <label style="display: block; margin-bottom: 5px; font-size: 12px; font-weight: 600;">Width (in)</label>
+                    <input type="number" id="manualWidth" step="0.1" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
+                </div>
+                <div>
+                    <label style="display: block; margin-bottom: 5px; font-size: 12px; font-weight: 600;">Height (in)</label>
+                    <input type="number" id="manualHeight" step="0.1" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
+                </div>
+            </div>
+            
+            <div style="margin-bottom: 15px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 600;">Weight (lbs) - Optional</label>
+                <input type="number" id="manualWeight" step="0.1" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
+            </div>
+            
+            <div style="margin-bottom: 15px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 600;">Retailer</label>
+                <input type="text" id="manualRetailer" placeholder="e.g., In-Store, Custom Order" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
+            </div>
+            
+            <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                <button onclick="closeManualProductModal()" style="padding: 10px 20px; background: #6c757d; color: white; border: none; border-radius: 4px; cursor: pointer;">Cancel</button>
+                <button onclick="addManualProduct()" style="padding: 10px 20px; background: #9c27b0; color: white; border: none; border-radius: 4px; cursor: pointer;">Add Product</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Include all your existing JavaScript from index.html
+        // Plus these admin-specific functions:
+
+        let adminProducts = [];
+        let globalProfitMargin = 20;
+        
+        function updateMarginDisplay() {
+            const margin = document.getElementById('profitMargin').value;
+            document.getElementById('marginDisplay').textContent = margin + '%';
+            globalProfitMargin = parseFloat(margin);
+            
+            // Recalculate if on final page
+            if (currentPage === 3) {
+                calculateFinalWithProfit();
+            }
+        }
+        
+        function showManualProductForm() {
+            document.getElementById('manualProductModal').style.display = 'block';
+        }
+        
+        function closeManualProductModal() {
+            document.getElementById('manualProductModal').style.display = 'none';
+            // Clear form
+            document.getElementById('manualName').value = '';
+            document.getElementById('manualPrice').value = '';
+            document.getElementById('manualLength').value = '';
+            document.getElementById('manualWidth').value = '';
+            document.getElementById('manualHeight').value = '';
+            document.getElementById('manualWeight').value = '';
+            document.getElementById('manualRetailer').value = '';
+        }
+        
+        async function addManualProduct() {
+            const name = document.getElementById('manualName').value;
+            const price = parseFloat(document.getElementById('manualPrice').value);
+            const length = parseFloat(document.getElementById('manualLength').value);
+            const width = parseFloat(document.getElementById('manualWidth').value);
+            const height = parseFloat(document.getElementById('manualHeight').value);
+            const weight = parseFloat(document.getElementById('manualWeight').value) || null;
+            const retailer = document.getElementById('manualRetailer').value || 'Manual Entry';
+            
+            if (!name || !price || !length || !width || !height) {
+                alert('Please fill in all required fields');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/admin/add-manual-product', {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Basic ' + btoa('admin:1064')
+                    },
+                    body: JSON.stringify({
+                        name,
+                        price,
+                        dimensions: { length, width, height },
+                        weight,
+                        retailer,
+                        category: 'general'
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    adminProducts.push(result.product);
+                    closeManualProductModal();
+                    
+                    // Update display if on page 2
+                    if (currentPage === 2) {
+                        const allProducts = [...scrapedProducts, ...adminProducts];
+                        vendorGroups = groupProductsByVendor(allProducts);
+                        displayVendorGroupsAdmin();
+                    }
+                }
+            } catch (error) {
+                alert('Error adding product: ' + error.message);
+            }
+        }
+        
+        function displayVendorGroupsAdmin() {
+            // Similar to displayVendorGroups but with admin controls
+            const container = document.getElementById('vendorGroups');
+            container.innerHTML = '';
+            
+            Object.entries(vendorGroups).forEach(([vendor, products]) => {
+                // ... existing vendor display code ...
+                
+                // Add dimension override controls for each product
+                products.forEach((product, index) => {
+                    const productId = `${vendor.replace(/\s+/g, '')}-${index}`;
+                    const cubicFeet = product.cubicFeet || 
+                                     (product.dimensions ? 
+                                      (product.dimensions.length * product.dimensions.width * product.dimensions.height) / 1728 : 
+                                      0);
+                    
+                    // Add dimensions override section
+                    const dimensionsHTML = `
+                        <div class="dimensions-override">
+                            <h4 style="margin: 0 0 10px 0; color: #c92a2a; font-size: 14px;">
+                                📏 Dimensions Override 
+                                <span class="admin-badge">ADMIN</span>
+                            </h4>
+                            <div class="dimensions-grid">
+                                <div class="dimension-field">
+                                    <label>Length (in)</label>
+                                    <input type="number" 
+                                           id="length-${productId}" 
+                                           value="${product.dimensions?.length || 0}"
+                                           step="0.1"
+                                           onchange="updateDimensions('${productId}', '${vendor}', ${index})">
+                                </div>
+                                <div class="dimension-field">
+                                    <label>Width (in)</label>
+                                    <input type="number" 
+                                           id="width-${productId}" 
+                                           value="${product.dimensions?.width || 0}"
+                                           step="0.1"
+                                           onchange="updateDimensions('${productId}', '${vendor}', ${index})">
+                                </div>
+                                <div class="dimension-field">
+                                    <label>Height (in)</label>
+                                    <input type="number" 
+                                           id="height-${productId}" 
+                                           value="${product.dimensions?.height || 0}"
+                                           step="0.1"
+                                           onchange="updateDimensions('${productId}', '${vendor}', ${index})">
+                                </div>
+                                <div class="dimension-field">
+                                    <label>Weight (lbs)</label>
+                                    <input type="number" 
+                                           id="weight-${productId}" 
+                                           value="${product.weight || 0}"
+                                           step="0.1"
+                                           onchange="updateWeight('${productId}', '${vendor}', ${index})">
+                                </div>
+                            </div>
+                            <div class="cubic-feet-display" id="cubic-${productId}">
+                                📦 Volume: ${cubicFeet.toFixed(3)} ft³ 
+                                | Shipping Base: $${(cubicFeet * 8).toFixed(2)}
+                            </div>
+                        </div>
+                    `;
+                    
+                    // Insert after product details
+                    // ... add to existing product HTML ...
+                });
+            });
+        }
+        
+        function updateDimensions(productId, vendor, productIndex) {
+            const length = parseFloat(document.getElementById(`length-${productId}`).value);
+            const width = parseFloat(document.getElementById(`width-${productId}`).value);
+            const height = parseFloat(document.getElementById(`height-${productId}`).value);
+            
+            if (vendorGroups[vendor] && vendorGroups[vendor][productIndex]) {
+                vendorGroups[vendor][productIndex].dimensions = { length, width, height };
+                
+                // Recalculate cubic feet and shipping
+                const cubicFeet = (length * width * height) / 1728;
+                vendorGroups[vendor][productIndex].cubicFeet = cubicFeet;
+                
+                const baseCost = Math.max(15, cubicFeet * 8);
+                const handlingFee = 15;
+                vendorGroups[vendor][productIndex].shippingCost = baseCost + handlingFee;
+                
+                // Update display
+                document.getElementById(`cubic-${productId}`).innerHTML = `
+                    📦 Volume: ${cubicFeet.toFixed(3)} ft³ 
+                    | Shipping Base: $${(baseCost + handlingFee).toFixed(2)}
+                `;
+                
+                // Recalculate if price is confirmed
+                if (confirmedPrices.has(productId)) {
+                    confirmPrice(productId, vendor, productIndex, false);
+                }
+            }
+        }
+        
+        function calculateFinalWithProfit() {
+            // Calculate with current margin
+            const products = [];
+            let totalProductCost = 0;
+            let totalDuty = 0;
+            let totalShipping = 0;
+            let totalDeliveryFees = 0;
+            
+            Object.entries(vendorGroups).forEach(([vendor, vendorProducts]) => {
+                vendorProducts.forEach(product => {
+                    if (!product.deleted) {
+                        const quantity = product.quantity || 1;
+                        const productTotal = product.price * quantity;
+                        
+                        totalProductCost += productTotal;
+                        totalDuty += productTotal * 0.265;
+                        totalShipping += (product.shippingCost || 50) * quantity;
+                        
+                        products.push(product);
+                    }
+                });
+                
+                // Add delivery fee for this vendor
+                const deliveryFee = parseFloat(document.getElementById(`delivery-${vendor}`)?.value) || 0;
+                totalDeliveryFees += deliveryFee;
+            });
+            
+            const subtotal = totalProductCost + totalDuty + totalShipping + totalDeliveryFees;
+            const margin = subtotal * (globalProfitMargin / 100);
+            const grandTotal = subtotal + margin;
+            
+            // Display profit breakdown
+            document.getElementById('profitBreakdown').innerHTML = `
+                <div class="profit-row">
+                    <span>Total Product Cost:</span>
+                    <span>$${totalProductCost.toFixed(2)}</span>
+                </div>
+                <div class="profit-row">
+                    <span>Total Duty (26.5%):</span>
+                    <span>$${totalDuty.toFixed(2)}</span>
+                </div>
+                <div class="profit-row">
+                    <span>Total Shipping:</span>
+                    <span>$${totalShipping.toFixed(2)}</span>
+                </div>
+                <div class="profit-row">
+                    <span>Total Delivery Fees:</span>
+                    <span>$${totalDeliveryFees.toFixed(2)}</span>
+                </div>
+                <div class="profit-row">
+                    <span>Subtotal (Cost):</span>
+                    <span>$${subtotal.toFixed(2)}</span>
+                </div>
+                <div class="profit-row">
+                    <span>Margin (${globalProfitMargin}%):</span>
+                    <span>$${margin.toFixed(2)}</span>
+                </div>
+                <div class="profit-row">
+                    <span>TOTAL PROFIT:</span>
+                    <span>$${margin.toFixed(2)}</span>
+                </div>
+                <div class="profit-row">
+                    <span>Customer Price:</span>
+                    <span>$${grandTotal.toFixed(2)}</span>
+                </div>
+            `;
+            
+            // Update regular cost breakdown
+            // ... existing cost breakdown code ...
+            
+            finalCalculation = {
+                products,
+                totals: {
+                    productCost: totalProductCost,
+                    dutyAmount: totalDuty,
+                    totalShippingCost: totalShipping,
+                    deliveryFees: totalDeliveryFees,
+                    subtotal,
+                    margin,
+                    grandTotal,
+                    totalProfit: margin
+                }
+            };
+        }
+        
+        async function createQuickDraftOrder() {
+            const btn = event.target;
+            btn.disabled = true;
+            btn.textContent = 'Creating Order...';
+            
+            try {
+                const response = await fetch('/api/admin/quick-draft-order', {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Basic ' + btoa('admin:1064')
+                    },
+                    body: JSON.stringify({
+                        ...finalCalculation,
+                        profitMargin: globalProfitMargin,
+                        originalUrls: document.getElementById('productUrls').value
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    alert(`✅ Draft Order Created!\n\nOrder #: ${result.draftOrderNumber}\nTotal: $${result.totalAmount.toFixed(2)}\nProfit: $${result.profit.toFixed(2)}\n\nOpening Shopify admin...`);
+                    
+                    // Open Shopify admin
+                    window.open(result.adminUrl, '_blank');
+                    
+                    // Reset form
+                    resetToFirstPage();
+                } else {
+                    throw new Error(result.error);
+                }
+            } catch (error) {
+                alert('Error creating order: ' + error.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '🚀 Create Draft Order Now';
+            }
+        }
+        
+        function exportToPDF() {
+            // For now, we'll use the browser's print dialog
+            // You can integrate with jsPDF later for better control
+            window.print();
+        }
+        
+        // Override the form submission to handle manual products
+        document.getElementById('urlForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const urls = document.getElementById('productUrls').value
+                .split('\n')
+                .map(url => url.trim())
+                .filter(url => url && url.startsWith('http'));
+            
+            if (urls.length === 0 && adminProducts.length === 0) {
+                alert('Please add at least one product (URL or manual)');
+                return;
+            }
+            
+            goToPage(2);
+            
+            if (urls.length > 0) {
+                await scrapeProducts(urls);
+            } else {
+                // Just manual products
+                vendorGroups = groupProductsByVendor(adminProducts);
+                displayVendorGroupsAdmin();
+            }
+        });
+        
+        // Add print styles for PDF export
+        const printStyles = document.createElement('style');
+        printStyles.textContent = `
+            @media print {
+                .admin-header, .admin-controls, .progress-bar, 
+                button, .button-group, .price-buttons, .delete-product-btn {
+                    display: none !important;
+                }
+                
+                .profit-display {
+                    page-break-inside: avoid;
+                    border: 2px solid #4caf50;
+                    color: black !important;
+                    background: white !important;
+                }
+                
+                .profit-display * {
+                    color: black !important;
+                }
+                
+                body {
+                    background: white;
+                }
+                
+                h1::after {
+                    content: " - Quote";
+                }
+            }
+        `;
+        document.head.appendChild(printStyles);
+        
+        // Include all other functions from regular index.html
+        // ... (copy all the regular functions but use displayVendorGroupsAdmin instead)
+    </script>
+</body>
+</html>
