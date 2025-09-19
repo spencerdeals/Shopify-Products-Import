@@ -441,24 +441,24 @@ function dimensionsLookSuspicious(dimensions) {
 }
 
 // Smart UPCitemdb lookup for dimensions
-async function getUPCDimensions(productName) {
+async function getUPCPackageDimensions(productName) {
   if (!USE_UPCITEMDB || !productName) return null;
   
   try {
-    console.log(`   🔍 UPCitemdb lookup for: "${productName.substring(0, 50)}..."`);
+    console.log(`   📦 UPCitemdb package lookup for: "${productName.substring(0, 50)}..."`);
     const upcData = await upcItemDB.searchByName(productName);
     
     if (upcData && upcData.dimensions) {
-      console.log(`   ✅ UPCitemdb found BOX dimensions: ${upcData.dimensions.length}" × ${upcData.dimensions.width}" × ${upcData.dimensions.height}"`);
+      console.log(`   ✅ UPCitemdb found PACKAGE dimensions: ${upcData.dimensions.length}" × ${upcData.dimensions.width}" × ${upcData.dimensions.height}"`);
       
-      // UPCitemdb already provides shipping box dimensions
-      const boxDimensions = upcData.dimensions;
+      // UPCitemdb provides package/shipping box dimensions (crowd-sourced from retail sites)
+      const packageDimensions = upcData.dimensions;
       
-      console.log(`   📦 Using UPCitemdb BOX dimensions: ${boxDimensions.length}" × ${boxDimensions.width}" × ${boxDimensions.height}"`);
-      return boxDimensions;
+      console.log(`   📦 Using UPCitemdb PACKAGE dimensions: ${packageDimensions.length}" × ${packageDimensions.width}" × ${packageDimensions.height}"`);
+      return packageDimensions;
     }
     
-    console.log('   ❌ UPCitemdb: No dimensions found');
+    console.log('   ❌ UPCitemdb: No package dimensions found');
     return null;
   } catch (error) {
     console.log('   ❌ UPCitemdb lookup failed:', error.message);
@@ -629,24 +629,24 @@ async function scrapeProduct(url) {
   
   // STEP 3: Smart UPCitemdb lookup for dimensions if needed
   if (productData && productData.name && dimensionsLookSuspicious(productData.dimensions)) {
-    const upcDimensions = await getUPCDimensions(productData.name);
-    if (upcDimensions) {
-      productData.dimensions = upcDimensions;
-      console.log('   ✅ UPCitemdb provided accurate dimensions');
+    const upcPackageDimensions = await getUPCPackageDimensions(productData.name);
+    if (upcPackageDimensions) {
+      productData.dimensions = upcPackageDimensions;
+      console.log('   ✅ UPCitemdb provided accurate package dimensions');
       
       // IKEA Multi-Box Detection
       if (retailer === 'IKEA' && productData.name && productData.name.toLowerCase().includes('bed')) {
         console.log('   🛏️ IKEA bed detected - likely multi-box shipment');
-        console.log(`   📦 Single product: ${upcDimensions.length}" × ${upcDimensions.width}" × ${upcDimensions.height}"`);
+        console.log(`   📦 Single package: ${upcPackageDimensions.length}" × ${upcPackageDimensions.width}" × ${upcPackageDimensions.height}"`);
         
         // Multiply dimensions by 4 for typical IKEA bed (4 boxes)
         productData.dimensions = {
-          length: Math.max(boxDimensions.length * 2, 80), // At least 80" for bed length
-          width: Math.max(boxDimensions.width * 2, 60),   // At least 60" for bed width  
-          height: boxDimensions.height * 4                // Stack 4 boxes high
+          length: Math.max(upcPackageDimensions.length * 2, 80), // At least 80" for bed length
+          width: Math.max(upcPackageDimensions.width * 2, 60),   // At least 60" for bed width  
+          height: upcPackageDimensions.height * 4                // Stack 4 boxes high
         };
         
-        console.log(`   📦 Multi-box total: ${productData.dimensions.length}" × ${productData.dimensions.width}" × ${productData.dimensions.height}"`);
+        console.log(`   📦 Multi-package total: ${productData.dimensions.length}" × ${productData.dimensions.width}" × ${productData.dimensions.height}"`);
         scrapingMethod = 'zyte+upcitemdb+ikea-multibox';
       }
       
@@ -656,9 +656,8 @@ async function scrapeProduct(url) {
         scrapingMethod = 'gpt+upcitemdb';
       }
     } else {
-      console.log('   ⚠️ UPCitemdb found no dimensions, current dimensions may be packaging size');
+      console.log('   ⚠️ UPCitemdb found no package dimensions, using scraped dimensions');
       console.log(`   📦 Current dimensions: ${productData.dimensions.length}" × ${productData.dimensions.width}" × ${productData.dimensions.height}"`);
-      console.log('   🔍 Checking if dimensions look like packaging vs actual product...');
     }
   }
   
@@ -857,11 +856,11 @@ Content: ${htmlContent.substring(0, 15000)}`;
         
         // Smart UPCitemdb lookup for manual entry too
         if (productData.name && dimensionsLookSuspicious(productData.dimensions)) {
-          console.log('   🔍 Checking UPCitemdb for manual entry dimensions...');
-          const upcDimensions = await getUPCDimensions(productData.name);
-          if (upcDimensions) {
-            productData.dimensions = upcDimensions;
-            console.log('   ✅ UPCitemdb provided dimensions for manual entry');
+          console.log('   📦 Checking UPCitemdb for manual entry package dimensions...');
+          const upcPackageDimensions = await getUPCPackageDimensions(productData.name);
+          if (upcPackageDimensions) {
+            productData.dimensions = upcPackageDimensions;
+            console.log('   ✅ UPCitemdb provided package dimensions for manual entry');
           }
         }
         
