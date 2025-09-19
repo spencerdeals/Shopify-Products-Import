@@ -926,6 +926,7 @@ async function scrapeProduct(url) {
     }
   }
   
+  // STEP 4: Ensure we have dimensions before proceeding
   if (!productData.dimensions) {
     productData.dimensions = estimateDimensions(category, productName);
     console.log('   📐 Estimated dimensions based on category:', category);
