@@ -1,8 +1,7 @@
 [build]
-command = "npm install"
+builder = "NIXPACKS"
 
 [deploy]
-startCommand = "npm start"
+startCommand = "node backend/fastScraper.js"
 
 [env]
-NODE_ENV = "production"
