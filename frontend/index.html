@@ -2485,6 +2485,13 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
             }
         }
         
+        function closeManualEntryModal() {
+            const modal = document.getElementById('manualEntryModal');
+            if (modal) {
+                modal.style.display = 'none';
+            }
+        }
+        
         // Add pulse animation
         const style = document.createElement('style');
         style.textContent = `
