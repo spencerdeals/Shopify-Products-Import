@@ -23,33 +23,27 @@ const APIFY_API_KEY = process.env.APIFY_API_KEY || '';
 const SCRAPING_TIMEOUT = 30000;  // 30 seconds timeout
 const MAX_CONCURRENT_SCRAPES = 2;
 const BERMUDA_DUTY_RATE = 0.265;
-const USE_SCRAPINGBEE = !!SCRAPINGBEE_API_KEY;
 const SHIPPING_RATE_PER_CUBIC_FOOT = 8; // $8 per cubic foot as discussed
 
-// Initialize Apify scraper
-const apifyScraper = new ApifyScraper(APIFY_API_KEY);
-const USE_APIFY = apifyScraper.isAvailable();
+// Initialize Zyte scraper
+const zyteScraper = new ZyteScraper();
+const USE_ZYTE = zyteScraper.enabled;
 
 console.log('=== SERVER STARTUP ===');
 console.log(`Port: ${PORT}`);
 console.log(`Shopify Domain: ${SHOPIFY_DOMAIN}`);
 console.log('');
 console.log('🔍 SCRAPING CONFIGURATION:');
-console.log(`1. Primary: Apify - ${USE_APIFY ? '✅ ENABLED (All Retailers)' : '❌ DISABLED (Missing API Key)'}`);
-console.log(`2. Fallback: ScrapingBee - ${USE_SCRAPINGBEE ? '✅ ENABLED' : '❌ DISABLED (Missing API Key)'}`);
-console.log(`3. Dimension Data: UPCitemdb - ${USE_UPCITEMDB ? '✅ ENABLED' : '❌ DISABLED (Missing API Key)'}`);
+console.log(`1. Primary: Zyte - ${USE_ZYTE ? '✅ ENABLED (All Retailers)' : '❌ DISABLED (Missing API Key)'}`);
+console.log(`2. Dimension Data: UPCitemdb - ${USE_UPCITEMDB ? '✅ ENABLED' : '❌ DISABLED (Missing API Key)'}`);
 console.log('');
 console.log('📊 SCRAPING STRATEGY:');
-if (USE_APIFY && USE_SCRAPINGBEE && USE_UPCITEMDB) {
-  console.log('✅ OPTIMAL: Apify → ScrapingBee → UPCitemdb → AI Estimation');
-} else if (USE_APIFY && USE_SCRAPINGBEE) {
-  console.log('⚠️  GOOD: Apify → ScrapingBee → AI Estimation (No UPCitemdb)');
-} else if (USE_APIFY && !USE_SCRAPINGBEE) {
-  console.log('⚠️  LIMITED: Apify → AI Estimation (No ScrapingBee fallback)');
-} else if (!USE_APIFY && USE_SCRAPINGBEE) {
-  console.log('⚠️  LIMITED: ScrapingBee → AI Estimation (No Apify primary)');
+if (USE_ZYTE && USE_UPCITEMDB) {
+  console.log('✅ OPTIMAL: Zyte → UPCitemdb → AI Estimation');
+} else if (USE_ZYTE) {
+  console.log('⚠️  GOOD: Zyte → AI Estimation (No UPCitemdb)');
 } else {
-  console.log('❌ MINIMAL: AI Estimation only (No scrapers configured)');
+  console.log('❌ MINIMAL: AI Estimation only (No Zyte configured)');
 }
 console.log('=====================');
 
@@ -71,12 +65,10 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     port: PORT,
     scraping: {
-      primary: USE_APIFY ? 'Apify' : 'None',
-      fallback: USE_SCRAPINGBEE ? 'ScrapingBee' : 'None',
+      primary: USE_ZYTE ? 'Zyte' : 'None',
       dimensions: USE_UPCITEMDB ? 'UPCitemdb' : 'None',
-      strategy: USE_APIFY && USE_SCRAPINGBEE && USE_UPCITEMDB ? 'Optimal' : 
-                USE_APIFY && USE_SCRAPINGBEE ? 'Good' :
-                USE_APIFY || USE_SCRAPINGBEE ? 'Limited' : 'Minimal'
+      strategy: USE_ZYTE && USE_UPCITEMDB ? 'Optimal' : 
+                USE_ZYTE ? 'Good' : 'Minimal'
     },
     shopifyConfigured: !!SHOPIFY_ACCESS_TOKEN
   });
@@ -407,170 +399,6 @@ function mergeProductData(primary, secondary) {
   };
 }
 
-// ScrapingBee scraping function - ENHANCED WITH AI EXTRACTION
-async function scrapeWithScrapingBee(url) {
-  if (!USE_SCRAPINGBEE) {
-    throw new Error('ScrapingBee not configured');
-  }
-
-  try {
-    console.log('🐝 Starting ScrapingBee AI extraction for:', url);
-    
-    // Try basic scraping first, then AI extraction if needed
-    const response = await axios({
-      method: 'GET',
-      url: 'https://app.scrapingbee.com/api/v1/',
-      params: {
-        api_key: SCRAPINGBEE_API_KEY,
-        url: url,
-        premium_proxy: 'false',  // Try without premium first
-        country_code: 'us',
-        render_js: 'false',      // Disable JS to reduce errors
-        block_resources: 'true', // Block images/css
-        wait: '2000'
-      },
-      timeout: SCRAPING_TIMEOUT
-    });
-
-    console.log('✅ ScrapingBee basic scraping completed');
-    
-    // Parse the HTML response manually
-    const html = response.data;
-    if (!html || typeof html !== 'string') {
-      throw new Error('No HTML content received');
-    }
-    
-    const productData = {
-      name: null,
-      price: null,
-      image: null,
-      dimensions: null,
-      weight: null,
-      brand: null,
-      category: null,
-      inStock: true
-    };
-
-    // Extract product name from HTML
-    const titlePatterns = [
-      /<h1[^>]*>([^<]+)<\/h1>/i,
-      /<title[^>]*>([^<]+)<\/title>/i,
-      /class="[^"]*product[^"]*title[^"]*"[^>]*>([^<]+)</i,
-      /data-testid="[^"]*title[^"]*"[^>]*>([^<]+)</i
-    ];
-    
-    for (const pattern of titlePatterns) {
-      const match = html.match(pattern);
-      if (match && match[1].trim()) {
-        productData.name = match[1].trim().replace(/&[^;]+;/g, '').substring(0, 200);
-        console.log('   📝 Extracted title:', productData.name.substring(0, 50) + '...');
-        break;
-      }
-    }
-
-    // Extract price from HTML
-    const pricePatterns = [
-      /\$(\d+(?:,\d{3})*(?:\.\d{2})?)/g,
-      /price[^>]*>[\s\S]*?\$(\d+(?:,\d{3})*(?:\.\d{2})?)/i,
-      /MoneyPrice[^>]*>[\s\S]*?\$(\d+(?:,\d{3})*(?:\.\d{2})?)/i,
-      /"price":\s*"?\$?(\d+(?:,\d{3})*(?:\.\d{2})?)"?/i
-    ];
-    
-    for (const pattern of pricePatterns) {
-      const matches = [...html.matchAll(pattern)];
-      for (const match of matches) {
-        const price = parseFloat(match[1].replace(/,/g, ''));
-        if (price > 0 && price < 100000) {
-          productData.price = price;
-          console.log('   💰 Extracted price: $' + productData.price);
-          break;
-        }
-      }
-      if (productData.price) break;
-    }
-
-    // Extract dimensions from HTML
-    const dimPatterns = [
-      /(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*(?:inches?|in\.?|")/i,
-      /dimensions?[^>]*>[\s\S]*?(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)/i,
-      /L:\s*(\d+(?:\.\d+)?).*W:\s*(\d+(?:\.\d+)?).*H:\s*(\d+(?:\.\d+)?)/i
-    ];
-    
-    for (const pattern of dimPatterns) {
-      const match = html.match(pattern);
-      if (match) {
-        productData.dimensions = {
-          length: parseFloat(match[1]),
-          width: parseFloat(match[2]),
-          height: parseFloat(match[3])
-        };
-        console.log('   📏 Extracted dimensions:', productData.dimensions);
-        break;
-      }
-    }
-
-    // Extract weight from HTML
-    const weightPatterns = [
-      /(\d+(?:\.\d+)?)\s*(?:pounds?|lbs?)/i,
-      /weight[^>]*>[\s\S]*?(\d+(?:\.\d+)?)\s*(?:pounds?|lbs?)/i,
-      /(\d+(?:\.\d+)?)\s*(?:kilograms?|kgs?)/i
-    ];
-    
-    for (const pattern of weightPatterns) {
-      const match = html.match(pattern);
-      if (match) {
-        let weight = parseFloat(match[1]);
-        // Convert to pounds if needed
-        if (/kg/i.test(match[0])) weight *= 2.205;
-        
-        productData.weight = Math.round(weight * 10) / 10;
-        console.log('   ⚖️ Extracted weight:', productData.weight + ' lbs');
-        break;
-      }
-    }
-
-    // Extract image URL
-    const imagePatterns = [
-      /src="([^"]+)"[^>]*(?:class="[^"]*product[^"]*image|data-testid="[^"]*image)/i,
-      /<img[^>]+src="([^"]+)"[^>]*product/i,
-      /property="og:image"[^>]+content="([^"]+)"/i
-    ];
-    
-    for (const pattern of imagePatterns) {
-      const match = html.match(pattern);
-      if (match && match[1].startsWith('http')) {
-        productData.image = match[1];
-        break;
-      }
-    }
-
-    // Check availability  
-    const outOfStockKeywords = /out of stock|unavailable|sold out|not available/i;
-    productData.inStock = !outOfStockKeywords.test(html);
-
-    console.log('📦 ScrapingBee results:', {
-      hasName: !!productData.name,
-      hasPrice: !!productData.price,
-      hasImage: !!productData.image,
-      hasDimensions: !!productData.dimensions,
-      hasWeight: !!productData.weight
-    });
-
-    return productData;
-
-  } catch (error) {
-    console.error('❌ ScrapingBee extraction failed:', error.message);
-    if (error.response) {
-      console.error('Response status:', error.response.status);
-      console.error('Response data:', error.response.data);
-      if (error.response.status === 500) {
-        console.error('Server Error - ScrapingBee may be having issues');
-      }
-    }
-    throw error;
-  }
-}
-
 // Main product scraping function
 async function scrapeProduct(url) {
   // AI CHECK: See if we've seen this exact product before
@@ -589,69 +417,30 @@ async function scrapeProduct(url) {
   console.log(`\n📦 Processing: ${url}`);
   console.log(`   Retailer: ${retailer}`);
   
-  // STEP 1: Always try Apify first for all retailers
-  if (USE_APIFY) {
+  // STEP 1: Always try Zyte first for all retailers
+  if (USE_ZYTE) {
     try {
-      console.log('   🔄 Attempting Apify scrape...');
+      console.log('   🔄 Attempting Zyte scrape...');
       
-      // Use the universal scrapeProduct method from apifyScraper
-      productData = await apifyScraper.scrapeProduct(url);
+      // Use Zyte scraper
+      productData = await zyteScraper.scrapeProduct(url);
       
       if (productData) {
-        scrapingMethod = 'apify';
-        console.log('   ✅ Apify returned data');
+        scrapingMethod = 'zyte';
+        console.log('   ✅ Zyte returned data');
         
         // Check if data is complete
         if (!isDataComplete(productData)) {
-          console.log('   ⚠️ Apify data incomplete, will try ScrapingBee for missing fields');
+          console.log('   ⚠️ Zyte data incomplete, will try UPCitemdb for missing fields');
         }
       }
     } catch (error) {
-      console.log('   ❌ Apify failed:', error.message);
+      console.log('   ❌ Zyte failed:', error.message);
       productData = null;
     }
   }
   
-  // STEP 2: If Apify failed or returned incomplete data, try ScrapingBee with AI
-  if (USE_SCRAPINGBEE && (!productData || !isDataComplete(productData))) {
-    try {
-      console.log('   🐝 Attempting ScrapingBee AI extraction...');
-      const scrapingBeeData = await scrapeWithScrapingBee(url);
-      
-      if (scrapingBeeData) {
-        if (!productData) {
-          // Apify failed completely, use ScrapingBee data
-          productData = scrapingBeeData;
-          scrapingMethod = 'scrapingbee';
-          console.log('   ✅ Using ScrapingBee AI data (Apify failed)');
-        } else {
-          // Merge data - keep Apify data but fill in missing fields from ScrapingBee
-          const mergedData = mergeProductData(productData, scrapingBeeData);
-          
-          // Log what was supplemented
-          if (!productData.name && scrapingBeeData.name) {
-            console.log('   ✅ ScrapingBee AI provided missing name');
-          }
-          if (!productData.price && scrapingBeeData.price) {
-            console.log('   ✅ ScrapingBee AI provided missing price');
-          }
-          if (!productData.image && scrapingBeeData.image) {
-            console.log('   ✅ ScrapingBee AI provided missing image');
-          }
-          if (!productData.dimensions && scrapingBeeData.dimensions) {
-            console.log('   ✅ ScrapingBee AI provided missing dimensions');
-          }
-          
-          productData = mergedData;
-          scrapingMethod = 'apify+scrapingbee';
-        }
-      }
-    } catch (error) {
-      console.log('   ❌ ScrapingBee AI extraction failed:', error.message);
-    }
-  }
-  
-  // STEP 3: Try UPCitemdb if we have a product name but missing dimensions
+  // STEP 2: Try UPCitemdb if we have a product name but missing dimensions
   if (USE_UPCITEMDB && productData && productData.name && (!productData.dimensions || !productData.weight)) {
     try {
       console.log('   📦 Attempting UPCitemdb lookup...');
@@ -679,7 +468,7 @@ async function scrapeProduct(url) {
     }
   }
   
-  // STEP 4: Use intelligent estimation for any missing data
+  // STEP 3: Use intelligent estimation for any missing data
   if (!productData) {
     // All methods failed completely
     productData = {
@@ -801,20 +590,18 @@ app.post('/api/scrape', async (req, res) => {
     }
     
     console.log(`\n🚀 Starting batch scrape for ${urls.length} products...`);
-    console.log('   Strategy: Apify → ScrapingBee AI → UPCitemdb → Estimation\n');
+    console.log('   Strategy: Zyte → UPCitemdb → Estimation\n');
     
     const products = await processBatch(urls);
     
     // Log summary
-    const apifyCount = products.filter(p => p.scrapingMethod?.includes('apify')).length;
-    const scrapingBeeCount = products.filter(p => p.scrapingMethod?.includes('scrapingbee')).length;
+    const zyteCount = products.filter(p => p.scrapingMethod?.includes('zyte')).length;
     const upcitemdbCount = products.filter(p => p.scrapingMethod?.includes('upcitemdb')).length;
     const estimatedCount = products.filter(p => p.scrapingMethod === 'estimation').length;
     
     console.log('\n📊 SCRAPING SUMMARY:');
     console.log(`   Total products: ${products.length}`);
-    console.log(`   Apify used: ${apifyCount}`);
-    console.log(`   ScrapingBee AI used: ${scrapingBeeCount}`);
+    console.log(`   Zyte used: ${zyteCount}`);
     console.log(`   UPCitemdb used: ${upcitemdbCount}`);
     console.log(`   Fully estimated: ${estimatedCount}`);
     console.log(`   Success rate: ${((products.length - estimatedCount) / products.length * 100).toFixed(1)}%\n`);
@@ -829,8 +616,7 @@ app.post('/api/scrape', async (req, res) => {
         scraped: products.length - estimatedCount,
         estimated: estimatedCount,
         scrapingMethods: {
-          apify: apifyCount,
-          scrapingBee: scrapingBeeCount,
+          zyte: zyteCount,
           upcitemdb: upcitemdbCount,
           estimation: estimatedCount
         }
