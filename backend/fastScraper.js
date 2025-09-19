@@ -185,7 +185,9 @@ function detectRetailer(url) {
     if (domain.includes('westelm.com')) return 'West Elm';
     if (domain.includes('potterybarn.com')) return 'Pottery Barn';
     if (domain.includes('lunafurn.com')) return 'Luna Furniture';
-    return 'Unknown Retailer';
+    return
+  }
+} 'Unknown Retailer';
   } catch (e) {
     return 'Unknown Retailer';
   }
