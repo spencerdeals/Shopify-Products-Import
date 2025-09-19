@@ -880,7 +880,7 @@ async function scrapeProduct(url) {
   
   // Fill in missing data with estimations
   const productName = (productData && productData.name) || `Product from ${retailer}`;
-  const category = (productData && productData.category) || categorizeProduct(productName, url);
+  const productCategory = productData?.category || categorizeProduct(productName, url);
   // Handle category - safely convert object to string if needed
   let category = null;
   if (productData && productData.category) {
@@ -1009,8 +1009,8 @@ async function scrapeProduct(url) {
         productData = { dimensions: estimatedDimensions };
       }
       if (!productData) productData = {};
-      productData.dimensions = estimateDimensions(category, productName);
-      console.log('   📐 Estimated dimensions based on category:', category);
+      productData.dimensions = estimateDimensions(productCategory, productName);
+      console.log('   📐 Estimated dimensions based on category:', productCategory);
       if (scrapingMethod === 'none') {
         scrapingMethod = 'estimation';
       }
@@ -1024,7 +1024,7 @@ async function scrapeProduct(url) {
       productData.weight = estimatedWeight;
     } else {
       productData = { ...productData, weight: estimatedWeight };
-    }
+    productData.weight = estimateWeight(productData.dimensions, productCategory);
     console.log('   ⚖️ Estimated weight based on dimensions');
   }
   
@@ -1042,7 +1042,7 @@ async function scrapeProduct(url) {
     name: productName,
     price: (productData && productData.price) ? productData.price : null,
     image: (productData && productData.image) ? productData.image : 'https://placehold.co/400x400/7CB342/FFFFFF/png?text=SDL',
-    category: category,
+    category: productCategory,
     retailer: retailer,
     dimensions: productData.dimensions,
     weight: productData.weight,
