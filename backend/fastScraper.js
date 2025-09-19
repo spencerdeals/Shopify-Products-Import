@@ -10,7 +10,6 @@ const UPCItemDB = require('./upcitemdb');
 const OrderTracker = require('./orderTracking');
 const ZyteScraper = require('./zyteScraper');
 const ApifyActorScraper = require('./apifyActorScraper');
-const { parseProduct: parseWithGPT } = require('./gptParser');
 
 // Simple, working scraper approach
 const MAX_CONCURRENT = 1; // Process one at a time to avoid issues
@@ -491,6 +490,8 @@ async function scrapeProduct(url) {
     if (USE_GPT_FALLBACK) {
       try {
         console.log('   🤖 Trying GPT parser fallback...');
+        // Import GPT parser dynamically to avoid circular dependency
+        const { parseProduct: parseWithGPT } = require('./gptParser');
         const gptData = await parseWithGPT(url);
         
         // Check if GPT got essential data
@@ -736,6 +737,7 @@ app.post('/api/process-manual-content', async (req, res) => {
     console.log('✅ OpenAI API key found, proceeding with GPT parsing...');
     
     // Use the GPT parser module
+    // Import GPT parser dynamically to avoid circular dependency
     const { parseProduct } = require('./gptParser');
     const gptData = await parseProduct(url, { htmlContent });
     
