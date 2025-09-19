@@ -369,6 +369,215 @@ class ZyteScraper {
   }
 }
 
+// Extract product information from manual content with real dimensions
+function extractProductFromContent(content, url, retailer, category) {
+  console.log('🔍 Extracting product data from manual content...');
+  
+  const productData = {
+    name: null,
+    price: null,
+    image: null,
+    dimensions: null,
+    weight: null
+  };
+  
+  // Extract product name from content
+  const namePatterns = [
+    /product[^:]*:\s*([^\n\r]{10,100})/i,
+    /title[^:]*:\s*([^\n\r]{10,100})/i,
+    /<h1[^>]*>([^<]{10,100})<\/h1>/i,
+    /name[^:]*:\s*([^\n\r]{10,100})/i
+  ];
+  
+  for (const pattern of namePatterns) {
+    const match = content.match(pattern);
+    if (match && match[1].trim()) {
+      productData.name = match[1].trim().substring(0, 200);
+      console.log(`   📝 Extracted name: ${productData.name.substring(0, 50)}...`);
+      break;
+    }
+  }
+  
+  // Extract price from content
+  const pricePatterns = [
+    /\$(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)/g,
+    /price[^$]*\$(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)/gi,
+    /cost[^$]*\$(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)/gi
+  ];
+  
+  for (const pattern of pricePatterns) {
+    const matches = [...content.matchAll(pattern)];
+    for (const match of matches) {
+      const price = parseFloat(match[1].replace(/,/g, ''));
+      if (price > 10 && price < 50000) {
+        productData.price = price;
+        console.log(`   💰 Extracted price: $${productData.price}`);
+        break;
+      }
+    }
+    if (productData.price) break;
+  }
+  
+  // CRITICAL: Extract REAL product dimensions from content
+  console.log('🔍 Searching for product dimensions in content...');
+  const dimPatterns = [
+    // Standard dimension formats
+    /(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*(?:inches?|in\.?|"|'')/i,
+    /(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*(?:cm|centimeters?)/i,
+    // Labeled dimensions
+    /dimensions?[^:]*:\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)/i,
+    /overall[^:]*:\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)/i,
+    /size[^:]*:\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)/i,
+    // L x W x H format
+    /L:\s*(\d+(?:\.\d+)?)[^0-9]*W:\s*(\d+(?:\.\d+)?)[^0-9]*H:\s*(\d+(?:\.\d+)?)/i,
+    /length[^:]*:\s*(\d+(?:\.\d+)?)[^0-9]*width[^:]*:\s*(\d+(?:\.\d+)?)[^0-9]*height[^:]*:\s*(\d+(?:\.\d+)?)/i,
+    // Individual measurements
+    /width[^:]*:\s*(\d+(?:\.\d+)?)[^0-9]*depth[^:]*:\s*(\d+(?:\.\d+)?)[^0-9]*height[^:]*:\s*(\d+(?:\.\d+)?)/i,
+    // Product-specific formats
+    /assembled[^:]*:\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)/i,
+    /product[^:]*:\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)/i
+  ];
+  
+  for (const pattern of dimPatterns) {
+    const match = content.match(pattern);
+    if (match) {
+      let length = parseFloat(match[1]);
+      let width = parseFloat(match[2]);
+      let height = parseFloat(match[3]);
+      
+      // Convert cm to inches if needed
+      if (content.toLowerCase().includes('cm') || content.toLowerCase().includes('centimeter')) {
+        length = length / 2.54;
+        width = width / 2.54;
+        height = height / 2.54;
+        console.log('   📐 Converted from cm to inches');
+      }
+      
+      // Validate dimensions are reasonable
+      if (length > 0 && width > 0 && height > 0 && 
+          length < 200 && width < 200 && height < 200) {
+        
+        // CRITICAL: Add packaging padding based on category
+        const paddingFactors = {
+          'electronics': 1.3,      // 30% padding for fragile items
+          'appliances': 1.2,       // 20% padding
+          'furniture': 1.15,       // 15% padding for sturdy items
+          'high-end-furniture': 1.15, // 15% padding for quality items
+          'outdoor': 1.15,         // 15% padding for outdoor furniture
+          'clothing': 1.4,         // 40% padding for soft goods
+          'books': 1.2,            // 20% padding
+          'toys': 1.25,            // 25% padding
+          'sports': 1.2,           // 20% padding
+          'home-decor': 1.35,      // 35% padding for fragile decor
+          'tools': 1.15,           // 15% padding
+          'garden': 1.2,           // 20% padding
+          'general': 1.25          // 25% padding default
+        };
+        
+        const paddingFactor = paddingFactors[category] || 1.25;
+        
+        productData.dimensions = {
+          length: Math.round(length * paddingFactor * 10) / 10,
+          width: Math.round(width * paddingFactor * 10) / 10,
+          height: Math.round(height * paddingFactor * 10) / 10
+        };
+        
+        console.log(`   📐 Found product dimensions: ${length}" × ${width}" × ${height}"`);
+        console.log(`   📦 Added ${((paddingFactor - 1) * 100).toFixed(0)}% packaging padding for ${category}`);
+        console.log(`   📦 Final shipping dimensions: ${productData.dimensions.length}" × ${productData.dimensions.width}" × ${productData.dimensions.height}"`);
+        break;
+      }
+    }
+  }
+  
+  // If no dimensions found, try to extract from URL or use category-based estimation
+  if (!productData.dimensions) {
+    console.log('   ⚠️ No dimensions found in content, trying URL extraction...');
+    
+    // Try to extract size from URL (like "85" from "mallorca-85-wood-outdoor-sofa")
+    const urlSizeMatch = url.match(/[-_](\d{2,3})[-_]/);
+    if (urlSizeMatch) {
+      const extractedSize = parseInt(urlSizeMatch[1]);
+      if (extractedSize >= 20 && extractedSize <= 120) {
+        // Use extracted size as length, estimate width/height based on category
+        const categoryRatios = {
+          'furniture': { w: 0.4, h: 0.35 },
+          'high-end-furniture': { w: 0.4, h: 0.35 },
+          'outdoor': { w: 0.4, h: 0.35 },
+          'electronics': { w: 0.6, h: 0.4 },
+          'general': { w: 0.5, h: 0.4 }
+        };
+        
+        const ratio = categoryRatios[category] || categoryRatios['general'];
+        const paddingFactor = 1.15; // 15% padding
+        
+        productData.dimensions = {
+          length: Math.round(extractedSize * paddingFactor * 10) / 10,
+          width: Math.round(extractedSize * ratio.w * paddingFactor * 10) / 10,
+          height: Math.round(extractedSize * ratio.h * paddingFactor * 10) / 10
+        };
+        
+        console.log(`   📐 Extracted size ${extractedSize}" from URL`);
+        console.log(`   📦 Estimated shipping dimensions: ${productData.dimensions.length}" × ${productData.dimensions.width}" × ${productData.dimensions.height}"`);
+      }
+    }
+  }
+  
+  // Last resort: reasonable category-based estimates (NOT random!)
+  if (!productData.dimensions) {
+    console.log('   ⚠️ No dimensions found anywhere, using category-based estimate...');
+    
+    const categoryEstimates = {
+      'high-end-furniture': { length: 72, width: 32, height: 30 },
+      'furniture': { length: 48, width: 30, height: 36 },
+      'outdoor': { length: 78, width: 34, height: 32 },
+      'electronics': { length: 24, width: 16, height: 12 },
+      'appliances': { length: 30, width: 30, height: 48 },
+      'clothing': { length: 14, width: 12, height: 3 },
+      'books': { length: 10, width: 7, height: 2 },
+      'toys': { length: 16, width: 14, height: 12 },
+      'sports': { length: 30, width: 24, height: 16 },
+      'home-decor': { length: 18, width: 15, height: 18 },
+      'tools': { length: 20, width: 15, height: 8 },
+      'garden': { length: 30, width: 24, height: 18 },
+      'general': { length: 18, width: 15, height: 12 }
+    };
+    
+    const estimate = categoryEstimates[category] || categoryEstimates['general'];
+    const paddingFactor = 1.15; // 15% padding
+    
+    productData.dimensions = {
+      length: Math.round(estimate.length * paddingFactor * 10) / 10,
+      width: Math.round(estimate.width * paddingFactor * 10) / 10,
+      height: Math.round(estimate.height * paddingFactor * 10) / 10
+    };
+    
+    console.log(`   📦 Category-based estimate with packaging: ${productData.dimensions.length}" × ${productData.dimensions.width}" × ${productData.dimensions.height}"`);
+  }
+  
+  // Extract weight from content
+  const weightPatterns = [
+    /(\d+(?:\.\d+)?)\s*(?:pounds?|lbs?)/i,
+    /weight[^:]*:\s*(\d+(?:\.\d+)?)\s*(?:pounds?|lbs?)/i,
+    /(\d+(?:\.\d+)?)\s*(?:kilograms?|kgs?)/i
+  ];
+  
+  for (const pattern of weightPatterns) {
+    const match = content.match(pattern);
+    if (match) {
+      let weight = parseFloat(match[1]);
+      // Convert to pounds if needed
+      if (/kg/i.test(match[0])) weight *= 2.205;
+      
+      productData.weight = Math.round(weight * 10) / 10;
+      console.log(`   ⚖️ Extracted weight: ${productData.weight} lbs`);
+      break;
+    }
+  }
+  
+  return productData;
+}
+
 function categorizeProduct(name, url) {
   const text = (name + ' ' + url).toLowerCase();
   
