@@ -404,6 +404,69 @@ function calculateShippingCost(dimensions, weight, price) {
   return Math.round(finalShippingCost);
 }
 
+// Check if IKEA product needs component collection
+function checkIfIkeaNeedsComponents(productName, price) {
+  const name = productName.toLowerCase();
+  
+  // Bed frames - typically 2-4 components
+  if (/\b(bed|frame|headboard|footboard)\b/.test(name)) {
+    if (price > 400) {
+      return { count: 4, type: 'bed frame' }; // King/Queen beds
+    } else if (price > 200) {
+      return { count: 3, type: 'bed frame' }; // Full/Double beds
+    } else {
+      return { count: 2, type: 'bed frame' }; // Twin beds
+    }
+  }
+  
+  // Wardrobes/PAX - typically 3-6 components
+  if (/\b(wardrobe|armoire|closet|pax)\b/.test(name)) {
+    if (price > 500) {
+      return { count: 6, type: 'wardrobe system' }; // Large PAX systems
+    } else if (price > 300) {
+      return { count: 4, type: 'wardrobe' }; // Medium wardrobes
+    } else {
+      return { count: 3, type: 'wardrobe' }; // Small wardrobes
+    }
+  }
+  
+  // Kitchen systems - typically 4-8 components
+  if (/\b(kitchen|cabinet.*set|knoxhult|enhet)\b/.test(name)) {
+    if (price > 1000) {
+      return { count: 8, type: 'kitchen system' }; // Full kitchen
+    } else if (price > 500) {
+      return { count: 5, type: 'kitchen set' }; // Partial kitchen
+    } else {
+      return { count: 4, type: 'kitchen unit' }; // Small kitchen set
+    }
+  }
+  
+  // Sectional sofas - typically 2-4 components
+  if (/\b(sectional|sofa.*section|corner.*sofa)\b/.test(name)) {
+    if (price > 800) {
+      return { count: 4, type: 'sectional sofa' }; // Large sectionals
+    } else {
+      return { count: 3, type: 'sectional sofa' }; // Small sectionals
+    }
+  }
+  
+  // Dining sets - typically 2-3 components (table + chairs)
+  if (/\b(dining|table.*chair|chair.*table)\b/.test(name)) {
+    return { count: 3, type: 'dining set' };
+  }
+  
+  // Large storage/shelving - typically 2-3 components for tall units
+  if (/\b(bookshelf|shelf.*unit|billy|hemnes.*bookcase|kallax)\b/.test(name) && price > 200) {
+    return { count: 3, type: 'storage unit' };
+  }
+  
+  // Large desks - typically 2 components
+  if (/\b(desk|workstation|office.*table)\b/.test(name) && price > 300) {
+    return { count: 2, type: 'desk system' };
+  }
+  
+  return null; // Single component item
+}
 // Helper function to check if essential data is complete
 function isDataComplete(productData) {
   return productData && 
@@ -747,6 +810,41 @@ async function scrapeProduct(url) {
         hasVariant: false
       }
     };
+  }
+  
+  // Check if IKEA component collection is needed
+  if (retailer === 'IKEA' && productData && productData.name && productData.price) {
+    const needsComponents = checkIfIkeaNeedsComponents(productData.name, productData.price);
+    if (needsComponents) {
+      console.log(`   🛏️ IKEA product likely has multiple components: ${productData.name}`);
+      return {
+        id: productId,
+        url: url,
+        name: productData.name,
+        price: productData.price,
+        image: productData.image,
+        category: category,
+        retailer: retailer,
+        dimensions: productData.dimensions,
+        weight: productData.weight,
+        shippingCost: 0,
+        scrapingMethod: 'ikea-components-required',
+        confidence: confidence,
+        variant: productData.variant,
+        ikeaComponentsRequired: true,
+        estimatedComponents: needsComponents.count,
+        componentType: needsComponents.type,
+        message: `This IKEA ${needsComponents.type} likely ships in ${needsComponents.count} separate packages. Please check "What's included" and provide URLs for each component.`,
+        dataCompleteness: {
+          hasName: !!productData.name,
+          hasImage: !!productData.image,
+          hasDimensions: !!productData.dimensions,
+          hasWeight: !!productData.weight,
+          hasPrice: !!productData.price,
+          hasVariant: !!productData.variant
+        }
+      };
+    }
   }
   
   // Ensure we always have valid productData for successful scrapes
