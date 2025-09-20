@@ -383,21 +383,24 @@ async function enhanceProductDataWithGPT(zyteData, url, retailer) {
     const OpenAI = require('openai');
     const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
     
-    const prompt = `Enhance this product data intelligently. Extract ALL meaningful variants (color, size, style, orientation) and realistic shipping box dimensions. Return valid JSON.
+    const prompt = `Enhance this product data intelligently. Extract ALL meaningful variants (color, size, style, orientation) and realistic shipping box dimensions. Return valid JSON format.
 
 Product: "${zyteData.name}"
 Category: "${zyteData.category}"
 Current Variant: "${zyteData.variant || 'none'}"
+Current Price: $${zyteData.price || 'unknown'}
 Current Dimensions: ${JSON.stringify(zyteData.dimensions)}
 Retailer: ${retailer}
 URL: ${url}
 
 Rules:
+1. VERIFY PRICE: If you see sale/current price info, return the SALE price, not regular price
 1. Extract ALL meaningful variants: color, size, style, orientation, material
 2. For furniture: Extract size (King, Queen, 63"), color (Navy, Gray), style (Left-facing, Right-facing)
 3. Extract realistic shipping box dimensions based on product type
 4. Get the main product image URL if available
-5. Return valid JSON with these fields:
+5. Return valid JSON format with these fields:
+   - "salePrice": actual sale price if different from current price
    - "allVariants": ["Color: Navy", "Size: King", "Orientation: Left-facing"]
    - "primaryVariant": "Navy King Left-facing Sectional"
    - "enhancedDimensions": {"length": X, "width": Y, "height": Z}
@@ -414,7 +417,7 @@ Examples:
       max_tokens: 200,
       response_format: { type: 'json_object' },
       messages: [
-        { role: 'system', content: 'You are a furniture expert. Enhance product data intelligently and return valid JSON.' },
+        { role: 'system', content: 'You are a furniture expert. Enhance product data intelligently and return valid JSON format. PRIORITIZE SALE PRICES over regular prices.' },
         { role: 'user', content: prompt }
       ],
     });
@@ -423,6 +426,12 @@ Examples:
     
     // SAFELY enhance the data (never replace, only improve)
     const enhanced = { ...zyteData };
+    
+    // Check if GPT found a better (sale) price
+    if (enhancement.salePrice && typeof enhancement.salePrice === 'number' && enhancement.salePrice > 0 && enhancement.salePrice < zyteData.price) {
+      enhanced.price = enhancement.salePrice;
+      console.log(`   💰 Enhanced price: $${zyteData.price} → $${enhancement.salePrice} (sale price)`);
+    }
     
     // Enhance variants if GPT found better ones
     if (enhancement.allVariants && Array.isArray(enhancement.allVariants) && enhancement.allVariants.length > 0) {

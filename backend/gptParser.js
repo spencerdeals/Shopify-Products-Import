@@ -130,25 +130,25 @@ async function smartFetchHtml(url) {
 function vendorPromptHints(vendor){
   switch (vendor) {
     case 'Wayfair':
-      return `For Wayfair: prefer the current price near the main buy button; ignore per-month and struck list prices.`;
+      return `For Wayfair: PRIORITIZE SALE PRICES - look for current/sale price (often in red or highlighted), ignore regular/list prices and per-month financing. Sale prices are usually more prominent and near "Add to Cart".`;
     case 'Amazon':
-      return `For Amazon: prefer the price near "Add to Cart"; ignore subscription/per-month and struck list prices.`;
+      return `For Amazon: PRIORITIZE SALE PRICES - look for current/deal price (often in red), ignore list prices (struck through) and subscription/per-month pricing.`;
     case 'Walmart':
-      return `For Walmart: prefer the main price above "Add to cart"; ignore fees and per-month financing.`;
+      return `For Walmart: PRIORITIZE SALE PRICES - look for current/now price (often highlighted), ignore was/list prices and per-month financing.`;
     case 'Target':
-      return `For Target: look for the main product price, ignore membership prices and financing.`;
+      return `For Target: PRIORITIZE SALE PRICES - look for current/sale price (often in red), ignore reg/was prices and membership pricing.`;
     case 'BestBuy':
-      return `For Best Buy: prefer the main price display, ignore membership discounts and financing.`;
+      return `For Best Buy: PRIORITIZE SALE PRICES - look for current/sale price, ignore regular prices and membership discounts.`;
     case 'HomeDepot':
-      return `For Home Depot: look for the main selling price, ignore bulk pricing and special offers.`;
+      return `For Home Depot: PRIORITIZE SALE PRICES - look for current/special price, ignore regular prices and bulk pricing.`;
     case 'CrateAndBarrel':
-      return `For Crate & Barrel: look for the main product price (like $2,899.00), ignore financing options and membership prices. Extract dimensions from format like "23.8"H height 85.4"W width 37"D depth".`;
+      return `For Crate & Barrel: PRIORITIZE SALE PRICES - look for current/sale price (often highlighted), ignore regular prices and financing options. Extract dimensions from format like "23.8"H height 85.4"W width 37"D depth".`;
     case 'IKEA':
-      return `For IKEA: prefer the main price display, ignore assembly service costs.`;
+      return `For IKEA: PRIORITIZE SALE PRICES - look for current/member price, ignore regular prices and assembly service costs.`;
     case 'LunaFurniture':
-      return `For Luna Furniture: look for the current selling price, ignore compare-at prices.`;
+      return `For Luna Furniture: PRIORITIZE SALE PRICES - look for current/sale price, ignore compare-at/was prices.`;
     default:
-      return `Prefer the most prominent product price near the buy action; ignore per-month financing and struck-through prices.`;
+      return `PRIORITIZE SALE PRICES - look for current/sale/now prices (often highlighted in red or bold), ignore regular/list/was prices (often struck through) and financing options.`;
   }
 }
 
@@ -166,10 +166,10 @@ async function parseWithGPT({ url, html, currencyFallback = DEFAULT_CURRENCY }){
 
   const system = `
 You are a precise e-commerce product extractor.
-Return STRICT JSON with fields:
+Return STRICT JSON format with fields:
 - url (string)
 - name (string)
-- price (number, no currency symbols)
+- price (number, no currency symbols - MUST be the SALE/CURRENT price, NOT regular/list price)
 - currency (ISO code)
 - image (string URL)
 - brand (string, optional)
@@ -184,8 +184,9 @@ Return STRICT JSON with fields:
 Rules:
 - ${vendorPromptHints(vendor)}
 - If currency is unclear, use "${currencyFallback}".
-- "price" must be > 0 and realistic.
-- Prefer selling price (not list/was/per-month).
+- "price" MUST be the SALE/CURRENT price customers actually pay, NOT the regular/list price.
+- Look for prices that are highlighted, in red, or marked as "sale", "now", "current".
+- IGNORE struck-through prices, "was" prices, "reg" prices, and financing options.
 - If you see an explicit "Package Dimensions" or "Box Dimensions", include them.
 - For dimensions like "23.8"H height 85.4"W width 37"D depth", convert to: length=85.4, width=37, height=23.8
 - "image" should be the main product image URL if visible.
