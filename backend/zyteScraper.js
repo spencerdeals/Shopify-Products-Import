@@ -132,6 +132,17 @@ class ZyteScraper {
       console.log('🚨 HTML preview:', data.httpResponseBody.substring(0, 500));
     }
     
+    // EMERGENCY DEBUG - Let's see what Zyte is actually returning!
+    console.log('🚨 EMERGENCY DEBUG - Raw Zyte response:');
+    console.log('🚨 Full data object:', JSON.stringify(data, null, 2));
+    if (data.product) {
+      console.log('🚨 Product object:', JSON.stringify(data.product, null, 2));
+    }
+    if (data.httpResponseBody) {
+      console.log('🚨 HTML length:', data.httpResponseBody.length);
+      console.log('🚨 HTML preview:', data.httpResponseBody.substring(0, 500));
+    }
+    
     // CRITICAL: Check if we got blocked by anti-bot
     if (data.httpResponseBody) {
       const html = data.httpResponseBody;
@@ -145,13 +156,6 @@ class ZyteScraper {
         console.log('🚨 Contains akam-sw.js:', html.includes('akam-sw.js'));
         throw new Error('Bot detection triggered - need different approach');
       }
-    }
-    
-    // EMERGENCY DEBUG - Let's see what Zyte is actually returning!
-    console.log('🚨 EMERGENCY DEBUG - Raw Zyte response:');
-    console.log('🚨 Full data object:', JSON.stringify(data, null, 2));
-    if (data.product) {
-      console.log('🚨 Product object:', JSON.stringify(data.product, null, 2));
     }
     
     const productData = {
