@@ -30,8 +30,98 @@ class ZyteScraper {
     try {
       console.log('   📤 Sending request to Zyte API with automatic extraction...');
       
-      // DEBUG: Log the exact request we're sending
-      const requestPayload = {
+      // Try multiple request strategies
+      const strategies = [
+        // Strategy 1: Exact playground format
+        {
+          name: "playground-exact",
+          payload: {
+            url: url,
+            browserHtml: true,
+            product: true,
+            productOptions: {
+              extractFrom: "browserHtml",
+              ai: true
+            }
+          }
+        },
+        // Strategy 2: Different user agent
+        {
+          name: "different-ua",
+          payload: {
+            url: url,
+            browserHtml: true,
+            product: true,
+            productOptions: {
+              extractFrom: "browserHtml",
+              ai: true
+            },
+            httpResponseHeaders: true,
+            customHttpRequestHeaders: {
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            }
+          }
+        },
+        // Strategy 3: No browser HTML, just product
+        {
+          name: "product-only",
+          payload: {
+            url: url,
+            product: true,
+            productOptions: {
+              ai: true
+            }
+          }
+        }
+      ];
+      
+      let lastError = null;
+      
+      for (const strategy of strategies) {
+        console.log(`   🎯 Trying strategy: ${strategy.name}`);
+        
+        try {
+          const response = await axios.post(this.baseURL, strategy.payload, {
+            auth: {
+              username: this.apiKey,
+              password: ''
+            },
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+              'Accept-Encoding': 'gzip, deflate'
+            },
+            timeout: 90000
+          });
+          
+          console.log(`   ✅ Strategy ${strategy.name} succeeded!`);
+          console.log('📊 Response status:', response.status);
+          
+          if (response.data && response.data.product) {
+            const confidence = response.data.product.metadata?.probability;
+            console.log(`   🎯 Confidence: ${confidence ? (confidence * 100).toFixed(1) + '%' : 'unknown'}`);
+            
+            if (confidence && confidence > 0.5) {
+              console.log(`   🚀 High confidence result with strategy: ${strategy.name}`);
+              return this.parseZyteResponse(response.data, url, retailer);
+            }
+          }
+          
+          console.log(`   ⚠️ Strategy ${strategy.name} low confidence, trying next...`);
+          
+        } catch (error) {
+          console.log(`   ❌ Strategy ${strategy.name} failed: ${error.message}`);
+          lastError = error;
+          continue;
+        }
+      }
+      
+      throw lastError || new Error('All strategies failed');
+      
+    } catch (error) {
+      return this.handleZyteError(error);
+    }
+  }
         url: url,
         browserHtml: true,
         product: true,
