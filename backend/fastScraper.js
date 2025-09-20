@@ -815,8 +815,8 @@ async function scrapeProduct(url) {
             console.log('   📦 Enhanced dimensions:', (gptResult.dimensions.length * gptResult.dimensions.width * gptResult.dimensions.height / 1728).toFixed(1), 'ft³ vs', (productData.dimensions?.length * productData.dimensions?.width * productData.dimensions?.height / 1728 || 0).toFixed(1), 'ft³');
           }
         }
-        
-        try {
+           
+      try {
           productData = await enhanceProductDataWithGPT(productData, url, retailer);
           console.log('   ✅ GPT enhancement successful');
         } catch (gptError) {
