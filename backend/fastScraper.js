@@ -815,8 +815,8 @@ async function scrapeProduct(url) {
             console.log('   📦 Enhanced dimensions:', (gptResult.dimensions.length * gptResult.dimensions.width * gptResult.dimensions.height / 1728).toFixed(1), 'ft³ vs', (productData.dimensions?.length * productData.dimensions?.width * productData.dimensions?.height / 1728 || 0).toFixed(1), 'ft³');
           }
         }
-           
-      try {
+        
+        try {
           productData = await enhanceProductDataWithGPT(productData, url, retailer);
           console.log('   ✅ GPT enhancement successful');
         } catch (gptError) {
@@ -826,46 +826,47 @@ async function scrapeProduct(url) {
       }
     
     } catch (error) {
-    console.log('   ❌ Zyte API failed:', error.message);
-    
-    // STEP 2: Try GPT parser as fallback
-    if (USE_GPT_FALLBACK) {
-      try {
-        console.log('   🤖 Trying GPT parser fallback...');
-        const gptData = await parseWithGPT(url);
-        
-        // Check if GPT got essential data
-        const gptHasEssentialData = gptData && gptData.name && gptData.price;
-        
-        if (gptHasEssentialData) {
-          // Convert GPT parser format to our expected format
-          productData = {
-            name: gptData.name,
-            price: gptData.price,
-            image: gptData.image,
-            dimensions: gptData.dimensions || gptData.package_dimensions,
-            weight: gptData.weight || gptData.package_weight_lbs,
-            brand: gptData.brand,
-            category: gptData.category,
-            inStock: gptData.inStock,
-            variant: gptData.variant
-          };
-          scrapingMethod = 'gpt-fallback';
-          console.log('   ✅ GPT parser fallback success!');
-        } else {
-          console.log('   ❌ GPT parser also missing essential data');
-          throw new Error(`GPT parser failed: missing essential data (name: ${!!gptData?.name}, price: ${!!gptData?.price})`);
+      console.log('   ❌ Zyte API failed:', error.message);
+      
+      // STEP 2: Try GPT parser as fallback
+      if (USE_GPT_FALLBACK) {
+        try {
+          console.log('   🤖 Trying GPT parser fallback...');
+          const gptData = await parseWithGPT(url);
+          
+          // Check if GPT got essential data
+          const gptHasEssentialData = gptData && gptData.name && gptData.price;
+          
+          if (gptHasEssentialData) {
+            // Convert GPT parser format to our expected format
+            productData = {
+              name: gptData.name,
+              price: gptData.price,
+              image: gptData.image,
+              dimensions: gptData.dimensions || gptData.package_dimensions,
+              weight: gptData.weight || gptData.package_weight_lbs,
+              brand: gptData.brand,
+              category: gptData.category,
+              inStock: gptData.inStock,
+              variant: gptData.variant
+            };
+            scrapingMethod = 'gpt-fallback';
+            console.log('   ✅ GPT parser fallback success!');
+          } else {
+            console.log('   ❌ GPT parser also missing essential data');
+            throw new Error(`GPT parser failed: missing essential data (name: ${!!gptData?.name}, price: ${!!gptData?.price})`);
+          }
+        } catch (gptError) {
+          console.log('   ❌ GPT parser fallback failed:', gptError.message);
+          
+          // Both Zyte and GPT failed - require manual entry
+          console.log('   🚨 Both automated methods failed - requiring manual entry');
+          scrapingMethod = 'manual-required';
         }
-      } catch (gptError) {
-        console.log('   ❌ GPT parser fallback failed:', gptError.message);
-        
-        // Both Zyte and GPT failed - require manual entry
-        console.log('   🚨 Both automated methods failed - requiring manual entry');
+      } else {
+        console.log('   ⚠️ No GPT fallback available (missing OpenAI API key)');
         scrapingMethod = 'manual-required';
       }
-    } else {
-      console.log('   ⚠️ No GPT fallback available (missing OpenAI API key)');
-      scrapingMethod = 'manual-required';
     }
   }
   
