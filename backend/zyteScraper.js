@@ -33,12 +33,8 @@ class ZyteScraper {
       // Use automatic product extraction - this is the key fix!
       const response = await axios.post(this.baseURL, {
         url: url,
-        product: true,
-        productOptions: {
-          extractFrom: 'httpResponseBody',
-          extractFrom: 'browserHtml'
-        },
         browserHtml: true,
+        product: true,
         // CRITICAL: Add these to bypass bot detection
         customHttpRequestHeaders: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
