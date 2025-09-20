@@ -314,37 +314,41 @@ function estimateDimensions(category, name = '') {
 function estimateBoxDimensions(productDimensions, category) {
   if (!productDimensions) return null;
   
-  // Add padding based on category
+  // ENHANCED: Add realistic packaging padding based on category and fragility
   const paddingFactors = {
-    'electronics': 1.3,  // More padding for fragile items
-    'appliances': 1.2,
-    'furniture': 1.1,   // Less padding for large items
-    'clothing': 1.4,     // More padding for soft goods
+    'electronics': 1.35,  // More padding for fragile items + protective foam
+    'appliances': 1.25,   // Moderate padding + corner protection
+    'furniture': 1.15,    // Minimal padding for large/sturdy items
+    'clothing': 1.45,     // Significant padding for soft goods compression
     'books': 1.2,
-    'toys': 1.25,
-    'sports': 1.2,
-    'home-decor': 1.35,  // More padding for fragile decor
-    'tools': 1.15,
-    'garden': 1.2,
-    'general': 1.25
+    'toys': 1.3,          // Extra padding for irregular shapes
+    'sports': 1.25,       // Moderate padding for equipment
+    'home-decor': 1.4,    // High padding for fragile decorative items
+    'tools': 1.2,         // Moderate padding for metal items
+    'garden': 1.25,       // Moderate padding for outdoor items
+    'general': 1.3        // Conservative estimate for unknown items
   };
   
   const factor = paddingFactors[category] || 1.25;
   
+  // ENHANCED: Add minimum padding requirements (at least 2 inches per side for fragile items)
+  const minPadding = ['electronics', 'home-decor'].includes(category) ? 4 : 2; // 2 inches per side = 4 total
+  
   return {
-    length: Math.round(productDimensions.length * factor * 10) / 10,
-    width: Math.round(productDimensions.width * factor * 10) / 10,
-    height: Math.round(productDimensions.height * factor * 10) / 10
+    length: Math.round(Math.max(productDimensions.length * factor, productDimensions.length + minPadding) * 10) / 10,
+    width: Math.round(Math.max(productDimensions.width * factor, productDimensions.width + minPadding) * 10) / 10,
+    height: Math.round(Math.max(productDimensions.height * factor, productDimensions.height + minPadding) * 10) / 10
   };
 }
 
 function calculateShippingCost(dimensions, weight, price) {
   if (!dimensions) {
     // No dimensions available, use a default based on price
-    return Math.max(25, price * 0.15);
+    console.log(`   ⚠️ No dimensions - using price-based estimate`);
+    return Math.max(30, price * 0.18); // Slightly higher default for safety
   }
   
-  console.log(`   🧮 DETAILED Shipping calculation:`);
+  console.log(`   🧮 ENHANCED DETAILED Shipping calculation:`);
   console.log(`   📦 Input dimensions: ${dimensions.length}" × ${dimensions.width}" × ${dimensions.height}"`);
   
   // Calculate volume in cubic feet
@@ -354,19 +358,64 @@ function calculateShippingCost(dimensions, weight, price) {
   console.log(`   📊   ${dimensions.length} × ${dimensions.width} × ${dimensions.height} = ${cubicInches.toFixed(0)} cubic inches`);
   console.log(`   📊   ${cubicInches.toFixed(0)} ÷ 1728 = ${cubicFeet.toFixed(3)} cubic feet`);
   
-  // Base rate: $8 per cubic foot, minimum $15
-  const baseCost = Math.max(15, cubicFeet * SHIPPING_RATE_PER_CUBIC_FOOT);
+  // ENHANCED: Progressive pricing based on size
+  let ratePerCubicFoot = SHIPPING_RATE_PER_CUBIC_FOOT;
+  
+  // Larger items get slightly better rates (economies of scale)
+  if (cubicFeet > 20) {
+    ratePerCubicFoot = SHIPPING_RATE_PER_CUBIC_FOOT * 0.9; // 10% discount for large items
+    console.log(`   💰 Large item discount applied: $${ratePerCubicFoot.toFixed(2)}/ft³`);
+  } else if (cubicFeet < 1) {
+    ratePerCubicFoot = SHIPPING_RATE_PER_CUBIC_FOOT * 1.2; // 20% premium for tiny items
+    console.log(`   💰 Small item premium applied: $${ratePerCubicFoot.toFixed(2)}/ft³`);
+  }
+  
+  // Base cost with enhanced minimum
+  const baseCost = Math.max(20, cubicFeet * ratePerCubicFoot); // Increased minimum from $15 to $20
   console.log(`   💰 BASE COST CALCULATION:`);
-  console.log(`   💰   ${cubicFeet.toFixed(3)} × $${SHIPPING_RATE_PER_CUBIC_FOOT} = $${(cubicFeet * SHIPPING_RATE_PER_CUBIC_FOOT).toFixed(2)}`);
-  console.log(`   💰   Math.max(15, ${(cubicFeet * SHIPPING_RATE_PER_CUBIC_FOOT).toFixed(2)}) = $${baseCost.toFixed(2)}`);
+  console.log(`   💰   ${cubicFeet.toFixed(3)} × $${ratePerCubicFoot.toFixed(2)} = $${(cubicFeet * ratePerCubicFoot).toFixed(2)}`);
+  console.log(`   💰   Math.max(20, ${(cubicFeet * ratePerCubicFoot).toFixed(2)}) = $${baseCost.toFixed(2)}`);
+  
+  // ENHANCED: Oversize surcharges
+  let oversizeFee = 0;
+  const maxDimension = Math.max(dimensions.length, dimensions.width, dimensions.height);
+  
+  if (maxDimension > 96) {
+    oversizeFee = 100; // Very large items
+    console.log(`   📏 OVERSIZE FEE: Max dimension ${maxDimension}" > 96" = $${oversizeFee}`);
+  } else if (maxDimension > 72) {
+    oversizeFee = 50; // Large items
+    console.log(`   📏 OVERSIZE FEE: Max dimension ${maxDimension}" > 72" = $${oversizeFee}`);
+  } else if (maxDimension > 48) {
+    oversizeFee = 25; // Medium-large items
+    console.log(`   📏 OVERSIZE FEE: Max dimension ${maxDimension}" > 48" = $${oversizeFee}`);
+  }
+  
+  // ENHANCED: High-value item insurance fee
+  let valueFee = 0;
+  if (price > 2000) {
+    valueFee = price * 0.015; // 1.5% for very high value
+    console.log(`   💎 HIGH VALUE FEE: $${price} > $2000 = $${valueFee.toFixed(2)} (1.5%)`);
+  } else if (price > 1000) {
+    valueFee = price * 0.01; // 1% for high value
+    console.log(`   💎 HIGH VALUE FEE: $${price} > $1000 = $${valueFee.toFixed(2)} (1%)`);
+  } else if (price > 500) {
+    valueFee = price * 0.005; // 0.5% for medium value
+    console.log(`   💎 VALUE FEE: $${price} > $500 = $${valueFee.toFixed(2)} (0.5%)`);
+  }
   
   // Add handling fee
-  const handlingFee = 15;
+  const handlingFee = 18; // Increased from $15 to $18
   console.log(`   📋 HANDLING FEE: $${handlingFee}`);
   
   // Total shipping cost
-  const totalShippingCost = baseCost + handlingFee;
-  console.log(`   💰 TOTAL SHIPPING: $${baseCost.toFixed(2)} + $${handlingFee} = $${totalShippingCost.toFixed(2)}`);
+  const totalShippingCost = baseCost + oversizeFee + valueFee + handlingFee;
+  console.log(`   💰 ENHANCED TOTAL SHIPPING:`);
+  console.log(`   💰   Base: $${baseCost.toFixed(2)}`);
+  if (oversizeFee > 0) console.log(`   💰   Oversize: $${oversizeFee.toFixed(2)}`);
+  if (valueFee > 0) console.log(`   💰   Value: $${valueFee.toFixed(2)}`);
+  console.log(`   💰   Handling: $${handlingFee.toFixed(2)}`);
+  console.log(`   💰   TOTAL: $${totalShippingCost.toFixed(2)}`);
   
   return Math.round(totalShippingCost * 100) / 100;
 }
@@ -378,43 +427,54 @@ async function enhanceProductDataWithGPT(zyteData, url, retailer) {
   }
   
   try {
-    console.log('   🧠 Enhancing product data with GPT intelligence...');
+    console.log('   🧠 Enhancing product data with ADVANCED GPT intelligence...');
     
     const OpenAI = require('openai');
     const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
     
-    const prompt = `Enhance this product data intelligently. Focus on extracting the PRIMARY variant (size/dimension over color) and realistic shipping box dimensions.
+    const prompt = `ENHANCED PRODUCT INTELLIGENCE: Analyze this product and provide SHIPPING BOX dimensions (not product dimensions).
 
 Product: "${zyteData.name}"
 Category: "${zyteData.category}"
 Current Variant: "${zyteData.variant || 'none'}"
-Current Dimensions: ${JSON.stringify(zyteData.dimensions)}
+Current Product Dimensions: ${JSON.stringify(zyteData.dimensions)}
 Retailer: ${retailer}
+Price: $${zyteData.price || 'unknown'}
 
-Rules:
-1. For furniture/mattresses: Prioritize SIZE variant (King, Queen, 63", etc.) over color
-2. Extract realistic shipping box dimensions based on product type
-3. If current data is good, keep it
-4. Return ONLY: {"primaryVariant": "...", "enhancedDimensions": {"length": X, "width": Y, "height": Z}}
+CRITICAL RULES:
+1. SHIPPING BOX dimensions (what UPS/FedEx would measure) - NOT product dimensions
+2. Add 2-6 inches padding per side for packaging materials
+3. For furniture: Consider disassembly/flat-pack vs assembled shipping
+4. For electronics: Consider protective packaging requirements
+5. Multi-box items: Estimate largest single box dimensions
+6. Primary variant should be SIZE/DIMENSION over color (King vs Blue)
 
-Examples:
-- "King Mattress\" → primaryVariant: "King", dimensions: ~80×80×12 inches
-- "63\" Loveseat" → primaryVariant: "63\" Loveseat", dimensions: ~65×35×32 inches`;
+Return ONLY: {
+  "primaryVariant": "...",
+  "shippingBoxDimensions": {"length": X, "width": Y, "height": Z},
+  "packagingType": "flat-pack|assembled|multi-box|standard",
+  "confidence": "high|medium|low"
+}
+
+EXAMPLES:
+- King Mattress → shippingBoxDimensions: {length: 84, width: 84, height: 16} (rolled/compressed)
+- 63" Loveseat → shippingBoxDimensions: {length: 68, width: 40, height: 36} (assembled)
+- IKEA Dresser → shippingBoxDimensions: {length: 48, width: 24, height: 8} (flat-pack)`;
 
     const response = await client.chat.completions.create({
       model: 'gpt-4o-mini',
       temperature: 0.1,
-      max_tokens: 200,
+      max_tokens: 300,
       response_format: { type: 'json_object' },
       messages: [
-        { role: 'system', content: 'You are a furniture expert. Enhance product data intelligently.' },
+        { role: 'system', content: 'You are a shipping/logistics expert specializing in e-commerce packaging. Focus on REALISTIC shipping box dimensions.' },
         { role: 'user', content: prompt }
       ],
     });
 
     const enhancement = JSON.parse(response.choices[0].message.content || '{}');
     
-    // SAFELY enhance the data (never replace, only improve)
+    // SAFELY enhance the data with new shipping intelligence
     const enhanced = { ...zyteData };
     
     // Enhance variant if GPT found a better one
@@ -423,20 +483,24 @@ Examples:
       console.log(`   🎨 Enhanced variant: "${zyteData.variant}" → "${enhancement.primaryVariant}"`);
     }
     
-    // Enhance dimensions if GPT found better ones
-    if (enhancement.enhancedDimensions && 
-        enhancement.enhancedDimensions.length > 0 &&
-        enhancement.enhancedDimensions.width > 0 &&
-        enhancement.enhancedDimensions.height > 0) {
+    // Enhance with SHIPPING BOX dimensions if GPT found better ones
+    if (enhancement.shippingBoxDimensions && 
+        enhancement.shippingBoxDimensions.length > 0 &&
+        enhancement.shippingBoxDimensions.width > 0 &&
+        enhancement.shippingBoxDimensions.height > 0) {
       
-      // Only use GPT dimensions if they seem more realistic
-      const gptVolume = enhancement.enhancedDimensions.length * enhancement.enhancedDimensions.width * enhancement.enhancedDimensions.height;
+      // Only use GPT shipping dimensions if confidence is medium/high
+      const confidence = enhancement.confidence || 'low';
+      const gptVolume = enhancement.shippingBoxDimensions.length * enhancement.shippingBoxDimensions.width * enhancement.shippingBoxDimensions.height;
       const currentVolume = zyteData.dimensions ? (zyteData.dimensions.length * zyteData.dimensions.width * zyteData.dimensions.height) : 0;
       
-      // Use GPT dimensions if they're significantly larger (more realistic for furniture)
-      if (gptVolume > currentVolume * 1.5) {
-        enhanced.dimensions = enhancement.enhancedDimensions;
-        console.log(`   📦 Enhanced dimensions: ${Math.round(gptVolume/1728 * 100)/100} ft³ vs ${Math.round(currentVolume/1728 * 100)/100} ft³`);
+      // Use GPT shipping dimensions if confidence is good OR they're more realistic
+      if (confidence !== 'low' || gptVolume > currentVolume * 1.2) {
+        enhanced.dimensions = enhancement.shippingBoxDimensions;
+        enhanced.packagingType = enhancement.packagingType || 'standard';
+        enhanced.dimensionSource = 'gpt-shipping-enhanced';
+        console.log(`   📦 Enhanced SHIPPING dimensions (${confidence} confidence): ${Math.round(gptVolume/1728 * 100)/100} ft³ vs ${Math.round(currentVolume/1728 * 100)/100} ft³`);
+        console.log(`   📦 Packaging type: ${enhanced.packagingType}`);
       }
     }
     
@@ -553,116 +617,133 @@ function estimateIkeaMultiBoxShipping(singleBoxDimensions, productName, price) {
   const name = productName.toLowerCase();
   const volume = singleBoxDimensions.length * singleBoxDimensions.width * singleBoxDimensions.height;
   
-  console.log(`   🛏️ IKEA Multi-Box Analysis for: "${productName.substring(0, 50)}..."`);
+  console.log(`   🛏️ ENHANCED IKEA Multi-Box Analysis for: "${productName.substring(0, 50)}..."`);
   console.log(`   📦 Single box: ${singleBoxDimensions.length}" × ${singleBoxDimensions.width}" × ${singleBoxDimensions.height}" (${(volume/1728).toFixed(2)} ft³)`);
   
   let boxMultiplier = 1;
   let confidence = 'low';
+  let packagingNotes = '';
   
-  // Bed frames - typically 2-4 boxes depending on size
+  // ENHANCED: More specific IKEA product analysis
   if (/\b(bed|frame|headboard|footboard)\b/.test(name)) {
     if (price > 400) {
-      boxMultiplier = 4; // King/Queen beds
+      boxMultiplier = 4; // King/Queen beds - frame, headboard, slats, hardware
       confidence = 'high';
+      packagingNotes = 'King/Queen bed - frame, headboard, slats, hardware';
     } else if (price > 200) {
-      boxMultiplier = 3; // Full/Double beds
+      boxMultiplier = 3; // Full/Double beds - frame, headboard, slats
       confidence = 'medium';
+      packagingNotes = 'Full/Double bed - frame, headboard, slats';
     } else {
-      boxMultiplier = 2; // Twin beds
+      boxMultiplier = 2; // Twin beds - frame, slats
       confidence = 'medium';
+      packagingNotes = 'Twin bed - frame and slats';
     }
   }
-  // Wardrobes/Armoires - typically 3-6 boxes
+  // PAX Wardrobes - IKEA's modular system
   else if (/\b(wardrobe|armoire|closet|pax)\b/.test(name)) {
     if (price > 500) {
-      boxMultiplier = 6; // Large PAX systems
+      boxMultiplier = 6; // Large PAX systems - sides, shelves, doors, hardware
       confidence = 'high';
+      packagingNotes = 'Large PAX system - sides, shelves, doors, hardware';
     } else if (price > 300) {
-      boxMultiplier = 4; // Medium wardrobes
+      boxMultiplier = 4; // Medium PAX - sides, shelves, doors
       confidence = 'medium';
+      packagingNotes = 'Medium PAX wardrobe - sides, shelves, doors';
     } else {
-      boxMultiplier = 3; // Small wardrobes
+      boxMultiplier = 3; // Small PAX - basic components
       confidence = 'medium';
+      packagingNotes = 'Small PAX wardrobe - basic components';
     }
   }
-  // Dining sets - typically 2-3 boxes (table + chairs)
+  // Kitchen systems - IKEA's flat-pack kitchen units
+  else if (/\b(kitchen|cabinet.*set|knoxhult|enhet|metod)\b/.test(name)) {
+    if (price > 1000) {
+      boxMultiplier = 8; // Full kitchen - cabinets, doors, drawers, hardware
+      confidence = 'medium';
+      packagingNotes = 'Full kitchen system - multiple cabinet boxes';
+    } else if (price > 500) {
+      boxMultiplier = 5; // Partial kitchen - few cabinets
+      confidence = 'medium';
+      packagingNotes = 'Kitchen set - cabinet boxes and hardware';
+    } else {
+      boxMultiplier = 3; // Small kitchen unit
+      confidence = 'low';
+      packagingNotes = 'Small kitchen unit - basic components';
+    }
+  }
+  // Dining sets - table + chairs
   else if (/\b(dining|table.*chair|chair.*table)\b/.test(name)) {
-    boxMultiplier = 3;
+    boxMultiplier = 3; // Table top, legs, chairs
     confidence = 'medium';
+    packagingNotes = 'Dining set - table and chairs separately boxed';
   }
   // Sectional sofas - typically 2-4 boxes
   else if (/\b(sectional|sofa.*section|corner.*sofa)\b/.test(name)) {
     if (price > 800) {
-      boxMultiplier = 4; // Large sectionals
+      boxMultiplier = 4; // Large sectionals - multiple sections
       confidence = 'high';
+      packagingNotes = 'Large sectional - multiple seat sections';
     } else {
-      boxMultiplier = 3; // Small sectionals
+      boxMultiplier = 3; // Small sectionals - corner + sections
       confidence = 'medium';
+      packagingNotes = 'Sectional sofa - corner and seat sections';
     }
   }
-  // Kitchen systems - typically 3-8 boxes
-  else if (/\b(kitchen|cabinet.*set|knoxhult|enhet)\b/.test(name)) {
-    if (price > 1000) {
-      boxMultiplier = 8; // Full kitchen
-      confidence = 'medium';
-    } else if (price > 500) {
-      boxMultiplier = 5; // Partial kitchen
-      confidence = 'medium';
-    } else {
-      boxMultiplier = 3; // Small kitchen set
-      confidence = 'low';
-    }
-  }
-  // Bookshelves/Storage - typically 2-3 boxes for tall units
-  else if (/\b(bookshelf|shelf.*unit|billy|hemnes.*bookcase|kallax)\b/.test(name)) {
+  // Storage systems - BILLY, KALLAX, HEMNES
+  else if (/\b(bookshelf|shelf.*unit|billy|hemnes.*bookcase|kallax|ivar)\b/.test(name)) {
     if (price > 200) {
-      boxMultiplier = 3; // Tall/wide units
+      boxMultiplier = 3; // Tall units - shelves, sides, back panel
       confidence = 'medium';
+      packagingNotes = 'Tall storage unit - shelves, sides, back panel';
     } else {
-      boxMultiplier = 2; // Standard units
+      boxMultiplier = 2; // Standard units - main components
       confidence = 'medium';
+      packagingNotes = 'Standard storage unit - main components';
     }
   }
   // Desks - typically 2 boxes for larger desks
-  else if (/\b(desk|workstation|office.*table)\b/.test(name)) {
+  else if (/\b(desk|workstation|office.*table|bekant|linnmon)\b/.test(name)) {
     if (price > 300) {
-      boxMultiplier = 2; // Large desks
+      boxMultiplier = 2; // Large desks - top and legs/frame
       confidence = 'medium';
+      packagingNotes = 'Large desk - desktop and legs/frame';
     }
   }
   // Default for other furniture
   else if (price > 300) {
-    boxMultiplier = 2; // Assume larger furniture ships in 2 boxes
+    boxMultiplier = 2; // Assume larger furniture needs multiple boxes
     confidence = 'low';
+    packagingNotes = 'Large furniture item - estimated multi-box';
   }
   
-  // Calculate estimated total shipping dimensions
-  // Strategy: Stack boxes efficiently (2x2 for 4 boxes, 2x3 for 6 boxes, etc.)
+  // ENHANCED: Calculate estimated total shipping dimensions
+  // Strategy: Optimize stacking for freight efficiency
   let totalDimensions;
   
   if (boxMultiplier <= 2) {
-    // Side by side
+    // Side by side for 2 boxes
     totalDimensions = {
       length: singleBoxDimensions.length * boxMultiplier,
       width: singleBoxDimensions.width,
       height: singleBoxDimensions.height
     };
   } else if (boxMultiplier <= 4) {
-    // 2x2 arrangement
+    // 2x2 arrangement for 3-4 boxes
     totalDimensions = {
       length: singleBoxDimensions.length * 2,
       width: singleBoxDimensions.width * 2,
       height: singleBoxDimensions.height
     };
   } else if (boxMultiplier <= 6) {
-    // 2x3 arrangement
+    // 2x3 arrangement for 5-6 boxes
     totalDimensions = {
       length: singleBoxDimensions.length * 2,
       width: singleBoxDimensions.width * 3,
       height: singleBoxDimensions.height
     };
   } else {
-    // 2x4 arrangement for 8 boxes
+    // 2x4 arrangement for 7-8 boxes
     totalDimensions = {
       length: singleBoxDimensions.length * 2,
       width: singleBoxDimensions.width * 4,
@@ -672,20 +753,21 @@ function estimateIkeaMultiBoxShipping(singleBoxDimensions, productName, price) {
   
   const totalVolume = totalDimensions.length * totalDimensions.width * totalDimensions.height;
   
-  console.log(`   📊 IKEA Multi-Box Estimate:`);
-  console.log(`   📊   Product type: ${getIkeaProductType(name)}`);
+  console.log(`   📊 ENHANCED IKEA Multi-Box Estimate:`);
+  console.log(`   📊   Product analysis: ${packagingNotes}`);
   console.log(`   📊   Estimated boxes: ${boxMultiplier} (confidence: ${confidence})`);
   console.log(`   📊   Total dimensions: ${totalDimensions.length}" × ${totalDimensions.width}" × ${totalDimensions.height}"`);
   console.log(`   📊   Total volume: ${(totalVolume/1728).toFixed(2)} ft³ (vs single box: ${(volume/1728).toFixed(2)} ft³)`);
-  console.log(`   ⚠️   This is an ESTIMATE - actual IKEA shipping may vary`);
+  console.log(`   ⚠️   ENHANCED ESTIMATE - based on IKEA flat-pack patterns`);
   
   return {
     dimensions: totalDimensions,
     boxCount: boxMultiplier,
     confidence: confidence,
+    packagingNotes: packagingNotes,
     singleBoxVolume: volume / 1728,
     totalVolume: totalVolume / 1728,
-    estimationMethod: 'ikea-multibox'
+    estimationMethod: 'ikea-multibox-enhanced'
   };
 }
 
@@ -1360,4 +1442,5 @@ app.listen(PORT, () => {
   console.log(`📍 Frontend: http://localhost:${PORT}`);
   console.log(`📍 API Health: http://localhost:${PORT}/health`);
   console.log(`📍 Admin Panel: http://localhost:${PORT}/admin (admin:1064)`);
+// Updated: Force Railway deployment trigger
 });
