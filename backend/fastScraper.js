@@ -902,7 +902,7 @@ async function scrapeProduct(url) {
   if (productData && productData.category) {
     category = productData.category;
   }
-  if (typeof category === 'object' && category && category.name) {
+  if (typeof category === 'object' && category.name) {
     category = category.name; // Extract string from Zyte category object
   }
   if (!category || typeof category !== 'string') {
