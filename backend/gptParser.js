@@ -100,12 +100,6 @@ async function smartFetchHtml(url) {
   
   // Try Apify first (if available)
   try {
-    // html = await fetchViaApify(url);
-  } catch (err) {
-    console.warn('[GPT Parser] Apify failed:', err.message);
-  }
-  
-  if (html) {
     console.log('[GPT Parser] Got HTML via Apify');
     return html;
   }
@@ -164,6 +158,8 @@ async function parseWithGPT({ url, html, currencyFallback = DEFAULT_CURRENCY }){
   const visibleText = htmlToVisibleText(html).slice(0, 20000);
   const htmlSlice = html.slice(0, 20000);
 
+  // Extract URL parameters for variant detection
+  const urlParams = new URL(url).searchParams.toString();
   const system = `
 You are a precise e-commerce product extractor.
 Return STRICT JSON with fields:
@@ -192,7 +188,7 @@ Rules:
 - Look for SKU numbers in the content.
 `.trim();
 
-  const user = `URL: ${url}\nExtract product data from the provided HTML and visible text.\nReturn ONLY JSON, no explanations.`;
+  const user = `URL: ${url}\nURL Parameters: ${urlParams}\nExtract product data from the provided HTML and visible text.\nPay special attention to SELECTED/ACTIVE variants and matching images.\nReturn ONLY valid JSON, no explanations.`;
 
   console.log(`[GPT Parser] Making GPT call ${gptCallsUsed}/${MAX_GPT_CALLS_PER_RUN} for ${vendor}`);
   
@@ -235,6 +231,27 @@ Rules:
   }
   const pkgWeight = data.package_weight_lbs != null ? coerceNumber(data.package_weight_lbs) : null;
 
+  // Parse GPT's shipping box estimate
+  let shippingBox = null;
+  if (data.estimated_shipping_box && typeof data.estimated_shipping_box === 'object') {
+    const box = data.estimated_shipping_box;
+    const l = coerceNumber(box.length);
+    const w = coerceNumber(box.width);
+    const h = coerceNumber(box.height);
+    const cf = coerceNumber(box.cubic_feet);
+    const conf = coerceNumber(box.confidence);
+    
+    if ([l, w, h, cf].every(Number.isFinite) && l > 0 && w > 0 && h > 0 && cf > 0) {
+      shippingBox = {
+        length: l,
+        width: w,
+        height: h,
+        cubic_feet: cf,
+        confidence: conf || 75,
+        reasoning: typeof box.reasoning === 'string' ? box.reasoning : 'GPT shipping analysis'
+      };
+    }
+  }
   if (!name || !price || price <= 0 || price > 200000) {
     throw new Error('GPT parse missing/invalid required fields (name/price).');
   }
@@ -258,6 +275,7 @@ Rules:
     package_weight_lbs: pkgWeight,
     dimensions: pkgDims, // Map to expected field name
     weight: pkgWeight, // Map to expected field name
+    estimated_shipping_box: shippingBox,
     category: breadcrumbs[breadcrumbs.length - 1] || null,
     inStock: availability === 'in_stock',
     _meta: { vendor, model: MODEL, gptCallsUsed },
