@@ -164,6 +164,17 @@ class ZyteScraper {
                              !availability.includes('sold out');
       }
 
+      // CRITICAL: Extract shipping dimensions from Zyte data
+      productData.dimensions = this.extractShippingDimensions(product);
+      if (productData.dimensions) {
+        console.log('   📦 Shipping dimensions found:', `${productData.dimensions.length}" × ${productData.dimensions.width}" × ${productData.dimensions.height}"`);
+      }
+
+      // Extract weight from Zyte data
+      productData.weight = this.extractWeight(product);
+      if (productData.weight) {
+        console.log('   ⚖️ Weight found:', productData.weight + ' lbs');
+      }
       // Variants
       if (product.variants && product.variants.length > 0) {
         const selectedVariant = product.variants.find(v => v.selected) || product.variants[0];
@@ -207,6 +218,150 @@ class ZyteScraper {
     return productData;
   }
 
+  // Extract shipping dimensions from Zyte product data
+  extractShippingDimensions(product) {
+    console.log('   🔍 Searching for shipping dimensions in Zyte data...');
+    
+    // Method 1: Check description for shipping dimensions
+    if (product.description) {
+      const shippingDims = this.parseShippingDimensionsFromText(product.description);
+      if (shippingDims) {
+        console.log('   📦 Found shipping dimensions in description');
+        return shippingDims;
+      }
+    }
+    
+    // Method 2: Check additionalProperties for shipping dimensions
+    if (product.additionalProperties) {
+      const propsText = typeof product.additionalProperties === 'object' 
+        ? JSON.stringify(product.additionalProperties) 
+        : String(product.additionalProperties);
+      
+      const shippingDims = this.parseShippingDimensionsFromText(propsText);
+      if (shippingDims) {
+        console.log('   📦 Found shipping dimensions in additional properties');
+        return shippingDims;
+      }
+    }
+    
+    // Method 3: Check for product dimensions and convert to shipping
+    if (product.additionalProperties && typeof product.additionalProperties === 'string') {
+      const productDimMatch = product.additionalProperties.match(/product dimensions:\s*(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)\s*inches/i);
+      if (productDimMatch) {
+        const productDims = {
+          length: parseFloat(productDimMatch[1]),
+          width: parseFloat(productDimMatch[2]),
+          height: parseFloat(productDimMatch[3])
+        };
+        
+        // Convert product dimensions to shipping dimensions (add packaging)
+        const shippingDims = this.convertToShippingDimensions(productDims);
+        console.log('   📦 Converted product dimensions to shipping dimensions');
+        return shippingDims;
+      }
+    }
+    
+    console.log('   ❌ No shipping dimensions found in Zyte data');
+    return null;
+  }
+
+  // Parse shipping dimensions from text (like your example)
+  parseShippingDimensionsFromText(text) {
+    const patterns = [
+      // "Shipping Dimensions: 12 Inch King: 20*20*41; Approx. 110lbs"
+      /shipping\s+dimensions?[^:]*:\s*[^:]*:\s*(\d+(?:\.\d+)?)\s*[*x×]\s*(\d+(?:\.\d+)?)\s*[*x×]\s*(\d+(?:\.\d+)?)/i,
+      // "12 Inch King: 20*20*41"
+      /(\d+(?:\.\d+)?)\s*[*x×]\s*(\d+(?:\.\d+)?)\s*[*x×]\s*(\d+(?:\.\d+)?)[^0-9]*(?:approx\.?\s*)?(\d+(?:\.\d+)?)\s*lbs?/i,
+      // Generic shipping dimensions
+      /shipping[^:]*:\s*(\d+(?:\.\d+)?)\s*[*x×]\s*(\d+(?:\.\d+)?)\s*[*x×]\s*(\d+(?:\.\d+)?)/i,
+      // Box dimensions
+      /box\s+dimensions?[^:]*:\s*(\d+(?:\.\d+)?)\s*[*x×]\s*(\d+(?:\.\d+)?)\s*[*x×]\s*(\d+(?:\.\d+)?)/i
+    ];
+    
+    for (const pattern of patterns) {
+      const match = text.match(pattern);
+      if (match) {
+        const length = parseFloat(match[1]);
+        const width = parseFloat(match[2]);
+        const height = parseFloat(match[3]);
+        
+        // Validate dimensions are reasonable
+        if (length > 0 && width > 0 && height > 0 && 
+            length < 200 && width < 200 && height < 200) {
+          return {
+            length: Math.round(length * 10) / 10,
+            width: Math.round(width * 10) / 10,
+            height: Math.round(height * 10) / 10
+          };
+        }
+      }
+    }
+    
+    return null;
+  }
+
+  // Convert product dimensions to shipping dimensions by adding packaging
+  convertToShippingDimensions(productDims) {
+    // Add 2-4 inches per dimension for packaging
+    return {
+      length: Math.round((productDims.length + 3) * 10) / 10,
+      width: Math.round((productDims.width + 3) * 10) / 10,
+      height: Math.round((productDims.height + 2) * 10) / 10
+    };
+  }
+
+  // Extract weight from Zyte product data
+  extractWeight(product) {
+    console.log('   🔍 Searching for weight in Zyte data...');
+    
+    // Method 1: Direct weight property
+    if (product.weight) {
+      if (typeof product.weight === 'object' && product.weight.value) {
+        const weight = parseFloat(product.weight.value);
+        const unit = (product.weight.unit || 'pound').toLowerCase();
+        
+        // Convert to pounds if needed
+        if (unit.includes('kg') || unit.includes('kilogram')) {
+          return Math.round(weight * 2.205 * 10) / 10;
+        } else {
+          return Math.round(weight * 10) / 10;
+        }
+      } else if (typeof product.weight === 'string') {
+        const weightMatch = product.weight.match(/(\d+(?:\.\d+)?)\s*(lb|pound|kg|kilogram)?/i);
+        if (weightMatch) {
+          const weight = parseFloat(weightMatch[1]);
+          const unit = (weightMatch[2] || 'lb').toLowerCase();
+          
+          if (unit.includes('kg')) {
+            return Math.round(weight * 2.205 * 10) / 10;
+          } else {
+            return Math.round(weight * 10) / 10;
+          }
+        }
+      }
+    }
+    
+    // Method 2: Check description for weight
+    if (product.description) {
+      const weightMatch = product.description.match(/approx\.?\s*(\d+(?:\.\d+)?)\s*lbs?/i);
+      if (weightMatch) {
+        console.log('   ⚖️ Found weight in description');
+        return Math.round(parseFloat(weightMatch[1]) * 10) / 10;
+      }
+    }
+    
+    // Method 3: Check additionalProperties for item weight
+    if (product.additionalProperties && typeof product.additionalProperties === 'string') {
+      const weightMatch = product.additionalProperties.match(/item weight:\s*(\d+(?:\.\d+)?)\s*pounds?/i);
+      if (weightMatch) {
+        console.log('   ⚖️ Found weight in additional properties');
+        return Math.round(parseFloat(weightMatch[1]) * 10) / 10;
+      }
+    }
+    
+    console.log('   ❌ No weight found in Zyte data');
+    return null;
+  }
   extractPriceFromHTML(html, retailer) {
     console.log('   🔍 Searching for price in HTML...');
     const $ = cheerio.load(html);
