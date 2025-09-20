@@ -207,7 +207,13 @@ class ZyteScraper {
     console.log('📊 Response confidence:', data.product?.metadata?.probability);
     console.log('📊 Has product data:', !!data.product);
     console.log('📊 Browser HTML length:', data.browserHtml?.length || 0);
-    console.log('📊 Raw Zyte product data:', JSON.stringify(data.product, null, 2));
+    console.log('📊 Raw Zyte price data:', {
+      price: data.product?.price,
+      priceType: typeof data.product?.price,
+      salePrice: data.product?.salePrice,
+      currentPrice: data.product?.currentPrice,
+      specialPrice: data.product?.specialPrice
+    });
     
     const productData = {
       name: null,
@@ -237,15 +243,38 @@ class ZyteScraper {
 
       // Enhanced price parsing - use the main price from Zyte (it's already the correct sale price)
       if (product.price) {
-        // Zyte already gives us the correct current/sale price
-        if (typeof product.price === 'string') {
-          productData.price = parseFloat(product.price);
-        } else if (typeof product.price === 'number') {
-          productData.price = product.price;
+        // Try different price fields in priority order
+        let priceValue = null;
+        
+        // Priority 1: Sale/Special prices
+        if (product.salePrice) {
+          priceValue = product.salePrice;
+          console.log('   💰 Using salePrice:', priceValue);
+        } else if (product.currentPrice) {
+          priceValue = product.currentPrice;
+          console.log('   💰 Using currentPrice:', priceValue);
+        } else if (product.specialPrice) {
+          priceValue = product.specialPrice;
+          console.log('   💰 Using specialPrice:', priceValue);
+        } else {
+          // Priority 2: Main price field
+          priceValue = product.price;
+          console.log('   💰 Using main price:', priceValue);
+        }
+        
+        // Parse the price value
+        if (typeof priceValue === 'string') {
+          // Remove currency symbols and parse
+          const cleanPrice = priceValue.replace(/[$,]/g, '');
+          productData.price = parseFloat(cleanPrice);
+        } else if (typeof priceValue === 'number') {
+          productData.price = priceValue;
         }
         
         if (productData.price && productData.price > 0) {
-          console.log('   💰 Zyte Price (current/sale): $' + productData.price);
+          console.log('   💰 Final Price: $' + productData.price);
+        } else {
+          console.log('   ❌ Failed to parse price from:', priceValue);
         }
       }
 
