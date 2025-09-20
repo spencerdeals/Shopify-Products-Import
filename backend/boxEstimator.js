@@ -176,6 +176,93 @@ class BoxEstimator {
       return 'Poor estimate - significant algorithm changes needed';
     }
   }
+
+  // Detect potential freight overcharges
+  detectOvercharge(estimatedCubicFeet, billedCubicFeet, tolerance = 0.15) {
+    const difference = billedCubicFeet - estimatedCubicFeet;
+    const percentageOver = (difference / estimatedCubicFeet) * 100;
+    
+    if (percentageOver > tolerance * 100) {
+      const potentialSavings = this.calculateOverchargeCost(difference);
+      
+      return {
+        isOvercharge: true,
+        estimatedCubicFeet,
+        billedCubicFeet,
+        overchargeAmount: difference.toFixed(2),
+        percentageOver: percentageOver.toFixed(1),
+        potentialSavings,
+        recommendation: 'DISPUTE THIS CHARGE - Request detailed box measurements'
+      };
+    }
+    
+    return {
+      isOvercharge: false,
+      difference: difference.toFixed(2),
+      status: 'Billing appears accurate'
+    };
+  }
+
+  calculateOverchargeCost(excessCubicFeet, shippingRate = 8.50, dutyRate = 0.265) {
+    const excessShipping = excessCubicFeet * shippingRate;
+    const excessDuty = excessShipping * dutyRate;
+    const totalOvercharge = excessShipping + excessDuty;
+    
+    return {
+      excessShipping: excessShipping.toFixed(2),
+      excessDuty: excessDuty.toFixed(2),
+      totalOvercharge: totalOvercharge.toFixed(2)
+    };
+  }
+
+  // Generate dispute documentation
+  generateDisputeReport(actualBoxes, billedCubicFeet) {
+    const actualCubicFeet = actualBoxes.reduce((total, box) => {
+      return total + (box.length * box.width * box.height / 1728);
+    }, 0);
+    
+    const overchargeAnalysis = this.detectOvercharge(actualCubicFeet, billedCubicFeet);
+    
+    if (overchargeAnalysis.isOvercharge) {
+      return {
+        disputeRecommended: true,
+        actualMeasurements: actualBoxes.map(box => 
+          `${box.length}" × ${box.width}" × ${box.height}"`
+        ),
+        actualCubicFeet: actualCubicFeet.toFixed(2),
+        billedCubicFeet: billedCubicFeet.toFixed(2),
+        overchargeAmount: overchargeAnalysis.overchargeAmount,
+        potentialRefund: overchargeAnalysis.potentialSavings.totalOvercharge,
+        disputeText: this.generateDisputeText(actualBoxes, billedCubicFeet, overchargeAnalysis)
+      };
+    }
+    
+    return { disputeRecommended: false };
+  }
+
+  generateDisputeText(actualBoxes, billedCubicFeet, analysis) {
+    return `
+FREIGHT CHARGE DISPUTE REQUEST
+
+Order Details:
+- Billed Cubic Feet: ${billedCubicFeet} ft³
+- Actual Cubic Feet: ${analysis.estimatedCubicFeet} ft³
+- Overcharge: ${analysis.overchargeAmount} ft³ (${analysis.percentageOver}%)
+
+Actual Box Measurements:
+${actualBoxes.map((box, i) => 
+  `Box ${i + 1}: ${box.length}" × ${box.width}" × ${box.height}" = ${(box.length * box.width * box.height / 1728).toFixed(2)} ft³`
+).join('\n')}
+
+Total Calculated: ${analysis.estimatedCubicFeet} ft³
+
+Requested Refund: $${analysis.potentialSavings.totalOvercharge}
+- Excess Shipping: $${analysis.potentialSavings.excessShipping}
+- Excess Duty: $${analysis.potentialSavings.excessDuty}
+
+Please provide detailed measurements used for billing calculation.
+    `.trim();
+  }
 }
 
 module.exports = BoxEstimator;
