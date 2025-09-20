@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SDL Import Admin - Order Tracking</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #7cb342 0%, #2e7d32 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            margin: 0;
+            font-size: 2.5em;
+            font-weight: 300;
+        }
+        
+        .header p {
+            margin: 10px 0 0 0;
+            opacity: 0.9;
+            font-size: 1.1em;
+        }
+        
+        .content {
+            padding: 40px;
+        }
+        
+        .section {
+            margin-bottom: 40px;
+            padding: 30px;
+            background: #f8f9fa;
+            border-radius: 15px;
+            border-left: 5px solid #7cb342;
+        }
+        
+        .section h2 {
+            color: #2e7d32;
+            margin-top: 0;
+            font-size: 1.5em;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .form-group input, .form-group textarea, .form-group select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        
+        .form-group input:focus, .form-group textarea:focus, .form-group select:focus {
+            outline: none;
+            border-color: #7cb342;
+        }
+        
+        .btn {
+            background: linear-gradient(135deg, #7cb342 0%, #2e7d32 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 25px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(124, 179, 66, 0.3);
+        }
+        
+        .btn-secondary {
+            background: linear-gradient(135deg, #6c757d 0%, #495057 100%);
+        }
+        
+        .btn-danger {
+            background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+        }
+        
+        .status-display {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            margin-top: 20px;
+            border: 1px solid #e0e0e0;
+        }
+        
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px;
+            margin-bottom: 10px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border-left: 4px solid #7cb342;
+        }
+        
+        .status-badge {
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        
+        .status-processing { background: #fff3cd; color: #856404; }
+        .status-shipped { background: #d4edda; color: #155724; }
+        .status-delivered { background: #d1ecf1; color: #0c5460; }
+        .status-cancelled { background: #f8d7da; color: #721c24; }
+        .status-unknown { background: #e2e3e5; color: #383d41; }
+        
+        .retailer-orders {
+            display: grid;
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .retailer-order {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            border: 1px solid #e0e0e0;
+        }
+        
+        .retailer-order h4 {
+            margin: 0 0 10px 0;
+            color: #2e7d32;
+        }
+        
+        .tracking-info {
+            font-size: 14px;
+            color: #666;
+            margin-top: 10px;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+        
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 10px;
+        }
+        
+        .success {
+            background: #d4edda;
+            color: #155724;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 10px;
+        }
+        
+        .add-retailer-order {
+            background: #e9ecef;
+            border: 2px dashed #6c757d;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .add-retailer-order:hover {
+            background: #dee2e6;
+            border-color: #495057;
+        }
+        
+        .retailer-order-form {
+            display: grid;
+            grid-template-columns: 1fr 1fr 2fr auto;
+            gap: 15px;
+            align-items: end;
+            margin-bottom: 15px;
+        }
+        
+        @media (max-width: 768px) {
+            .retailer-order-form {
+                grid-template-columns: 1fr;
+            }
+            
+            .container {
+                margin: 10px;
+                border-radius: 15px;
+            }
+            
+            .content {
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚚 SDL Import Admin</h1>
+            <p>Order Tracking & Management System</p>
+        </div>
+        
+        <div class="content">
+            <!-- Start Tracking Section -->
+            <div class="section">
+                <h2>📦 Start Order Tracking</h2>
+                <div class="form-group">
+                    <label for="shopifyOrderId">Shopify Order ID</label>
+                    <input type="text" id="shopifyOrderId" placeholder="e.g., 5234567890123">
+                </div>
+                
+                <div id="retailerOrdersContainer">
+                    <h3>Retailer Orders</h3>
+                    <div id="retailerOrdersList">
+                        <!-- Retailer orders will be added here -->
+                    </div>
+                    <div class="add-retailer-order" onclick="addRetailerOrder()">
+                        + Add Retailer Order
+                    </div>
+                </div>
+                
+                <button class="btn" onclick="startTracking()">🚀 Start Tracking</button>
+                <div id="startTrackingResult"></div>
+            </div>
+            
+            <!-- Check Status Section -->
+            <div class="section">
+                <h2>🔍 Check Order Status</h2>
+                <div class="form-group">
+                    <label for="checkOrderId">Shopify Order ID</label>
+                    <input type="text" id="checkOrderId" placeholder="e.g., 5234567890123">
+                </div>
+                
+                <button class="btn" onclick="checkOrderStatus()">🔄 Check Status</button>
+                <button class="btn btn-secondary" onclick="getTrackingStatus()">📊 Get Tracking Info</button>
+                <button class="btn btn-danger" onclick="stopTracking()">⏹️ Stop Tracking</button>
+                
+                <div id="statusResult"></div>
+            </div>
+            
+            <!-- Bulk Operations Section -->
+            <div class="section">
+                <h2>⚡ Bulk Operations</h2>
+                <div class="form-group">
+                    <label for="bulkOrderIds">Order IDs (one per line)</label>
+                    <textarea id="bulkOrderIds" rows="5" placeholder="5234567890123&#10;5234567890124&#10;5234567890125"></textarea>
+                </div>
+                
+                <button class="btn" onclick="bulkCheckStatus()">🔄 Bulk Status Check</button>
+                <div id="bulkResult"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let retailerOrderCount = 0;
+        
+        // Add a new retailer order form
+        function addRetailerOrder() {
+            retailerOrderCount++;
+            const container = document.getElementById('retailerOrdersList');
+            
+            const orderDiv = document.createElement('div');
+            orderDiv.className = 'retailer-order';
+            orderDiv.innerHTML = `
+                <div class="retailer-order-form">
+                    <div class="form-group">
+                        <label>Retailer</label>
+                        <select id="retailer_${retailerOrderCount}">
+                            <option value="amazon">Amazon</option>
+                            <option value="walmart">Walmart</option>
+                            <option value="target">Target</option>
+                            <option value="wayfair">Wayfair</option>
+                            <option value="best buy">Best Buy</option>
+                            <option value="home depot">Home Depot</option>
+                            <option value="lowes">Lowes</option>
+                            <option value="macys">Macys</option>
+                            <option value="costco">Costco</option>
+                            <option value="ikea">IKEA</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Order ID</label>
+                        <input type="text" id="orderId_${retailerOrderCount}" placeholder="Retailer order ID">
+                    </div>
+                    <div class="form-group">
+                        <label>Items (comma separated)</label>
+                        <input type="text" id="items_${retailerOrderCount}" placeholder="Sofa, Coffee Table, Lamp">
+                    </div>
+                    <button class="btn btn-danger" onclick="removeRetailerOrder(this)">Remove</button>
+                </div>
+            `;
+            
+            container.appendChild(orderDiv);
+        }
+        
+        // Remove a retailer order form
+        function removeRetailerOrder(button) {
+            button.closest('.retailer-order').remove();
+        }
+        
+        // Collect retailer orders from forms
+        function collectRetailerOrders() {
+            const orders = [];
+            const orderForms = document.querySelectorAll('.retailer-order-form');
+            
+            orderForms.forEach((form, index) => {
+                const retailerSelect = form.querySelector('select');
+                const orderIdInput = form.querySelector('input[id^="orderId_"]');
+                const itemsInput = form.querySelector('input[id^="items_"]');
+                
+                if (retailerSelect && orderIdInput && itemsInput && 
+                    retailerSelect.value && orderIdInput.value && itemsInput.value) {
+                    orders.push({
+                        retailer: retailerSelect.value,
+                        orderId: orderIdInput.value.trim(),
+                        items: itemsInput.value.split(',').map(item => item.trim())
+                    });
+                }
+            });
+            
+            return orders;
+        }
+        
+        // Start tracking an order
+        async function startTracking() {
+            const shopifyOrderId = document.getElementById('shopifyOrderId').value.trim();
+            const retailerOrders = collectRetailerOrders();
+            const resultDiv = document.getElementById('startTrackingResult');
+            
+            if (!shopifyOrderId) {
+                resultDiv.innerHTML = '<div class="error">Please enter a Shopify Order ID</div>';
+                return;
+            }
+            
+            if (retailerOrders.length === 0) {
+                resultDiv.innerHTML = '<div class="error">Please add at least one retailer order</div>';
+                return;
+            }
+            
+            resultDiv.innerHTML = '<div class="loading">🔄 Starting tracking...</div>';
+            
+            try {
+                const response = await fetch(`/api/orders/${shopifyOrderId}/start-tracking`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ retailerOrders })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    resultDiv.innerHTML = `
+                        <div class="success">
+                            ✅ Tracking started successfully!<br>
+                            Monitoring ${retailerOrders.length} retailer orders.<br>
+                            Status will be checked every 4 hours.
+                        </div>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `<div class="error">❌ ${result.message || 'Failed to start tracking'}</div>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">❌ Error: ${error.message}</div>`;
+            }
+        }
+        
+        // Check order status manually
+        async function checkOrderStatus() {
+            const orderId = document.getElementById('checkOrderId').value.trim();
+            const resultDiv = document.getElementById('statusResult');
+            
+            if (!orderId) {
+                resultDiv.innerHTML = '<div class="error">Please enter an Order ID</div>';
+                return;
+            }
+            
+            resultDiv.innerHTML = '<div class="loading">🔄 Checking status...</div>';
+            
+            try {
+                // This would need retailer orders - for demo, we'll just show tracking status
+                const response = await fetch(`/api/orders/${orderId}/tracking-status`);
+                const result = await response.json();
+                
+                resultDiv.innerHTML = `
+                    <div class="status-display">
+                        <h3>📊 Tracking Status</h3>
+                        <div class="status-item">
+                            <span>Is Tracking Active:</span>
+                            <span class="status-badge ${result.isTracking ? 'status-shipped' : 'status-unknown'}">
+                                ${result.isTracking ? 'ACTIVE' : 'INACTIVE'}
+                            </span>
+                        </div>
+                        <div class="status-item">
+                            <span>Last Update:</span>
+                            <span>${new Date(result.lastUpdate).toLocaleString()}</span>
+                        </div>
+                    </div>
+                `;
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">❌ Error: ${error.message}</div>`;
+            }
+        }
+        
+        // Get tracking status
+        async function getTrackingStatus() {
+            const orderId = document.getElementById('checkOrderId').value.trim();
+            const resultDiv = document.getElementById('statusResult');
+            
+            if (!orderId) {
+                resultDiv.innerHTML = '<div class="error">Please enter an Order ID</div>';
+                return;
+            }
+            
+            resultDiv.innerHTML = '<div class="loading">📊 Getting tracking info...</div>';
+            
+            try {
+                const response = await fetch(`/api/orders/${orderId}/tracking-status`);
+                const result = await response.json();
+                
+                let statusHtml = `
+                    <div class="status-display">
+                        <h3>📊 Detailed Tracking Status</h3>
+                        <div class="status-item">
+                            <span>Tracking Active:</span>
+                            <span class="status-badge ${result.isTracking ? 'status-shipped' : 'status-unknown'}">
+                                ${result.isTracking ? 'YES' : 'NO'}
+                            </span>
+                        </div>
+                        <div class="status-item">
+                            <span>Last Update:</span>
+                            <span>${new Date(result.lastUpdate).toLocaleString()}</span>
+                        </div>
+                `;
+                
+                if (result.retailerStatuses && Object.keys(result.retailerStatuses).length > 0) {
+                    statusHtml += '<div class="retailer-orders">';
+                    for (const [retailer, status] of Object.entries(result.retailerStatuses)) {
+                        statusHtml += `
+                            <div class="retailer-order">
+                                <h4>${retailer.toUpperCase()}</h4>
+                                <div class="status-badge status-${status.status}">${status.status.toUpperCase()}</div>
+                                ${status.trackingNumber ? `<div class="tracking-info">Tracking: ${status.trackingNumber}</div>` : ''}
+                                ${status.estimatedDelivery ? `<div class="tracking-info">Est. Delivery: ${status.estimatedDelivery}</div>` : ''}
+                            </div>
+                        `;
+                    }
+                    statusHtml += '</div>';
+                }
+                
+                statusHtml += '</div>';
+                resultDiv.innerHTML = statusHtml;
+                
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">❌ Error: ${error.message}</div>`;
+            }
+        }
+        
+        // Stop tracking
+        async function stopTracking() {
+            const orderId = document.getElementById('checkOrderId').value.trim();
+            const resultDiv = document.getElementById('statusResult');
+            
+            if (!orderId) {
+                resultDiv.innerHTML = '<div class="error">Please enter an Order ID</div>';
+                return;
+            }
+            
+            if (!confirm('Are you sure you want to stop tracking this order?')) {
+                return;
+            }
+            
+            resultDiv.innerHTML = '<div class="loading">⏹️ Stopping tracking...</div>';
+            
+            try {
+                const response = await fetch(`/api/orders/${orderId}/stop-tracking`, {
+                    method: 'POST'
+                });
+                const result = await response.json();
+                
+                if (result.success) {
+                    resultDiv.innerHTML = '<div class="success">✅ Tracking stopped successfully</div>';
+                } else {
+                    resultDiv.innerHTML = `<div class="error">❌ ${result.message}</div>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">❌ Error: ${error.message}</div>`;
+            }
+        }
+        
+        // Bulk status check
+        async function bulkCheckStatus() {
+            const orderIds = document.getElementById('bulkOrderIds').value
+                .split('\n')
+                .map(id => id.trim())
+                .filter(id => id);
+            const resultDiv = document.getElementById('bulkResult');
+            
+            if (orderIds.length === 0) {
+                resultDiv.innerHTML = '<div class="error">Please enter at least one Order ID</div>';
+                return;
+            }
+            
+            resultDiv.innerHTML = `<div class="loading">🔄 Checking ${orderIds.length} orders...</div>`;
+            
+            let resultsHtml = '<div class="status-display"><h3>📊 Bulk Status Results</h3>';
+            
+            for (const orderId of orderIds) {
+                try {
+                    const response = await fetch(`/api/orders/${orderId}/tracking-status`);
+                    const result = await response.json();
+                    
+                    resultsHtml += `
+                        <div class="status-item">
+                            <span>Order #${orderId}</span>
+                            <span class="status-badge ${result.isTracking ? 'status-shipped' : 'status-unknown'}">
+                                ${result.isTracking ? 'TRACKING' : 'NOT TRACKING'}
+                            </span>
+                        </div>
+                    `;
+                } catch (error) {
+                    resultsHtml += `
+                        <div class="status-item">
+                            <span>Order #${orderId}</span>
+                            <span class="status-badge status-cancelled">ERROR</span>
+                        </div>
+                    `;
+                }
+            }
+            
+            resultsHtml += '</div>';
+            resultDiv.innerHTML = resultsHtml;
+        }
+        
+        // Initialize with one retailer order form
+        addRetailerOrder();
+    </script>
+</body>
+</html>
