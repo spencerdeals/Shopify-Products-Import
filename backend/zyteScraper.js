@@ -30,8 +30,8 @@ class ZyteScraper {
     try {
       console.log('   📤 Sending request to Zyte API with automatic extraction...');
       
-      // Use the EXACT same format as Zyte playground - simplified request
-      const response = await axios.post(this.baseURL, {
+      // DEBUG: Log the exact request we're sending
+      const requestPayload = {
         url: url,
         browserHtml: true,
         product: true,
@@ -39,20 +39,29 @@ class ZyteScraper {
           extractFrom: "browserHtml",
           ai: true
         }
-      }, {
+      };
+      
+      console.log('🚨 DEBUG: Exact request payload:', JSON.stringify(requestPayload, null, 2));
+      console.log('🚨 DEBUG: API Key (first 8 chars):', this.apiKey.substring(0, 8) + '...');
+      console.log('🚨 DEBUG: Base URL:', this.baseURL);
+      
+      // Use the EXACT same format as Zyte playground - simplified request
+      const response = await axios.post(this.baseURL, requestPayload, {
         auth: {
           username: this.apiKey,
           password: ''
         },
         headers: {
           'Content-Type': 'application/json',
-          'Accept': 'application/json'
+          'Accept': 'application/json',
+          'Accept-Encoding': 'gzip, deflate'
         },
         timeout: 90000
       });
 
       console.log('✅ Zyte request completed successfully');
       console.log('📊 Response status:', response.status);
+      console.log('📊 Response headers:', JSON.stringify(response.headers, null, 2));
       
       if (!response.data) {
         throw new Error('No data received from Zyte API');
