@@ -1340,11 +1340,14 @@ Content: ${trimmedContent}`;
             hasWeight: !!productData.weight,
             hasPrice: !!productData.price,
             hasVariant: !!productData.variant
-          } else if (gptData.variant_image_available === false) {
-            productData.variant_image_note = `Selected variant (${gptData.enhanced_variant || productData.variant}) not pictured - showing similar style`;
-            console.log('   📷 Variant image not available - will show note to customer');
           }
         };
+        
+        // Add variant image note if needed
+        if (gptData && gptData.variant_image_available === false) {
+          product.variant_image_note = `Selected variant (${gptData.enhanced_variant || productData.variant}) not pictured - showing similar style`;
+          console.log('   📷 Variant image not available - will show note to customer');
+        }
         
         if (gptData.variant_image_available === false) {
           product.variant_image_note = `Selected variant (${gptData.enhanced_variant || productData.variant}) not pictured - showing similar style`;
