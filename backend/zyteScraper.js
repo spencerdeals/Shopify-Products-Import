@@ -147,36 +147,35 @@ class ZyteScraper {
         console.log('   🖼️ Image: Found (main)');
       }
 
-      // Variants - Clean extraction focusing on meaningful data
-      const variantParts = [];
-      
-      // Try variants array first
+      // Brand
+      productData.brand = product.brand || null;
+
+      // Category
+      if (product.breadcrumbs && product.breadcrumbs.length > 0) {
+        productData.category = product.breadcrumbs[product.breadcrumbs.length - 1].name || 
+                              product.breadcrumbs[product.breadcrumbs.length - 1];
+      }
+
+      // Availability
+      if (product.availability) {
+        const availability = String(product.availability).toLowerCase();
+        productData.inStock = !availability.includes('out of stock') && 
+                             !availability.includes('unavailable') &&
+                             !availability.includes('sold out');
+      }
+
+      // Variants
       if (product.variants && product.variants.length > 0) {
         const selectedVariant = product.variants.find(v => v.selected) || product.variants[0];
         if (selectedVariant) {
+          const variantParts = [];
           this.extractVariantProperties(selectedVariant, variantParts);
+          
+          if (variantParts.length > 0) {
+            productData.variant = variantParts.join(', ');
+            console.log('   🎨 Variant:', productData.variant);
+          }
         }
-      }
-      
-      // If no good variants from array, try direct properties
-      if (variantParts.length === 0) {
-        // Check for direct variant properties
-        const directVariants = {};
-        if (product.color && typeof product.color === 'string') directVariants.color = product.color;
-        if (product.size && typeof product.size === 'string') directVariants.size = product.size;
-        if (product.style && typeof product.style === 'string') directVariants.style = product.style;
-        if (product.material && typeof product.material === 'string') directVariants.material = product.material;
-        if (product.finish && typeof product.finish === 'string') directVariants.finish = product.finish;
-        
-        this.extractVariantProperties(directVariants, variantParts);
-      }
-      
-      // Set final variant
-      if (variantParts.length > 0) {
-        productData.variant = variantParts.join(', ');
-        console.log('   🎨 Variant:', productData.variant);
-      } else {
-        console.log('   🎨 No clean variants found');
       }
     }
 
@@ -214,29 +213,21 @@ class ZyteScraper {
     
     const priceSelectors = this.getPriceSelectors(retailer);
     
-    let foundPrice = null;
-    
     for (const selector of priceSelectors) {
       const elements = $(selector);
       console.log(`   🔍 Found ${elements.length} elements for selector: ${selector}`);
       
-      for (let i = 0; i < elements.length; i++) {
-        const el = elements[i];
+      elements.each((i, el) => {
         const priceText = $(el).text().trim();
         const priceMatch = priceText.match(/[\d,]+\.?\d*/);
         if (priceMatch) {
           const price = parseFloat(priceMatch[0].replace(/,/g, ''));
           if (price > 0 && price < 100000) {
             console.log(`   💰 Found valid price: $${price} from selector: ${selector}`);
-            foundPrice = price;
-            break;
+            return price;
           }
         }
-      }
-      
-      if (foundPrice) {
-        return foundPrice;
-      }
+      });
     }
     
     console.log('   ❌ No valid price found in HTML');
@@ -248,78 +239,25 @@ class ZyteScraper {
       if (value && typeof value === 'string' && value.trim()) {
         const trimmedValue = value.trim();
         if (trimmedValue.length >= 2 && trimmedValue.length <= 50) {
-          // Skip raw data dumps and focus on meaningful variants
-          if (this.isRawDataDump(trimmedValue)) {
-            return; // Skip this property entirely
-          }
-          
           const lowerValue = trimmedValue.toLowerCase();
-          const lowerProp = prop.toLowerCase();
           
-          // Smart categorization based on property name and content
-          if (lowerProp === 'size' || this.isSizeValue(lowerValue)) {
-            variantParts.push(`Size: ${trimmedValue}`);
-          } else if (lowerProp === 'color' || lowerProp === 'colour' || this.isColorValue(lowerValue)) {
+          if (this.isColorValue(lowerValue)) {
             variantParts.push(`Color: ${trimmedValue}`);
-          } else if (lowerProp === 'material' || this.isMaterialValue(lowerValue)) {
+          } else if (this.isSizeValue(lowerValue)) {
+            variantParts.push(`Size: ${trimmedValue}`);
+          } else if (prop === 'material' || this.isMaterialValue(lowerValue)) {
             variantParts.push(`Material: ${trimmedValue}`);
-          } else if (lowerProp === 'style' || lowerProp === 'type') {
+          } else if (prop === 'style' || prop === 'type') {
             variantParts.push(`Style: ${trimmedValue}`);
-          } else if (lowerProp === 'finish') {
+          } else if (prop === 'finish') {
             variantParts.push(`Finish: ${trimmedValue}`);
-          } else if (lowerProp === 'pattern') {
-            variantParts.push(`Pattern: ${trimmedValue}`);
-          } else if (this.isValidVariantValue(trimmedValue)) {
-            // Only add if it looks like a real variant (not raw data)
-            variantParts.push(trimmedValue);
+          } else {
+            const propName = prop.charAt(0).toUpperCase() + prop.slice(1);
+            variantParts.push(`${propName}: ${trimmedValue}`);
           }
         }
       }
     }
-  }
-
-  isRawDataDump(value) {
-    // Detect raw data dumps that shouldn't be variants
-    const indicators = [
-      '|', // Pipe separators like "SET | B844-54S | B844-57"
-      'Price:', 'Currency:', 'Availability:', 'Sku:', 'RegularPrice:',
-      'InStock', 'OutOfStock',
-      /\d{3,}/, // Long numbers (likely SKUs/IDs)
-      /[A-Z]\d{3}-\d{2}[A-Z]?/, // SKU patterns like B844-54S
-    ];
-    
-    return indicators.some(indicator => {
-      if (typeof indicator === 'string') {
-        return value.includes(indicator);
-      } else {
-        return indicator.test(value);
-      }
-    });
-  }
-
-  isValidVariantValue(value) {
-    // Check if this looks like a real variant value
-    const lowerValue = value.toLowerCase();
-    
-    // Skip if it contains raw data indicators
-    if (this.isRawDataDump(value)) return false;
-    
-    // Skip if it's just numbers or codes
-    if (/^[A-Z0-9\-_]+$/.test(value)) return false;
-    
-    // Skip if it's too long (likely description text)
-    if (value.length > 30) return false;
-    
-    // Accept common variant patterns
-    const validPatterns = [
-      /\b(small|medium|large|xl|xxl|xs)\b/i,
-      /\b(twin|full|queen|king|california)\b/i,
-      /\b\d+['"]\s*x\s*\d+['"]\b/i, // Dimensions like 60" x 80"
-      /\b(black|white|brown|gray|blue|red|green)\b/i,
-      /\b(wood|metal|fabric|leather|cotton)\b/i,
-    ];
-    
-    return validPatterns.some(pattern => pattern.test(lowerValue));
   }
 
   isColorValue(value) {
