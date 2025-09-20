@@ -114,42 +114,10 @@ class ZyteScraper {
   parseZyteResponse(data, url, retailer) {
     console.log('🔍 Parsing Zyte response with automatic extraction...');
     
-    // EMERGENCY DEBUG - Let's see what Zyte is actually returning!
-    console.log('🚨 EMERGENCY DEBUG - Raw Zyte response:');
-    console.log('🚨 Full data object:', JSON.stringify(data, null, 2));
-    if (data.product) {
-      console.log('🚨 Product object:', JSON.stringify(data.product, null, 2));
-    }
-    if (data.httpResponseBody) {
-      console.log('🚨 HTML length:', data.httpResponseBody.length);
-      console.log('🚨 HTML preview:', data.httpResponseBody.substring(0, 500));
-    }
-    
-    // EMERGENCY DEBUG - Let's see what Zyte is actually returning!
-    console.log('🚨 EMERGENCY DEBUG - Raw Zyte response:');
-    console.log('🚨 Full data object:', JSON.stringify(data, null, 2));
-    if (data.product) {
-      console.log('🚨 Product object:', JSON.stringify(data.product, null, 2));
-    }
-    if (data.httpResponseBody) {
-      console.log('🚨 HTML length:', data.httpResponseBody.length);
-      console.log('🚨 HTML preview:', data.httpResponseBody.substring(0, 500));
-    }
-    
-    // CRITICAL: Check if we got blocked by anti-bot
-    if (data.httpResponseBody) {
-      const html = data.httpResponseBody;
-      if (html.includes('akam-sw.js') || 
-          html.includes('challenge') || 
-          html.includes('bot detection') ||
-          html.includes('SDk4Z/hTt/AOPx') ||
-          html.length < 5000) {
-        console.log('🚨 DETECTED BOT BLOCKING! Crate & Barrel is using anti-bot protection');
-        console.log('🚨 HTML length:', html.length);
-        console.log('🚨 Contains akam-sw.js:', html.includes('akam-sw.js'));
-        throw new Error('Bot detection triggered - need different approach');
-      }
-    }
+    // Debug what we received
+    console.log('📊 Response confidence:', data.product?.metadata?.probability);
+    console.log('📊 Has product data:', !!data.product);
+    console.log('📊 Browser HTML length:', data.browserHtml?.length || 0);
     
     const productData = {
       name: null,
@@ -167,7 +135,7 @@ class ZyteScraper {
     // Priority 1: Use Zyte's automatic product extraction
     if (data.product) {
       const product = data.product;
-      console.log('   ✅ Using Zyte automatic extraction data');
+      console.log('   ✅ Using Zyte automatic extraction data with confidence:', product.metadata?.probability);
       
       // Product name
       productData.name = product.name || null;
@@ -176,74 +144,20 @@ class ZyteScraper {
         console.log('   📝 Product name:', productData.name.substring(0, 50) + '...');
       }
 
-      // SMART PRICE PARSING - Fixed to handle incorrect Zyte prices
-      let extractedPrice = null;
-      let regularPrice = null;
-      
+      // Price parsing - handle string or number
       if (product.price) {
-        // Handle different price formats from Zyte
-        if (typeof product.price === 'object' && product.price.value) {
-          extractedPrice = parseFloat(product.price.value);
-        } else if (typeof product.price === 'string') {
-          // Extract number from string like "$2,899.00"
-          const priceMatch = product.price.match(/[\d,]+\.?\d*/);
-          if (priceMatch) {
-            extractedPrice = parseFloat(priceMatch[0].replace(/,/g, ''));
-          }
-        } else {
-          extractedPrice = parseFloat(product.price);
+        if (typeof product.price === 'string') {
+          productData.price = parseFloat(product.price);
+        } else if (typeof product.price === 'number') {
+          productData.price = product.price;
         }
-        console.log('   💰 Zyte extracted price: $' + extractedPrice);
+        
+        if (productData.price && productData.price > 0) {
+          console.log('   💰 Price: $' + productData.price);
+        }
       }
       
-      if (product.regularPrice) {
-        if (typeof product.regularPrice === 'object' && product.regularPrice.value) {
-          regularPrice = parseFloat(product.regularPrice.value);
-        } else if (typeof product.regularPrice === 'string') {
-          const priceMatch = product.regularPrice.match(/[\d,]+\.?\d*/);
-          if (priceMatch) {
-            regularPrice = parseFloat(priceMatch[0].replace(/,/g, ''));
-          }
-        } else {
-          regularPrice = parseFloat(product.regularPrice);
-        }
-        console.log('   🏷️ Zyte regular price: $' + regularPrice);
-      }
-      
-      // Validate if Zyte's price makes sense
-      let priceIsValid = true;
-      if (extractedPrice && regularPrice && extractedPrice > 0 && regularPrice > 0) {
-        // If extracted price is less than 30% of regular price, it's probably wrong
-        const discountPercent = (regularPrice - extractedPrice) / regularPrice;
-        if (discountPercent > 0.7) {
-          console.log('   ⚠️ Zyte price seems too low (>70% discount), will verify with HTML parsing');
-          priceIsValid = false;
-        }
-      } else if (extractedPrice && extractedPrice > 0) {
-        // If we only have extracted price and it's valid, use it
-        priceIsValid = true;
-      }
-      
-      if (priceIsValid && extractedPrice && extractedPrice > 0) {
-        productData.price = extractedPrice;
-        console.log('   ✅ Using Zyte price: $' + productData.price);
-      } else {
-        console.log('   🔍 Zyte price invalid, falling back to HTML parsing...');
-        const htmlPrice = this.extractPriceFromHTML(data.httpResponseBody);
-        if (htmlPrice) {
-          productData.price = htmlPrice;
-          console.log('   ✅ Using HTML parsed price: $' + productData.price);
-        } else {
-          if (extractedPrice && extractedPrice > 0) {
-            productData.price = extractedPrice; // Use Zyte price as last resort
-            console.log('   ⚠️ Using Zyte price as fallback: $' + productData.price);
-          } else {
-            console.log('   ❌ No valid price found anywhere');
-          }
-        }
-      }
-
-      // Main image
+      // Main image - handle both formats
       if (product.mainImage && product.mainImage.url) {
         productData.image = product.mainImage.url;
         console.log('   🖼️ Main Image: Found');
@@ -260,75 +174,54 @@ class ZyteScraper {
       }
 
       // Category from breadcrumbs
-      if (product.breadcrumbs && typeof product.breadcrumbs === 'string') {
+      if (product.breadcrumbs && Array.isArray(product.breadcrumbs) && product.breadcrumbs.length > 0) {
+        const lastCrumb = product.breadcrumbs[product.breadcrumbs.length - 1];
+        productData.category = typeof lastCrumb === 'object' ? lastCrumb.name : lastCrumb;
+        console.log('   📂 Category:', productData.category);
+      } else if (product.breadcrumbs && typeof product.breadcrumbs === 'string') {
         productData.category = product.breadcrumbs.split(' / ').pop() || null;
         console.log('   📂 Category:', productData.category);
-      } else if (product.breadcrumbs && Array.isArray(product.breadcrumbs)) {
-        productData.category = product.breadcrumbs[product.breadcrumbs.length - 1] || null;
-        console.log('   📂 Category:', productData.category);
       }
 
-      // Weight
-      if (product.weight && product.weight.value) {
-        productData.weight = parseFloat(product.weight.value);
-        console.log('   ⚖️ Weight:', productData.weight + ' ' + (product.weight.unit || 'lbs'));
-      }
-
-      // Dimensions from additionalProperties
-      if (product.additionalProperties) {
-        const dimensions = this.extractDimensionsFromProperties(product.additionalProperties);
-        if (dimensions) {
-          productData.dimensions = dimensions;
-          console.log('   📏 Dimensions:', `${dimensions.length}" × ${dimensions.width}" × ${dimensions.height}"`);
+      // Extract dimensions from size field
+      if (product.size) {
+        const sizeMatch = product.size.match(/(\d+(?:\.\d+)?)"W\s*x\s*(\d+(?:\.\d+)?)"D/);
+        if (sizeMatch) {
+          productData.dimensions = {
+            length: parseFloat(sizeMatch[1]), // Width becomes length
+            width: parseFloat(sizeMatch[2]),  // Depth becomes width  
+            height: 36 // Estimate height for sofa
+          };
+          console.log('   📏 Dimensions from size:', `${productData.dimensions.length}" × ${productData.dimensions.width}" × ${productData.dimensions.height}"`);
         }
       }
 
-      // Variants - handle color, size, etc.
-      const variantParts = [];
-      
-      if (product.color) {
-        variantParts.push(`Color: ${product.color}`);
+      // Availability
+      if (product.availability) {
+        productData.inStock = product.availability.toLowerCase() === 'instock';
+        console.log('   📦 In Stock:', productData.inStock);
       }
-      
+
+      // Use size as variant info
       if (product.size) {
-        variantParts.push(`Size: ${product.size}`);
-      }
-      
-      if (product.material) {
-        variantParts.push(`Material: ${product.material}`);
-      }
-      
-      // Check variants array
-      if (product.variants && product.variants.length > 0) {
-        product.variants.forEach(variant => {
-          if (variant.size && !variantParts.some(p => p.includes('Size'))) {
-            variantParts.push(`Size: ${variant.size}`);
-          }
-          if (variant.color && !variantParts.some(p => p.includes('Color'))) {
-            variantParts.push(`Color: ${variant.color}`);
-          }
-        });
-      }
-      
-      if (variantParts.length > 0) {
-        productData.variant = variantParts.join(', ');
+        productData.variant = product.size;
         console.log('   🎨 Variant:', productData.variant);
       }
 
       // Confidence score
-      if (data.probability) {
-        productData.confidence = parseFloat(data.probability);
+      if (product.metadata && product.metadata.probability) {
+        productData.confidence = parseFloat(product.metadata.probability);
         console.log('   🎯 Confidence:', (productData.confidence * 100).toFixed(1) + '%');
       }
 
-      // Availability
-      productData.inStock = true; // Assume in stock unless we find evidence otherwise
+      console.log('   ✅ Zyte extraction successful!');
+      return productData;
     }
 
-    // Fallback: Parse from HTML if automatic extraction failed
-    if (!productData.name && data.httpResponseBody) {
+    // Fallback: Parse from HTML if automatic extraction failed  
+    if (!productData.name && data.browserHtml) {
       console.log('   🔍 Falling back to HTML parsing...');
-      const htmlData = this.parseHTML(data.httpResponseBody, url, retailer);
+      const htmlData = this.parseHTML(data.browserHtml, url, retailer);
       
       // Merge data - prefer automatic extraction but fill gaps with HTML parsing
       productData.name = productData.name || htmlData.name;
