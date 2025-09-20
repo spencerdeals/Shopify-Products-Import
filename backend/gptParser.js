@@ -159,7 +159,7 @@ You are a precise e-commerce product extractor that returns accurate json data.
 Return STRICT JSON with fields:
 - url (string)
 - name (string)
-- price (number, no currency symbols - look for the CURRENT selling price, not list/was prices)
+- price (number, no currency symbols - look for the CURRENT selling price like $639.99 or $809.99, not list/was/financing prices)
 - currency (ISO code)
 - image (string URL)
 - brand (string, optional)
@@ -175,6 +175,12 @@ CRITICAL VARIANT DETECTION:
 - Parse URL parameters like piid=1222175087,1261760516,1262971467 to understand selections
 - For Wayfair: Look for selected fabric color and orientation (Left/Right Hand Facing)
 - Match the product image to the SELECTED variant, not the default
+
+CRITICAL PRICE DETECTION:
+- Look for the main selling price near "Add to Cart" or buy buttons
+- For Wayfair: Look for prices like $639.99 or $809.99, ignore financing options
+- Ignore struck-through "was" prices and monthly payment options
+- The price should be realistic for furniture (typically $200-$5000)
 
 - Look for the main selling price (like $639.99 or $809.99)
 - Ignore struck-through "was" prices and financing options

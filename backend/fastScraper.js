@@ -956,8 +956,8 @@ async function scrapeProduct(url) {
         console.log('   🧠 Enhancing with ADVANCED GPT intelligence...');
         productData = await enhanceProductDataWithAdvancedGPT(productData, url, retailer);
         console.log('   ✅ Advanced GPT enhancement successful');
-      } catch (gptError) {
-        console.log('   ⚠️ Advanced GPT enhancement failed, using original Zyte data:', gptError.message);
+        // Override price if GPT found a significantly different price
+        if (gptResult.price && (gptResult.price > product.price * 2 || product.price < 200)) {
         // Continue with original Zyte data - no harm done!
       }
     }
