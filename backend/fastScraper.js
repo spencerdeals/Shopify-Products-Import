@@ -366,19 +366,19 @@ function calculateShippingCost(dimensions, weight, price) {
   
   // Total shipping cost
   const totalShippingCost = baseCost + handlingFee;
-  console.log(`   💰 TOTAL: $${baseCost.toFixed(2)} + $${handlingFee} = $${totalShippingCost.toFixed(2)}`);
+  console.log(`   💰 TOTAL SHIPPING: $${baseCost.toFixed(2)} + $${handlingFee} = $${totalShippingCost.toFixed(2)}`);
   
   return Math.round(totalShippingCost * 100) / 100;
 }
 
-// Enhanced GPT function to improve Zyte data
+// Enhanced GPT enhancement function
 async function enhanceProductDataWithGPT(zyteData, url, retailer) {
   if (!process.env.OPENAI_API_KEY) {
-    return zyteData; // Return original data if no GPT available
+    return zyteData;
   }
   
   try {
-    console.log('   🧠 Enhancing with GPT intelligence...');
+    console.log('   🧠 Enhancing product data with GPT intelligence...');
     
     const OpenAI = require('openai');
     const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -420,7 +420,7 @@ Examples:
     // Enhance variant if GPT found a better one
     if (enhancement.primaryVariant && enhancement.primaryVariant !== 'none') {
       enhanced.variant = enhancement.primaryVariant;
-      console.log(\`   🎨 Enhanced variant: "${zyteData.variant}\" → "${enhancement.primaryVariant}"`);
+      console.log(`   🎨 Enhanced variant: "${zyteData.variant}" → "${enhancement.primaryVariant}"`);
     }
     
     // Enhance dimensions if GPT found better ones
@@ -436,7 +436,7 @@ Examples:
       // Use GPT dimensions if they're significantly larger (more realistic for furniture)
       if (gptVolume > currentVolume * 1.5) {
         enhanced.dimensions = enhancement.enhancedDimensions;
-        console.log(\`   📦 Enhanced dimensions: ${Math.round(gptVolume/1728 * 100)/100} ft³ vs ${Math.round(currentVolume/1728 * 100)/100} ft³`);
+        console.log(`   📦 Enhanced dimensions: ${Math.round(gptVolume/1728 * 100)/100} ft³ vs ${Math.round(currentVolume/1728 * 100)/100} ft³`);
       }
     }
     
@@ -454,40 +454,62 @@ function checkIfIkeaNeedsComponents(productName, price) {
   
   // Bed frames - typically 2-4 components
   if (/\b(bed|frame|headboard|footboard)\b/.test(name)) {
-    return price > 150; // Beds over $150 likely have multiple components
+    if (price > 400) {
+      return { count: 4, type: 'bed frame' }; // King/Queen beds
+    } else if (price > 200) {
+      return { count: 3, type: 'bed frame' }; // Full/Double beds
+    } else {
+      return { count: 2, type: 'bed frame' }; // Twin beds
+    }
   }
   
-  // Wardrobes/Armoires - typically 3-6 components
+  // Wardrobes/PAX - typically 3-6 components
   if (/\b(wardrobe|armoire|closet|pax)\b/.test(name)) {
-    return price > 200; // Wardrobes over $200 likely have multiple components
+    if (price > 500) {
+      return { count: 6, type: 'wardrobe system' }; // Large PAX systems
+    } else if (price > 300) {
+      return { count: 4, type: 'wardrobe' }; // Medium wardrobes
+    } else {
+      return { count: 3, type: 'wardrobe' }; // Small wardrobes
+    }
   }
   
-  // Dining sets - typically 2-3 components (table + chairs)
-  if (/\b(dining|table.*chair|chair.*table)\b/.test(name)) {
-    return price > 300; // Dining sets over $300 likely have multiple components
-  }
-  
-  // Kitchen systems - typically 3-8 components
+  // Kitchen systems - typically 4-8 components
   if (/\b(kitchen|cabinet.*set|knoxhult|enhet)\b/.test(name)) {
-    return price > 400; // Kitchen sets over $400 likely have multiple components
+    if (price > 1000) {
+      return { count: 8, type: 'kitchen system' }; // Full kitchen
+    } else if (price > 500) {
+      return { count: 5, type: 'kitchen set' }; // Partial kitchen
+    } else {
+      return { count: 4, type: 'kitchen unit' }; // Small kitchen set
+    }
   }
   
   // Sectional sofas - typically 2-4 components
   if (/\b(sectional|sofa.*section|corner.*sofa)\b/.test(name)) {
-    return price > 500; // Sectionals over $500 likely have multiple components
+    if (price > 800) {
+      return { count: 4, type: 'sectional sofa' }; // Large sectionals
+    } else {
+      return { count: 3, type: 'sectional sofa' }; // Small sectionals
+    }
   }
   
-  // Bookshelves/Storage - typically 2-3 components for tall units
-  if (/\b(bookshelf|shelf.*unit|billy|hemnes.*bookcase|kallax)\b/.test(name)) {
-    return price > 150; // Storage units over $150 likely have multiple components
+  // Dining sets - typically 2-3 components (table + chairs)
+  if (/\b(dining|table.*chair|chair.*table)\b/.test(name)) {
+    return { count: 3, type: 'dining set' };
   }
   
-  // Desks - typically 2 components for larger desks
-  if (/\b(desk|workstation|office.*table)\b/.test(name)) {
-    return price > 250; // Desks over $250 likely have multiple components
+  // Large storage/shelving - typically 2-3 components for tall units
+  if (/\b(bookshelf|shelf.*unit|billy|hemnes.*bookcase|kallax)\b/.test(name) && price > 200) {
+    return { count: 3, type: 'storage unit' };
   }
   
-  return false; // Default: single component
+  // Large desks - typically 2 components
+  if (/\b(desk|workstation|office.*table)\b/.test(name) && price > 300) {
+    return { count: 2, type: 'desk system' };
+  }
+  
+  return null; // Single component item
 }
 
 // Helper function to check if essential data is complete
@@ -531,8 +553,8 @@ function estimateIkeaMultiBoxShipping(singleBoxDimensions, productName, price) {
   const name = productName.toLowerCase();
   const volume = singleBoxDimensions.length * singleBoxDimensions.width * singleBoxDimensions.height;
   
-  console.log(\`   🛏️ IKEA Multi-Box Analysis for: "${productName.substring(0, 50)}..."`);
-  console.log(\`   📦 Single box: ${singleBoxDimensions.length}" × ${singleBoxDimensions.width}\" × ${singleBoxDimensions.height}" (${(volume/1728).toFixed(2)} ft³)`);
+  console.log(`   🛏️ IKEA Multi-Box Analysis for: "${productName.substring(0, 50)}..."`);
+  console.log(`   📦 Single box: ${singleBoxDimensions.length}" × ${singleBoxDimensions.width}" × ${singleBoxDimensions.height}" (${(volume/1728).toFixed(2)} ft³)`);
   
   let boxMultiplier = 1;
   let confidence = 'low';
