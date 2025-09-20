@@ -128,27 +128,50 @@ class ZyteScraper {
       let regularPrice = null;
       
       if (product.price) {
-        extractedPrice = parseFloat(product.price);
+        // Handle different price formats from Zyte
+        if (typeof product.price === 'object' && product.price.value) {
+          extractedPrice = parseFloat(product.price.value);
+        } else if (typeof product.price === 'string') {
+          // Extract number from string like "$2,899.00"
+          const priceMatch = product.price.match(/[\d,]+\.?\d*/);
+          if (priceMatch) {
+            extractedPrice = parseFloat(priceMatch[0].replace(/,/g, ''));
+          }
+        } else {
+          extractedPrice = parseFloat(product.price);
+        }
         console.log('   💰 Zyte extracted price: $' + extractedPrice);
       }
       
       if (product.regularPrice) {
-        regularPrice = parseFloat(product.regularPrice);
+        if (typeof product.regularPrice === 'object' && product.regularPrice.value) {
+          regularPrice = parseFloat(product.regularPrice.value);
+        } else if (typeof product.regularPrice === 'string') {
+          const priceMatch = product.regularPrice.match(/[\d,]+\.?\d*/);
+          if (priceMatch) {
+            regularPrice = parseFloat(priceMatch[0].replace(/,/g, ''));
+          }
+        } else {
+          regularPrice = parseFloat(product.regularPrice);
+        }
         console.log('   🏷️ Zyte regular price: $' + regularPrice);
       }
       
       // Validate if Zyte's price makes sense
       let priceIsValid = true;
-      if (extractedPrice && regularPrice) {
+      if (extractedPrice && regularPrice && extractedPrice > 0 && regularPrice > 0) {
         // If extracted price is less than 30% of regular price, it's probably wrong
         const discountPercent = (regularPrice - extractedPrice) / regularPrice;
         if (discountPercent > 0.7) {
           console.log('   ⚠️ Zyte price seems too low (>70% discount), will verify with HTML parsing');
           priceIsValid = false;
         }
+      } else if (extractedPrice && extractedPrice > 0) {
+        // If we only have extracted price and it's valid, use it
+        priceIsValid = true;
       }
       
-      if (priceIsValid && extractedPrice) {
+      if (priceIsValid && extractedPrice && extractedPrice > 0) {
         productData.price = extractedPrice;
         console.log('   ✅ Using Zyte price: $' + productData.price);
       } else {
@@ -158,8 +181,12 @@ class ZyteScraper {
           productData.price = htmlPrice;
           console.log('   ✅ Using HTML parsed price: $' + productData.price);
         } else {
-          productData.price = extractedPrice; // Use Zyte price as last resort
-          console.log('   ⚠️ Using Zyte price as fallback: $' + productData.price);
+          if (extractedPrice && extractedPrice > 0) {
+            productData.price = extractedPrice; // Use Zyte price as last resort
+            console.log('   ⚠️ Using Zyte price as fallback: $' + productData.price);
+          } else {
+            console.log('   ❌ No valid price found anywhere');
+          }
         }
       }
 
