@@ -4,12 +4,9 @@ const rateLimit = require('express-rate-limit');
 const axios = require('axios');
 const path = require('path');
 const { URL } = require('url');
-const { parseProduct } = require('./boxEstimator');
 require('dotenv').config();
-const UPCItemDB = require('./upcitemdb');
 const OrderTracker = require('./orderTracking');
 const ZyteScraper = require('./zyteScraper');
-const ApifyActorScraper = require('./apifyActorScraper');
 const { parseProduct: parseWithGPT } = require('./gptParser');
 
 // Simple, working scraper approach
@@ -21,9 +18,6 @@ const PORT = process.env.PORT || 3000;
 // Configuration
 const SHOPIFY_DOMAIN = process.env.SHOPIFY_DOMAIN || 'spencer-deals-ltd.myshopify.com';
 const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN || '';
-const UPCITEMDB_API_KEY = process.env.UPCITEMDB_API_KEY || '';
-const upcItemDB = new UPCItemDB(UPCITEMDB_API_KEY);
-const USE_UPCITEMDB = !!UPCITEMDB_API_KEY;
 const SCRAPING_TIMEOUT = 30000;
 const MAX_CONCURRENT_SCRAPES = 2;
 const BERMUDA_DUTY_RATE = 0.265;
@@ -32,8 +26,6 @@ const SHIPPING_RATE_PER_CUBIC_FOOT = 8;
 // Initialize scrapers
 const zyteScraper = new ZyteScraper();
 const USE_ZYTE = zyteScraper.enabled;
-const apifyActorScraper = new ApifyActorScraper(process.env.APIFY_API_KEY);
-const USE_APIFY_ACTORS = apifyActorScraper.isAvailable();
 const USE_GPT_FALLBACK = !!process.env.OPENAI_API_KEY;
 
 // Confidence threshold for triggering GPT fallback
@@ -54,7 +46,6 @@ console.log('');
 console.log('🔍 SCRAPING CONFIGURATION:');
 console.log(`1. Primary: Zyte API - ${USE_ZYTE ? '✅ ENABLED' : '❌ DISABLED (Missing API Key)'}`);
 console.log(`2. Fallback: GPT Parser - ${USE_GPT_FALLBACK ? '✅ ENABLED' : '❌ DISABLED (Missing OpenAI Key)'}`);
-console.log(`3. Confidence Threshold: ${CONFIDENCE_THRESHOLD} (${CONFIDENCE_THRESHOLD * 100}%)`);
 console.log('');
 
 // Middleware
@@ -76,7 +67,7 @@ app.get('/health', (req, res) => {
     scraping: {
       primary: USE_ZYTE ? 'Zyte API' : 'None',
       fallback: process.env.OPENAI_API_KEY ? 'GPT Parser' : 'None',
-      dimensions: USE_UPCITEMDB ? 'UPCitemdb' : 'None'
+      dimensions: 'Estimation'
     },
     shopifyConfigured: !!SHOPIFY_ACCESS_TOKEN
   });
@@ -507,32 +498,6 @@ function dimensionsLookSuspicious(dimensions) {
   return false;
 }
 
-// Smart UPCitemdb lookup for dimensions
-async function getUPCDimensions(productName) {
-  if (!USE_UPCITEMDB || !productName) return null;
-  
-  try {
-    console.log(`   🔍 UPCitemdb lookup for: "${productName.substring(0, 50)}..."`);
-    const upcData = await upcItemDB.searchByName(productName);
-    
-    if (upcData && upcData.dimensions) {
-      console.log(`   ✅ UPCitemdb found BOX dimensions: ${upcData.dimensions.length}" × ${upcData.dimensions.width}" × ${upcData.dimensions.height}"`);
-      
-      // UPCitemdb already provides shipping box dimensions
-      const boxDimensions = upcData.dimensions;
-      
-      console.log(`   📦 Using UPCitemdb BOX dimensions: ${boxDimensions.length}" × ${boxDimensions.width}" × ${boxDimensions.height}"`);
-      return boxDimensions;
-    }
-    
-    console.log('   ❌ UPCitemdb: No dimensions found');
-    return null;
-  } catch (error) {
-    console.log('   ❌ UPCitemdb lookup failed:', error.message);
-    return null;
-  }
-}
-
 // IKEA Multi-Box Estimator - estimates total shipping volume for IKEA furniture
 function estimateIkeaMultiBoxShipping(singleBoxDimensions, productName, price) {
   const name = productName.toLowerCase();
@@ -883,30 +848,7 @@ async function scrapeProduct(url) {
   
   console.log(`   📂 Final category: "${category}"`);
   
-  // STEP 3: Smart UPCitemdb lookup for dimensions if needed
-  if (productData && productData.name && dimensionsLookSuspicious(productData ? productData.dimensions : null)) {
-    const upcDimensions = await getUPCDimensions(productData.name);
-    if (upcDimensions) {
-      productData.dimensions = upcDimensions;
-      console.log('   ✅ UPCitemdb provided accurate dimensions');
-      
-      if (scrapingMethod === 'zyte') {
-        scrapingMethod = 'zyte+upcitemdb';
-      } else if (scrapingMethod === 'gpt-fallback') {
-        scrapingMethod = 'gpt+upcitemdb';
-      }
-    } else {
-      console.log('   ⚠️ UPCitemdb found no dimensions, current dimensions may be packaging size');
-      if (productData.dimensions) {
-        console.log(`   📦 Current dimensions: ${productData.dimensions.length}" × ${productData.dimensions.width}" × ${productData.dimensions.height}"`);
-      } else {
-        console.log('   📦 No dimensions available, will estimate based on category');
-      }
-      console.log('   🔍 Checking if dimensions look like packaging vs actual product...');
-    }
-  }
-  
-  // STEP 3.5: IKEA Multi-Box Estimation
+  // STEP 3: IKEA Multi-Box Estimation
   if (retailer === 'IKEA' && productData && productData.dimensions && productData.name && productData.price) {
     const ikeaEstimate = estimateIkeaMultiBoxShipping(productData.dimensions, productData.name, productData.price);
     
@@ -919,11 +861,7 @@ async function scrapeProduct(url) {
         totalVolume: ikeaEstimate.totalVolume
       };
       
-      if (scrapingMethod.includes('upcitemdb')) {
-        scrapingMethod = scrapingMethod + '+ikea-multibox';
-      } else {
-        scrapingMethod = scrapingMethod + '+ikea-multibox';
-      }
+      scrapingMethod = scrapingMethod + '+ikea-multibox';
       
       console.log(`   🎯 Applied IKEA multi-box estimation (${ikeaEstimate.confidence} confidence)`);
     }
@@ -1136,16 +1074,6 @@ Content: ${trimmedContent}`;
         // Fill in missing data with estimations
         if (!productData.dimensions) {
           productData.dimensions = estimateDimensions(category, productData.name);
-        }
-        
-        // Smart UPCitemdb lookup for manual entry too
-        if (productData.name && dimensionsLookSuspicious(productData.dimensions)) {
-          console.log('   🔍 Checking UPCitemdb for manual entry dimensions...');
-          const upcDimensions = await getUPCDimensions(productData.name);
-          if (upcDimensions) {
-            productData.dimensions = upcDimensions;
-            console.log('   ✅ UPCitemdb provided dimensions for manual entry');
-          }
         }
         
         if (!productData.weight) {
