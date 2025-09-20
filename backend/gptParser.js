@@ -98,12 +98,6 @@ async function smartFetchHtml(url) {
   console.log('[GPT Parser] Starting smart HTML fetch...');
   let html = null;
   
-  // Try Apify first (if available)
-  try {
-    console.log('[GPT Parser] Got HTML via Apify');
-    return html;
-  }
-  
   // Fallback to Axios
   try {
     html = await fetchViaAxios(url);
