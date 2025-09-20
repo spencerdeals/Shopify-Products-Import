@@ -45,8 +45,8 @@ class ZyteScraper {
       console.log('🚨 DEBUG: API Key (first 8 chars):', this.apiKey.substring(0, 8) + '...');
       console.log('🚨 DEBUG: Base URL:', this.baseURL);
       
-      // Use the EXACT same format as Zyte playground - simplified request
-      const response = await axios.post(this.baseURL, requestPayload, {
+      // DEBUG: Log exact axios config
+      const axiosConfig = {
         auth: {
           username: this.apiKey,
           password: ''
@@ -57,7 +57,12 @@ class ZyteScraper {
           'Accept-Encoding': 'gzip, deflate'
         },
         timeout: 90000
-      });
+      };
+      
+      console.log('🚨 DEBUG: Exact axios config:', JSON.stringify(axiosConfig, null, 2));
+      
+      // Use the EXACT same format as Zyte playground - simplified request
+      const response = await axios.post(this.baseURL, requestPayload, axiosConfig);
 
       console.log('✅ Zyte request completed successfully');
       console.log('📊 Response status:', response.status);
