@@ -126,6 +126,57 @@ class BoxEstimator {
     };
   }
 
+  // Add data point to our tracking
+  addDataPoint(productType, actualCubicFeet, billedCubicFeet, actualBoxes = []) {
+    const overcharge = this.detectOvercharge(actualCubicFeet, billedCubicFeet);
+    const dataPoint = {
+      timestamp: new Date().toISOString(),
+      productType,
+      actualCubicFeet,
+      billedCubicFeet,
+      overcharge: overcharge.isOvercharge ? parseFloat(overcharge.overchargeAmount) : 0,
+      overchargePercent: overcharge.isOvercharge ? parseFloat(overcharge.percentageOver) : 0,
+      potentialRefund: overcharge.isOvercharge ? parseFloat(overcharge.potentialSavings.totalOvercharge) : 0,
+      actualBoxes
+    };
+    
+    console.log(`📊 Data Point Added: ${productType}`);
+    console.log(`   Actual: ${actualCubicFeet} ft³`);
+    console.log(`   Billed: ${billedCubicFeet} ft³`);
+    if (overcharge.isOvercharge) {
+      console.log(`   🚨 OVERCHARGE: ${overcharge.overchargeAmount} ft³ (${overcharge.percentageOver}%)`);
+      console.log(`   💰 Potential Refund: $${overcharge.potentialSavings.totalOvercharge}`);
+    } else {
+      console.log(`   ✅ Fair billing`);
+    }
+    
+    return dataPoint;
+  }
+
+  // Analyze all collected data points
+  analyzeOverchargePattern(dataPoints) {
+    if (!dataPoints || dataPoints.length === 0) return null;
+    
+    const totalActual = dataPoints.reduce((sum, dp) => sum + dp.actualCubicFeet, 0);
+    const totalBilled = dataPoints.reduce((sum, dp) => sum + dp.billedCubicFeet, 0);
+    const totalOvercharge = dataPoints.reduce((sum, dp) => sum + dp.overcharge, 0);
+    const totalRefund = dataPoints.reduce((sum, dp) => sum + dp.potentialRefund, 0);
+    
+    const overchargeRate = (totalOvercharge / totalActual) * 100;
+    const overchargedItems = dataPoints.filter(dp => dp.overcharge > 0).length;
+    
+    return {
+      totalItems: dataPoints.length,
+      overchargedItems,
+      overchargeRate: `${overchargeRate.toFixed(1)}%`,
+      totalActualCubicFeet: totalActual.toFixed(2),
+      totalBilledCubicFeet: totalBilled.toFixed(2),
+      totalOverchargeCubicFeet: totalOvercharge.toFixed(2),
+      totalPotentialRefund: `$${totalRefund.toFixed(2)}`,
+      pattern: overchargedItems > dataPoints.length * 0.5 ? 'SYSTEMATIC_OVERCHARGING' : 'OCCASIONAL_ERRORS'
+    };
+  }
+
   // Learn from actual shipping data to improve estimates
   learnFromActual(productDimensions, actualBoxes, productType = 'furniture') {
     const comparison = this.compareWithActual(
