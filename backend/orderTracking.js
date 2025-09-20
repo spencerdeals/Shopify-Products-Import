@@ -6,9 +6,18 @@ class OrderTracker {
   }
 
   static async create() {
+    // Separate try-catch for dynamic import
+    let createClient;
     try {
-      const { createClient } = await new Function('return import("@libsql/client")')();
-      
+      const libsqlModule = await new Function('return import("@libsql/client")')();
+      createClient = libsqlModule.createClient;
+    } catch (importError) {
+      console.error('❌ Failed to import @libsql/client:', importError);
+      throw importError;
+    }
+
+    // Main try-catch for OrderTracker creation
+    try {
       // Create the database client
       const dbClient = createClient({
         url: process.env.TURSO_DATABASE_URL || 'file:orders.db',
