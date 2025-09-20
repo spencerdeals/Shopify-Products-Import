@@ -815,17 +815,17 @@ async function scrapeProduct(url) {
             console.log('   📦 Enhanced dimensions:', (gptResult.dimensions.length * gptResult.dimensions.width * gptResult.dimensions.height / 1728).toFixed(1), 'ft³ vs', (productData.dimensions?.length * productData.dimensions?.width * productData.dimensions?.height / 1728 || 0).toFixed(1), 'ft³');
           }
         }
-           
+        
         try {
-        productData = await enhanceProductDataWithGPT(productData, url, retailer);
-        console.log('   ✅ GPT enhancement successful');
-      } catch (gptError) {
-        console.log('   ⚠️ GPT enhancement failed, using original Zyte data:', gptError.message);
-        // Continue with original Zyte data - no harm done!
+          productData = await enhanceProductDataWithGPT(productData, url, retailer);
+          console.log('   ✅ GPT enhancement successful');
+        } catch (gptError) {
+          console.log('   ⚠️ GPT enhancement failed, using original Zyte data:', gptError.message);
+          // Continue with original Zyte data - no harm done!
+        }
       }
-    }
     
-  } catch (error) {
+    } catch (error) {
     console.log('   ❌ Zyte API failed:', error.message);
     
     // STEP 2: Try GPT parser as fallback
