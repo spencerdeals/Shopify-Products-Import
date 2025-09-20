@@ -776,6 +776,11 @@ async function scrapeProduct(url) {
         confidence = zyteResult.confidence || null;
         console.log(`   ✅ Zyte success! Product: "${zyteResult.name.substring(0, 50)}..." Price: $${zyteResult.price}`);
         
+        // Mark as successful - no manual entry needed
+        zyteResult.manualEntryRequired = false;
+        zyteResult.ikeaComponentsRequired = false;
+        zyteResult.scrapingMethod = 'zyte-success';
+        
         // Skip GPT enhancement if we already have good Zyte data
         if (productData.confidence && productData.confidence > 0.95 && productData.allVariants && productData.allVariants.length > 2) {
           console.log('   ✅ Skipping GPT enhancement - Zyte data is excellent');
@@ -851,6 +856,12 @@ async function scrapeProduct(url) {
               variant: gptData.variant
             };
             scrapingMethod = 'gpt-fallback';
+            
+            // Mark as successful - no manual entry needed
+            productData.manualEntryRequired = false;
+            productData.ikeaComponentsRequired = false;
+            productData.scrapingMethod = 'gpt-success';
+            
             console.log('   ✅ GPT parser fallback success!');
           } else {
             console.log('   ❌ GPT parser also missing essential data');
@@ -888,6 +899,7 @@ async function scrapeProduct(url) {
       confidence: null,
       variant: null,
       manualEntryRequired: true,
+      ikeaComponentsRequired: false,
       message: `${retailer} requires manual entry. Please copy and paste the webpage content.`,
       dataCompleteness: {
         hasName: false,
@@ -1074,8 +1086,19 @@ app.post('/api/scrape', async (req, res) => {
     const products = await processBatch(urls);
     console.log(`\n✅ Completed scraping ${products.length} products\n`);
     
-    res.json({ 
-      products
+    // Check if any products need manual entry or IKEA components
+    const needsManualEntry = products.some(p => p.manualEntryRequired);
+    const needsIkeaComponents = products.some(p => p.ikeaComponentsRequired);
+    
+    console.log(`📊 Manual entry check: ${needsManualEntry ? 'YES' : 'NO'}`);
+    console.log(`📊 IKEA components check: ${needsIkeaComponents ? 'YES' : 'NO'}`);
+    
+    res.json({
+      success: true,
+      products: products,
+      needsManualEntry,
+      needsIkeaComponents,
+      message: `Successfully processed ${products.length} products`
     });
     
   } catch (error) {

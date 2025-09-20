@@ -330,10 +330,20 @@ class ZyteScraper {
       }
 
       console.log('   ✅ Zyte extraction successful!');
+      
+      // Mark as successful Zyte extraction
+      productData.scrapingMethod = 'zyte-success';
+      productData.manualEntryRequired = false;
+      productData.ikeaComponentsRequired = false;
+      
       return productData;
     }
 
     console.log('   ✅ Zyte parsing completed!');
+    
+    // If we get here, Zyte didn't provide complete data
+    productData.manualEntryRequired = true;
+    productData.scrapingMethod = 'zyte-incomplete';
 
     return productData;
   }
