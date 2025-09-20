@@ -145,7 +145,7 @@ class ZyteScraper {
           'Accept': 'application/json',
           'Accept-Encoding': 'gzip, deflate'
         },
-        timeout: 90000
+        timeout: 90000  // Increased to 90 seconds for complex pages
       };
       
       console.log('🚨 DEBUG: Exact axios config:', JSON.stringify(axiosConfig, null, 2));
