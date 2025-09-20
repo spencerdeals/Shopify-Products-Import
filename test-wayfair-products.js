@@ -1,4 +1,4 @@
-const { parseProduct } = require('./backend/gptParser');
+const { parseProduct } = require('./backend/boxEstimator');
 
 async function testWayfairProducts() {
   console.log('🧪 Testing Wayfair Products Against Known BOL Data');

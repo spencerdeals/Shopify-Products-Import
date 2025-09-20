@@ -1,4 +1,4 @@
-// gptParser.js
+// boxEstimator.js
 // Trimmed tokens + multi-source fetch + richer fields + package dims support.
 
 const axios = require('axios');

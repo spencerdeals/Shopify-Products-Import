@@ -359,6 +359,24 @@ class ZyteScraper {
           }
         }
       });
+      
+      // If we found a valid price in the loop above, return it
+      let foundPrice = null;
+      elements.each((i, el) => {
+        if (foundPrice) return false; // Break if we already found a price
+        const priceText = $(el).text().trim();
+        const priceMatch = priceText.match(/\$?(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)/);
+        if (priceMatch) {
+          const price = parseFloat(priceMatch[1].replace(/,/g, ''));
+          if (price >= 50 && price <= 10000) {
+            foundPrice = price;
+          }
+        }
+      });
+      
+      if (foundPrice) {
+        return foundPrice;
+      }
     }
     
     // Fallback: Search for price patterns in raw HTML

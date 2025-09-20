@@ -186,7 +186,7 @@ class AdaptiveScraper {
   async recordScrapingAttempt(url, retailer, success, extractedData, failureReasons = []) {
     await this.initialize();
     
-    const retailerKey = retailer.toLowerCase().replace(/\s+/g, ' ');
+    const retailerKey = retailer.toLowerCase().replace(/\s+/g, ' ').trim();
     
     if (!this.config.retailers[retailerKey]) {
       this.config.retailers[retailerKey] = {
@@ -251,7 +251,7 @@ class AdaptiveScraper {
 
   // Get optimized selectors for a retailer
   getSelectorsForRetailer(retailer) {
-    const retailerKey = retailer.toLowerCase().replace(/\s+/g, ' ');
+    const retailerKey = retailer.toLowerCase().replace(/\s+/g, ' ').trim();
     const config = this.config?.retailers[retailerKey];
     
     if (!config) {
