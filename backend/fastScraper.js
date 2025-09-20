@@ -364,7 +364,7 @@ function calculateShippingCost(dimensions, weight, price) {
   const handlingFee = 15;
   console.log(`   📋 HANDLING FEE: $${handlingFee}`);
   
-  
+      const requestPayload = {
       // SACRED BINGO MOMENT CONFIGURATION - DO NOT CHANGE!
       const requestPayload = {
         url: url,
@@ -388,18 +388,26 @@ function calculateShippingCost(dimensions, weight, price) {
         },
         timeout: 90000
       });
-// GPT Enhancement Function - SAFE post-processor for Zyte data
-async function enhanceProductDataWithGPT(zyteData, url, retailer) {
-  if (!process.env.OPENAI_API_KEY) {
-    return zyteData; // No enhancement available
-  }
-  
-  const OpenAI = require('openai');
-  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  
-  try {
-    const prompt = `Analyze this product data and enhance ONLY the variant and dimensions. Return JSON with enhanced fields:
 
+      console.log('✅ Zyte request completed successfully');
+      console.log('📊 Response status:', response.status);
+      
+      if (!response.data) {
+        throw new Error('No data received from Zyte API');
+      }
+      
+      // Parse the Zyte response using automatic extraction data
+      const productData = this.parseZyteResponse(response.data, url, retailer);
+      
+      console.log('📦 Zyte extraction results:', {
+        hasName: !!productData.name,
+        hasPrice: !!productData.price,
+        hasImage: !!productData.image,
+        hasDimensions: !!productData.dimensions,
+        hasWeight: !!productData.weight,
+        hasVariant: !!productData.variant,
+        confidence: productData.confidence
+      });
 Product: "${zyteData.name}"
 Category: "${zyteData.category}"
 Current Variant: "${zyteData.variant || 'none'}"
