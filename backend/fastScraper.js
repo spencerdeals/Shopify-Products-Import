@@ -354,7 +354,7 @@ function calculateShippingCost(dimensions, weight, price) {
   console.log(`   📊   ${dimensions.length} × ${dimensions.width} × ${dimensions.height} = ${cubicInches.toFixed(0)} cubic inches`);
   console.log(`   📊   ${cubicInches.toFixed(0)} ÷ 1728 = ${cubicFeet.toFixed(3)} cubic feet`);
   
-  // Base rate: $8 per cubic foot
+  // Base rate: $8 per cubic foot, minimum $15
   const baseCost = Math.max(15, cubicFeet * SHIPPING_RATE_PER_CUBIC_FOOT);
   console.log(`   💰 BASE COST CALCULATION:`);
   console.log(`   💰   ${cubicFeet.toFixed(3)} × $${SHIPPING_RATE_PER_CUBIC_FOOT} = $${(cubicFeet * SHIPPING_RATE_PER_CUBIC_FOOT).toFixed(2)}`);
@@ -364,41 +364,30 @@ function calculateShippingCost(dimensions, weight, price) {
   const handlingFee = 15;
   console.log(`   📋 HANDLING FEE: $${handlingFee}`);
   
-  // Calculate base shipping cost
-  const baseShippingCost = baseCost + handlingFee;
   
-  // Calculate total landed cost before margin
-  const dutyAmount = price * 0.265;
-  const deliveryFee = 25;
-  const landedCostBeforeMargin = price + dutyAmount + baseShippingCost + deliveryFee;
-  
-  // Calculate 20% margin on total landed cost
-  const margin = landedCostBeforeMargin * 0.20;
-  console.log(`   🎯 MARGIN CALCULATION (20% of total landed cost):`);
-  console.log(`   🎯   Product: $${price.toFixed(2)}`);
-  console.log(`   🎯   Duty (26.5%): $${dutyAmount.toFixed(2)}`);
-  console.log(`   🎯   Base Shipping: $${baseShippingCost.toFixed(2)}`);
-  console.log(`   🎯   Delivery: $${deliveryFee.toFixed(2)}`);
-  console.log(`   🎯   Landed Cost Before Margin: $${landedCostBeforeMargin.toFixed(2)}`);
-  console.log(`   🎯   20% Margin: $${landedCostBeforeMargin.toFixed(2)} × 0.20 = $${margin.toFixed(2)}`);
-  
-  // Add margin to shipping cost (margin is hidden in shipping)
-  const finalShippingCost = baseShippingCost + margin;
-  
-  console.log(`   💰 FINAL SHIPPING COST:`);
-  console.log(`   💰   Base Shipping: $${baseShippingCost.toFixed(2)}`);
-  console.log(`   💰   + Margin: $${margin.toFixed(2)}`);
-  console.log(`   💰   = Final Shipping: $${finalShippingCost.toFixed(2)}`);
-  
-  // IKEA specific debugging
-  if (dimensions.length < 30 && dimensions.width < 30 && dimensions.height < 30) {
-    console.log(`   🚨 SUSPICIOUS: All dimensions under 30" - this might be packaging for one component!`);
-    console.log(`   🚨 For furniture, expected dimensions should be 60"+ for at least one dimension`);
-  }
-  
-  return Math.round(finalShippingCost);
-}
-
+      // SACRED BINGO MOMENT CONFIGURATION - DO NOT CHANGE!
+      const requestPayload = {
+        url: url,
+        browserHtml: true,
+        product: true,
+        productOptions: {
+          extractFrom: "browserHtml",
+          ai: true
+        }
+      };
+      
+      const response = await axios.post(this.baseURL, requestPayload, {
+        auth: {
+          username: this.apiKey,
+          password: ''
+        },
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Accept-Encoding': 'gzip, deflate'
+        },
+        timeout: 90000
+      });
 // GPT Enhancement Function - SAFE post-processor for Zyte data
 async function enhanceProductDataWithGPT(zyteData, url, retailer) {
   if (!process.env.OPENAI_API_KEY) {
