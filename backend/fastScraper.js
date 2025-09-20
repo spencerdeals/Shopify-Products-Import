@@ -1189,6 +1189,7 @@ Content: ${trimmedContent}`;
           price: productData.price,
           image: productData.image || 'https://placehold.co/400x400/7CB342/FFFFFF/png?text=SDL',
           category: category,
+          cubicFeet: product.cubicFeet || null,
           retailer: retailer,
           dimensions: productData.dimensions,
           weight: productData.weight,

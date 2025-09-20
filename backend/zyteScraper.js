@@ -299,6 +299,14 @@ class ZyteScraper {
       productData.dimensions = this.extractDimensions(product);
       if (productData.dimensions) {
         console.log('   📏 Dimensions extracted:', `${productData.dimensions.length}" × ${productData.dimensions.width}" × ${productData.dimensions.height}"`);
+        
+        // Calculate and display cubic feet
+        const cubicInches = productData.dimensions.length * productData.dimensions.width * productData.dimensions.height;
+        const cubicFeet = cubicInches / 1728;
+        console.log('   📦 Calculated cubic feet:', cubicFeet.toFixed(2), 'ft³');
+        
+        // Add cubic feet to the response
+        productData.cubicFeet = parseFloat(cubicFeet.toFixed(2));
       }
       
       // Extract weight if available
