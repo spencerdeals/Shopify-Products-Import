@@ -153,6 +153,32 @@ class BoxEstimator {
     return dataPoint;
   }
 
+  // Quick test with current data
+  testCurrentData() {
+    console.log('\n📊 CURRENT OVERCHARGE ANALYSIS:');
+    
+    // Sofa data
+    const sofaData = this.addDataPoint('sofa', 56.25, 67.5, [
+      { length: 43, width: 45, height: 20 },
+      { length: 45, width: 65, height: 20 }
+    ]);
+    
+    // Desk data  
+    const deskData = this.addDataPoint('desk', 2.59, 2.6, [
+      { length: 14.39, width: 49.4, height: 6.3 }
+    ]);
+    
+    // Analysis
+    const analysis = this.analyzeOverchargePattern([sofaData, deskData]);
+    console.log('\n🎯 PATTERN ANALYSIS:');
+    console.log(`   Total Items: ${analysis.totalItems}`);
+    console.log(`   Overcharged Items: ${analysis.overchargedItems}`);
+    console.log(`   Overcharge Rate: ${analysis.overchargeRate}`);
+    console.log(`   Total Potential Refund: ${analysis.totalPotentialRefund}`);
+    console.log(`   Pattern: ${analysis.pattern}`);
+    
+    return analysis;
+  }
   // Analyze all collected data points
   analyzeOverchargePattern(dataPoints) {
     if (!dataPoints || dataPoints.length === 0) return null;
