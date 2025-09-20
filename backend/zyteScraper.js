@@ -26,6 +26,12 @@ class ZyteScraper {
 
     const retailer = this.detectRetailer(url);
     console.log(`🕷️ Zyte scraping ${retailer}: ${url.substring(0, 60)}...`);
+    
+    try {
+      const strategies = [
+        {
+          name: "ai-extraction",
+          payload: {
             url: url,
             product: true,
             productOptions: {
@@ -36,7 +42,9 @@ class ZyteScraper {
         {
           name: "browser-request", 
           payload: {
-            }
+            url: url,
+            browserHtml: true,
+            product: true
           }
         },
         {
@@ -62,7 +70,8 @@ class ZyteScraper {
             },
             headers: {
               'Content-Type': 'application/json',
-              'Accept': 'application/json'
+              'Accept': 'application/json',
+              'Accept-Encoding': 'gzip, deflate'
             },
             timeout: 60000
           });
