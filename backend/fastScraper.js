@@ -1123,6 +1123,7 @@ Content: ${trimmedContent}`;
           inStock: gptData.inStock,
           variant: gptData.variant,
           allVariants: gptData.allVariants || []
+          allVariants: gptData.allVariants || []
         };
         
         // Fill in missing data with estimations
