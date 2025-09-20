@@ -155,11 +155,11 @@ async function parseWithGPT({ url, html, currencyFallback = DEFAULT_CURRENCY }){
   // Extract URL parameters for variant detection
   const urlParams = new URL(url).searchParams.toString();
   const system = `
-You are a precise e-commerce product extractor.
+You are a precise e-commerce product extractor that returns accurate json data.
 Return STRICT JSON with fields:
 - url (string)
 - name (string)
-- price (number, no currency symbols)
+- price (number, no currency symbols - look for the CURRENT selling price, not list/was prices)
 - currency (ISO code)
 - image (string URL)
 - brand (string, optional)
@@ -168,16 +168,29 @@ Return STRICT JSON with fields:
 - breadcrumbs (array of strings, optional)
 - package_dimensions (object with length,width,height in inches, optional)
 - package_weight_lbs (number, optional)
-- variant (string, optional - color, size, style)
+- variant (string, optional - SELECTED color/fabric, size, orientation from URL params or active elements)
 
+CRITICAL VARIANT DETECTION:
+- Look for SELECTED/ACTIVE options in HTML (aria-selected="true", .selected, .active)
+- Parse URL parameters like piid=1222175087,1261760516,1262971467 to understand selections
+- For Wayfair: Look for selected fabric color and orientation (Left/Right Hand Facing)
+- Match the product image to the SELECTED variant, not the default
+
+- Look for the main selling price (like $639.99 or $809.99)
+- Ignore struck-through "was" prices and financing options
 - If you see an explicit "Package Dimensions" or "Box Dimensions", include them.
-- For dimensions like "23.8"H height 85.4"W width 37"D depth", convert to: length=85.4, width=37, height=23.8
-- "image" should be the main product image URL if visible.
-- Extract variant info like color, size, or style if clearly selected.
-- Look for SKU numbers in the content.
+- "image" should match the SELECTED variant, not the default product image.
 `.trim();
 
-  const user = `URL: ${url}\nURL Parameters: ${urlParams}\nExtract product data from the provided HTML and visible text.\nPay special attention to SELECTED/ACTIVE variants and matching images.\nReturn ONLY valid JSON, no explanations.`;
+  const user = `URL: ${url}
+URL Parameters: ${urlParams}
+
+Extract product data and return json. Pay special attention to:
+1. SELECTED variant options (not defaults)
+2. Current selling price (not list prices)  
+3. Product image matching the selected variant
+
+Return ONLY valid json, no explanations.`;
   
   gptCallsUsed += 1;
   const response = await client.chat.completions.create({
