@@ -389,7 +389,8 @@ class ZyteScraper {
 
   // Comprehensive variant extraction
   extractAllVariants(product) {
-    const variants = [];
+    const selectedVariants = [];
+    const allVariants = [];
     const variantData = {};
     
     console.log('   🎨 Extracting variants from Zyte data...');
@@ -401,12 +402,19 @@ class ZyteScraper {
       product.variants.forEach((variant, index) => {
         console.log(`   🔍 Variant ${index + 1}:`, variant);
         
+        // Check if this variant is selected/active
+        const isSelected = variant.selected === true || variant.active === true || variant.current === true;
+        
         // Extract color
         if (variant.color) {
           const colorValue = this.cleanVariantValue(variant.color);
           if (colorValue) {
-            variants.push(`Color: ${colorValue}`);
-            variantData.color = colorValue;
+            const colorVariant = `Color: ${colorValue}`;
+            allVariants.push(colorVariant);
+            if (isSelected) {
+              selectedVariants.push(colorVariant);
+              variantData.color = colorValue;
+            }
           }
         }
         
@@ -414,8 +422,12 @@ class ZyteScraper {
         if (variant.size) {
           const sizeValue = this.cleanVariantValue(variant.size);
           if (sizeValue) {
-            variants.push(`Size: ${sizeValue}`);
-            variantData.size = sizeValue;
+            const sizeVariant = `Size: ${sizeValue}`;
+            allVariants.push(sizeVariant);
+            if (isSelected) {
+              selectedVariants.push(sizeVariant);
+              variantData.size = sizeValue;
+            }
           }
         }
         
@@ -423,8 +435,12 @@ class ZyteScraper {
         if (variant.style) {
           const styleValue = this.cleanVariantValue(variant.style);
           if (styleValue) {
-            variants.push(`Style: ${styleValue}`);
-            variantData.style = styleValue;
+            const styleVariant = `Style: ${styleValue}`;
+            allVariants.push(styleVariant);
+            if (isSelected) {
+              selectedVariants.push(styleVariant);
+              variantData.style = styleValue;
+            }
           }
         }
         
@@ -432,8 +448,12 @@ class ZyteScraper {
         if (variant.material) {
           const materialValue = this.cleanVariantValue(variant.material);
           if (materialValue) {
-            variants.push(`Material: ${materialValue}`);
-            variantData.material = materialValue;
+            const materialVariant = `Material: ${materialValue}`;
+            allVariants.push(materialVariant);
+            if (isSelected) {
+              selectedVariants.push(materialVariant);
+              variantData.material = materialValue;
+            }
           }
         }
       });
@@ -443,7 +463,9 @@ class ZyteScraper {
     if (product.color && !variantData.color) {
       const colorValue = this.cleanVariantValue(product.color);
       if (colorValue) {
-        variants.push(`Color: ${colorValue}`);
+        const colorVariant = `Color: ${colorValue}`;
+        selectedVariants.push(colorVariant);
+        allVariants.push(colorVariant);
         variantData.color = colorValue;
       }
     }
@@ -451,7 +473,9 @@ class ZyteScraper {
     if (product.size && !variantData.size) {
       const sizeValue = this.cleanVariantValue(product.size);
       if (sizeValue) {
-        variants.push(`Size: ${sizeValue}`);
+        const sizeVariant = `Size: ${sizeValue}`;
+        selectedVariants.push(sizeVariant);
+        allVariants.push(sizeVariant);
         variantData.size = sizeValue;
       }
     }
@@ -468,32 +492,45 @@ class ZyteScraper {
         
         // Map property names to variant types
         if (propName === 'orientation' && !variantData.orientation) {
-          variants.push(`Orientation: ${propValue}`);
+          const orientationVariant = `Orientation: ${propValue}`;
+          selectedVariants.push(orientationVariant);
+          allVariants.push(orientationVariant);
           variantData.orientation = propValue;
         } else if (propName === 'fabric' && !variantData.fabric) {
-          variants.push(`Fabric: ${propValue}`);
+          const fabricVariant = `Fabric: ${propValue}`;
+          selectedVariants.push(fabricVariant);
+          allVariants.push(fabricVariant);
           variantData.fabric = propValue;
         } else if (propName === 'finish' && !variantData.finish) {
-          variants.push(`Finish: ${propValue}`);
+          const finishVariant = `Finish: ${propValue}`;
+          selectedVariants.push(finishVariant);
+          allVariants.push(finishVariant);
           variantData.finish = propValue;
         } else if (propName === 'configuration' && !variantData.configuration) {
-          variants.push(`Configuration: ${propValue}`);
+          const configVariant = `Configuration: ${propValue}`;
+          selectedVariants.push(configVariant);
+          allVariants.push(configVariant);
           variantData.configuration = propValue;
         }
       });
     }
     
-    // Remove duplicates and clean up
-    const uniqueVariants = [...new Set(variants)];
+    // Remove duplicates and prioritize selected variants
+    const uniqueSelectedVariants = [...new Set(selectedVariants)];
+    const uniqueAllVariants = [...new Set(allVariants)];
     
-    if (uniqueVariants.length > 0) {
-      console.log('   ✅ Extracted variants:', uniqueVariants);
+    // Use selected variants if available, otherwise fall back to all variants
+    const finalVariants = uniqueSelectedVariants.length > 0 ? uniqueSelectedVariants : uniqueAllVariants;
+    
+    if (finalVariants.length > 0) {
+      console.log('   ✅ Selected variants:', uniqueSelectedVariants);
+      console.log('   📋 All variants:', uniqueAllVariants);
     } else {
       console.log('   ⚠️ No variants found');
     }
     
     return {
-      variants: uniqueVariants,
+      variants: finalVariants,
       variantData: variantData
     };
   }
