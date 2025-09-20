@@ -19,6 +19,8 @@ class ZyteScraper {
     }
   }
 
+  let lastGoodResult = null;
+
   async scrapeProduct(url) {
     if (!this.enabled) {
       throw new Error('Zyte not configured - missing API key');
@@ -30,47 +32,33 @@ class ZyteScraper {
     try {
       console.log('   📤 Sending request to Zyte API with automatic extraction...');
       
-      // Try multiple request strategies
+      // Try HTTP request first (faster, cheaper, often works better)
       const strategies = [
-        // Strategy 1: Exact playground format
         {
-          name: "playground-exact",
+          name: "http-request",
           payload: {
             url: url,
-            browserHtml: true,
             product: true,
             productOptions: {
-              extractFrom: "browserHtml",
-              ai: true
+              extractFrom: "httpResponseBody"
             }
           }
         },
-        // Strategy 2: Different user agent
         {
-          name: "different-ua",
+          name: "browser-request", 
           payload: {
             url: url,
-            browserHtml: true,
             product: true,
             productOptions: {
-              extractFrom: "browserHtml",
-              ai: true
-            },
-            httpResponseHeaders: true,
-            customHttpRequestHeaders: {
-              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+              extractFrom: "browserHtml"
             }
           }
         },
-        // Strategy 3: No browser HTML, just product
         {
-          name: "product-only",
+          name: "default-extraction",
           payload: {
             url: url,
-            product: true,
-            productOptions: {
-              ai: true
-            }
+            product: true
           }
         }
       ];
@@ -91,7 +79,7 @@ class ZyteScraper {
               'Accept': 'application/json',
               'Accept-Encoding': 'gzip, deflate'
             },
-            timeout: 90000
+            timeout: 60000
           });
           
           console.log(`   ✅ Strategy ${strategy.name} succeeded!`);
@@ -101,19 +89,29 @@ class ZyteScraper {
             const confidence = response.data.product.metadata?.probability;
             console.log(`   🎯 Confidence: ${confidence ? (confidence * 100).toFixed(1) + '%' : 'unknown'}`);
             
-            if (confidence && confidence > 0.5) {
+            if (confidence && confidence > 0.8) {
               console.log(`   🚀 High confidence result with strategy: ${strategy.name}`);
               return this.parseZyteResponse(response.data, url, retailer);
+            } else if (confidence && confidence > 0.3) {
+              console.log(`   ⚠️ Medium confidence result with strategy: ${strategy.name}, continuing...`);
+              // Store this result but try next strategy
+              lastGoodResult = { data: response.data, strategy: strategy.name };
             }
           }
           
-          console.log(`   ⚠️ Strategy ${strategy.name} low confidence, trying next...`);
+          console.log(`   ⚠️ Strategy ${strategy.name} low/no confidence, trying next...`);
           
         } catch (error) {
           console.log(`   ❌ Strategy ${strategy.name} failed: ${error.message}`);
           lastError = error;
           continue;
         }
+      }
+      
+      // If we have a medium confidence result, use it
+      if (lastGoodResult) {
+        console.log(`   📊 Using medium confidence result from ${lastGoodResult.strategy}`);
+        return this.parseZyteResponse(lastGoodResult.data, url, retailer);
       }
       
       throw lastError || new Error('All strategies failed');
@@ -204,10 +202,14 @@ class ZyteScraper {
   parseZyteResponse(data, url, retailer) {
     console.log('🔍 Parsing Zyte response with automatic extraction...');
     
-    // Debug what we received
-    console.log('📊 Response confidence:', data.product?.metadata?.probability);
-    console.log('📊 Has product data:', !!data.product);
-    console.log('📊 Browser HTML length:', data.browserHtml?.length || 0);
+    // Handle the exact playground response format
+    console.log('📊 Response structure:', {
+      hasProduct: !!data.product,
+      confidence: data.product?.metadata?.probability,
+      statusCode: data.statusCode,
+      hasBrowserHtml: !!data.browserHtml,
+      hasHttpResponseBody: !!data.httpResponseBody
+    });
     
     const productData = {
       name: null,
@@ -222,10 +224,12 @@ class ZyteScraper {
       confidence: null
     };
 
-    // Priority 1: Use Zyte's automatic product extraction
+    // Parse the product data (same format as playground)
     if (data.product) {
       const product = data.product;
-      console.log('   ✅ Using Zyte automatic extraction data with confidence:', product.metadata?.probability);
+      const confidence = product.metadata?.probability;
+      console.log('   ✅ Using Zyte automatic extraction data');
+      console.log('   🎯 Confidence:', confidence ? (confidence * 100).toFixed(1) + '%' : 'unknown');
       
       // Product name
       productData.name = product.name || null;
@@ -234,20 +238,16 @@ class ZyteScraper {
         console.log('   📝 Product name:', productData.name.substring(0, 50) + '...');
       }
 
-      // Price parsing - handle string or number
+      // Price - handle the exact format from playground
       if (product.price) {
-        if (typeof product.price === 'string') {
-          productData.price = parseFloat(product.price);
-        } else if (typeof product.price === 'number') {
-          productData.price = product.price;
-        }
+        productData.price = parseFloat(product.price);
         
         if (productData.price && productData.price > 0) {
           console.log('   💰 Price: $' + productData.price);
         }
       }
       
-      // Main image - handle both formats
+      // Images - handle mainImage and images array
       if (product.mainImage && product.mainImage.url) {
         productData.image = product.mainImage.url;
         console.log('   🖼️ Main Image: Found');
@@ -268,19 +268,16 @@ class ZyteScraper {
         const lastCrumb = product.breadcrumbs[product.breadcrumbs.length - 1];
         productData.category = typeof lastCrumb === 'object' ? lastCrumb.name : lastCrumb;
         console.log('   📂 Category:', productData.category);
-      } else if (product.breadcrumbs && typeof product.breadcrumbs === 'string') {
-        productData.category = product.breadcrumbs.split(' / ').pop() || null;
-        console.log('   📂 Category:', productData.category);
       }
 
-      // Extract dimensions from size field
+      // Extract dimensions from size field (like "Right-Arm Chaise – 126"W x 74.5"D")
       if (product.size) {
-        const sizeMatch = product.size.match(/(\d+(?:\.\d+)?)"W\s*x\s*(\d+(?:\.\d+)?)"D/);
+        const sizeMatch = product.size.match(/(\d+(?:\.\d+)?)"?W\s*x\s*(\d+(?:\.\d+)?)"?D/i);
         if (sizeMatch) {
           productData.dimensions = {
-            length: parseFloat(sizeMatch[1]), // Width becomes length
-            width: parseFloat(sizeMatch[2]),  // Depth becomes width  
-            height: 36 // Estimate height for sofa
+            length: parseFloat(sizeMatch[1]), 
+            width: parseFloat(sizeMatch[2]),  
+            height: 36 // Reasonable estimate for furniture
           };
           console.log('   📏 Dimensions from size:', `${productData.dimensions.length}" × ${productData.dimensions.width}" × ${productData.dimensions.height}"`);
         }
@@ -292,15 +289,15 @@ class ZyteScraper {
         console.log('   📦 In Stock:', productData.inStock);
       }
 
-      // Use size as variant info
-      if (product.size) {
-        productData.variant = product.size;
+      // SKU as variant info
+      if (product.sku) {
+        productData.variant = `SKU: ${product.sku}`;
         console.log('   🎨 Variant:', productData.variant);
       }
 
       // Confidence score
-      if (product.metadata && product.metadata.probability) {
-        productData.confidence = parseFloat(product.metadata.probability);
+      if (confidence) {
+        productData.confidence = confidence;
         console.log('   🎯 Confidence:', (productData.confidence * 100).toFixed(1) + '%');
       }
 
@@ -308,18 +305,9 @@ class ZyteScraper {
       return productData;
     }
 
-    // Fallback: Parse from HTML if automatic extraction failed  
-    if (!productData.name && data.browserHtml) {
-      console.log('   🔍 Falling back to HTML parsing...');
-      const htmlData = this.parseHTML(data.browserHtml, url, retailer);
-      
-      // Merge data - prefer automatic extraction but fill gaps with HTML parsing
-      productData.name = productData.name || htmlData.name;
-      productData.price = productData.price || htmlData.price;
-      productData.image = productData.image || htmlData.image;
-      productData.dimensions = productData.dimensions || htmlData.dimensions;
-      productData.weight = productData.weight || htmlData.weight;
-    }
+    console.log('   ❌ No product data found in response');
+    throw new Error('No product data extracted');
+  }
 
     return productData;
   }
