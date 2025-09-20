@@ -35,7 +35,7 @@ class BoxEstimator {
     const buffer = this.packagingBuffer[sizeCategory];
     
     // Add packaging buffer to each dimension
-    const boxDimensions = {
+    let boxDimensions = {
       length: length + buffer,
       width: width + buffer,
       height: height + buffer,
