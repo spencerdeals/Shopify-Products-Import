@@ -431,6 +431,13 @@ Examples:
     if (enhancement.salePrice && typeof enhancement.salePrice === 'number' && enhancement.salePrice > 0 && enhancement.salePrice < zyteData.price) {
       enhanced.price = enhancement.salePrice;
       console.log(`   💰 Enhanced price: $${zyteData.price} → $${enhancement.salePrice} (sale price)`);
+    } else if (enhancement.salePrice && typeof enhancement.salePrice === 'number' && enhancement.salePrice > 0) {
+      // Even if it's not lower, use it if it's a valid sale price and significantly different
+      const priceDifference = Math.abs(enhancement.salePrice - zyteData.price);
+      if (priceDifference > zyteData.price * 0.1) { // More than 10% difference
+        enhanced.price = enhancement.salePrice;
+        console.log(`   💰 Enhanced price: $${zyteData.price} → $${enhancement.salePrice} (corrected price)`);
+      }
     }
     
     // Enhance variants if GPT found better ones

@@ -260,6 +260,15 @@ class ZyteScraper {
           console.log('   💰 Final Price: $' + productData.price);
         }
       }
+
+      // If we have browser HTML, try to find a better sale price
+      if (data.browserHtml && productData.price) {
+        const htmlSalePrice = this.extractSalePriceFromHTML(data.browserHtml);
+        if (htmlSalePrice && htmlSalePrice < productData.price) {
+          console.log(`   💰 Found better sale price in HTML: $${htmlSalePrice} (was $${productData.price})`);
+          productData.price = htmlSalePrice;
+        }
+      }
       
       // Enhanced image extraction - prefer high-quality variant images
       if (product.images && product.images.length > 0) {
@@ -420,44 +429,102 @@ class ZyteScraper {
       '.BasePriceBlock .MoneyPrice',
       '.PriceBlock .MoneyPrice'
     ];
+
+    return this.extractSalePriceFromHTML(html);
+  }
+
+  extractSalePriceFromHTML(html) {
+    if (!html) return null;
+    
+    const $ = cheerio.load(html);
+    
+    // Enhanced Wayfair-specific sale price selectors
+    const salePriceSelectors = [
+      // Wayfair sale price selectors (highest priority)
+      '.SalePriceBlock .MoneyPrice',
+      '.CurrentPriceBlock .MoneyPrice',
+      '[data-testid="current-price"]',
+      '[data-testid="sale-price"]',
+      '.price-current',
+      '.sale-price',
+      '.price-now',
+      '.price-special',
+      // Look for prices in red or highlighted containers
+      '.price-red .MoneyPrice',
+      '.highlight-price .MoneyPrice',
+      '.special-price .MoneyPrice',
+      // Generic sale price patterns
+      '[class*="sale"] [class*="price"]',
+      '[class*="current"] [class*="price"]',
+      '[class*="now"] [class*="price"]'
+    ];
+    
+    const regularPriceSelectors = [
+      '.MoneyPrice',
+      '[data-testid="price"]',
+      '.BasePriceBlock .MoneyPrice',
+      '.PriceBlock .MoneyPrice',
+      '.price'
+    ];
     
     console.log('   🔍 Searching for price in HTML...');
     
-    let foundPrices = [];
-    
-    for (const selector of priceSelectors) {
+    // First, try to find sale prices
+    for (const selector of salePriceSelectors) {
       const elements = $(selector);
-      console.log(`   🔍 Found ${elements.length} elements for selector: ${selector}`);
+      console.log(`   🔍 Checking sale price selector: ${selector} (${elements.length} elements)`);
       
       elements.each((i, el) => {
         const priceText = $(el).text().trim();
-        console.log(`   💰 Price text found with ${selector}: "${priceText}"`);
+        console.log(`   💰 Sale price text found: "${priceText}"`);
         
-        // Extract price from text like "$349.99" or "349.99"
         const priceMatch = priceText.match(/\$?(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)/);
         if (priceMatch) {
           const price = parseFloat(priceMatch[1].replace(/,/g, ''));
-          // Filter for reasonable furniture prices
-          if (price >= 50 && price <= 10000) {
-            foundPrices.push({ price, selector, text: priceText });
-            console.log(`   ✅ Valid price found with ${selector}: $${price}`);
+          if (price >= 10 && price <= 10000) {
+            console.log(`   ✅ SALE PRICE FOUND: $${price} from ${selector}`);
+            return price;
           }
         }
       });
     }
     
-    // Return the first valid price found (sale prices are checked first)
+    // If no sale price found, look for regular prices
+    console.log('   ⚠️ No sale price found, checking regular prices...');
+    let foundPrices = [];
+    
+    for (const selector of regularPriceSelectors) {
+      const elements = $(selector);
+      console.log(`   🔍 Checking regular price selector: ${selector} (${elements.length} elements)`);
+      
+      elements.each((i, el) => {
+        const priceText = $(el).text().trim();
+        console.log(`   💰 Regular price text: "${priceText}"`);
+        
+        const priceMatch = priceText.match(/\$?(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)/);
+        if (priceMatch) {
+          const price = parseFloat(priceMatch[1].replace(/,/g, ''));
+          if (price >= 10 && price <= 10000) {
+            foundPrices.push({ price, selector, text: priceText });
+            console.log(`   ✅ Regular price found: $${price} from ${selector}`);
+          }
+        }
+      });
+    }
+    
+    // Return the first regular price found
     if (foundPrices.length > 0) {
       const bestPrice = foundPrices[0];
-      console.log(`   🎯 Using price $${bestPrice.price} from ${bestPrice.selector}`);
+      console.log(`   🎯 Using regular price $${bestPrice.price} from ${bestPrice.selector}`);
       return bestPrice.price;
     }
     
-    // Fallback: Search for price patterns in raw HTML
+    // Final fallback: Search for price patterns in raw HTML with sale priority
     const pricePatterns = [
-      // Look for sale price patterns first
-      /(?:sale|now|current|special)[\s\S]*?\$(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)/gi,
-      // Standard price patterns
+      // Sale price patterns (highest priority)
+      /(?:sale|now|current|special|save)[\s\S]{0,50}?\$(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)/gi,
+      /\$(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)[\s\S]{0,50}?(?:sale|now|current|special|save)/gi,
+      // Regular price patterns
       /\$(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)/g
     ];
     
@@ -466,33 +533,29 @@ class ZyteScraper {
       const validPrices = [];
       
       for (const match of matches) {
-        const priceIndex = match.length > 2 ? 1 : 1; // Handle capture groups
-        const price = parseFloat(match[priceIndex].replace(/,/g, ''));
-        if (price >= 50 && price <= 10000) {
+        const price = parseFloat(match[1].replace(/,/g, ''));
+        if (price >= 10 && price <= 10000) {
           validPrices.push(price);
         }
       }
       
       if (validPrices.length > 0) {
-        // For sale price patterns, return the first (likely sale price)
-        // For standard patterns, return the most common
-        if (pattern.source.includes('sale|now|current')) {
-          console.log(`   ✅ Sale price found in HTML: $${validPrices[0]}`);
+        if (pattern.source.includes('sale|now|current|special|save')) {
+          console.log(`   ✅ SALE PRICE found in HTML pattern: $${validPrices[0]}`);
           return validPrices[0];
         } else {
-          // Return the most common price (likely the current price)
           const priceFreq = {};
           validPrices.forEach(p => priceFreq[p] = (priceFreq[p] || 0) + 1);
           const mostCommonPrice = Object.keys(priceFreq).reduce((a, b) => 
             priceFreq[a] > priceFreq[b] ? a : b
           );
-          console.log(`   ✅ Most common price in HTML: $${mostCommonPrice}`);
+          console.log(`   ✅ Most common regular price in HTML: $${mostCommonPrice}`);
           return parseFloat(mostCommonPrice);
         }
       }
     }
     
-    console.log('   ❌ No valid price found in HTML');
+    console.log('   ❌ No valid price found in HTML at all');
     return null;
   }
 

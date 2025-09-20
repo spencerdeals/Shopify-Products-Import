@@ -130,25 +130,25 @@ async function smartFetchHtml(url) {
 function vendorPromptHints(vendor){
   switch (vendor) {
     case 'Wayfair':
-      return `For Wayfair: PRIORITIZE SALE PRICES - look for current/sale price (often in red or highlighted), ignore regular/list prices and per-month financing. Sale prices are usually more prominent and near "Add to Cart".`;
+      return `For Wayfair: CRITICAL - ONLY use SALE/CURRENT prices. Look for prices in red text, highlighted boxes, or marked as "sale", "current", "now". IGNORE regular prices, "was" prices, and financing options. The sale price is usually larger and more prominent near "Add to Cart".`;
     case 'Amazon':
-      return `For Amazon: PRIORITIZE SALE PRICES - look for current/deal price (often in red), ignore list prices (struck through) and subscription/per-month pricing.`;
+      return `For Amazon: CRITICAL - ONLY use SALE/DEAL prices. Look for prices in red, marked as "deal", "sale", or "current price". IGNORE struck-through list prices and subscription pricing.`;
     case 'Walmart':
-      return `For Walmart: PRIORITIZE SALE PRICES - look for current/now price (often highlighted), ignore was/list prices and per-month financing.`;
+      return `For Walmart: CRITICAL - ONLY use CURRENT/NOW prices. Look for highlighted prices marked as "now", "current", or "sale". IGNORE "was" prices and financing options.`;
     case 'Target':
-      return `For Target: PRIORITIZE SALE PRICES - look for current/sale price (often in red), ignore reg/was prices and membership pricing.`;
+      return `For Target: CRITICAL - ONLY use SALE/CURRENT prices. Look for red prices, "sale" prices, or "current" prices. IGNORE "reg" and "was" prices.`;
     case 'BestBuy':
-      return `For Best Buy: PRIORITIZE SALE PRICES - look for current/sale price, ignore regular prices and membership discounts.`;
+      return `For Best Buy: CRITICAL - ONLY use SALE/CURRENT prices. Look for highlighted sale prices. IGNORE regular prices and membership pricing.`;
     case 'HomeDepot':
-      return `For Home Depot: PRIORITIZE SALE PRICES - look for current/special price, ignore regular prices and bulk pricing.`;
+      return `For Home Depot: CRITICAL - ONLY use SALE/SPECIAL prices. Look for highlighted special prices. IGNORE regular prices and bulk pricing.`;
     case 'CrateAndBarrel':
-      return `For Crate & Barrel: PRIORITIZE SALE PRICES - look for current/sale price (often highlighted), ignore regular prices and financing options. Extract dimensions from format like "23.8"H height 85.4"W width 37"D depth".`;
+      return `For Crate & Barrel: CRITICAL - ONLY use SALE/CURRENT prices. Look for highlighted sale prices. IGNORE regular prices and financing. Extract dimensions from format like "23.8"H height 85.4"W width 37"D depth".`;
     case 'IKEA':
-      return `For IKEA: PRIORITIZE SALE PRICES - look for current/member price, ignore regular prices and assembly service costs.`;
+      return `For IKEA: CRITICAL - ONLY use MEMBER/SALE prices. Look for member prices or sale prices. IGNORE regular prices and service costs.`;
     case 'LunaFurniture':
-      return `For Luna Furniture: PRIORITIZE SALE PRICES - look for current/sale price, ignore compare-at/was prices.`;
+      return `For Luna Furniture: CRITICAL - ONLY use SALE/CURRENT prices. Look for sale prices. IGNORE "compare at" and "was" prices.`;
     default:
-      return `PRIORITIZE SALE PRICES - look for current/sale/now prices (often highlighted in red or bold), ignore regular/list/was prices (often struck through) and financing options.`;
+      return `CRITICAL - ONLY use SALE/CURRENT prices. Look for prices marked as "sale", "now", "current", or highlighted in red/bold. COMPLETELY IGNORE regular/list/was prices and financing options.`;
   }
 }
 
@@ -184,9 +184,11 @@ Return STRICT JSON format with fields:
 Rules:
 - ${vendorPromptHints(vendor)}
 - If currency is unclear, use "${currencyFallback}".
-- "price" MUST be the SALE/CURRENT price customers actually pay, NOT the regular/list price.
-- Look for prices that are highlighted, in red, or marked as "sale", "now", "current".
-- IGNORE struck-through prices, "was" prices, "reg" prices, and financing options.
+- CRITICAL: "price" field MUST ONLY contain the SALE/CURRENT price that customers actually pay.
+- Look ONLY for prices that are highlighted, in red, bold, or explicitly marked as "sale", "now", "current", "special".
+- COMPLETELY IGNORE and DO NOT USE: struck-through prices, "was" prices, "reg" prices, "list" prices, "MSRP", financing options, or any crossed-out prices.
+- If you see multiple prices, ALWAYS choose the sale/current price over the regular price.
+- The sale price is usually more prominent, larger, or in a different color (often red).
 - If you see an explicit "Package Dimensions" or "Box Dimensions", include them.
 - For dimensions like "23.8"H height 85.4"W width 37"D depth", convert to: length=85.4, width=37, height=23.8
 - "image" should be the main product image URL if visible.
