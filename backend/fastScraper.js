@@ -759,43 +759,60 @@ async function scrapeProduct(url) {
   
   let productData = null;
   let scrapingMethod = 'none';
+  let confidence = null;
+  
+  console.log(`\n🔍 Scraping: ${url}`);
+  console.log(`   🏪 Retailer: ${retailer}`);
+  
+  // STEP 1: Try Zyte API first
+  if (USE_ZYTE) {
+    try {
+      console.log('   🕷️ Trying Zyte API...');
+      const zyteResult = await zyteScraper.scrapeProduct(url);
+      
+      if (zyteResult && zyteResult.name && zyteResult.price) {
+        productData = zyteResult;
+        scrapingMethod = 'zyte';
+        confidence = zyteResult.confidence || null;
+        console.log(`   ✅ Zyte success! Product: "${zyteResult.name.substring(0, 50)}..." Price: $${zyteResult.price}`);
+        
         // Skip GPT enhancement if we already have good Zyte data
-        if (product.confidence && product.confidence > 0.95 && product.allVariants && product.allVariants.length > 2) {
+        if (productData.confidence && productData.confidence > 0.95 && productData.allVariants && productData.allVariants.length > 2) {
           console.log('   ✅ Skipping GPT enhancement - Zyte data is excellent');
         } else {
           const gptResult = await parseWithGPT({ 
-            url: product.url, 
-            html: `Product: ${product.name}\nPrice: $${product.price}\nVariants: ${product.allVariants?.join(', ') || product.variant || 'None'}\nImage: ${product.image || 'None'}`, 
+            url: productData.url, 
+            html: `Product: ${productData.name}\nPrice: $${productData.price}\nVariants: ${productData.allVariants?.join(', ') || productData.variant || 'None'}\nImage: ${productData.image || 'None'}`, 
             currencyFallback: 'USD' 
           });
           
           // Only use GPT enhancements if they're significantly different or better
-          if (gptResult.allVariants && gptResult.allVariants.length > (product.allVariants?.length || 0)) {
-            product.allVariants = gptResult.allVariants;
-            product.variant = gptResult.variant;
+          if (gptResult.allVariants && gptResult.allVariants.length > (productData.allVariants?.length || 0)) {
+            productData.allVariants = gptResult.allVariants;
+            productData.variant = gptResult.variant;
             console.log('   🎨 Enhanced variants:', gptResult.allVariants);
           }
           
-          if (gptResult.variant && gptResult.variant.length > (product.variant?.length || 0)) {
+          if (gptResult.variant && gptResult.variant.length > (productData.variant?.length || 0)) {
             const cleanVariant = gptResult.variant.replace(/[|•]/g, ' ').replace(/\s+/g, ' ').trim();
-            product.variant = cleanVariant;
-            console.log(`   🎨 Enhanced variant: "${product.variant}" → "${cleanVariant}"`);
+            productData.variant = cleanVariant;
+            console.log(`   🎨 Enhanced variant: "${productData.variant}" → "${cleanVariant}"`);
           }
           
-          if (gptResult.image && gptResult.image !== product.image && gptResult.image.startsWith('http')) {
-            product.image = gptResult.image;
+          if (gptResult.image && gptResult.image !== productData.image && gptResult.image.startsWith('http')) {
+            productData.image = gptResult.image;
             console.log('   🖼️ Enhanced image URL');
           }
           
           // Only use GPT price if it's significantly different (>10% difference)
-          if (gptResult.price && Math.abs(gptResult.price - product.price) > (product.price * 0.1)) {
-            console.log(`   💰 GPT found different price: $${gptResult.price} vs $${product.price}`);
-            product.price = gptResult.price;
+          if (gptResult.price && Math.abs(gptResult.price - productData.price) > (productData.price * 0.1)) {
+            console.log(`   💰 GPT found different price: $${gptResult.price} vs $${productData.price}`);
+            productData.price = gptResult.price;
           }
           
-          if (gptResult.dimensions && !product.dimensions) {
-            product.dimensions = gptResult.dimensions;
-            console.log('   📦 Enhanced dimensions:', (gptResult.dimensions.length * gptResult.dimensions.width * gptResult.dimensions.height / 1728).toFixed(1), 'ft³ vs', (product.dimensions?.length * product.dimensions?.width * product.dimensions?.height / 1728 || 0).toFixed(1), 'ft³');
+          if (gptResult.dimensions && !productData.dimensions) {
+            productData.dimensions = gptResult.dimensions;
+            console.log('   📦 Enhanced dimensions:', (gptResult.dimensions.length * gptResult.dimensions.width * gptResult.dimensions.height / 1728).toFixed(1), 'ft³ vs', (productData.dimensions?.length * productData.dimensions?.width * productData.dimensions?.height / 1728 || 0).toFixed(1), 'ft³');
           }
         }
         productData = await enhanceProductDataWithGPT(productData, url, retailer);
@@ -932,8 +949,8 @@ async function scrapeProduct(url) {
         estimatedBoxes: ikeaEstimate.boxCount,
         confidence: ikeaEstimate.confidence,
         singleBoxVolume: ikeaEstimate.singleBoxVolume,
-        variant: null,
-        allVariants: []
+        totalVolume: ikeaEstimate.totalVolume,
+        estimationMethod: ikeaEstimate.estimationMethod
       };
       
       scrapingMethod = scrapingMethod + '+ikea-multibox';
