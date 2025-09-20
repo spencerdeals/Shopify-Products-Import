@@ -130,25 +130,25 @@ async function smartFetchHtml(url) {
 function vendorPromptHints(vendor){
   switch (vendor) {
     case 'Wayfair':
-      return `For Wayfair: prefer the current price near the main buy button; ignore per-month and struck list prices.`;
+      return `For Wayfair: prefer the current price near the main buy button; ignore per-month and struck list prices. Look for shipping/package dimensions if available.`;
     case 'Amazon':
-      return `For Amazon: prefer the price near "Add to Cart"; ignore subscription/per-month and struck list prices.`;
+      return `For Amazon: prefer the price near "Add to Cart"; ignore subscription/per-month and struck list prices. Check for shipping weight/dimensions in product details.`;
     case 'Walmart':
-      return `For Walmart: prefer the main price above "Add to cart"; ignore fees and per-month financing.`;
+      return `For Walmart: prefer the main price above "Add to cart"; ignore fees and per-month financing. Look for shipping dimensions if listed.`;
     case 'Target':
-      return `For Target: look for the main product price, ignore membership prices and financing.`;
+      return `For Target: look for the main product price, ignore membership prices and financing. Check product specifications for shipping info.`;
     case 'BestBuy':
-      return `For Best Buy: prefer the main price display, ignore membership discounts and financing.`;
+      return `For Best Buy: prefer the main price display, ignore membership discounts and financing. Electronics often have shipping dimensions listed.`;
     case 'HomeDepot':
-      return `For Home Depot: look for the main selling price, ignore bulk pricing and special offers.`;
+      return `For Home Depot: look for the main selling price, ignore bulk pricing and special offers. Appliances may have shipping specifications.`;
     case 'CrateAndBarrel':
-      return `For Crate & Barrel: look for the main product price (like $2,899.00), ignore financing options and membership prices. Extract dimensions from format like "23.8"H height 85.4"W width 37"D depth".`;
+      return `For Crate & Barrel: look for the main product price (like $2,899.00), ignore financing options and membership prices. Extract dimensions from format like "23.8"H height 85.4"W width 37"D depth". Look for shipping/package dimensions if available.`;
     case 'IKEA':
-      return `For IKEA: prefer the main price display, ignore assembly service costs.`;
+      return `For IKEA: prefer the main price display, ignore assembly service costs. IKEA often lists package dimensions and weight.`;
     case 'LunaFurniture':
-      return `For Luna Furniture: look for the current selling price, ignore compare-at prices.`;
+      return `For Luna Furniture: look for the current selling price, ignore compare-at prices. Check for shipping specifications.`;
     default:
-      return `Prefer the most prominent product price near the buy action; ignore per-month financing and struck-through prices.`;
+      return `Prefer the most prominent product price near the buy action; ignore per-month financing and struck-through prices. Look for any shipping/package dimension information.`;
   }
 }
 
