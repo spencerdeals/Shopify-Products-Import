@@ -6,24 +6,26 @@ class OrderTracker {
   }
 
   static async create() {
-    return new Function('return import("@libsql/client")')()
-      .then(({ createClient }) => {
-        // Create the database client
-        const dbClient = createClient({
-          url: process.env.TURSO_DATABASE_URL || 'file:orders.db',
-          authToken: process.env.TURSO_AUTH_TOKEN
-        });
-        
-        // Create the OrderTracker instance
-        const tracker = new OrderTracker(dbClient);
-        
-        // Initialize the database
-        return tracker.initDatabase().then(() => tracker);
-      })
-      .catch(error => {
-        console.error('❌ Failed to create OrderTracker:', error);
-        throw error;
+    try {
+      const { createClient } = await new Function('return import("@libsql/client")')();
+      
+      // Create the database client
+      const dbClient = createClient({
+        url: process.env.TURSO_DATABASE_URL || 'file:orders.db',
+        authToken: process.env.TURSO_AUTH_TOKEN
       });
+      
+      // Create the OrderTracker instance
+      const tracker = new OrderTracker(dbClient);
+      
+      // Initialize the database
+      await tracker.initDatabase();
+      
+      return tracker;
+    } catch (error) {
+      console.error('❌ Failed to create OrderTracker:', error);
+      throw error;
+    }
   }
 
   async initDatabase() {
