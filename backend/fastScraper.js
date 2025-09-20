@@ -759,40 +759,45 @@ async function scrapeProduct(url) {
   
   let productData = null;
   let scrapingMethod = 'none';
-  let confidence = null;
-  
-  console.log(`\n📦 Processing: ${url}`);
-  console.log(`   Retailer: ${retailer}`);
-  
-  // STEP 1: Try Zyte API first
-  try {
-    console.log('   🕷️ Using Zyte API...');
-    productData = await zyteScraper.scrapeProduct(url);
-    confidence = productData?.confidence || null;
-    scrapingMethod = 'zyte';
-    
-    if (confidence !== null) {
-      console.log(`   📊 Zyte confidence: ${(confidence * 100).toFixed(1)}%`);
-    }
-    
-    // Check if we got essential data - name AND price are required
-    const hasEssentialData = productData && productData.name && productData.price;
-    
-    // Only fail if we have NO data at all
-    if (!hasEssentialData) {
-      console.log(`   ⚠️ Missing essential data (name: ${!!productData?.name}, price: ${!!productData?.price}), trying GPT fallback...`);
-      throw new Error(`Zyte failed: missing essential data`);
-    }
-    
-    console.log('   ✅ Zyte API success!');
-    if (confidence !== null) {
-      console.log(`   🎯 Confidence: ${(confidence * 100).toFixed(1)}%`);
-    }
-    
-    // STEP 1.5: GPT Enhancement (SAFE - only enhances, never replaces)
-    if (productData && USE_GPT_FALLBACK) {
-      try {
-        console.log('   🧠 Enhancing with GPT intelligence...');
+        // Skip GPT enhancement if we already have good Zyte data
+        if (product.confidence && product.confidence > 0.95 && product.allVariants && product.allVariants.length > 2) {
+          console.log('   ✅ Skipping GPT enhancement - Zyte data is excellent');
+        } else {
+          const gptResult = await parseWithGPT({ 
+            url: product.url, 
+            html: `Product: ${product.name}\nPrice: $${product.price}\nVariants: ${product.allVariants?.join(', ') || product.variant || 'None'}\nImage: ${product.image || 'None'}`, 
+            currencyFallback: 'USD' 
+          });
+          
+          // Only use GPT enhancements if they're significantly different or better
+          if (gptResult.allVariants && gptResult.allVariants.length > (product.allVariants?.length || 0)) {
+            product.allVariants = gptResult.allVariants;
+            product.variant = gptResult.variant;
+            console.log('   🎨 Enhanced variants:', gptResult.allVariants);
+          }
+          
+          if (gptResult.variant && gptResult.variant.length > (product.variant?.length || 0)) {
+            const cleanVariant = gptResult.variant.replace(/[|•]/g, ' ').replace(/\s+/g, ' ').trim();
+            product.variant = cleanVariant;
+            console.log(`   🎨 Enhanced variant: "${product.variant}" → "${cleanVariant}"`);
+          }
+          
+          if (gptResult.image && gptResult.image !== product.image && gptResult.image.startsWith('http')) {
+            product.image = gptResult.image;
+            console.log('   🖼️ Enhanced image URL');
+          }
+          
+          // Only use GPT price if it's significantly different (>10% difference)
+          if (gptResult.price && Math.abs(gptResult.price - product.price) > (product.price * 0.1)) {
+            console.log(`   💰 GPT found different price: $${gptResult.price} vs $${product.price}`);
+            product.price = gptResult.price;
+          }
+          
+          if (gptResult.dimensions && !product.dimensions) {
+            product.dimensions = gptResult.dimensions;
+            console.log('   📦 Enhanced dimensions:', (gptResult.dimensions.length * gptResult.dimensions.width * gptResult.dimensions.height / 1728).toFixed(1), 'ft³ vs', (product.dimensions?.length * product.dimensions?.width * product.dimensions?.height / 1728 || 0).toFixed(1), 'ft³');
+          }
+        }
         productData = await enhanceProductDataWithGPT(productData, url, retailer);
         console.log('   ✅ GPT enhancement successful');
       } catch (gptError) {

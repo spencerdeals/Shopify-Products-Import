@@ -207,6 +207,7 @@ class ZyteScraper {
     console.log('📊 Response confidence:', data.product?.metadata?.probability);
     console.log('📊 Has product data:', !!data.product);
     console.log('📊 Browser HTML length:', data.browserHtml?.length || 0);
+    console.log('📊 Raw Zyte product data:', JSON.stringify(data.product, null, 2));
     
     const productData = {
       name: null,
@@ -234,67 +235,28 @@ class ZyteScraper {
         console.log('   📝 Product name:', productData.name.substring(0, 50) + '...');
       }
 
-      // Enhanced price parsing - prioritize sale prices
+      // Enhanced price parsing - use the main price from Zyte (it's already the correct sale price)
       if (product.price) {
-        let finalPrice = null;
-        
-        // Check if Zyte provides multiple price options
-        if (product.salePrice || product.currentPrice || product.specialPrice) {
-          // Prioritize sale/current/special prices
-          finalPrice = product.salePrice || product.currentPrice || product.specialPrice;
-          console.log('   💰 Found sale/current price:', finalPrice);
-        } else if (product.price) {
-          // Use main price as fallback
-          finalPrice = product.price;
-          console.log('   💰 Using main price:', finalPrice);
-        }
-        
-        // Convert to number if needed
-        if (typeof finalPrice === 'string') {
-          productData.price = parseFloat(finalPrice);
-        } else if (typeof finalPrice === 'number') {
-          productData.price = finalPrice;
+        // Zyte already gives us the correct current/sale price
+        if (typeof product.price === 'string') {
+          productData.price = parseFloat(product.price);
+        } else if (typeof product.price === 'number') {
+          productData.price = product.price;
         }
         
         if (productData.price && productData.price > 0) {
-          console.log('   💰 Final Price: $' + productData.price);
+          console.log('   💰 Zyte Price (current/sale): $' + productData.price);
         }
       }
 
-      // If we have browser HTML, try to find a better sale price
-      if (data.browserHtml && productData.price) {
-        const htmlSalePrice = this.extractSalePriceFromHTML(data.browserHtml);
-        if (htmlSalePrice && htmlSalePrice < productData.price) {
-          console.log(`   💰 Found better sale price in HTML: $${htmlSalePrice} (was $${productData.price})`);
-          productData.price = htmlSalePrice;
-        }
-      }
-      
       // Enhanced image extraction - prefer high-quality variant images
       if (product.images && product.images.length > 0) {
-        // Look for the largest/highest quality image
-        let bestImage = null;
-        let maxSize = 0;
-        
-        product.images.forEach(img => {
-          const imageUrl = typeof img === 'object' ? img.url : img;
-          if (imageUrl && imageUrl.startsWith('http')) {
-            // Try to detect image size from URL patterns
-            const sizeMatch = imageUrl.match(/(\d+)x(\d+)/);
-            if (sizeMatch) {
-              const size = parseInt(sizeMatch[1]) * parseInt(sizeMatch[2]);
-              if (size > maxSize) {
-                maxSize = size;
-                bestImage = imageUrl;
-              }
-            } else if (!bestImage) {
-              bestImage = imageUrl; // Fallback to first valid image
-            }
-          }
-        });
-        
-        productData.image = bestImage;
-        console.log('   🖼️ Best Image: Found (quality optimized)');
+        // Use the main image (highest quality) from Zyte
+        const mainImageUrl = product.mainImage?.url || product.images[0]?.url || product.images[0];
+        if (mainImageUrl && mainImageUrl.startsWith('http')) {
+          productData.image = mainImageUrl;
+          console.log('   🖼️ Main Image: Found');
+        }
       } else if (product.mainImage && product.mainImage.url) {
         productData.image = product.mainImage.url;
         console.log('   🖼️ Main Image: Found');
@@ -316,47 +278,72 @@ class ZyteScraper {
         console.log('   📂 Category:', productData.category);
       }
 
-      // Enhanced variant extraction - look for multiple variant types
+      // Enhanced variant extraction using Zyte's rich variant data
       const variants = [];
       
-      // Extract size/dimensions as variant
-      if (product.size) {
-        variants.push(`Size: ${product.size}`);
-        const sizeMatch = product.size.match(/(\d+(?:\.\d+)?)"W\s*x\s*(\d+(?:\.\d+)?)"D/);
-        if (sizeMatch) {
-          productData.dimensions = {
-            length: parseFloat(sizeMatch[1]), // Width becomes length
-            width: parseFloat(sizeMatch[2]),  // Depth becomes width  
-            height: 36 // Estimate height for sofa
-          };
-          console.log('   📏 Dimensions from size:', `${productData.dimensions.length}" × ${productData.dimensions.width}" × ${productData.dimensions.height}"`);
+      // Use Zyte's variants array if available (this is the gold standard)
+      if (product.variants && Array.isArray(product.variants)) {
+        console.log('   🎯 Using Zyte variants array:', product.variants.length, 'variants');
+        
+        product.variants.forEach(variant => {
+          if (variant.color) {
+            // Clean up the color variant
+            const colorValue = variant.color.replace(' selected', '').trim();
+            if (colorValue && !variants.some(v => v.includes(colorValue))) {
+              variants.push(`Color: ${colorValue}`);
+            }
+          }
+          if (variant.size) {
+            // Clean up the size variant
+            const sizeValue = variant.size.replace('Size: ', '').trim();
+            if (sizeValue && !variants.some(v => v.includes(sizeValue))) {
+              variants.push(`Size: ${sizeValue}`);
+            }
+          }
+        });
+      }
+      
+      // Add orientation from additionalProperties
+      if (product.additionalProperties && Array.isArray(product.additionalProperties)) {
+        const orientationProp = product.additionalProperties.find(prop => prop.name === 'orientation');
+        if (orientationProp && orientationProp.value) {
+          variants.push(`Orientation: ${orientationProp.value}`);
+          console.log('   🧭 Orientation variant:', orientationProp.value);
+        }
+        
+        const fabricProp = product.additionalProperties.find(prop => prop.name === 'fabric');
+        if (fabricProp && fabricProp.value && !variants.some(v => v.includes(fabricProp.value))) {
+          variants.push(`Fabric: ${fabricProp.value}`);
+          console.log('   🧵 Fabric variant:', fabricProp.value);
         }
       }
       
-      // Extract color variants
-      if (product.color) {
-        variants.push(`Color: ${product.color}`);
-        console.log('   🎨 Color variant:', product.color);
+      // Fallback to individual fields if variants array not available
+      if (variants.length === 0) {
+        if (product.color) {
+          const colorValue = product.color.replace(' selected', '').trim();
+          variants.push(`Color: ${colorValue}`);
+          console.log('   🎨 Color variant:', colorValue);
+        }
+        
+        if (product.size) {
+          variants.push(`Size: ${product.size}`);
+          console.log('   📏 Size variant:', product.size);
+        }
       }
       
-      // Extract style/material variants
-      if (product.style) {
-        variants.push(`Style: ${product.style}`);
-        console.log('   ✨ Style variant:', product.style);
-      }
-      
-      if (product.material) {
-        variants.push(`Material: ${product.material}`);
-        console.log('   🪵 Material variant:', product.material);
-      }
-      
-      // Look for variants in product features or options
-      if (product.features && Array.isArray(product.features)) {
-        product.features.forEach(feature => {
-          if (typeof feature === 'string' && feature.length < 50) {
-            variants.push(feature);
-          }
-        });
+      // Extract dimensions from size if available
+      const sizeInfo = product.size || product.additionalProperties?.find(p => p.name === 'size')?.value;
+      if (sizeInfo) {
+        const sizeMatch = sizeInfo.match(/(\d+(?:\.\d+)?)"?\s*H\s*x\s*(\d+(?:\.\d+)?)"?\s*W\s*x\s*(\d+(?:\.\d+)?)"?\s*D/);
+        if (sizeMatch) {
+          productData.dimensions = {
+            height: parseFloat(sizeMatch[1]),
+            length: parseFloat(sizeMatch[2]), // Width becomes length
+            width: parseFloat(sizeMatch[3])   // Depth becomes width  
+          };
+          console.log('   📏 Dimensions extracted:', `${productData.dimensions.length}" × ${productData.dimensions.width}" × ${productData.dimensions.height}"`);
+        }
       }
       
       // Store all variants
@@ -364,11 +351,8 @@ class ZyteScraper {
       
       // Create a comprehensive primary variant
       if (variants.length > 0) {
-        productData.variant = variants.join(' | ');
-        console.log('   🎯 Combined variants:', productData.variant);
-      } else if (product.size) {
-        productData.variant = product.size;
-        console.log('   📏 Size variant:', productData.variant);
+        productData.variant = variants.join(' • ');
+        console.log('   🎯 Final variants:', productData.variant);
       }
 
       // Availability
@@ -388,20 +372,7 @@ class ZyteScraper {
       return productData;
     }
 
-    // Fallback: Enhanced HTML parsing if automatic extraction failed  
-    if (!productData.name && data.browserHtml) {
-      console.log('   🔍 Falling back to HTML parsing...');
-      const htmlData = this.parseHTMLWithVariants(data.browserHtml, url, retailer);
-      
-      // Merge data - prefer automatic extraction but fill gaps with HTML parsing
-      productData.name = productData.name || htmlData.name;
-      productData.price = productData.price || htmlData.price;
-      productData.image = productData.image || htmlData.image;
-      productData.dimensions = productData.dimensions || htmlData.dimensions;
-      productData.weight = productData.weight || htmlData.weight;
-      productData.allVariants = productData.allVariants || htmlData.allVariants || [];
-      productData.variant = productData.variant || htmlData.variant;
-    }
+    console.log('   ✅ Zyte parsing completed!');
 
     return productData;
   }
