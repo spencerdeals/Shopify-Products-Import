@@ -430,78 +430,81 @@ async function enhanceProductDataWithGPT(zyteData, url, retailer) {
     console.log('   🧠 Enhancing product data with ADVANCED GPT intelligence...');
     
     const OpenAI = require('openai');
-    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
     
-    const productData = zyteData;
-    
-    const system = `You are a smart product shipping analyst. Analyze this product and provide realistic shipping estimates in JSON format.
-       
-Product: ${productData.name}
-Price: $${productData.price}
-Dimensions: ${productData.dimensions ? `${productData.dimensions.length}" × ${productData.dimensions.width}" × ${productData.dimensions.height}"` : 'Not specified'}
-Variant: ${productData.variant || 'Not specified'}
-Category: ${productData.category || 'Unknown'}
+    const prompt = `ENHANCED PRODUCT INTELLIGENCE: Analyze this product and provide SHIPPING BOX dimensions (not product dimensions).
 
-CRITICAL VARIANT ANALYSIS:
-- Analyze the variant information to understand the EXACT product being ordered
-- Consider how the specific variant (color, size, orientation) affects shipping
-- Ensure shipping estimates match the SELECTED variant, not generic estimates
+Product: "${zyteData.name}"
+Category: "${zyteData.category}"
+Current Variant: "${zyteData.variant || 'none'}"
+Current Product Dimensions: ${JSON.stringify(zyteData.dimensions)}
+Retailer: ${retailer}
+Price: $${zyteData.price || 'unknown'}
 
-Provide JSON with:
-- estimated_shipping_box: {length, width, height, cubic_feet, confidence, reasoning}
-- product_category: string (furniture/appliance/electronics/etc)
-- shipping_notes: string (assembly, fragility, special handling)
-- variant_analysis: string (how the specific variant affects shipping)
+CRITICAL RULES:
+1. SHIPPING BOX dimensions (what UPS/FedEx would measure) - NOT product dimensions
+2. Add 2-6 inches padding per side for packaging materials
+3. For furniture: Consider disassembly/flat-pack vs assembled shipping
+4. For electronics: Consider protective packaging requirements
+5. Multi-box items: Estimate largest single box dimensions
+6. Primary variant should be SIZE/DIMENSION over color (King vs Blue)
 
-Be realistic about shipping - large furniture needs significant packaging space.`;
+Return ONLY: {
+  "primaryVariant": "...",
+  "shippingBoxDimensions": {"length": X, "width": Y, "height": Z},
+  "packagingType": "flat-pack|assembled|multi-box|standard",
+  "confidence": "high|medium|low"
+}
 
-    const userMessage = `Analyze this ${productData.retailer || 'product'} for realistic shipping estimates. Consider the specific variant: "${productData.variant || 'standard'}"`;
+EXAMPLES:
+- King Mattress → shippingBoxDimensions: {length: 84, width: 84, height: 16} (rolled/compressed)
+- 63" Loveseat → shippingBoxDimensions: {length: 68, width: 40, height: 36} (assembled)
+- IKEA Dresser → shippingBoxDimensions: {length: 48, width: 24, height: 8} (flat-pack)`;
 
-    const response = await openai.chat.completions.create({
+    const response = await client.chat.completions.create({
       model: 'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: userMessage }
-      ],
+      temperature: 0.1,
+      max_tokens: 300,
       response_format: { type: 'json_object' },
-      temperature: 0.1
+      messages: [
+        { role: 'system', content: 'You are a shipping/logistics expert specializing in e-commerce packaging. Focus on REALISTIC shipping box dimensions.' },
+        { role: 'user', content: prompt }
+      ],
     });
 
-    const gptAnalysis = JSON.parse(response.choices[0].message.content);
+    const enhancement = JSON.parse(response.choices[0].message.content || '{}');
     
-    // Apply GPT's shipping analysis
-    if (gptAnalysis.estimated_shipping_box) {
-      const box = gptAnalysis.estimated_shipping_box;
-      if (box.length && box.width && box.height && box.cubic_feet) {
-        productData.dimensions = {
-          length: box.length,
-          width: box.width, 
-          height: box.height
-        };
-        productData.estimatedCubicFeet = box.cubic_feet;
-        productData.shippingConfidence = box.confidence || 75;
-        productData.shippingReasoning = box.reasoning || 'GPT shipping analysis';
+    // SAFELY enhance the data with new shipping intelligence
+    const enhanced = { ...zyteData };
+    
+    // Enhance variant if GPT found a better one
+    if (enhancement.primaryVariant && enhancement.primaryVariant !== 'none') {
+      enhanced.variant = enhancement.primaryVariant;
+      console.log(`   🎨 Enhanced variant: "${zyteData.variant}" → "${enhancement.primaryVariant}"`);
+    }
+    
+    // Enhance with SHIPPING BOX dimensions if GPT found better ones
+    if (enhancement.shippingBoxDimensions && 
+        enhancement.shippingBoxDimensions.length > 0 &&
+        enhancement.shippingBoxDimensions.width > 0 &&
+        enhancement.shippingBoxDimensions.height > 0) {
+      
+      // Only use GPT shipping dimensions if confidence is medium/high
+      const confidence = enhancement.confidence || 'low';
+      const gptVolume = enhancement.shippingBoxDimensions.length * enhancement.shippingBoxDimensions.width * enhancement.shippingBoxDimensions.height;
+      const currentVolume = zyteData.dimensions ? (zyteData.dimensions.length * zyteData.dimensions.width * zyteData.dimensions.height) : 0;
+      
+      // Use GPT shipping dimensions if confidence is good OR they're more realistic
+      if (confidence !== 'low' || gptVolume > currentVolume * 1.2) {
+        enhanced.dimensions = enhancement.shippingBoxDimensions;
+        enhanced.packagingType = enhancement.packagingType || 'standard';
+        enhanced.dimensionSource = 'gpt-shipping-enhanced';
+        console.log(`   📦 Enhanced SHIPPING dimensions (${confidence} confidence): ${Math.round(gptVolume/1728 * 100)/100} ft³ vs ${Math.round(currentVolume/1728 * 100)/100} ft³`);
+        console.log(`   📦 Packaging type: ${enhanced.packagingType}`);
       }
     }
-
-    // Enhanced category and variant analysis
-    if (gptAnalysis.product_category) {
-      productData.category = gptAnalysis.product_category;
-    }
     
-    if (gptAnalysis.variant_analysis) {
-      productData.variantAnalysis = gptAnalysis.variant_analysis;
-    }
-    
-    if (gptAnalysis.shipping_notes) {
-      productData.shippingNotes = gptAnalysis.shipping_notes;
-    }
-
-    console.log(`   🎨 Variant Analysis: ${gptAnalysis.variant_analysis || 'Standard variant'}`);
-    console.log(`   📦 Shipping Notes: ${gptAnalysis.shipping_notes || 'Standard shipping'}`);
-    console.log(`   ✅ GPT enhancement successful`);
-    
-    return productData;
+    return enhanced;
     
   } catch (error) {
     console.log('   ❌ GPT enhancement error:', error.message);
@@ -797,6 +800,119 @@ function mergeProductData(primary, secondary) {
   };
 }
 
+// Enhanced product data enhancement with URL parameter analysis
+async function enhanceProductDataWithAdvancedGPT(productData, url, retailer) {
+  if (!process.env.OPENAI_API_KEY) {
+    return productData;
+  }
+  
+  try {
+    console.log('   🧠 Enhancing product data with ADVANCED GPT intelligence...');
+    
+    const OpenAI = require('openai');
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    
+    // Extract URL parameters for variant detection
+    const urlObj = new URL(url);
+    const urlParams = Object.fromEntries(urlObj.searchParams.entries());
+    
+    console.log('   🔍 URL parameters detected:', urlParams);
+    
+    // Enhanced prompt with URL parameter analysis
+    const enhancementPrompt = `
+You are an expert e-commerce product analyzer. Analyze this product data and return enhanced information in JSON format.
+
+Product URL: ${productData.url}
+URL Parameters: ${urlParams}
+Current Data: ${JSON.stringify(productData, null, 2)}
+
+Enhance the product data with:
+1. SELECTED variant detection (color, size, style from URL params and selected options)
+2. Correct product image URL for the SELECTED variant (not default)
+3. Intelligent shipping box estimation based on product type and dimensions
+4. Realistic cubic feet calculation for shipping
+
+Return a JSON object with these fields:
+- selected_variant: string (e.g., "Dark Green Corduroy, Left Hand Facing")
+- variant_image_url: string (image URL for selected variant)
+- estimated_shipping_box: object with length, width, height, cubic_feet, confidence, reasoning
+- enhanced_category: string (better category than current)
+
+Focus on accuracy - this affects customer orders and shipping costs.
+`;
+
+        const response = await openai.chat.completions.create({
+          model: 'gpt-4o-mini',
+          messages: [
+            {
+              role: 'system',
+              content: 'You are a product analysis expert. Always return valid JSON format responses.'
+            },
+            {
+              role: 'user', 
+              content: enhancementPrompt
+            }
+          ],
+          response_format: { type: 'json_object' },
+          temperature: 0.1,
+          max_tokens: 1000
+        });
+
+    const enhancement = JSON.parse(response.choices[0].message.content || '{}');
+    
+    // SAFELY enhance the data with new intelligence
+    const enhanced = { ...productData };
+    
+    // Enhance variant if GPT found a better one
+    if (enhancement.selected_variant && enhancement.selected_variant !== 'none') {
+      enhanced.variant = enhancement.selected_variant;
+      console.log(`   🎨 Enhanced variant: "${productData.variant}" → "${enhancement.selected_variant}"`);
+    }
+    
+    // Enhance image if GPT found a variant-specific one
+    if (enhancement.variant_image_url && enhancement.variant_image_url !== productData.image) {
+      enhanced.image = enhancement.variant_image_url;
+      console.log(`   🖼️ Enhanced image for selected variant`);
+    }
+    
+    // Enhance with SHIPPING BOX dimensions if GPT found better ones
+    if (enhancement.estimated_shipping_box && 
+        enhancement.estimated_shipping_box.length > 0 &&
+        enhancement.estimated_shipping_box.width > 0 &&
+        enhancement.estimated_shipping_box.height > 0) {
+      
+      const confidence = enhancement.estimated_shipping_box.confidence || 'low';
+      const gptVolume = enhancement.estimated_shipping_box.length * enhancement.estimated_shipping_box.width * enhancement.estimated_shipping_box.height;
+      const currentVolume = productData.dimensions ? (productData.dimensions.length * productData.dimensions.width * productData.dimensions.height) : 0;
+      
+      // Use GPT shipping dimensions if confidence is good OR they're more realistic
+      if (confidence !== 'low' || gptVolume > currentVolume * 1.2) {
+        enhanced.dimensions = {
+          length: enhancement.estimated_shipping_box.length,
+          width: enhancement.estimated_shipping_box.width,
+          height: enhancement.estimated_shipping_box.height
+        };
+        enhanced.dimensionSource = 'gpt-advanced-enhanced';
+        enhanced.shippingReasoning = enhancement.estimated_shipping_box.reasoning;
+        console.log(`   📦 Enhanced SHIPPING dimensions (${confidence} confidence): ${Math.round(gptVolume/1728 * 100)/100} ft³`);
+        console.log(`   📦 Reasoning: ${enhancement.estimated_shipping_box.reasoning}`);
+      }
+    }
+    
+    // Enhance category if GPT found a better one
+    if (enhancement.enhanced_category && enhancement.enhanced_category !== productData.category) {
+      enhanced.category = enhancement.enhanced_category;
+      console.log(`   📂 Enhanced category: "${productData.category}" → "${enhancement.enhanced_category}"`);
+    }
+    
+    return enhanced;
+    
+  } catch (error) {
+    console.log('   ❌ Advanced GPT enhancement error:', error.message);
+    return productData; // Return original data if enhancement fails
+  }
+}
+
 // Main product scraping function
 async function scrapeProduct(url) {
   const productId = generateProductId();
@@ -834,14 +950,14 @@ async function scrapeProduct(url) {
       console.log(`   🎯 Confidence: ${(confidence * 100).toFixed(1)}%`);
     }
     
-    // STEP 1.5: GPT Enhancement (SAFE - only enhances, never replaces)
+    // STEP 1.5: Advanced GPT Enhancement (SAFE - only enhances, never replaces)
     if (productData && USE_GPT_FALLBACK) {
       try {
-        console.log('   🧠 Enhancing with GPT intelligence...');
-        productData = await enhanceProductDataWithGPT(productData, url, retailer);
-        console.log('   ✅ GPT enhancement successful');
+        console.log('   🧠 Enhancing with ADVANCED GPT intelligence...');
+        productData = await enhanceProductDataWithAdvancedGPT(productData, url, retailer);
+        console.log('   ✅ Advanced GPT enhancement successful');
       } catch (gptError) {
-        console.log('   ⚠️ GPT enhancement failed, using original Zyte data:', gptError.message);
+        console.log('   ⚠️ Advanced GPT enhancement failed, using original Zyte data:', gptError.message);
         // Continue with original Zyte data - no harm done!
       }
     }
