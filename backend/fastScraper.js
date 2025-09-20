@@ -761,117 +761,109 @@ async function scrapeProduct(url) {
   let scrapingMethod = 'none';
   let confidence = null;
   
-  console.log(`\n🔍 Processing: ${url}`);
+  console.log(`\n🔍 Scraping: ${url}`);
   console.log(`   🏪 Retailer: ${retailer}`);
   
   // STEP 1: Try Zyte API first
   if (USE_ZYTE) {
     try {
       console.log('   🕷️ Trying Zyte API...');
-      const zyteData = await zyteScraper.scrapeProduct(url);
+      const zyteResult = await zyteScraper.scrapeProduct(url);
       
-      if (zyteData && zyteData.name && zyteData.price) {
-        productData = zyteData;
+      if (zyteResult && zyteResult.name && zyteResult.price) {
+        productData = zyteResult;
         scrapingMethod = 'zyte';
-        confidence = zyteData.confidence || null;
-        console.log(`   ✅ Zyte success! Product: "${zyteData.name.substring(0, 50)}..." Price: $${zyteData.price}`);
+        confidence = zyteResult.confidence || null;
+        console.log(`   ✅ Zyte success! Product: "${zyteResult.name.substring(0, 50)}..." Price: $${zyteResult.price}`);
         
         // Skip GPT enhancement if we already have good Zyte data
         if (productData.confidence && productData.confidence > 0.95 && productData.allVariants && productData.allVariants.length > 2) {
           console.log('   ✅ Skipping GPT enhancement - Zyte data is excellent');
         } else {
-          try {
-            const gptResult = await parseWithGPT({ 
-              url: productData.url, 
-              html: `Product: ${productData.name}\nPrice: $${productData.price}\nVariants: ${productData.allVariants?.join(', ') || productData.variant || 'None'}\nImage: ${productData.image || 'None'}`, 
-              currencyFallback: 'USD' 
-            });
-            
-            // Only use GPT enhancements if they're significantly different or better
-            if (gptResult.allVariants && gptResult.allVariants.length > (productData.allVariants?.length || 0)) {
-              productData.allVariants = gptResult.allVariants;
-              productData.variant = gptResult.variant;
-              console.log('   🎨 Enhanced variants:', gptResult.allVariants);
-            }
-            
-            if (gptResult.variant && gptResult.variant.length > (productData.variant?.length || 0)) {
-              const cleanVariant = gptResult.variant.replace(/[|•]/g, ' ').replace(/\s+/g, ' ').trim();
-              productData.variant = cleanVariant;
-              console.log(`   🎨 Enhanced variant: "${productData.variant}" → "${cleanVariant}"`);
-            }
-            
-            if (gptResult.image && gptResult.image !== productData.image && gptResult.image.startsWith('http')) {
-              productData.image = gptResult.image;
-              console.log('   🖼️ Enhanced image URL');
-            }
-            
-            // Only use GPT price if it's significantly different (>10% difference)
-            if (gptResult.price && Math.abs(gptResult.price - productData.price) > (productData.price * 0.1)) {
-              console.log(`   💰 GPT found different price: $${gptResult.price} vs $${productData.price}`);
-              productData.price = gptResult.price;
-            }
-            
-            if (gptResult.dimensions && !productData.dimensions) {
-              productData.dimensions = gptResult.dimensions;
-              console.log('   📦 Enhanced dimensions:', (gptResult.dimensions.length * gptResult.dimensions.width * gptResult.dimensions.height / 1728).toFixed(1), 'ft³ vs', (productData.dimensions?.length * productData.dimensions?.width * productData.dimensions?.height / 1728 || 0).toFixed(1), 'ft³');
-            }
-          } catch (gptError) {
-            console.log('   ⚠️ GPT enhancement failed, using original Zyte data:', gptError.message);
-            // Continue with original Zyte data - no harm done!
+          const gptResult = await parseWithGPT({ 
+            url: productData.url, 
+            html: `Product: ${productData.name}\nPrice: $${productData.price}\nVariants: ${productData.allVariants?.join(', ') || productData.variant || 'None'}\nImage: ${productData.image || 'None'}`, 
+            currencyFallback: 'USD' 
+          });
+          
+          // Only use GPT enhancements if they're significantly different or better
+          if (gptResult.allVariants && gptResult.allVariants.length > (productData.allVariants?.length || 0)) {
+            productData.allVariants = gptResult.allVariants;
+            productData.variant = gptResult.variant;
+            console.log('   🎨 Enhanced variants:', gptResult.allVariants);
+          }
+          
+          if (gptResult.variant && gptResult.variant.length > (productData.variant?.length || 0)) {
+            const cleanVariant = gptResult.variant.replace(/[|•]/g, ' ').replace(/\s+/g, ' ').trim();
+            productData.variant = cleanVariant;
+            console.log(`   🎨 Enhanced variant: "${productData.variant}" → "${cleanVariant}"`);
+          }
+          
+          if (gptResult.image && gptResult.image !== productData.image && gptResult.image.startsWith('http')) {
+            productData.image = gptResult.image;
+            console.log('   🖼️ Enhanced image URL');
+          }
+          
+          // Only use GPT price if it's significantly different (>10% difference)
+          if (gptResult.price && Math.abs(gptResult.price - productData.price) > (productData.price * 0.1)) {
+            console.log(`   💰 GPT found different price: $${gptResult.price} vs $${productData.price}`);
+            productData.price = gptResult.price;
+          }
+          
+          if (gptResult.dimensions && !productData.dimensions) {
+            productData.dimensions = gptResult.dimensions;
+            console.log('   📦 Enhanced dimensions:', (gptResult.dimensions.length * gptResult.dimensions.width * gptResult.dimensions.height / 1728).toFixed(1), 'ft³ vs', (productData.dimensions?.length * productData.dimensions?.width * productData.dimensions?.height / 1728 || 0).toFixed(1), 'ft³');
           }
         }
-        
-        try {
-          productData = await enhanceProductDataWithGPT(productData, url, retailer);
-          console.log('   ✅ GPT enhancement successful');
-        } catch (gptError) {
-          console.log('   ⚠️ GPT enhancement failed, using original Zyte data:', gptError.message);
-          // Continue with original Zyte data - no harm done!
-        }
+        productData = await enhanceProductDataWithGPT(productData, url, retailer);
+        console.log('   ✅ GPT enhancement successful');
+      } catch (gptError) {
+        console.log('   ⚠️ GPT enhancement failed, using original Zyte data:', gptError.message);
+        // Continue with original Zyte data - no harm done!
       }
-      
-    } catch (error) {
-      console.log('   ❌ Zyte API failed:', error.message);
-      
-      // STEP 2: Try GPT parser as fallback
-      if (USE_GPT_FALLBACK) {
-        try {
-          console.log('   🤖 Trying GPT parser fallback...');
-          const gptData = await parseWithGPT(url);
-          
-          // Check if GPT got essential data
-          const gptHasEssentialData = gptData && gptData.name && gptData.price;
-          
-          if (gptHasEssentialData) {
-            // Convert GPT parser format to our expected format
-            productData = {
-              name: gptData.name,
-              price: gptData.price,
-              image: gptData.image,
-              dimensions: gptData.dimensions || gptData.package_dimensions,
-              weight: gptData.weight || gptData.package_weight_lbs,
-              brand: gptData.brand,
-              category: gptData.category,
-              inStock: gptData.inStock,
-              variant: gptData.variant
-            };
-            scrapingMethod = 'gpt-fallback';
-            console.log('   ✅ GPT parser fallback success!');
-          } else {
-            console.log('   ❌ GPT parser also missing essential data');
-            throw new Error(`GPT parser failed: missing essential data (name: ${!!gptData?.name}, price: ${!!gptData?.price})`);
-          }
-        } catch (gptError) {
-          console.log('   ❌ GPT parser fallback failed:', gptError.message);
-          
-          // Both Zyte and GPT failed - require manual entry
-          console.log('   🚨 Both automated methods failed - requiring manual entry');
-          scrapingMethod = 'manual-required';
+    }
+    
+  } catch (error) {
+    console.log('   ❌ Zyte API failed:', error.message);
+    
+    // STEP 2: Try GPT parser as fallback
+    if (USE_GPT_FALLBACK) {
+      try {
+        console.log('   🤖 Trying GPT parser fallback...');
+        const gptData = await parseWithGPT(url);
+        
+        // Check if GPT got essential data
+        const gptHasEssentialData = gptData && gptData.name && gptData.price;
+        
+        if (gptHasEssentialData) {
+          // Convert GPT parser format to our expected format
+          productData = {
+            name: gptData.name,
+            price: gptData.price,
+            image: gptData.image,
+            dimensions: gptData.dimensions || gptData.package_dimensions,
+            weight: gptData.weight || gptData.package_weight_lbs,
+            brand: gptData.brand,
+            category: gptData.category,
+            inStock: gptData.inStock,
+            variant: gptData.variant
+          };
+          scrapingMethod = 'gpt-fallback';
+          console.log('   ✅ GPT parser fallback success!');
+        } else {
+          console.log('   ❌ GPT parser also missing essential data');
+          throw new Error(`GPT parser failed: missing essential data (name: ${!!gptData?.name}, price: ${!!gptData?.price})`);
         }
-      } else {
-        console.log('   ⚠️ No GPT fallback available (missing OpenAI API key)');
+      } catch (gptError) {
+        console.log('   ❌ GPT parser fallback failed:', gptError.message);
+        
+        // Both Zyte and GPT failed - require manual entry
+        console.log('   🚨 Both automated methods failed - requiring manual entry');
         scrapingMethod = 'manual-required';
       }
+    } else {
+      console.log('   ⚠️ No GPT fallback available (missing OpenAI API key)');
+      scrapingMethod = 'manual-required';
     }
   }
   
@@ -957,8 +949,8 @@ async function scrapeProduct(url) {
         estimatedBoxes: ikeaEstimate.boxCount,
         confidence: ikeaEstimate.confidence,
         singleBoxVolume: ikeaEstimate.singleBoxVolume,
-        variant: null,
-        allVariants: []
+        totalVolume: ikeaEstimate.totalVolume,
+        estimationMethod: ikeaEstimate.estimationMethod
       };
       
       scrapingMethod = scrapingMethod + '+ikea-multibox';
