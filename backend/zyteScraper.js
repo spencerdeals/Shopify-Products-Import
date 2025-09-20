@@ -34,7 +34,11 @@ class ZyteScraper {
       const response = await axios.post(this.baseURL, {
         url: url,
         browserHtml: true,
-        product: true
+        product: true,
+        productOptions: {
+          extractFrom: "browserHtml",
+          ai: true
+        }
       }, {
         auth: {
           username: this.apiKey,
