@@ -7,8 +7,8 @@ class OrderTracker {
 
   static async create() {
     try {
-      // Direct dynamic import of ES module
-      const { createClient } = await import('@libsql/client');
+      // Dynamic import using Function constructor to bypass static parsing
+      const { createClient } = await new Function('return import("@libsql/client")')();
       
       // Create the database client
       const dbClient = createClient({
