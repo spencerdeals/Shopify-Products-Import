@@ -1,6 +1,5 @@
 // backend/zyteScraper.js - Fixed Zyte API Integration
 const axios = require('axios');
-const cheerio = require('cheerio');
 
 class ZyteScraper {
   constructor() {
@@ -69,7 +68,62 @@ class ZyteScraper {
         hasVariant: !!productData.variant
       });
 
-      return productData;
+      // Fill in missing data with estimations
+      const productName = productData.name || `Product from ${retailer}`;
+      const category = productData.category || categorizeProduct(productName, url);
+      
+      console.log(`   🏷️ Product category: ${category}`);
+      
+      if (!productData.dimensions) {
+        // Try AI estimation first
+        // const aiEstimate = await learningSystem.getSmartEstimation(category, productName, retailer);
+        // if (aiEstimate) {
+        //   productData.dimensions = aiEstimate.dimensions;
+        //   productData.weight = productData.weight || aiEstimate.weight;
+        //   console.log(`   🤖 AI: Applied learned patterns (confidence: ${(aiEstimate.confidence * 100).toFixed(0)}%)`);
+        // } else {
+          productData.dimensions = estimateDimensions(category, productName);
+          console.log(`   📐 Used category-based estimation for: ${category}`);
+        // }
+      }
+      
+      if (!productData.weight) {
+        productData.weight = estimateWeight(productData.dimensions, category);
+        console.log(`   ⚖️ Estimated weight: ${productData.weight} lbs`);
+      }
+      
+      // Calculate shipping cost
+      const shippingCost = calculateShippingCost(
+        productData.dimensions,
+        productData.weight,
+        productData.price || 100
+      );
+      
+      // SAFEGUARD: Final shipping cost validation
+      const itemPrice = productData.price || 100;
+      const shippingPercentage = (shippingCost / itemPrice) * 100;
+      
+      if (shippingPercentage > 60) {
+        console.log(`   🚨 WARNING: Shipping cost is ${shippingPercentage.toFixed(0)}% of item price - may need manual review`);
+      }
+      
+      // Prepare final product object
+      const product = {
+        name: productData.name,
+        price: productData.price,
+        image: productData.image,
+        dimensions: productData.dimensions,
+        weight: productData.weight,
+        brand: productData.brand,
+        category: category,
+        inStock: productData.inStock,
+        variant: productData.variant,
+        shippingCost: shippingCost,
+        retailer: retailer,
+        url: url
+      };
+
+      return product;
 
     } catch (error) {
       return this.handleZyteError(error);
@@ -225,18 +279,15 @@ class ZyteScraper {
             variantParts.push(`Color: ${trimmedValue}`);
           } else if (this.isSizeValue(lowerValue)) {
             variantParts.push(`Size: ${trimmedValue}`);
-          } else if (prop === 'material' || this.isMaterialValue(lowerValue)) {
+          } else if (prop === 'material') {
             variantParts.push(`Material: ${trimmedValue}`);
-          } else if (prop === 'style' || prop === 'type') {
-            variantParts.push(`Style: ${trimmedValue}`);
           } else if (prop === 'finish') {
             variantParts.push(`Finish: ${trimmedValue}`);
-          } else if (prop === 'pattern') {
-            variantParts.push(`Pattern: ${trimmedValue}`);
+          } else if (prop === 'style') {
+            variantParts.push(`Style: ${trimmedValue}`);
           } else {
-            // Default to the property name
-            const propName = prop.charAt(0).toUpperCase() + prop.slice(1);
-            variantParts.push(`${propName}: ${trimmedValue}`);
+            // Generic property
+            variantParts.push(trimmedValue);
           }
         }
       }
@@ -244,23 +295,17 @@ class ZyteScraper {
   }
 
   isColorValue(value) {
-    const colorKeywords = /\b(black|white|brown|gray|grey|blue|red|green|yellow|beige|tan|navy|cream|ivory|khaki|charcoal|burgundy|maroon|olive|teal|coral|sage|taupe|mocha|espresso|latte|camel|sand|stone|slate|pewter|bronze|copper|gold|silver|rose|blush|mint|seafoam|turquoise|aqua|lavender|purple|violet|magenta|pink|orange|peach|apricot|rust|terracotta|denim|indigo|rattan|wicker|natural|antique|vintage|distressed|weathered|aged)\b/i;
-    return colorKeywords.test(value);
+    const colors = ['red', 'blue', 'green', 'yellow', 'black', 'white', 'gray', 'grey', 'brown', 'pink', 'purple', 'orange', 'beige', 'tan', 'navy', 'cream', 'ivory', 'gold', 'silver', 'bronze'];
+    return colors.some(color => value.includes(color));
   }
 
   isSizeValue(value) {
-    const sizeKeywords = /\b(twin|full|queen|king|california|cal|single|double|xl|extra|small|medium|large|xs|s|m|l|xl|xxl|xxxl|\d+['"]\s*x\s*\d+['"']|\d+\s*x\s*\d+|\d+['"]\s*wide|\d+['"]\s*deep|\d+['"]\s*high|\d+\s*inch|\d+\s*ft|\d+\s*cm|\d+\s*mm)\b/i;
-    return sizeKeywords.test(value);
-  }
-
-  isMaterialValue(value) {
-    const materialKeywords = /\b(wood|wooden|metal|steel|iron|aluminum|plastic|fabric|cotton|linen|polyester|leather|velvet|suede|silk|wool|bamboo|rattan|wicker|glass|ceramic|marble|granite|stone|concrete|oak|pine|cherry|maple|walnut|mahogany|teak|cedar|birch|ash|poplar|acacia|mango|sheesham|rosewood)\b/i;
-    return materialKeywords.test(value);
+    return /\b(small|medium|large|xl|xxl|xs|twin|full|queen|king|cal|california)\b/.test(value) ||
+           /\d+(\.\d+)?\s*(inch|in|ft|feet|cm|mm|x|\"|')/i.test(value);
   }
 
   parseHTML(html, url, retailer) {
-    const $ = cheerio.load(html);
-    
+    // Basic HTML parsing fallback
     const productData = {
       name: null,
       price: null,
@@ -270,291 +315,459 @@ class ZyteScraper {
       variant: null
     };
 
-    // Extract product name from HTML
-    const titleSelectors = this.getTitleSelectors(retailer);
-    for (const selector of titleSelectors) {
-      const element = $(selector).first();
-      if (element.length && element.text().trim()) {
-        productData.name = element.text().trim().replace(/\s+/g, ' ').substring(0, 200);
-        console.log('   📝 HTML Product name:', productData.name.substring(0, 50) + '...');
-        break;
-      }
+    // Extract title
+    const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+    if (titleMatch) {
+      productData.name = titleMatch[1].trim().substring(0, 200);
     }
 
-    // Extract price from HTML
-    const priceSelectors = this.getPriceSelectors(retailer);
-    for (const selector of priceSelectors) {
-      const element = $(selector).first();
-      if (element.length) {
-        const priceText = element.text().replace(/[^0-9.]/g, '');
-        const price = parseFloat(priceText);
-        if (price > 0 && price < 100000) {
-          productData.price = price;
-          console.log('   💰 HTML Price: $' + productData.price);
-          break;
+    // Extract price - look for common price patterns
+    const pricePatterns = [
+      /\$[\d,]+\.?\d*/g,
+      /price[^>]*>[\s\S]*?\$?([\d,]+\.?\d*)/gi,
+      /cost[^>]*>[\s\S]*?\$?([\d,]+\.?\d*)/gi
+    ];
+
+    for (const pattern of pricePatterns) {
+      const matches = html.match(pattern);
+      if (matches) {
+        for (const match of matches) {
+          const price = parseFloat(match.replace(/[^0-9.]/g, ''));
+          if (price > 0 && price < 100000) {
+            productData.price = price;
+            break;
+          }
         }
+        if (productData.price) break;
       }
     }
 
     // Extract main image
-    const imageSelectors = this.getImageSelectors(retailer);
-    for (const selector of imageSelectors) {
-      const element = $(selector).first();
-      if (element.length) {
-        let imgSrc = element.attr('src') || element.attr('data-src') || element.attr('data-original');
-        if (imgSrc && imgSrc.startsWith('http')) {
-          productData.image = imgSrc;
-          console.log('   🖼️ HTML Image: Found');
-          break;
-        }
-      }
-    }
-
-    // Extract variant information
-    const variantSelectors = this.getVariantSelectors(retailer);
-    const allVariants = [];
-    
-    for (const selector of variantSelectors) {
-      const elements = $(selector);
-      elements.each((i, el) => {
-        const variantText = $(el).text().trim();
-        if (variantText.length >= 2 && variantText.length <= 50 && 
-            !variantText.toLowerCase().includes('select') &&
-            !variantText.toLowerCase().includes('choose') &&
-            !allVariants.includes(variantText)) {
-          allVariants.push(variantText);
-        }
-      });
-    }
-    
-    // Combine all found variants
-    if (allVariants.length > 0) {
-      productData.variant = allVariants.join(', ');
-      console.log('   🎨 HTML Variants:', productData.variant);
-    }
-
-    // Extract dimensions from text
-    const bodyText = $.text();
-    const dimMatch = bodyText.match(/(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*(?:inches?|in\.?|")/i);
-    if (dimMatch) {
-      productData.dimensions = {
-        length: parseFloat(dimMatch[1]),
-        width: parseFloat(dimMatch[2]),
-        height: parseFloat(dimMatch[3])
-      };
-      console.log('   📏 HTML Dimensions:', `${productData.dimensions.length}" × ${productData.dimensions.width}" × ${productData.dimensions.height}"`);
+    const imgMatch = html.match(/<img[^>]+src=["']([^"']+)["'][^>]*>/i);
+    if (imgMatch) {
+      productData.image = imgMatch[1];
     }
 
     return productData;
   }
 
-  getTitleSelectors(retailer) {
-    const common = [
-      'h1[data-testid*="title"]',
-      'h1[data-testid*="name"]',
-      'h1.product-title',
-      'h1.ProductTitle',
-      'h1',
-      '.product-title h1',
-      '.product-name h1'
-    ];
-
-    const specific = {
-      'Amazon': [
-        '#productTitle',
-        'h1.a-size-large',
-        'h1[data-automation-id="product-title"]'
-      ],
-      'Wayfair': [
-        'h1[data-testid="product-title"]',
-        'h1.ProductTitle'
-      ],
-      'Target': [
-        'h1[data-test="product-title"]',
-        'h1.ProductTitle'
-      ],
-      'Walmart': [
-        'h1[data-automation-id="product-title"]',
-        'h1.prod-ProductTitle'
-      ],
-      'Best Buy': [
-        'h1.sr-only',
-        'h1.heading-5'
-      ]
-    };
-
-    return [...(specific[retailer] || []), ...common];
-  }
-
-  getPriceSelectors(retailer) {
-    const common = [
-      '.price',
-      '[class*="price"]',
-      '.current-price',
-      '.sale-price',
-      '[data-testid*="price"]'
-    ];
-
-    const specific = {
-      'Amazon': [
-        '.a-price-whole',
-        '.a-price .a-offscreen',
-        '.a-price-range .a-price .a-offscreen'
-      ],
-      'Wayfair': [
-        '.MoneyPrice',
-        '[data-testid="price"]'
-      ],
-      'Target': [
-        '[data-test="product-price"]',
-        '.h-text-red'
-      ],
-      'Walmart': [
-        '[data-automation-id="product-price"]',
-        '.price-current'
-      ],
-      'Best Buy': [
-        '.pricing-price__value',
-        '.sr-only:contains("current price")'
-      ]
-    };
-
-    return [...(specific[retailer] || []), ...common];
-  }
-
-  getImageSelectors(retailer) {
-    const common = [
-      '.product-image img',
-      'img[class*="product"]',
-      '.hero-image img',
-      'img[data-testid*="image"]'
-    ];
-
-    const specific = {
-      'Amazon': [
-        '#landingImage',
-        '.a-dynamic-image',
-        'img[data-old-hires]',
-        '.imgTagWrapper img'
-      ],
-      'Wayfair': [
-        'img[data-testid="product-image"]',
-        '.ProductImages img'
-      ],
-      'Target': [
-        '.ProductImages img',
-        'img[data-test="product-image"]'
-      ],
-      'Walmart': [
-        'img[data-automation-id="product-image"]',
-        '.prod-hero-image img'
-      ],
-      'Best Buy': [
-        '.product-image img',
-        '.hero-image img'
-      ]
-    };
-
-    return [...(specific[retailer] || []), ...common];
-  }
-
-  getVariantSelectors(retailer) {
-    const common = [
-      '.selected',
-      '.selected-option',
-      '.selected-variant',
-      '[aria-selected="true"]',
-      '.variant-selected'
-    ];
-
-    const specific = {
-      'Amazon': [
-        '.a-button-selected .a-button-text',
-        '.a-dropdown-prompt',
-        '#variation_color_name .selection',
-        '#variation_size_name .selection',
-        '#variation_style_name .selection',
-        '.swatches .a-button-selected span'
-      ],
-      'Wayfair': [
-        '.SelectedOption',
-        '.option-selected',
-        '.selected-swatch',
-        '[data-testid="selected-option"]',
-        '.ProductOptionPills .selected',
-        '.OptionPill.selected'
-      ],
-      'Target': [
-        '.selected-variant',
-        '.h-text-bold',
-        '[data-test="selected-variant"]',
-        '.swatch--selected'
-      ],
-      'Walmart': [
-        '.selected-variant-value',
-        '[data-selected="true"]',
-        '.variant-pill--selected'
-      ],
-      'Best Buy': [
-        '.selected-variation',
-        '.variation-selected'
-      ],
-      'IKEA': [
-        '.range-revamp-pip-selected',
-        '.pip-selected',
-        '.range-revamp-color-image.selected',
-        '.range-revamp-size-option.selected',
-        '[aria-pressed="true"]'
-      ],
-      'Crate & Barrel': [
-        '.selected-swatch',
-        '.swatch.selected',
-        '.option-selected',
-        '.variant-selected',
-        '[data-selected="true"]',
-        '.color-swatch.selected',
-        '.size-option.selected'
-      ],
-      'Luna Furniture': [
-        '.product-form__input:checked + label',
-        '.variant-input:checked + label',
-        '.swatch.selected',
-        '.option-value.selected',
-        '.variant-option.selected',
-        '.product-option.selected'
-      ]
-    };
-
-    return [...(specific[retailer] || []), ...common];
-  }
-
   detectRetailer(url) {
-    try {
-      const domain = new URL(url).hostname.toLowerCase();
-      if (domain.includes('amazon.com')) return 'Amazon';
-      if (domain.includes('wayfair.com')) return 'Wayfair';
-      if (domain.includes('target.com')) return 'Target';
-      if (domain.includes('walmart.com')) return 'Walmart';
-      if (domain.includes('bestbuy.com')) return 'Best Buy';
-      if (domain.includes('homedepot.com')) return 'Home Depot';
-      if (domain.includes('lowes.com')) return 'Lowes';
-      if (domain.includes('costco.com')) return 'Costco';
-      if (domain.includes('macys.com')) return 'Macys';
-      if (domain.includes('ikea.com')) return 'IKEA';
-      if (domain.includes('lunafurn.com')) return 'Luna Furniture';
-      if (domain.includes('overstock.com')) return 'Overstock';
-      if (domain.includes('cb2.com')) return 'CB2';
-      if (domain.includes('crateandbarrel.com')) return 'Crate & Barrel';
-      if (domain.includes('westelm.com')) return 'West Elm';
-      if (domain.includes('potterybarn.com')) return 'Pottery Barn';
-      if (domain.includes('ashleyfurniture.com')) return 'Ashley Furniture';
-      if (domain.includes('roomstogo.com')) return 'Rooms To Go';
-      if (domain.includes('livingspaces.com')) return 'Living Spaces';
-      return 'Unknown';
-    } catch (e) {
-      return 'Unknown';
+    const domain = url.toLowerCase();
+    if (domain.includes('wayfair')) return 'Wayfair';
+    if (domain.includes('overstock')) return 'Overstock';
+    if (domain.includes('amazon')) return 'Amazon';
+    if (domain.includes('homedepot')) return 'Home Depot';
+    if (domain.includes('lowes')) return 'Lowes';
+    if (domain.includes('target')) return 'Target';
+    if (domain.includes('walmart')) return 'Walmart';
+    if (domain.includes('crateandbarrel')) return 'Crate & Barrel';
+    if (domain.includes('westelm')) return 'West Elm';
+    if (domain.includes('potterybarn')) return 'Pottery Barn';
+    if (domain.includes('cb2')) return 'CB2';
+    if (domain.includes('restorationhardware')) return 'Restoration Hardware';
+    return 'Unknown';
+  }
+}
+
+// Extract product information from manual content with real dimensions
+function extractProductFromContent(content, url, retailer, category) {
+  console.log('🔍 Extracting product data from manual content...');
+  
+  const productData = {
+    name: null,
+    price: null,
+    image: null,
+    dimensions: null,
+    weight: null
+  };
+  
+  // Extract product name from content
+  const namePatterns = [
+    /product[^:]*:\s*([^\n\r]{10,100})/i,
+    /title[^:]*:\s*([^\n\r]{10,100})/i,
+    /<h1[^>]*>([^<]{10,100})<\/h1>/i,
+    /name[^:]*:\s*([^\n\r]{10,100})/i
+  ];
+  
+  for (const pattern of namePatterns) {
+    const match = content.match(pattern);
+    if (match && match[1].trim()) {
+      productData.name = match[1].trim().substring(0, 200);
+      console.log(`   📝 Extracted name: ${productData.name.substring(0, 50)}...`);
+      break;
     }
   }
+  
+  // Extract price from content
+  const pricePatterns = [
+    /\$(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)/g,
+    /price[^$]*\$(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)/gi,
+    /cost[^$]*\$(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)/gi
+  ];
+  
+  for (const pattern of pricePatterns) {
+    const matches = [...content.matchAll(pattern)];
+    for (const match of matches) {
+      const price = parseFloat(match[1].replace(/,/g, ''));
+      if (price > 10 && price < 50000) {
+        productData.price = price;
+        console.log(`   💰 Extracted price: $${productData.price}`);
+        break;
+      }
+    }
+    if (productData.price) break;
+  }
+  
+  // CRITICAL: Extract REAL product dimensions from content
+  console.log('🔍 Searching for product dimensions in content...');
+  const dimPatterns = [
+    // Standard dimension formats
+    /(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*(?:inches?|in\.?|"|'')/i,
+    /(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*(?:cm|centimeters?)/i,
+    // Labeled dimensions
+    /dimensions?[^:]*:\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)/i,
+    /overall[^:]*:\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)/i,
+    /size[^:]*:\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)/i,
+    // L x W x H format
+    /L:\s*(\d+(?:\.\d+)?)[^0-9]*W:\s*(\d+(?:\.\d+)?)[^0-9]*H:\s*(\d+(?:\.\d+)?)/i,
+    /length[^:]*:\s*(\d+(?:\.\d+)?)[^0-9]*width[^:]*:\s*(\d+(?:\.\d+)?)[^0-9]*height[^:]*:\s*(\d+(?:\.\d+)?)/i,
+    // Individual measurements
+    /width[^:]*:\s*(\d+(?:\.\d+)?)[^0-9]*depth[^:]*:\s*(\d+(?:\.\d+)?)[^0-9]*height[^:]*:\s*(\d+(?:\.\d+)?)/i,
+    // Product-specific formats
+    /assembled[^:]*:\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)/i,
+    /product[^:]*:\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)/i
+  ];
+  
+  for (const pattern of dimPatterns) {
+    const match = content.match(pattern);
+    if (match) {
+      let length = parseFloat(match[1]);
+      let width = parseFloat(match[2]);
+      let height = parseFloat(match[3]);
+      
+      // Convert cm to inches if needed
+      if (content.toLowerCase().includes('cm') || content.toLowerCase().includes('centimeter')) {
+        length = length / 2.54;
+        width = width / 2.54;
+        height = height / 2.54;
+        console.log('   📐 Converted from cm to inches');
+      }
+      
+      // Validate dimensions are reasonable
+      if (length > 0 && width > 0 && height > 0 && 
+          length < 200 && width < 200 && height < 200) {
+        
+        // CRITICAL: Add packaging padding based on category
+        const paddingFactors = {
+          'electronics': 1.3,      // 30% padding for fragile items
+          'appliances': 1.2,       // 20% padding
+          'furniture': 1.15,       // 15% padding for sturdy items
+          'high-end-furniture': 1.15, // 15% padding for quality items
+          'outdoor': 1.15,         // 15% padding for outdoor furniture
+          'clothing': 1.4,         // 40% padding for soft goods
+          'books': 1.2,            // 20% padding
+          'toys': 1.25,            // 25% padding
+          'sports': 1.2,           // 20% padding
+          'home-decor': 1.35,      // 35% padding for fragile decor
+          'tools': 1.15,           // 15% padding
+          'garden': 1.2,           // 20% padding
+          'general': 1.25          // 25% padding default
+        };
+        
+        const paddingFactor = paddingFactors[category] || 1.25;
+        
+        productData.dimensions = {
+          length: Math.round(length * paddingFactor * 10) / 10,
+          width: Math.round(width * paddingFactor * 10) / 10,
+          height: Math.round(height * paddingFactor * 10) / 10
+        };
+        
+        console.log(`   📐 Found product dimensions: ${length}" × ${width}" × ${height}"`);
+        console.log(`   📦 Added ${((paddingFactor - 1) * 100).toFixed(0)}% packaging padding for ${category}`);
+        console.log(`   📦 Final shipping dimensions: ${productData.dimensions.length}" × ${productData.dimensions.width}" × ${productData.dimensions.height}"`);
+        break;
+      }
+    }
+  }
+  
+  // If no dimensions found, try to extract from URL or use category-based estimation
+  if (!productData.dimensions) {
+    console.log('   ⚠️ No dimensions found in content, trying URL extraction...');
+    
+    // Try to extract size from URL (like "85" from "mallorca-85-wood-outdoor-sofa")
+    const urlSizeMatch = url.match(/[-_](\d{2,3})[-_]/);
+    if (urlSizeMatch) {
+      const extractedSize = parseInt(urlSizeMatch[1]);
+      if (extractedSize >= 20 && extractedSize <= 120) {
+        // Use extracted size as length, estimate width/height based on category
+        const categoryRatios = {
+          'furniture': { w: 0.4, h: 0.35 },
+          'high-end-furniture': { w: 0.4, h: 0.35 },
+          'outdoor': { w: 0.4, h: 0.35 },
+          'electronics': { w: 0.6, h: 0.4 },
+          'general': { w: 0.5, h: 0.4 }
+        };
+        
+        const ratio = categoryRatios[category] || categoryRatios['general'];
+        const paddingFactor = 1.15; // 15% padding
+        
+        productData.dimensions = {
+          length: Math.round(extractedSize * paddingFactor * 10) / 10,
+          width: Math.round(extractedSize * ratio.w * paddingFactor * 10) / 10,
+          height: Math.round(extractedSize * ratio.h * paddingFactor * 10) / 10
+        };
+        
+        console.log(`   📐 Extracted size ${extractedSize}" from URL`);
+        console.log(`   📦 Estimated shipping dimensions: ${productData.dimensions.length}" × ${productData.dimensions.width}" × ${productData.dimensions.height}"`);
+      }
+    }
+  }
+  
+  // Last resort: reasonable category-based estimates (NOT random!)
+  if (!productData.dimensions) {
+    console.log('   ⚠️ No dimensions found anywhere, using category-based estimate...');
+    
+    const categoryEstimates = {
+      'high-end-furniture': { length: 72, width: 32, height: 30 },
+      'furniture': { length: 48, width: 30, height: 36 },
+      'outdoor': { length: 78, width: 34, height: 32 },
+      'electronics': { length: 24, width: 16, height: 12 },
+      'appliances': { length: 30, width: 30, height: 48 },
+      'clothing': { length: 14, width: 12, height: 3 },
+      'books': { length: 10, width: 7, height: 2 },
+      'toys': { length: 16, width: 14, height: 12 },
+      'sports': { length: 30, width: 24, height: 16 },
+      'home-decor': { length: 18, width: 15, height: 18 },
+      'tools': { length: 20, width: 15, height: 8 },
+      'garden': { length: 30, width: 24, height: 18 },
+      'general': { length: 18, width: 15, height: 12 }
+    };
+    
+    const estimate = categoryEstimates[category] || categoryEstimates['general'];
+    const paddingFactor = 1.15; // 15% padding
+    
+    productData.dimensions = {
+      length: Math.round(estimate.length * paddingFactor * 10) / 10,
+      width: Math.round(estimate.width * paddingFactor * 10) / 10,
+      height: Math.round(estimate.height * paddingFactor * 10) / 10
+    };
+    
+    console.log(`   📦 Category-based estimate with packaging: ${productData.dimensions.length}" × ${productData.dimensions.width}" × ${productData.dimensions.height}"`);
+  }
+  
+  // Extract weight from content
+  const weightPatterns = [
+    /(\d+(?:\.\d+)?)\s*(?:pounds?|lbs?)/i,
+    /weight[^:]*:\s*(\d+(?:\.\d+)?)\s*(?:pounds?|lbs?)/i,
+    /(\d+(?:\.\d+)?)\s*(?:kilograms?|kgs?)/i
+  ];
+  
+  for (const pattern of weightPatterns) {
+    const match = content.match(pattern);
+    if (match) {
+      let weight = parseFloat(match[1]);
+      // Convert to pounds if needed
+      if (/kg/i.test(match[0])) weight *= 2.205;
+      
+      productData.weight = Math.round(weight * 10) / 10;
+      console.log(`   ⚖️ Extracted weight: ${productData.weight} lbs`);
+      break;
+    }
+  }
+  
+  return productData;
+}
+
+function categorizeProduct(name, url) {
+  const text = (name + ' ' + url).toLowerCase();
+  
+  // High-end furniture retailers get special treatment
+  if (/\b(crate|barrel|west.elm|pottery.barn|cb2|restoration.hardware)\b/.test(text)) {
+    return 'high-end-furniture';
+  }
+  
+  if (/\b(sofa|sectional|loveseat|couch|chair|recliner|ottoman|table|desk|dresser|nightstand|bookshelf|cabinet|wardrobe|armoire|bed|frame|headboard|mattress|dining|kitchen|office)\b/.test(text)) return 'furniture';
+ if (/\b(outdoor|patio|garden|deck|poolside|backyard|exterior|weather|teak|wicker|rattan)\b/.test(text)) return 'outdoor';
+ if (/\b(outdoor|patio|garden|deck|poolside|backyard|exterior|weather|teak|wicker|rattan)\b/.test(text)) return 'outdoor';
+ if (/\b(outdoor|patio|garden|deck|poolside|backyard|exterior|weather|teak|wicker|rattan)\b/.test(text)) return 'outdoor';
+ if (/\b(outdoor|patio|garden|deck|poolside|backyard|exterior|weather|teak|wicker|rattan)\b/.test(text)) return 'outdoor';
+ if (/\b(outdoor|patio|garden|deck|poolside|backyard|exterior|weather|teak|wicker|rattan)\b/.test(text)) return 'outdoor';
+  if (/\b(outdoor|patio|garden|deck|poolside|backyard|exterior|weather|teak|wicker|rattan)\b/.test(text)) return 'outdoor';
+  if (/\b(tv|television|monitor|laptop|computer|tablet|phone|smartphone|camera|speaker|headphone|earbuds|router|gaming|console|xbox|playstation|nintendo)\b/.test(text)) return 'electronics';
+  if (/\b(lamp|light|lighting|chandelier|sconce|pendant|floor.lamp|table.lamp)\b/.test(text)) return 'lighting';
+  if (/\b(rug|carpet|mat|runner)\b/.test(text)) return 'rugs';
+  if (/\b(curtain|blind|shade|drape|window.treatment)\b/.test(text)) return 'window-treatments';
+  if (/\b(pillow|cushion|throw|blanket|bedding|sheet|comforter|duvet)\b/.test(text)) return 'textiles';
+  if (/\b(art|artwork|painting|print|poster|frame|mirror|wall.decor)\b/.test(text)) return 'decor';
+  if (/\b(vase|candle|plant|pot|planter|decorative|ornament)\b/.test(text)) return 'accessories';
+  if (/\b(appliance|refrigerator|stove|oven|microwave|dishwasher|washer|dryer)\b/.test(text)) return 'appliances';
+  
+  return 'general';
+}
+
+function estimateDimensions(category, productName) {
+  const name = productName.toLowerCase();
+  
+  // Extract any dimensions from the product name first
+  const dimensionMatch = name.match(/(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)/);
+  if (dimensionMatch) {
+    return {
+      length: parseFloat(dimensionMatch[1]),
+      width: parseFloat(dimensionMatch[2]),
+      height: parseFloat(dimensionMatch[3])
+    };
+  }
+
+  // Category-based estimation
+  switch (category) {
+    case 'high-end-furniture':
+      if (name.includes('sofa') || name.includes('sectional')) {
+        return { length: 84, width: 36, height: 32 };
+      }
+      if (name.includes('chair')) {
+        return { length: 32, width: 32, height: 36 };
+      }
+      if (name.includes('table')) {
+        return { length: 60, width: 36, height: 30 };
+      }
+      return { length: 48, width: 24, height: 30 };
+      
+    case 'furniture':
+      if (name.includes('sofa') || name.includes('sectional')) {
+        return { length: 78, width: 34, height: 30 };
+      }
+      if (name.includes('chair')) {
+        return { length: 28, width: 28, height: 32 };
+      }
+      if (name.includes('table')) {
+        return { length: 48, width: 30, height: 29 };
+      }
+      if (name.includes('dresser')) {
+        return { length: 60, width: 18, height: 32 };
+      }
+      if (name.includes('bed')) {
+        if (name.includes('king')) return { length: 80, width: 76, height: 14 };
+        if (name.includes('queen')) return { length: 80, width: 60, height: 14 };
+        return { length: 75, width: 54, height: 14 };
+      }
+      return { length: 36, width: 18, height: 24 };
+      
+    case 'outdoor':
+      if (name.includes('table')) {
+        return { length: 60, width: 36, height: 29 };
+      }
+      if (name.includes('chair')) {
+        return { length: 24, width: 24, height: 36 };
+      }
+      return { length: 48, width: 24, height: 30 };
+      
+    case 'lighting':
+      if (name.includes('chandelier')) {
+        return { length: 24, width: 24, height: 36 };
+      }
+      if (name.includes('floor')) {
+        return { length: 12, width: 12, height: 60 };
+      }
+      return { length: 12, width: 12, height: 18 };
+      
+    case 'rugs':
+      if (name.includes('runner')) {
+        return { length: 96, width: 30, height: 0.5 };
+      }
+      if (name.includes('large') || name.includes('9x12')) {
+        return { length: 144, width: 108, height: 0.5 };
+      }
+      return { length: 96, width: 72, height: 0.5 };
+      
+    case 'electronics':
+      if (name.includes('tv')) {
+        return { length: 48, width: 28, height: 3 };
+      }
+      if (name.includes('laptop')) {
+        return { length: 14, width: 10, height: 1 };
+      }
+      return { length: 12, width: 8, height: 6 };
+      
+    default:
+      return { length: 24, width: 12, height: 12 };
+  }
+}
+
+function estimateWeight(dimensions, category) {
+  const volume = dimensions.length * dimensions.width * dimensions.height;
+  
+  // Weight estimation based on category and volume
+  switch (category) {
+    case 'high-end-furniture':
+      return Math.max(15, Math.round(volume * 0.008)); // Heavier, quality materials
+      
+    case 'furniture':
+      return Math.max(10, Math.round(volume * 0.006));
+      
+    case 'outdoor':
+      return Math.max(8, Math.round(volume * 0.005)); // Weather-resistant materials
+      
+    case 'electronics':
+      return Math.max(2, Math.round(volume * 0.01)); // Dense but compact
+      
+    case 'lighting':
+      return Math.max(3, Math.round(volume * 0.003)); // Lighter materials
+      
+    case 'rugs':
+      return Math.max(5, Math.round(volume * 0.02)); // Fabric density
+      
+    case 'textiles':
+      return Math.max(1, Math.round(volume * 0.001)); // Very light
+      
+    case 'appliances':
+      return Math.max(25, Math.round(volume * 0.015)); // Heavy materials
+      
+    default:
+      return Math.max(5, Math.round(volume * 0.004));
+  }
+}
+
+function calculateShippingCost(dimensions, weight, itemPrice) {
+  // Base shipping calculation
+  const volume = dimensions.length * dimensions.width * dimensions.height;
+  const volumeWeight = volume / 166; // Dimensional weight factor
+  const billableWeight = Math.max(weight, volumeWeight);
+  
+  // Base cost calculation
+  let shippingCost = 15; // Base rate
+  
+  // Weight-based pricing
+  if (billableWeight <= 10) {
+    shippingCost += billableWeight * 2;
+  } else if (billableWeight <= 50) {
+    shippingCost += 20 + (billableWeight - 10) * 3;
+  } else if (billableWeight <= 150) {
+    shippingCost += 140 + (billableWeight - 50) * 4;
+  } else {
+    shippingCost += 540 + (billableWeight - 150) * 5;
+  }
+  
+  // Size surcharges
+  const maxDimension = Math.max(dimensions.length, dimensions.width, dimensions.height);
+  if (maxDimension > 96) {
+    shippingCost += 100; // Oversized surcharge
+  } else if (maxDimension > 72) {
+    shippingCost += 50;
+  } else if (maxDimension > 48) {
+    shippingCost += 25;
+  }
+  
+  // Item value adjustment
+  if (itemPrice > 1000) {
+    shippingCost *= 1.2; // Premium handling
+  } else if (itemPrice < 50) {
+    shippingCost = Math.min(shippingCost, itemPrice * 0.5); // Cap at 50% of item value
+  }
+  
+  // Final safeguards
+  shippingCost = Math.max(15, Math.min(shippingCost, 800)); // Min $15, Max $800
+  
+  return Math.round(shippingCost);
 }
 
 module.exports = ZyteScraper;
