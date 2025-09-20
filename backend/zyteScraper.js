@@ -35,9 +35,32 @@ class ZyteScraper {
         url: url,
         product: true,
         productOptions: {
-          extractFrom: 'httpResponseBody'
+          extractFrom: 'httpResponseBody',
+          // Add anti-detection measures
+          renderJavaScript: true,
+          waitForSelector: 'h1, .product-title, [data-testid="product-title"]',
+          waitTime: 5000
         },
-        httpResponseBody: true
+        httpResponseBody: true,
+        // Enhanced browser simulation
+        browserHtml: true,
+        screenshot: false,
+        // Use premium residential proxies
+        requestHeaders: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.5',
+          'Accept-Encoding': 'gzip, deflate, br',
+          'DNT': '1',
+          'Connection': 'keep-alive',
+          'Upgrade-Insecure-Requests': '1',
+          'Sec-Fetch-Dest': 'document',
+          'Sec-Fetch-Mode': 'navigate',
+          'Sec-Fetch-Site': 'none',
+          'Cache-Control': 'max-age=0'
+        },
+        // Geographic location
+        geolocation: 'US'
       }, {
         auth: {
           username: this.apiKey,
@@ -46,7 +69,7 @@ class ZyteScraper {
         headers: {
           'Content-Type': 'application/json'
         },
-        timeout: 45000
+        timeout: 60000 // Longer timeout for JS rendering
       });
 
       console.log('✅ Zyte request completed successfully');
@@ -97,6 +120,21 @@ class ZyteScraper {
 
   parseZyteResponse(data, url, retailer) {
     console.log('🔍 Parsing Zyte response with automatic extraction...');
+    
+    // CRITICAL: Check if we got blocked by anti-bot
+    if (data.httpResponseBody) {
+      const html = data.httpResponseBody;
+      if (html.includes('akam-sw.js') || 
+          html.includes('challenge') || 
+          html.includes('bot detection') ||
+          html.includes('SDk4Z/hTt/AOPx') ||
+          html.length < 5000) {
+        console.log('🚨 DETECTED BOT BLOCKING! Crate & Barrel is using anti-bot protection');
+        console.log('🚨 HTML length:', html.length);
+        console.log('🚨 Contains akam-sw.js:', html.includes('akam-sw.js'));
+        throw new Error('Bot detection triggered - need different approach');
+      }
+    }
     
     // EMERGENCY DEBUG - Let's see what Zyte is actually returning!
     console.log('🚨 EMERGENCY DEBUG - Raw Zyte response:');
