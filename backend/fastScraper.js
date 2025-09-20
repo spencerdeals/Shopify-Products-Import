@@ -9,7 +9,7 @@ const OrderTracker = require('./orderTracking');
 require('dotenv').config();
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8080;
 
 // Initialize scrapers
 const zyteScraper = new ZyteScraper();
