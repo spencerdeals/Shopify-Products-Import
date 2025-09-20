@@ -823,7 +823,7 @@ async function enhanceProductDataWithAdvancedGPT(productData, url, retailer) {
 You are an expert e-commerce product analyzer. Analyze this product data and return enhanced information in JSON format.
 
 Product URL: ${productData.url}
-URL Parameters: ${urlParams}
+URL Parameters: ${JSON.stringify(urlParams)}
 Current Data: ${JSON.stringify(productData, null, 2)}
 
 Enhance the product data with:
@@ -958,15 +958,209 @@ async function scrapeProduct(url) {
         console.log('   ✅ Advanced GPT enhancement successful');
       } catch (error) {
         console.log('   ❌ GPT enhancement failed:', error.message);
-      }
         // Continue with original Zyte data - no harm done!
       }
     }
     
   } catch (error) {
-    console.error('❌ Error in try block:', error);
-    return null;
+    console.log('   ❌ Zyte API failed:', error.message);
+    
+    // STEP 2: Try GPT parser as fallback
+    if (USE_GPT_FALLBACK) {
+      try {
+        console.log('   🤖 Trying GPT parser fallback...');
+        const gptData = await parseWithGPT(url);
+        
+        // Check if GPT got essential data
+        const gptHasEssentialData = gptData && gptData.name && gptData.price;
+        
+        if (gptHasEssentialData) {
+          // Convert GPT parser format to our expected format
+          productData = {
+            name: gptData.name,
+            price: gptData.price,
+            image: gptData.image,
+            dimensions: gptData.dimensions || gptData.package_dimensions,
+            weight: gptData.weight || gptData.package_weight_lbs,
+            brand: gptData.brand,
+            category: gptData.category,
+            inStock: gptData.inStock,
+            variant: gptData.variant
+          };
+          scrapingMethod = 'gpt-fallback';
+          console.log('   ✅ GPT parser fallback success!');
+        } else {
+          console.log('   ❌ GPT parser also missing essential data');
+          throw new Error(`GPT parser failed: missing essential data (name: ${!!gptData?.name}, price: ${!!gptData?.price})`);
+        }
+      } catch (gptError) {
+        console.log('   ❌ GPT parser fallback failed:', gptError.message);
+        
+        // Both Zyte and GPT failed - require manual entry
+        console.log('   🚨 Both automated methods failed - requiring manual entry');
+        scrapingMethod = 'manual-required';
+      }
+    } else {
+      console.log('   ⚠️ No GPT fallback available (missing OpenAI API key)');
+      scrapingMethod = 'manual-required';
+    }
   }
+  
+  // Check if manual entry is required
+  if (scrapingMethod === 'manual-required') {
+    console.log(`   ⚠️ ${retailer} requires manual entry - both automated methods failed`);
+    return {
+      id: productId,
+      url: url,
+      name: null,
+      price: null,
+      image: null,
+      category: 'general',
+      retailer: retailer,
+      dimensions: null,
+      weight: null,
+      shippingCost: 0,
+      scrapingMethod: 'manual-required',
+      confidence: null,
+      variant: null,
+      manualEntryRequired: true,
+      message: `${retailer} requires manual entry. Please copy and paste the webpage content.`,
+      dataCompleteness: {
+        hasName: false,
+        hasImage: false,
+        hasDimensions: false,
+        hasWeight: false,
+        hasPrice: false,
+        hasVariant: false
+      }
+    };
+  }
+  
+  // Check if IKEA component collection is needed
+  if (retailer === 'IKEA' && productData && productData.name && productData.price) {
+    const needsComponents = checkIfIkeaNeedsComponents(productData.name, productData.price);
+    if (needsComponents) {
+      console.log(`   🛏️ IKEA product likely has multiple components: ${productData.name}`);
+    }
+    // TEMPORARILY DISABLED FOR DEBUGGING - Let's see what Zyte actually returns
+    // if (scrapingMethod === 'manual-required') { ... }
+  }
+  
+  // Ensure we always have valid productData for successful scrapes
+  if (!productData) {
+    productData = {
+      name: null,
+      price: null,
+      image: null,
+      dimensions: null,
+      weight: null,
+      brand: null,
+      category: null,
+      inStock: true,
+      variant: null
+    };
+  }
+  
+  // Fill in missing data with estimations
+  const productName = (productData && productData.name) ? productData.name : `Product from ${retailer}`;
+  
+  // Handle category - safely convert object to string if needed
+  let category = null;
+  if (productData && productData.category) {
+    category = productData.category;
+  }
+  if (typeof category === 'object' && category && category.name) {
+    category = category.name; // Extract string from Zyte category object
+  }
+  if (!category || typeof category !== 'string') {
+    category = categorizeProduct(productName, url);
+  }
+  
+  console.log(`   📂 Final category: "${category}"`);
+  
+  // STEP 3: IKEA Multi-Box Estimation
+  if (retailer === 'IKEA' && productData && productData.dimensions && productData.name && productData.price) {
+    const ikeaEstimate = estimateIkeaMultiBoxShipping(productData.dimensions, productData.name, productData.price);
+    
+    if (ikeaEstimate.boxCount > 1) {
+      productData.dimensions = ikeaEstimate.dimensions;
+      productData.ikeaMultiBox = {
+        estimatedBoxes: ikeaEstimate.boxCount,
+        confidence: ikeaEstimate.confidence,
+        singleBoxVolume: ikeaEstimate.singleBoxVolume,
+        totalVolume: ikeaEstimate.totalVolume
+      };
+      
+      scrapingMethod = scrapingMethod + '+ikea-multibox';
+      
+      console.log(`   🎯 Applied IKEA multi-box estimation (${ikeaEstimate.confidence} confidence)`);
+    }
+  }
+  
+  // STEP 4: Ensure we have dimensions before proceeding
+  if (!productData || !productData.dimensions) {
+    const estimatedDimensions = estimateDimensions(category, productName);
+    if (productData) {
+      productData.dimensions = estimatedDimensions;
+    } else {
+      productData = { dimensions: estimatedDimensions };
+    }
+    console.log('   📐 Estimated dimensions based on category:', category);
+    if (scrapingMethod === 'none') {
+      scrapingMethod = 'estimation';
+    }
+  }
+  
+  if (!productData || !productData.weight) {
+    const estimatedWeight = estimateWeight(productData.dimensions, category);
+    if (productData) {
+      productData.weight = estimatedWeight;
+    } else {
+      productData = { ...productData, weight: estimatedWeight };
+    }
+    console.log('   ⚖️ Estimated weight based on dimensions');
+  }
+  
+  // Calculate shipping cost
+  const shippingCost = calculateShippingCost(
+    productData.dimensions,
+    productData.weight,
+    (productData && productData.price) ? productData.price : 100
+  );
+  
+  // Prepare final product object
+  const product = {
+    id: productId,
+    url: url,
+    name: productName,
+    price: (productData && productData.price) ? productData.price : null,
+    image: (productData && productData.image) ? productData.image : 'https://placehold.co/400x400/7CB342/FFFFFF/png?text=SDL',
+    category: category,
+    retailer: retailer,
+    dimensions: productData.dimensions,
+    weight: productData.weight,
+    shippingCost: shippingCost,
+    scrapingMethod: scrapingMethod,
+    confidence: confidence,
+    variant: (productData && productData.variant) ? productData.variant : null,
+    dataCompleteness: {
+      hasName: !!(productData && productData.name),
+      hasImage: !!(productData && productData.image),
+      hasDimensions: !!(productData && productData.dimensions),
+      hasWeight: !!(productData && productData.weight),
+      hasPrice: !!(productData && productData.price),
+      hasVariant: !!(productData && productData.variant)
+    }
+  };
+  
+  console.log(`   💰 Shipping cost: $${shippingCost}`);
+  console.log(`   📊 Data source: ${scrapingMethod}`);
+  if (confidence !== null) {
+    console.log(`   🎯 Confidence: ${(confidence * 100).toFixed(1)}%`);
+  }
+  console.log(`   ✅ Product processed\n`);
+
+  return product;
 }
 
 // Batch processing with concurrency control
@@ -1140,6 +1334,9 @@ Content: ${trimmedContent}`;
             hasName: !!productData.name,
             hasImage: !!productData.image,
             hasDimensions: !!productData.dimensions,
+            hasWeight: !!productData.weight,
+            hasPrice: !!productData.price,
+            hasVariant: !!productData.variant
           }
         };
         
@@ -1364,5 +1561,5 @@ app.listen(PORT, () => {
   console.log(`📍 Frontend: http://localhost:${PORT}`);
   console.log(`📍 API Health: http://localhost:${PORT}/health`);
   console.log(`📍 Admin Panel: http://localhost:${PORT}/admin (admin:1064)`);
-// Updated: Force Railway deployment trigger
+  // Updated: Force Railway deployment trigger
 });
