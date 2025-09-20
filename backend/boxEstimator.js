@@ -168,16 +168,13 @@ class BoxEstimator {
       { length: 14.39, width: 49.4, height: 6.3 }
     ]);
     
-    // Chair data (waiting for billed amount)
-    const chairData = this.addDataPoint('chair', 3.09, null, [
+    // Chair data
+    const chairData = this.addDataPoint('chair', 3.09, 3.7, [
       { length: 20.6, width: 23.39, height: 11.1 }
     ]);
     
     // Analysis
-    const dataPoints = [sofaData, deskData];
-    if (chairData.billedCubicFeet) {
-      dataPoints.push(chairData);
-    }
+    const dataPoints = [sofaData, deskData, chairData];
     
     const analysis = this.analyzeOverchargePattern(dataPoints);
     console.log('\n🎯 PATTERN ANALYSIS:');
