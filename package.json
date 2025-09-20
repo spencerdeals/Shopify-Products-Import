@@ -1,6 +1,6 @@
 {
   "name": "bermuda-import-calculator",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "SDL Instant Import Calculator for Bermuda shipping estimates",
   "main": "backend/fastScraper.js",
   "scripts": {
