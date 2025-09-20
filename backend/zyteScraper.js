@@ -19,8 +19,6 @@ class ZyteScraper {
     }
   }
 
-  let lastGoodResult = null;
-
   async scrapeProduct(url) {
     if (!this.enabled) {
       throw new Error('Zyte not configured - missing API key');
@@ -64,6 +62,7 @@ class ZyteScraper {
       ];
       
       let lastError = null;
+      let lastGoodResult = null;
       
       for (const strategy of strategies) {
         console.log(`   🎯 Trying strategy: ${strategy.name}`);
@@ -116,65 +115,6 @@ class ZyteScraper {
       
       throw lastError || new Error('All strategies failed');
       
-    } catch (error) {
-      return this.handleZyteError(error);
-    }
-  }
-        url: url,
-        browserHtml: true,
-        product: true,
-        productOptions: {
-          extractFrom: "browserHtml",
-          ai: true
-        }
-      };
-      
-      console.log('🚨 DEBUG: Exact request payload:', JSON.stringify(requestPayload, null, 2));
-      console.log('🚨 DEBUG: API Key (first 8 chars):', this.apiKey.substring(0, 8) + '...');
-      console.log('🚨 DEBUG: Base URL:', this.baseURL);
-      
-      // DEBUG: Log exact axios config
-      const axiosConfig = {
-        auth: {
-          username: this.apiKey,
-          password: ''
-        },
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'Accept-Encoding': 'gzip, deflate'
-        },
-        timeout: 90000
-      };
-      
-      console.log('🚨 DEBUG: Exact axios config:', JSON.stringify(axiosConfig, null, 2));
-      
-      // Use the EXACT same format as Zyte playground - simplified request
-      const response = await axios.post(this.baseURL, requestPayload, axiosConfig);
-
-      console.log('✅ Zyte request completed successfully');
-      console.log('📊 Response status:', response.status);
-      console.log('📊 Response headers:', JSON.stringify(response.headers, null, 2));
-      
-      if (!response.data) {
-        throw new Error('No data received from Zyte API');
-      }
-      
-      // Parse the Zyte response using automatic extraction data
-      const productData = this.parseZyteResponse(response.data, url, retailer);
-      
-      console.log('📦 Zyte extraction results:', {
-        hasName: !!productData.name,
-        hasPrice: !!productData.price,
-        hasImage: !!productData.image,
-        hasDimensions: !!productData.dimensions,
-        hasWeight: !!productData.weight,
-        hasVariant: !!productData.variant,
-        confidence: productData.confidence
-      });
-
-      return productData;
-
     } catch (error) {
       return this.handleZyteError(error);
     }
@@ -307,9 +247,6 @@ class ZyteScraper {
 
     console.log('   ❌ No product data found in response');
     throw new Error('No product data extracted');
-  }
-
-    return productData;
   }
 
   extractPriceFromHTML(html) {
