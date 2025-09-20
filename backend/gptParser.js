@@ -169,12 +169,14 @@ Return STRICT JSON with fields:
 - package_dimensions (object with length,width,height in inches, optional)
 - package_weight_lbs (number, optional)
 - variant (string, optional - SELECTED color/fabric, size, orientation from URL params or active elements)
+- variant_image_available (boolean, optional - true if image shows selected variant, false if "not pictured")
 
 CRITICAL VARIANT DETECTION:
 - Look for SELECTED/ACTIVE options in HTML (aria-selected="true", .selected, .active)
 - Parse URL parameters like piid=1222175087,1261760516,1262971467 to understand selections
 - For Wayfair: Look for selected fabric color and orientation (Left/Right Hand Facing)
 - Match the product image to the SELECTED variant, not the default
+- If you see "Not pictured:" text, set variant_image_available to false
 
 CRITICAL PRICE DETECTION:
 - Look for the main selling price near "Add to Cart" or buy buttons
