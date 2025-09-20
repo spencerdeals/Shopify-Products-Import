@@ -2104,13 +2104,13 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
                     const totalMetrics = Object.keys(dataStatus).length || 5;
                     
                     let productNameHTML = product.name;
-                    if (product.variant) {
-                        productNameHTML = `${product.name} <span class="product-variant">🎨 ${product.variant}</span>`;
+                    if (product.enhanced_variant || product.variant) {
+                        productNameHTML = `${product.name} <span class="product-variant">🎨 ${product.enhanced_variant || product.variant}</span>`;
                     }
                     
                     vendorHTML += `
                         <div class="product-item ${vendorClass}" id="product-item-${productId}">
-                            <img src="${product.image || 'https://placehold.co/100x100/7CB342/FFFFFF/png?text=No+Image'}" 
+                            <img src="${product.enhanced_image || product.image || 'https://placehold.co/100x100/7CB342/FFFFFF/png?text=No+Image'}" 
                                  alt="${product.name}" 
                                  class="product-image" 
                                  onerror="this.src='https://placehold.co/100x100/7CB342/FFFFFF/png?text=No+Image'">
@@ -2121,7 +2121,7 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
                                     </a>
                                 </div>
                                 <div class="product-info">
-                                    <span>📦 ${product.category}</span>
+                                    <span>📦 ${product.enhanced_category || product.category}</span>
                                     <span>🚢 Est. shipping: $${product.shippingCost || 0}</span>
                                     <span>📊 Data: ${completenessScore}/${totalMetrics}</span>
                                 </div>
@@ -2398,7 +2398,7 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
                     html += `
                         <div class="product-breakdown-item">
                             <div class="product-breakdown-name">
-                                ${product.name} ${product.variant ? `<span class="product-variant">🎨 ${product.variant}</span>` : ''}
+                                ${product.name} ${product.enhanced_variant || product.variant ? `<span class="product-variant">🎨 ${product.enhanced_variant || product.variant}</span>` : ''}
                                 ${quantity > 1 ? `<strong>(Qty: ${quantity})</strong>` : ''}
                             </div>
                             <div class="product-breakdown-details">
