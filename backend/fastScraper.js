@@ -787,6 +787,7 @@ async function scrapeProduct(url) {
     const needsComponents = checkIfIkeaNeedsComponents(productData.name, productData.price);
     if (needsComponents) {
       console.log(`   🛏️ IKEA product likely has multiple components: ${productData.name}`);
+    }
     // TEMPORARILY DISABLED FOR DEBUGGING - Let's see what Zyte actually returns
     // if (scrapingMethod === 'manual-required') { ... }
   }
