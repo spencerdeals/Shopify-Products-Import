@@ -39,6 +39,30 @@ class ZyteScraper {
           extractFrom: 'browserHtml'
         },
         browserHtml: true,
+        // CRITICAL: Add these to bypass bot detection
+        customHttpRequestHeaders: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.5',
+          'Accept-Encoding': 'gzip, deflate, br',
+          'DNT': '1',
+          'Connection': 'keep-alive',
+          'Upgrade-Insecure-Requests': '1',
+          'Sec-Fetch-Dest': 'document',
+          'Sec-Fetch-Mode': 'navigate',
+          'Sec-Fetch-Site': 'none',
+          'Cache-Control': 'max-age=0'
+        },
+        // Add JavaScript execution wait time
+        actions: [
+          {
+            action: 'waitForTimeout',
+            timeout: 5000
+          }
+        ],
+        // Use residential proxy to avoid detection
+        requestUrl: url,
+        geolocation: 'US'
       }, {
         auth: {
           username: this.apiKey,
@@ -47,7 +71,7 @@ class ZyteScraper {
         headers: {
           'Content-Type': 'application/json'
         },
-        timeout: 60000 // Longer timeout for JS rendering
+        timeout: 90000 // Even longer timeout for bot bypass
       });
 
       console.log('✅ Zyte request completed successfully');
