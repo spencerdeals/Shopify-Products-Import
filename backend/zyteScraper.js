@@ -214,29 +214,21 @@ class ZyteScraper {
     
     const priceSelectors = this.getPriceSelectors(retailer);
     
-    let foundPrice = null;
-    
     for (const selector of priceSelectors) {
       const elements = $(selector);
       console.log(`   🔍 Found ${elements.length} elements for selector: ${selector}`);
       
-      for (let i = 0; i < elements.length; i++) {
-        const el = elements[i];
+      elements.each((i, el) => {
         const priceText = $(el).text().trim();
         const priceMatch = priceText.match(/[\d,]+\.?\d*/);
         if (priceMatch) {
           const price = parseFloat(priceMatch[0].replace(/,/g, ''));
           if (price > 0 && price < 100000) {
             console.log(`   💰 Found valid price: $${price} from selector: ${selector}`);
-            foundPrice = price;
-            break;
+            return price;
           }
         }
-      }
-      
-      if (foundPrice) {
-        return foundPrice;
-      }
+      });
     }
     
     console.log('   ❌ No valid price found in HTML');
