@@ -694,8 +694,7 @@ async function scrapeProduct(url) {
     const hasEssentialData = productData && productData.name && productData.price;
     
     // Check if confidence is too low (likely blocked/failed)
-    // TEMPORARILY DISABLED FOR DEBUGGING - let Zyte go all the way through
-    const lowConfidence = false; // confidence !== null && confidence < CONFIDENCE_THRESHOLD;
+    const lowConfidence = confidence !== null && confidence < CONFIDENCE_THRESHOLD;
     
     if (!hasEssentialData || lowConfidence) {
       if (!hasEssentialData) {
