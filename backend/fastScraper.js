@@ -1268,6 +1268,7 @@ Content: ${trimmedContent}`;
         
         console.log('   ✅ Manual content processed successfully');
         res.json({ success: true, product });
+        image: productData.image || '/images/sdl-logo.png',
         
       } else {
         console.log('❌ GPT extraction failed - missing required data:', {
