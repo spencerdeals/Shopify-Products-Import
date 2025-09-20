@@ -178,7 +178,8 @@ Return STRICT JSON with fields:
 - breadcrumbs (array of strings, optional)
 - package_dimensions (object with length,width,height in inches, optional)
 - package_weight_lbs (number, optional)
-- variant (string, optional - color, size, style)
+- variant (string, optional - primary selected variant)
+- allVariants (array of strings, optional - all available variants like ["Color: Navy", "Size: King"])
 
 Rules:
 - ${vendorPromptHints(vendor)}
@@ -188,7 +189,9 @@ Rules:
 - If you see an explicit "Package Dimensions" or "Box Dimensions", include them.
 - For dimensions like "23.8"H height 85.4"W width 37"D depth", convert to: length=85.4, width=37, height=23.8
 - "image" should be the main product image URL if visible.
-- Extract variant info like color, size, or style if clearly selected.
+- Extract ALL variant info: color, size, style, material, orientation if clearly selected.
+- "allVariants" should be array like ["Color: Navy Blue", "Size: King", "Style: Left-facing"]
+- "variant" should be the primary combined variant like "Navy Blue King Left-facing"
 - Look for SKU numbers in the content.
 `.trim();
 
@@ -222,6 +225,7 @@ Rules:
   const brand = typeof data.brand === 'string' && data.brand.trim() ? data.brand.trim() : null;
   const sku = typeof data.sku === 'string' && data.sku.trim() ? data.sku.trim() : null;
   const variant = typeof data.variant === 'string' && data.variant.trim() ? data.variant.trim() : null;
+  const allVariants = Array.isArray(data.allVariants) ? data.allVariants.filter(v => typeof v === 'string' && v.trim()) : [];
 
   // Optional package dims normalization
   let pkgDims = null;
@@ -253,7 +257,7 @@ Rules:
   }
 
   return {
-    url, name, price, currency, image, brand, sku, availability, breadcrumbs, variant,
+    url, name, price, currency, image, brand, sku, availability, breadcrumbs, variant, allVariants,
     package_dimensions: pkgDims,
     package_weight_lbs: pkgWeight,
     dimensions: pkgDims, // Map to expected field name

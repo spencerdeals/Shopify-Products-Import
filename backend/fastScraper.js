@@ -383,23 +383,30 @@ async function enhanceProductDataWithGPT(zyteData, url, retailer) {
     const OpenAI = require('openai');
     const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
     
-    const prompt = `Enhance this product data intelligently. Focus on extracting the PRIMARY variant (size/dimension over color) and realistic shipping box dimensions.
+    const prompt = `Enhance this product data intelligently. Extract ALL meaningful variants (color, size, style, orientation) and realistic shipping box dimensions. Return valid JSON.
 
 Product: "${zyteData.name}"
 Category: "${zyteData.category}"
 Current Variant: "${zyteData.variant || 'none'}"
 Current Dimensions: ${JSON.stringify(zyteData.dimensions)}
 Retailer: ${retailer}
+URL: ${url}
 
 Rules:
-1. For furniture/mattresses: Prioritize SIZE variant (King, Queen, 63", etc.) over color
-2. Extract realistic shipping box dimensions based on product type
-3. If current data is good, keep it
-4. Return ONLY: {"primaryVariant": "...", "enhancedDimensions": {"length": X, "width": Y, "height": Z}}
+1. Extract ALL meaningful variants: color, size, style, orientation, material
+2. For furniture: Extract size (King, Queen, 63"), color (Navy, Gray), style (Left-facing, Right-facing)
+3. Extract realistic shipping box dimensions based on product type
+4. Get the main product image URL if available
+5. Return valid JSON with these fields:
+   - "allVariants": ["Color: Navy", "Size: King", "Orientation: Left-facing"]
+   - "primaryVariant": "Navy King Left-facing Sectional"
+   - "enhancedDimensions": {"length": X, "width": Y, "height": Z}
+   - "mainImage": "https://..."
 
 Examples:
-- "King Mattress\" → primaryVariant: "King", dimensions: ~80×80×12 inches
-- "63\" Loveseat" → primaryVariant: "63\" Loveseat", dimensions: ~65×35×32 inches`;
+- Sectional Sofa → allVariants: ["Color: Navy", "Size: 89.5W", "Orientation: Left-facing"], primaryVariant: "Navy 89.5W Left-facing"
+- Standing Desk → allVariants: ["Color: Rustic Brown", "Size: 47.25W"], primaryVariant: "Rustic Brown 47.25W"
+- Office Chair → allVariants: ["Color: Black", "Style: Ergonomic"], primaryVariant: "Black Ergonomic"`;
 
     const response = await client.chat.completions.create({
       model: 'gpt-4o-mini',
@@ -407,7 +414,7 @@ Examples:
       max_tokens: 200,
       response_format: { type: 'json_object' },
       messages: [
-        { role: 'system', content: 'You are a furniture expert. Enhance product data intelligently.' },
+        { role: 'system', content: 'You are a furniture expert. Enhance product data intelligently and return valid JSON.' },
         { role: 'user', content: prompt }
       ],
     });
@@ -417,10 +424,21 @@ Examples:
     // SAFELY enhance the data (never replace, only improve)
     const enhanced = { ...zyteData };
     
-    // Enhance variant if GPT found a better one
-    if (enhancement.primaryVariant && enhancement.primaryVariant !== 'none') {
+    // Enhance variants if GPT found better ones
+    if (enhancement.allVariants && Array.isArray(enhancement.allVariants) && enhancement.allVariants.length > 0) {
+      enhanced.allVariants = enhancement.allVariants;
+      console.log(`   🎨 Enhanced variants: ${enhancement.allVariants.join(', ')}`);
+    }
+    
+    if (enhancement.primaryVariant && enhancement.primaryVariant !== 'none' && enhancement.primaryVariant.length > 3) {
       enhanced.variant = enhancement.primaryVariant;
       console.log(`   🎨 Enhanced variant: "${zyteData.variant}" → "${enhancement.primaryVariant}"`);
+    }
+    
+    // Enhance main image if GPT found a better one
+    if (enhancement.mainImage && enhancement.mainImage.startsWith('http')) {
+      enhanced.image = enhancement.mainImage;
+      console.log(`   🖼️ Enhanced image URL`);
     }
     
     // Enhance dimensions if GPT found better ones
@@ -1103,7 +1121,8 @@ Content: ${trimmedContent}`;
           brand: gptData.brand,
           category: category,
           inStock: gptData.inStock,
-          variant: gptData.variant
+          variant: gptData.variant,
+          allVariants: gptData.allVariants || []
         };
         
         // Fill in missing data with estimations

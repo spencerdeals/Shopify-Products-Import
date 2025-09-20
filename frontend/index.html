@@ -2117,7 +2117,9 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
                             <div class="product-details">
                                 <div class="product-name">
                                     <a href="${product.url}" target="_blank" title="View product page">
-                                        ${productNameHTML}
+                                        ${product.name}${product.allVariants && product.allVariants.length > 0 ? 
+                                            ` <span class="product-variant">🎨 ${product.allVariants.join(' • ')}</span>` : 
+                                            (product.variant ? ` <span class="product-variant">🎨 ${product.variant}</span>` : '')}
                                     </a>
                                 </div>
                                 <div class="product-info">

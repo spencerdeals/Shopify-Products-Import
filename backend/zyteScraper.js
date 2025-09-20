@@ -218,6 +218,7 @@ class ZyteScraper {
       category: null,
       inStock: true,
       variant: null,
+      allVariants: [],
       confidence: null
     };
 
@@ -246,14 +247,34 @@ class ZyteScraper {
         }
       }
       
-      // Main image - handle both formats
-      if (product.mainImage && product.mainImage.url) {
+      // Enhanced image extraction - prefer high-quality variant images
+      if (product.images && product.images.length > 0) {
+        // Look for the largest/highest quality image
+        let bestImage = null;
+        let maxSize = 0;
+        
+        product.images.forEach(img => {
+          const imageUrl = typeof img === 'object' ? img.url : img;
+          if (imageUrl && imageUrl.startsWith('http')) {
+            // Try to detect image size from URL patterns
+            const sizeMatch = imageUrl.match(/(\d+)x(\d+)/);
+            if (sizeMatch) {
+              const size = parseInt(sizeMatch[1]) * parseInt(sizeMatch[2]);
+              if (size > maxSize) {
+                maxSize = size;
+                bestImage = imageUrl;
+              }
+            } else if (!bestImage) {
+              bestImage = imageUrl; // Fallback to first valid image
+            }
+          }
+        });
+        
+        productData.image = bestImage;
+        console.log('   🖼️ Best Image: Found (quality optimized)');
+      } else if (product.mainImage && product.mainImage.url) {
         productData.image = product.mainImage.url;
         console.log('   🖼️ Main Image: Found');
-      } else if (product.images && product.images.length > 0) {
-        const firstImage = product.images[0];
-        productData.image = typeof firstImage === 'object' ? firstImage.url : firstImage;
-        console.log('   🖼️ Image: Found (from images array)');
       }
 
       // Brand
@@ -272,8 +293,12 @@ class ZyteScraper {
         console.log('   📂 Category:', productData.category);
       }
 
-      // Extract dimensions from size field
+      // Enhanced variant extraction - look for multiple variant types
+      const variants = [];
+      
+      // Extract size/dimensions as variant
       if (product.size) {
+        variants.push(`Size: ${product.size}`);
         const sizeMatch = product.size.match(/(\d+(?:\.\d+)?)"W\s*x\s*(\d+(?:\.\d+)?)"D/);
         if (sizeMatch) {
           productData.dimensions = {
@@ -284,6 +309,44 @@ class ZyteScraper {
           console.log('   📏 Dimensions from size:', `${productData.dimensions.length}" × ${productData.dimensions.width}" × ${productData.dimensions.height}"`);
         }
       }
+      
+      // Extract color variants
+      if (product.color) {
+        variants.push(`Color: ${product.color}`);
+        console.log('   🎨 Color variant:', product.color);
+      }
+      
+      // Extract style/material variants
+      if (product.style) {
+        variants.push(`Style: ${product.style}`);
+        console.log('   ✨ Style variant:', product.style);
+      }
+      
+      if (product.material) {
+        variants.push(`Material: ${product.material}`);
+        console.log('   🪵 Material variant:', product.material);
+      }
+      
+      // Look for variants in product features or options
+      if (product.features && Array.isArray(product.features)) {
+        product.features.forEach(feature => {
+          if (typeof feature === 'string' && feature.length < 50) {
+            variants.push(feature);
+          }
+        });
+      }
+      
+      // Store all variants
+      productData.allVariants = variants;
+      
+      // Create a comprehensive primary variant
+      if (variants.length > 0) {
+        productData.variant = variants.join(' | ');
+        console.log('   🎯 Combined variants:', productData.variant);
+      } else if (product.size) {
+        productData.variant = product.size;
+        console.log('   📏 Size variant:', productData.variant);
+      }
 
       // Availability
       if (product.availability) {
@@ -291,11 +354,6 @@ class ZyteScraper {
         console.log('   📦 In Stock:', productData.inStock);
       }
 
-      // Use size as variant info
-      if (product.size) {
-        productData.variant = product.size;
-        console.log('   🎨 Variant:', productData.variant);
-      }
 
       // Confidence score
       if (product.metadata && product.metadata.probability) {
@@ -307,10 +365,10 @@ class ZyteScraper {
       return productData;
     }
 
-    // Fallback: Parse from HTML if automatic extraction failed  
+    // Fallback: Enhanced HTML parsing if automatic extraction failed  
     if (!productData.name && data.browserHtml) {
       console.log('   🔍 Falling back to HTML parsing...');
-      const htmlData = this.parseHTML(data.browserHtml, url, retailer);
+      const htmlData = this.parseHTMLWithVariants(data.browserHtml, url, retailer);
       
       // Merge data - prefer automatic extraction but fill gaps with HTML parsing
       productData.name = productData.name || htmlData.name;
@@ -318,6 +376,8 @@ class ZyteScraper {
       productData.image = productData.image || htmlData.image;
       productData.dimensions = productData.dimensions || htmlData.dimensions;
       productData.weight = productData.weight || htmlData.weight;
+      productData.allVariants = productData.allVariants || htmlData.allVariants || [];
+      productData.variant = productData.variant || htmlData.variant;
     }
 
     return productData;
@@ -429,7 +489,9 @@ class ZyteScraper {
       price: null,
       image: null,
       dimensions: null,
-      weight: null
+      weight: null,
+      allVariants: [],
+      variant: null
     };
 
     // Extract product name from HTML title
@@ -441,6 +503,58 @@ class ZyteScraper {
     // Extract price from HTML
     productData.price = this.extractPriceFromHTML(html);
 
+    return productData;
+  }
+  
+  parseHTMLWithVariants(html, url, retailer) {
+    const productData = this.parseHTML(html, url, retailer);
+    
+    // Enhanced variant extraction from HTML
+    const variants = [];
+    const $ = require('cheerio').load(html);
+    
+    // Wayfair-specific variant selectors
+    if (retailer === 'Wayfair') {
+      // Look for selected options
+      $('.SelectedOption, .option-selected, .selected-swatch').each((i, el) => {
+        const variantText = $(el).text().trim();
+        if (variantText && variantText.length < 50) {
+          variants.push(variantText);
+        }
+      });
+      
+      // Look for color swatches
+      $('[data-testid*="color"], .color-option.selected, .ColorOption.selected').each((i, el) => {
+        const colorText = $(el).attr('aria-label') || $(el).text().trim();
+        if (colorText && colorText.length < 30) {
+          variants.push(`Color: ${colorText}`);
+        }
+      });
+      
+      // Look for size options
+      $('[data-testid*="size"], .size-option.selected, .SizeOption.selected').each((i, el) => {
+        const sizeText = $(el).attr('aria-label') || $(el).text().trim();
+        if (sizeText && sizeText.length < 30) {
+          variants.push(`Size: ${sizeText}`);
+        }
+      });
+    }
+    
+    // Generic variant extraction for other retailers
+    $('.selected, .selected-option, .selected-variant, [aria-selected="true"]').each((i, el) => {
+      const variantText = $(el).text().trim();
+      if (variantText && variantText.length > 2 && variantText.length < 50) {
+        variants.push(variantText);
+      }
+    });
+    
+    productData.allVariants = variants;
+    productData.variant = variants.length > 0 ? variants.join(' | ') : null;
+    
+    if (variants.length > 0) {
+      console.log('   🎨 HTML variants found:', variants);
+    }
+    
     return productData;
   }
 
