@@ -30,12 +30,11 @@ class ZyteScraper {
     try {
       console.log('   📤 Sending request to Zyte API with automatic extraction...');
       
-      // Use automatic product extraction - this is the key fix!
+      // Use the EXACT same format as Zyte playground
       const response = await axios.post(this.baseURL, {
         url: url,
-        browserHtml: true,        // Browser Rendering: Yes - browserHtml
-        product: true,            // Structured Data: AI-powered parsing
-        httpResponseBody: true    // HTML: Returns HTML response
+        browserHtml: true,     // Browser Rendering: Yes
+        product: true          // Structured Data: AI-powered parsing
       }, {
         auth: {
           username: this.apiKey,
@@ -44,7 +43,7 @@ class ZyteScraper {
         headers: {
           'Content-Type': 'application/json'
         },
-        timeout: 90000  // Give more time for AI processing
+        timeout: 60000
       });
 
       console.log('✅ Zyte request completed successfully');
