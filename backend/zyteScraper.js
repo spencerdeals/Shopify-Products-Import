@@ -390,13 +390,25 @@ class ZyteScraper {
     if (product.variants && Array.isArray(product.variants)) {
       console.log(`   📊 Found ${product.variants.length} variants in Zyte array`);
       
-      product.variants.forEach((variant, index) => {
+      // First, try to find selected/active variants
+      const selectedVariants = product.variants.filter(variant => 
+        variant.selected === true || 
+        variant.active === true || 
+        variant.current === true ||
+        variant.isSelected === true ||
+        variant.isActive === true
+      );
+      
+      const variantsToProcess = selectedVariants.length > 0 ? selectedVariants : product.variants;
+      console.log(`   🎯 Processing ${variantsToProcess.length} variants (${selectedVariants.length > 0 ? 'selected only' : 'all available'})`);
+      
+      variantsToProcess.forEach((variant, index) => {
         console.log(`   🔍 Variant ${index + 1}:`, variant);
         
         // Extract color
         if (variant.color) {
           const colorValue = this.cleanVariantValue(variant.color);
-          if (colorValue) {
+          if (colorValue && !variantData.color) {
             variants.push(`Color: ${colorValue}`);
             variantData.color = colorValue;
           }
@@ -405,7 +417,7 @@ class ZyteScraper {
         // Extract size
         if (variant.size) {
           const sizeValue = this.cleanVariantValue(variant.size);
-          if (sizeValue) {
+          if (sizeValue && !variantData.size) {
             variants.push(`Size: ${sizeValue}`);
             variantData.size = sizeValue;
           }
@@ -414,7 +426,7 @@ class ZyteScraper {
         // Extract style
         if (variant.style) {
           const styleValue = this.cleanVariantValue(variant.style);
-          if (styleValue) {
+          if (styleValue && !variantData.style) {
             variants.push(`Style: ${styleValue}`);
             variantData.style = styleValue;
           }
@@ -423,7 +435,7 @@ class ZyteScraper {
         // Extract material
         if (variant.material) {
           const materialValue = this.cleanVariantValue(variant.material);
-          if (materialValue) {
+          if (materialValue && !variantData.material) {
             variants.push(`Material: ${materialValue}`);
             variantData.material = materialValue;
           }
@@ -452,7 +464,18 @@ class ZyteScraper {
     if (product.additionalProperties && Array.isArray(product.additionalProperties)) {
       console.log(`   📊 Found ${product.additionalProperties.length} additional properties`);
       
-      product.additionalProperties.forEach(prop => {
+      // First, try to find selected properties
+      const selectedProperties = product.additionalProperties.filter(prop => 
+        prop.selected === true || 
+        prop.active === true || 
+        prop.current === true ||
+        prop.isSelected === true
+      );
+      
+      const propertiesToProcess = selectedProperties.length > 0 ? selectedProperties : product.additionalProperties;
+      console.log(`   🎯 Processing ${propertiesToProcess.length} properties (${selectedProperties.length > 0 ? 'selected only' : 'all available'})`);
+      
+      propertiesToProcess.forEach(prop => {
         const propName = prop.name?.toLowerCase();
         const propValue = this.cleanVariantValue(prop.value);
         
