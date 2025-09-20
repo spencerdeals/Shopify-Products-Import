@@ -26,15 +26,6 @@ class ZyteScraper {
 
     const retailer = this.detectRetailer(url);
     console.log(`🕷️ Zyte scraping ${retailer}: ${url.substring(0, 60)}...`);
-
-    try {
-      console.log('   📤 Sending request to Zyte API with automatic extraction...');
-      
-      // Try HTTP request first (faster, cheaper, often works better)
-      const strategies = [
-        {
-          name: "http-request",
-          payload: {
             url: url,
             product: true,
             productOptions: {
@@ -45,10 +36,6 @@ class ZyteScraper {
         {
           name: "browser-request", 
           payload: {
-            url: url,
-            product: true,
-            productOptions: {
-              extractFrom: "browserHtml"
             }
           }
         },
@@ -75,8 +62,7 @@ class ZyteScraper {
             },
             headers: {
               'Content-Type': 'application/json',
-              'Accept': 'application/json',
-              'Accept-Encoding': 'gzip, deflate'
+              'Accept': 'application/json'
             },
             timeout: 60000
           });
