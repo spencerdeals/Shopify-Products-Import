@@ -364,50 +364,27 @@ function calculateShippingCost(dimensions, weight, price) {
   const handlingFee = 15;
   console.log(`   📋 HANDLING FEE: $${handlingFee}`);
   
-      const requestPayload = {
-      // SACRED BINGO MOMENT CONFIGURATION - DO NOT CHANGE!
-      const requestPayload = {
-        url: url,
-        browserHtml: true,
-        product: true,
-        productOptions: {
-          extractFrom: "browserHtml",
-          ai: true
-        }
-      };
-      
-      const response = await axios.post(this.baseURL, requestPayload, {
-        auth: {
-          username: this.apiKey,
-          password: ''
-        },
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'Accept-Encoding': 'gzip, deflate'
-        },
-        timeout: 90000
-      });
+  // Total shipping cost
+  const totalShippingCost = baseCost + handlingFee;
+  console.log(`   💰 TOTAL SHIPPING: $${baseCost.toFixed(2)} + $${handlingFee} = $${totalShippingCost.toFixed(2)}`);
+  
+  return Math.round(totalShippingCost * 100) / 100;
+}
 
-      console.log('✅ Zyte request completed successfully');
-      console.log('📊 Response status:', response.status);
-      
-      if (!response.data) {
-        throw new Error('No data received from Zyte API');
-      }
-      
-      // Parse the Zyte response using automatic extraction data
-      const productData = this.parseZyteResponse(response.data, url, retailer);
-      
-      console.log('📦 Zyte extraction results:', {
-        hasName: !!productData.name,
-        hasPrice: !!productData.price,
-        hasImage: !!productData.image,
-        hasDimensions: !!productData.dimensions,
-        hasWeight: !!productData.weight,
-        hasVariant: !!productData.variant,
-        confidence: productData.confidence
-      });
+// Enhanced GPT enhancement function
+async function enhanceProductDataWithGPT(zyteData, url, retailer) {
+  if (!process.env.OPENAI_API_KEY) {
+    return zyteData;
+  }
+  
+  try {
+    console.log('   🧠 Enhancing product data with GPT intelligence...');
+    
+    const OpenAI = require('openai');
+    const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    
+    const prompt = `Enhance this product data intelligently. Focus on extracting the PRIMARY variant (size/dimension over color) and realistic shipping box dimensions.
+
 Product: "${zyteData.name}"
 Category: "${zyteData.category}"
 Current Variant: "${zyteData.variant || 'none'}"
@@ -421,8 +398,8 @@ Rules:
 4. Return ONLY: {"primaryVariant": "...", "enhancedDimensions": {"length": X, "width": Y, "height": Z}}
 
 Examples:
-- "King Mattress" → primaryVariant: "King", dimensions: ~80×80×12 inches
-- "63" Loveseat" → primaryVariant: "63" Loveseat", dimensions: ~65×35×32 inches`;
+- "King Mattress\" → primaryVariant: "King", dimensions: ~80×80×12 inches
+- "63\" Loveseat" → primaryVariant: "63\" Loveseat", dimensions: ~65×35×32 inches`;
 
     const response = await client.chat.completions.create({
       model: 'gpt-4o-mini',
@@ -443,7 +420,7 @@ Examples:
     // Enhance variant if GPT found a better one
     if (enhancement.primaryVariant && enhancement.primaryVariant !== 'none') {
       enhanced.variant = enhancement.primaryVariant;
-      console.log(`   🎨 Enhanced variant: "${zyteData.variant}" → "${enhancement.primaryVariant}"`);
+      console.log(\`   🎨 Enhanced variant: "${zyteData.variant}\" → "${enhancement.primaryVariant}"`);
     }
     
     // Enhance dimensions if GPT found better ones
@@ -459,7 +436,7 @@ Examples:
       // Use GPT dimensions if they're significantly larger (more realistic for furniture)
       if (gptVolume > currentVolume * 1.5) {
         enhanced.dimensions = enhancement.enhancedDimensions;
-        console.log(`   📦 Enhanced dimensions: ${Math.round(gptVolume/1728 * 100)/100} ft³ vs ${Math.round(currentVolume/1728 * 100)/100} ft³`);
+        console.log(\`   📦 Enhanced dimensions: ${Math.round(gptVolume/1728 * 100)/100} ft³ vs ${Math.round(currentVolume/1728 * 100)/100} ft³`);
       }
     }
     
@@ -477,6 +454,64 @@ function checkIfIkeaNeedsComponents(productName, price) {
   
   // Bed frames - typically 2-4 components
   if (/\b(bed|frame|headboard|footboard)\b/.test(name)) {
+    if (price > 400) {
+      return { count: 4, type: 'bed frame' }; // King/Queen beds
+    } else if (price > 200) {
+      return { count: 3, type: 'bed frame' }; // Full/Double beds
+    } else {
+      return { count: 2, type: 'bed frame' }; // Twin beds
+    }
+  }
+  
+  // Wardrobes/PAX - typically 3-6 components
+  if (/\b(wardrobe|armoire|closet|pax)\b/.test(name)) {
+    if (price > 500) {
+      return { count: 6, type: 'wardrobe system' }; // Large PAX systems
+    } else if (price > 300) {
+      return { count: 4, type: 'wardrobe' }; // Medium wardrobes
+    } else {
+      return { count: 3, type: 'wardrobe' }; // Small wardrobes
+    }
+  }
+  
+  // Kitchen systems - typically 4-8 components
+  if (/\b(kitchen|cabinet.*set|knoxhult|enhet)\b/.test(name)) {
+    if (price > 1000) {
+      return { count: 8, type: 'kitchen system' }; // Full kitchen
+    } else if (price > 500) {
+      return { count: 5, type: 'kitchen set' }; // Partial kitchen
+    } else {
+      return { count: 4, type: 'kitchen unit' }; // Small kitchen set
+    }
+  }
+  
+  // Sectional sofas - typically 2-4 components
+  if (/\b(sectional|sofa.*section|corner.*sofa)\b/.test(name)) {
+    if (price > 800) {
+      return { count: 4, type: 'sectional sofa' }; // Large sectionals
+    } else {
+      return { count: 3, type: 'sectional sofa' }; // Small sectionals
+    }
+  }
+  
+  // Dining sets - typically 2-3 components (table + chairs)
+  if (/\b(dining|table.*chair|chair.*table)\b/.test(name)) {
+    return { count: 3, type: 'dining set' };
+  }
+  
+  // Large storage/shelving - typically 2-3 components for tall units
+  if (/\b(bookshelf|shelf.*unit|billy|hemnes.*bookcase|kallax)\b/.test(name) && price > 200) {
+    return { count: 3, type: 'storage unit' };
+  }
+  
+  // Large desks - typically 2 components
+  if (/\b(desk|workstation|office.*table)\b/.test(name) && price > 300) {
+    return { count: 2, type: 'desk system' };
+  }
+  
+  return null; // Single component item
+}
+
 // Helper function to check if essential data is complete
 function isDataComplete(productData) {
   return productData && 
@@ -518,8 +553,8 @@ function estimateIkeaMultiBoxShipping(singleBoxDimensions, productName, price) {
   const name = productName.toLowerCase();
   const volume = singleBoxDimensions.length * singleBoxDimensions.width * singleBoxDimensions.height;
   
-  console.log(`   🛏️ IKEA Multi-Box Analysis for: "${productName.substring(0, 50)}..."`);
-  console.log(`   📦 Single box: ${singleBoxDimensions.length}" × ${singleBoxDimensions.width}" × ${singleBoxDimensions.height}" (${(volume/1728).toFixed(2)} ft³)`);
+  console.log(\`   🛏️ IKEA Multi-Box Analysis for: "${productName.substring(0, 50)}..."`);
+  console.log(\`   📦 Single box: ${singleBoxDimensions.length}" × ${singleBoxDimensions.width}\" × ${singleBoxDimensions.height}" (${(volume/1728).toFixed(2)} ft³)`);
   
   let boxMultiplier = 1;
   let confidence = 'low';
@@ -664,6 +699,7 @@ function getIkeaProductType(name) {
   if (/\b(desk|workstation)\b/.test(name)) return 'Desk/Office';
   return 'Furniture';
 }
+
 // Merge product data from multiple sources
 function mergeProductData(primary, secondary) {
   if (!primary) return secondary;
