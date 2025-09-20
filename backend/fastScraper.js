@@ -911,7 +911,8 @@ async function scrapeProduct(url) {
         estimatedBoxes: ikeaEstimate.boxCount,
         confidence: ikeaEstimate.confidence,
         singleBoxVolume: ikeaEstimate.singleBoxVolume,
-        totalVolume: ikeaEstimate.totalVolume
+        variant: null,
+        allVariants: []
       };
       
       scrapingMethod = scrapingMethod + '+ikea-multibox';
@@ -1122,7 +1123,6 @@ Content: ${trimmedContent}`;
           category: category,
           inStock: gptData.inStock,
           variant: gptData.variant,
-          allVariants: gptData.allVariants || []
           allVariants: gptData.allVariants || []
         };
         
