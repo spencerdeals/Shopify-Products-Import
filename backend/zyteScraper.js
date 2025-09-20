@@ -98,6 +98,13 @@ class ZyteScraper {
   parseZyteResponse(data, url, retailer) {
     console.log('🔍 Parsing Zyte response with automatic extraction...');
     
+    // EMERGENCY DEBUG - Let's see what Zyte is actually returning!
+    console.log('🚨 EMERGENCY DEBUG - Raw Zyte response:');
+    console.log('🚨 Full data object:', JSON.stringify(data, null, 2));
+    if (data.product) {
+      console.log('🚨 Product object:', JSON.stringify(data.product, null, 2));
+    }
+    
     const productData = {
       name: null,
       price: null,
