@@ -958,7 +958,6 @@ async function scrapeProduct(url) {
         console.log('   ✅ Advanced GPT enhancement successful');
       } catch (error) {
         console.log('   ❌ GPT enhancement failed:', error.message);
-      }
         // Continue with original Zyte data - no harm done!
       }
     }
@@ -1364,5 +1363,5 @@ app.listen(PORT, () => {
   console.log(`📍 Frontend: http://localhost:${PORT}`);
   console.log(`📍 API Health: http://localhost:${PORT}/health`);
   console.log(`📍 Admin Panel: http://localhost:${PORT}/admin (admin:1064)`);
-// Updated: Force Railway deployment trigger
+  // Updated: Force Railway deployment trigger
 });
