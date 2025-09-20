@@ -1351,6 +1351,10 @@ Content: ${trimmedContent}`;
           console.log('   📷 Variant image not available - will show note to customer');
         }
         
+          product.variant_image_note = `Selected variant (${gptData.enhanced_variant || productData.variant}) not pictured - showing similar style`;
+          console.log('   📷 Variant image not available - will show note to customer');
+        }
+        
         console.log('   ✅ Manual content processed successfully');
         res.json({ success: true, product });
         
