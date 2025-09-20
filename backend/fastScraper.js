@@ -823,7 +823,7 @@ async function enhanceProductDataWithAdvancedGPT(productData, url, retailer) {
 You are an expert e-commerce product analyzer. Analyze this product data and return enhanced information in JSON format.
 
 Product URL: ${productData.url}
-URL Parameters: ${urlParams}
+URL Parameters: ${JSON.stringify(urlParams)}
 Current Data: ${JSON.stringify(productData, null, 2)}
 
 Enhance the product data with:
@@ -958,7 +958,6 @@ async function scrapeProduct(url) {
         console.log('   ✅ Advanced GPT enhancement successful');
       } catch (error) {
         console.log('   ❌ GPT enhancement failed:', error.message);
-      }
         // Continue with original Zyte data - no harm done!
       }
     }
@@ -1335,6 +1334,9 @@ Content: ${trimmedContent}`;
             hasName: !!productData.name,
             hasImage: !!productData.image,
             hasDimensions: !!productData.dimensions,
+            hasWeight: !!productData.weight,
+            hasPrice: !!productData.price,
+            hasVariant: !!productData.variant
           }
         };
         
@@ -1559,5 +1561,5 @@ app.listen(PORT, () => {
   console.log(`📍 Frontend: http://localhost:${PORT}`);
   console.log(`📍 API Health: http://localhost:${PORT}/health`);
   console.log(`📍 Admin Panel: http://localhost:${PORT}/admin (admin:1064)`);
-// Updated: Force Railway deployment trigger
+  // Updated: Force Railway deployment trigger
 });
