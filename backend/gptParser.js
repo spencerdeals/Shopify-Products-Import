@@ -170,11 +170,6 @@ Return STRICT JSON with fields:
 - package_weight_lbs (number, optional)
 - variant (string, optional - color, size, style)
 
-Rules:
-- ${vendorPromptHints(vendor)}
-- If currency is unclear, use "${currencyFallback}".
-- "price" must be > 0 and realistic.
-- Prefer selling price (not list/was/per-month).
 - If you see an explicit "Package Dimensions" or "Box Dimensions", include them.
 - For dimensions like "23.8"H height 85.4"W width 37"D depth", convert to: length=85.4, width=37, height=23.8
 - "image" should be the main product image URL if visible.
@@ -183,8 +178,6 @@ Rules:
 `.trim();
 
   const user = `URL: ${url}\nURL Parameters: ${urlParams}\nExtract product data from the provided HTML and visible text.\nPay special attention to SELECTED/ACTIVE variants and matching images.\nReturn ONLY valid JSON, no explanations.`;
-
-  console.log(`[GPT Parser] Making GPT call ${gptCallsUsed}/${MAX_GPT_CALLS_PER_RUN} for ${vendor}`);
   
   gptCallsUsed += 1;
   const response = await client.chat.completions.create({
