@@ -35,7 +35,7 @@ class BoxEstimator {
     const buffer = this.packagingBuffer[sizeCategory];
     
     // Add packaging buffer to each dimension
-    let boxDimensions = {
+    const boxDimensions = {
       length: length + buffer,
       width: width + buffer,
       height: height + buffer,
@@ -45,15 +45,15 @@ class BoxEstimator {
     };
 
     // Check if item might need multiple boxes (furniture-specific logic)
-    if (itemType === 'furniture') {
-      boxDimensions = this.estimateFurnitureBoxing(productDimensions, boxDimensions);
-    }
+    const finalBoxDimensions = itemType === 'furniture' 
+      ? this.estimateFurnitureBoxing(productDimensions, boxDimensions)
+      : boxDimensions;
 
     // Calculate cubic feet
-    const cubicInches = boxDimensions.length * boxDimensions.width * boxDimensions.height * boxDimensions.estimatedBoxes;
-    boxDimensions.cubicFeet = cubicInches / 1728;
+    const cubicInches = finalBoxDimensions.length * finalBoxDimensions.width * finalBoxDimensions.height * finalBoxDimensions.estimatedBoxes;
+    finalBoxDimensions.cubicFeet = cubicInches / 1728;
 
-    return boxDimensions;
+    return finalBoxDimensions;
   }
 
   // Furniture-specific boxing estimation
