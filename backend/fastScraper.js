@@ -26,8 +26,8 @@ const SHIPPING_RATE_PER_CUBIC_FOOT = 8;
 
 // Initialize scrapers
 const zyteScraper = new ZyteScraper();
-const USE_ZYTE = zyteScraper.enabled;
 const boxEstimator = new BoxEstimator();
+const USE_ZYTE = zyteScraper.enabled;
 const USE_GPT_FALLBACK = !!process.env.OPENAI_API_KEY;
 
 // Confidence threshold for triggering GPT fallback
@@ -1020,6 +1020,20 @@ async function scrapeProduct(url) {
     }
   };
   
+        // Add box dimension estimation
+        if (product.dimensions) {
+          const boxEstimate = boxEstimator.estimateBoxDimensions(product.dimensions, 'furniture');
+          if (boxEstimate) {
+            console.log(`   📦 Estimated Box Dimensions: ${boxEstimate.length}" × ${boxEstimate.width}" × ${boxEstimate.height}"`);
+            console.log(`   📦 Estimated Boxes: ${boxEstimate.estimatedBoxes}`);
+            console.log(`   📦 Estimated Shipping Cubic Feet: ${boxEstimate.cubicFeet.toFixed(2)} ft³`);
+            console.log(`   📝 Notes: ${boxEstimate.notes}`);
+            
+            // Add to product data
+            product.boxEstimate = boxEstimate;
+          }
+        }
+  
   console.log(`   💰 Shipping cost: $${shippingCost}`);
   console.log(`   📊 Data source: ${scrapingMethod}`);
   if (confidence !== null) {
@@ -1281,6 +1295,35 @@ app.get('/api/orders/:orderId/tracking-status', async (req, res) => {
 app.post('/api/orders/:orderId/stop-tracking', async (req, res) => {
   // Order tracking disabled - missing orderTracking.js file
   return res.status(500).json({ error: 'Order tracking not available' });
+});
+
+// Test endpoint for box estimation learning
+app.post('/api/learn-box-dimensions', (req, res) => {
+  try {
+    const { productDimensions, actualBoxes, productType } = req.body;
+    
+    if (!productDimensions || !actualBoxes) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Missing productDimensions or actualBoxes' 
+      });
+    }
+    
+    const comparison = boxEstimator.learnFromActual(productDimensions, actualBoxes, productType);
+    
+    res.json({
+      success: true,
+      comparison,
+      message: 'Learning data processed successfully'
+    });
+    
+  } catch (error) {
+    console.error('Error in box dimension learning:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
 });
 
 // Shopify Draft Order Creation
