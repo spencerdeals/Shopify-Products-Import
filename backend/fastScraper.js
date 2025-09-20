@@ -399,81 +399,6 @@ function calculateShippingCost(dimensions, weight, price) {
   return Math.round(finalShippingCost);
 }
 
-// GPT Enhancement Function - SAFE post-processor for Zyte data
-async function enhanceProductDataWithGPT(zyteData, url, retailer) {
-  if (!process.env.OPENAI_API_KEY) {
-    return zyteData; // No enhancement available
-  }
-  
-  const OpenAI = require('openai');
-  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  
-  try {
-    const prompt = `Analyze this product data and enhance ONLY the variant and dimensions. Return JSON with enhanced fields:
-
-Product: "${zyteData.name}"
-Category: "${zyteData.category}"
-Current Variant: "${zyteData.variant || 'none'}"
-Current Dimensions: ${JSON.stringify(zyteData.dimensions)}
-Retailer: ${retailer}
-
-Rules:
-1. For furniture/mattresses: Prioritize SIZE variant (King, Queen, 63", etc.) over color
-2. Extract realistic shipping box dimensions based on product type
-3. If current data is good, keep it
-4. Return ONLY: {"primaryVariant": "...", "enhancedDimensions": {"length": X, "width": Y, "height": Z}}
-
-Examples:
-- "King Mattress" → primaryVariant: "King", dimensions: ~80×80×12 inches
-- "63" Loveseat" → primaryVariant: "63" Loveseat", dimensions: ~65×35×32 inches`;
-
-    const response = await client.chat.completions.create({
-      model: 'gpt-4o-mini',
-      temperature: 0.1,
-      max_tokens: 200,
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: 'You are a furniture expert. Enhance product data intelligently.' },
-        { role: 'user', content: prompt }
-      ],
-    });
-
-    const enhancement = JSON.parse(response.choices[0].message.content || '{}');
-    
-    // SAFELY enhance the data (never replace, only improve)
-    const enhanced = { ...zyteData };
-    
-    // Enhance variant if GPT found a better one
-    if (enhancement.primaryVariant && enhancement.primaryVariant !== 'none') {
-      enhanced.variant = enhancement.primaryVariant;
-      console.log(`   🎨 Enhanced variant: "${zyteData.variant}" → "${enhancement.primaryVariant}"`);
-    }
-    
-    // Enhance dimensions if GPT found better ones
-    if (enhancement.enhancedDimensions && 
-        enhancement.enhancedDimensions.length > 0 &&
-        enhancement.enhancedDimensions.width > 0 &&
-        enhancement.enhancedDimensions.height > 0) {
-      
-      // Only use GPT dimensions if they seem more realistic
-      const gptVolume = enhancement.enhancedDimensions.length * enhancement.enhancedDimensions.width * enhancement.enhancedDimensions.height;
-      const currentVolume = zyteData.dimensions ? (zyteData.dimensions.length * zyteData.dimensions.width * zyteData.dimensions.height) : 0;
-      
-      // Use GPT dimensions if they're significantly larger (more realistic for furniture)
-      if (gptVolume > currentVolume * 1.5) {
-        enhanced.dimensions = enhancement.enhancedDimensions;
-        console.log(`   📦 Enhanced dimensions: ${Math.round(gptVolume/1728 * 100)/100} ft³ vs ${Math.round(currentVolume/1728 * 100)/100} ft³`);
-      }
-    }
-    
-    return enhanced;
-    
-  } catch (error) {
-    console.log('   ❌ GPT enhancement error:', error.message);
-    return zyteData; // Return original data if enhancement fails
-  }
-}
-
 // Check if IKEA product needs component collection
 function checkIfIkeaNeedsComponents(productName, price) {
   const name = productName.toLowerCase();
@@ -782,19 +707,6 @@ async function scrapeProduct(url) {
     }
     
     console.log('   ✅ Zyte API success with good confidence');
-    
-    // STEP 1.5: GPT Enhancement (SAFE - only enhances, never replaces)
-    if (productData && USE_GPT_FALLBACK) {
-      try {
-        console.log('   🧠 Enhancing with GPT intelligence...');
-        productData = await enhanceProductDataWithGPT(productData, url, retailer);
-        console.log('   ✅ GPT enhancement successful');
-      } catch (gptError) {
-        console.log('   ⚠️ GPT enhancement failed, using original Zyte data:', gptError.message);
-        // Continue with original Zyte data - no harm done!
-      }
-    }
-    
   } catch (error) {
     console.log('   ❌ Zyte API failed:', error.message);
     
