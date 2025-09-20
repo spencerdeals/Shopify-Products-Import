@@ -168,8 +168,18 @@ class BoxEstimator {
       { length: 14.39, width: 49.4, height: 6.3 }
     ]);
     
+    // Chair data (waiting for billed amount)
+    const chairData = this.addDataPoint('chair', 3.09, null, [
+      { length: 20.6, width: 23.39, height: 11.1 }
+    ]);
+    
     // Analysis
-    const analysis = this.analyzeOverchargePattern([sofaData, deskData]);
+    const dataPoints = [sofaData, deskData];
+    if (chairData.billedCubicFeet) {
+      dataPoints.push(chairData);
+    }
+    
+    const analysis = this.analyzeOverchargePattern(dataPoints);
     console.log('\n🎯 PATTERN ANALYSIS:');
     console.log(`   Total Items: ${analysis.totalItems}`);
     console.log(`   Overcharged Items: ${analysis.overchargedItems}`);
