@@ -5,7 +5,7 @@ const axios = require('axios');
 const path = require('path');
 const { URL } = require('url');
 require('dotenv').config();
-const OrderTracker = require('./orderTracking');
+// const OrderTracker = require('./orderTracking');
 const ZyteScraper = require('./zyteScraper');
 const { parseProduct: parseWithGPT } = require('./gptParser');
 
@@ -31,14 +31,14 @@ const USE_GPT_FALLBACK = !!process.env.OPENAI_API_KEY;
 // Confidence threshold for triggering GPT fallback
 const CONFIDENCE_THRESHOLD = 0.3; // If Zyte confidence < 30%, try GPT
 
-// Initialize order tracker
-let orderTracker = null;
-
-OrderTracker.create().then(tracker => {
-  orderTracker = tracker;
-}).catch(error => {
-  console.error('Failed to initialize order tracker:', error);
-});
+// Initialize order tracker - DISABLED
+// let orderTracker = null;
+// 
+// OrderTracker.create().then(tracker => {
+//   orderTracker = tracker;
+// }).catch(error => {
+//   console.error('Failed to initialize order tracker:', error);
+// });
 
 console.log('=== SERVER STARTUP ===');
 console.log(`Port: ${PORT}`);
@@ -1266,35 +1266,18 @@ app.get('/api/get-pending-order/:orderId', (req, res) => {
 
 // Order tracking endpoints
 app.post('/api/orders/:orderId/start-tracking', async (req, res) => {
-  if (!orderTracker) {
-    return res.status(500).json({ error: 'Order tracking not available' });
-  }
-  
-  const { orderId } = req.params;
-  const { retailerOrders } = req.body;
-  
-  const result = await orderTracker.startTracking(orderId, retailerOrders);
-  res.json(result);
+  // Order tracking disabled - missing orderTracking.js file
+  return res.status(500).json({ error: 'Order tracking not available' });
 });
 
 app.get('/api/orders/:orderId/tracking-status', async (req, res) => {
-  if (!orderTracker) {
-    return res.status(500).json({ error: 'Order tracking not available' });
-  }
-  
-  const { orderId } = req.params;
-  const status = await orderTracker.getTrackingStatus(orderId);
-  res.json(status);
+  // Order tracking disabled - missing orderTracking.js file
+  return res.status(500).json({ error: 'Order tracking not available' });
 });
 
 app.post('/api/orders/:orderId/stop-tracking', async (req, res) => {
-  if (!orderTracker) {
-    return res.status(500).json({ error: 'Order tracking not available' });
-  }
-  
-  const { orderId } = req.params;
-  const result = await orderTracker.stopTracking(orderId);
-  res.json(result);
+  // Order tracking disabled - missing orderTracking.js file
+  return res.status(500).json({ error: 'Order tracking not available' });
 });
 
 // Shopify Draft Order Creation
