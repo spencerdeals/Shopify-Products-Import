@@ -787,34 +787,8 @@ async function scrapeProduct(url) {
     const needsComponents = checkIfIkeaNeedsComponents(productData.name, productData.price);
     if (needsComponents) {
       console.log(`   🛏️ IKEA product likely has multiple components: ${productData.name}`);
-      return {
-        id: productId,
-        url: url,
-        name: productData.name,
-        price: productData.price,
-        image: productData.image,
-        category: category,
-        retailer: retailer,
-        dimensions: productData.dimensions,
-        weight: productData.weight,
-        shippingCost: 0,
-        scrapingMethod: 'ikea-components-required',
-        confidence: confidence,
-        variant: productData.variant,
-        ikeaComponentsRequired: true,
-        estimatedComponents: needsComponents.count,
-        componentType: needsComponents.type,
-        message: `This IKEA ${needsComponents.type} likely ships in ${needsComponents.count} separate packages. Please check "What's included" and provide URLs for each component.`,
-        dataCompleteness: {
-          hasName: !!productData.name,
-          hasImage: !!productData.image,
-          hasDimensions: !!productData.dimensions,
-          hasWeight: !!productData.weight,
-          hasPrice: !!productData.price,
-          hasVariant: !!productData.variant
-        }
-      };
-    }
+    // TEMPORARILY DISABLED FOR DEBUGGING - Let's see what Zyte actually returns
+    // if (scrapingMethod === 'manual-required') { ... }
   }
   
   // Ensure we always have valid productData for successful scrapes
