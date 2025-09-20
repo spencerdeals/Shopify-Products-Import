@@ -8,6 +8,7 @@ require('dotenv').config();
 // const OrderTracker = require('./orderTracking');
 const ZyteScraper = require('./zyteScraper');
 const { parseProduct: parseWithGPT } = require('./gptParser');
+const BoxEstimator = require('./boxEstimator');
 
 // Simple, working scraper approach
 const MAX_CONCURRENT = 1; // Process one at a time to avoid issues
@@ -26,6 +27,7 @@ const SHIPPING_RATE_PER_CUBIC_FOOT = 8;
 // Initialize scrapers
 const zyteScraper = new ZyteScraper();
 const USE_ZYTE = zyteScraper.enabled;
+const boxEstimator = new BoxEstimator();
 const USE_GPT_FALLBACK = !!process.env.OPENAI_API_KEY;
 
 // Confidence threshold for triggering GPT fallback

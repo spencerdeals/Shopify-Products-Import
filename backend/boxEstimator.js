@@ -263,6 +263,33 @@ Requested Refund: $${analysis.potentialSavings.totalOvercharge}
 Please provide detailed measurements used for billing calculation.
     `.trim();
   }
+
+  // Quick calculation method for manual data entry
+  quickCalculate(dimensions, billedCubicFeet = null) {
+    const actualCubicFeet = (dimensions.length * dimensions.width * dimensions.height) / 1728;
+    
+    console.log('📦 Quick Calculation:');
+    console.log(`   Dimensions: ${dimensions.length}" × ${dimensions.width}" × ${dimensions.height}"`);
+    console.log(`   Actual Cubic Feet: ${actualCubicFeet.toFixed(2)} ft³`);
+    
+    if (billedCubicFeet) {
+      const overcharge = this.detectOvercharge(actualCubicFeet, billedCubicFeet);
+      console.log(`   Billed Cubic Feet: ${billedCubicFeet} ft³`);
+      
+      if (overcharge.isOvercharge) {
+        console.log(`   🚨 OVERCHARGE: ${overcharge.overchargeAmount} ft³ (${overcharge.percentageOver}%)`);
+        console.log(`   💰 Potential Refund: $${overcharge.potentialSavings.totalOvercharge}`);
+      } else {
+        console.log(`   ✅ Billing appears accurate (${overcharge.difference} ft³ difference)`);
+      }
+    }
+    
+    return {
+      actualCubicFeet: actualCubicFeet.toFixed(2),
+      billedCubicFeet,
+      dimensions: `${dimensions.length}" × ${dimensions.width}" × ${dimensions.height}"`
+    };
+  }
 }
 
 module.exports = BoxEstimator;
