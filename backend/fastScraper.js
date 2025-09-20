@@ -9,6 +9,7 @@ require('dotenv').config();
 const ZyteScraper = require('./zyteScraper');
 const { parseProduct: parseWithGPT } = require('./gptParser');
 const BoxEstimator = require('./boxEstimator');
+const DataManager = require('./dataManager');
 
 // Simple, working scraper approach
 const MAX_CONCURRENT = 1; // Process one at a time to avoid issues
@@ -27,6 +28,7 @@ const SHIPPING_RATE_PER_CUBIC_FOOT = 8;
 // Initialize scrapers
 const zyteScraper = new ZyteScraper();
 const boxEstimator = new BoxEstimator();
+const dataManager = new DataManager();
 const USE_ZYTE = zyteScraper.enabled;
 const USE_GPT_FALLBACK = !!process.env.OPENAI_API_KEY;
 
@@ -1067,6 +1069,49 @@ async function processBatch(urls, batchSize = MAX_CONCURRENT) {
   }
   return results;
 }
+
+// Get actual shipping data
+app.get('/api/actual-data', async (req, res) => {
+  try {
+    const data = await dataManager.loadActualData();
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Add actual shipment data
+app.post('/api/actual-data', async (req, res) => {
+  try {
+    const shipment = await dataManager.addActualShipment(req.body);
+    res.json({ success: true, shipment });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Compare scraper results with actual data
+app.post('/api/compare/:shipmentId', async (req, res) => {
+  try {
+    const comparison = await dataManager.compareScraperResults(req.body, req.params.shipmentId);
+    res.json(comparison);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Generate dispute report
+app.get('/api/dispute/:shipmentId', async (req, res) => {
+  try {
+    const report = await dataManager.generateDisputeReport(req.params.shipmentId);
+    if (!report) {
+      return res.json({ disputeRecommended: false, message: 'No overcharge detected' });
+    }
+    res.json(report);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 // API endpoint for scraping
 app.post('/api/scrape', async (req, res) => {

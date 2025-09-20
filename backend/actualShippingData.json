@@ -1,0 +1,97 @@
+{
+  "actualShipments": [
+    {
+      "id": "sofa-001",
+      "productType": "sofa",
+      "productName": "Flaubert Gwendoly Sofa and Chaise",
+      "productUrl": "https://www.wayfair.com/furniture/pdp/latitude-run-flaubert-gwendoly-sofa-and-chaise-w100063422.html",
+      "retailer": "Wayfair",
+      "actualBoxes": [
+        {
+          "boxNumber": 1,
+          "length": 43,
+          "width": 45,
+          "height": 20,
+          "cubicInches": 38700,
+          "cubicFeet": 22.4
+        },
+        {
+          "boxNumber": 2,
+          "length": 45,
+          "width": 65,
+          "height": 20,
+          "cubicInches": 58500,
+          "cubicFeet": 33.85
+        }
+      ],
+      "actualTotalCubicFeet": 56.25,
+      "billedCubicFeet": 67.5,
+      "overcharge": {
+        "cubicFeet": 11.25,
+        "percentage": 20.0,
+        "estimatedCost": 150.00
+      },
+      "dateRecorded": "2025-01-27"
+    },
+    {
+      "id": "desk-001",
+      "productType": "desk",
+      "productName": "Height Adjustable Standing Desk",
+      "productUrl": "https://www.wayfair.com/furniture/pdp/the-twillery-co-putnam-height-adjustable-standing-desks-w008127716.html",
+      "retailer": "Wayfair",
+      "actualBoxes": [
+        {
+          "boxNumber": 1,
+          "length": 14.39,
+          "width": 49.4,
+          "height": 6.3,
+          "cubicInches": 4479,
+          "cubicFeet": 2.59
+        }
+      ],
+      "actualTotalCubicFeet": 2.59,
+      "billedCubicFeet": 2.6,
+      "overcharge": {
+        "cubicFeet": 0.01,
+        "percentage": 0.4,
+        "estimatedCost": 0.15
+      },
+      "dateRecorded": "2025-01-27"
+    },
+    {
+      "id": "chair-001",
+      "productType": "chair",
+      "productName": "Office Chair",
+      "productUrl": null,
+      "retailer": "Unknown",
+      "actualBoxes": [
+        {
+          "boxNumber": 1,
+          "length": 20.6,
+          "width": 23.39,
+          "height": 11.1,
+          "cubicInches": 5347,
+          "cubicFeet": 3.09
+        }
+      ],
+      "actualTotalCubicFeet": 3.09,
+      "billedCubicFeet": 3.7,
+      "overcharge": {
+        "cubicFeet": 0.61,
+        "percentage": 19.7,
+        "estimatedCost": 12.00
+      },
+      "dateRecorded": "2025-01-27"
+    }
+  ],
+  "summary": {
+    "totalItems": 3,
+    "overchargedItems": 2,
+    "overchargeRate": "67%",
+    "totalActualCubicFeet": 61.93,
+    "totalBilledCubicFeet": 73.8,
+    "totalOverchargeCubicFeet": 11.87,
+    "totalEstimatedOverchargeCost": 162.15,
+    "pattern": "SYSTEMATIC_OVERCHARGING_ABOVE_3_CUBIC_FEET"
+  }
+}
