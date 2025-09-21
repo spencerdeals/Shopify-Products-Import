@@ -130,7 +130,12 @@ async function smartFetchHtml(url) {
 function vendorPromptHints(vendor){
   switch (vendor) {
     case 'Wayfair':
-      return `For Wayfair: CRITICAL - ONLY use SALE/CURRENT prices. Look for prices in red text, highlighted boxes, or marked as "sale", "current", "now". IGNORE regular prices, "was" prices, and financing options. The sale price is usually larger and more prominent near "Add to Cart".`;
+      return `For Wayfair: CRITICAL - Extract the MAIN SELLING PRICE that customers pay. Look for:
+        1. Sale prices (red text, highlighted, marked as "sale", "current", "now") - HIGHEST PRIORITY
+        2. If no sale price, use the main price near "Add to Cart" button
+        3. IGNORE "was" prices, financing options, and struck-through prices
+        4. The price should be clearly visible and prominent on the page
+        5. If multiple prices exist, choose the one customers would actually pay`;
     case 'Amazon':
       return `For Amazon: CRITICAL - ONLY use SALE/DEAL prices. Look for prices in red, marked as "deal", "sale", or "current price". IGNORE struck-through list prices and subscription pricing.`;
     case 'Walmart':
@@ -189,6 +194,8 @@ Rules:
 - COMPLETELY IGNORE and DO NOT USE: struck-through prices, "was" prices, "reg" prices, "list" prices, "MSRP", financing options, or any crossed-out prices.
 - If you see multiple prices, ALWAYS choose the sale/current price over the regular price.
 - The sale price is usually more prominent, larger, or in a different color (often red).
+- CRITICAL: You MUST extract a valid product name and price. If you cannot find these, make reasonable assumptions based on page content.
+- For name: Use the main product title, even if it's in the page title or meta tags.
 - If you see an explicit "Package Dimensions" or "Box Dimensions", include them.
 - For dimensions like "23.8"H height 85.4"W width 37"D depth", convert to: length=85.4, width=37, height=23.8
 - "image" should be the main product image URL if visible.
