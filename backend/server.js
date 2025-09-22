@@ -2,13 +2,10 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const rateLimit = require('express-rate-limit');
-const ZyteScraper = require('./zyteScraper');
+const axios = require('axios');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-
-// Initialize Zyte scraper
-const zyteScraper = new ZyteScraper();
 
 // Trust proxy for Railway deployment
 app.set('trust proxy', 1);
@@ -26,6 +23,124 @@ const limiter = rateLimit({
   trustProxy: true
 });
 app.use('/api/', limiter);
+
+// Zyte Scraper Class
+class ZyteScraper {
+  constructor() {
+    this.apiKey = process.env.ZYTE_API_KEY;
+    this.enabled = !!this.apiKey;
+    
+    if (this.enabled) {
+      console.log('🕷️ ZyteScraper initialized - API Key configured');
+    } else {
+      console.log('🕷️ ZyteScraper disabled - No API Key');
+    }
+  }
+
+  async scrapeProduct(url) {
+    if (!this.enabled) {
+      throw new Error('Zyte API key not configured');
+    }
+
+    console.log(`🕷️ Zyte scraping: ${url}`);
+    
+    try {
+      const response = await axios.post('https://api.zyte.com/v1/extract', {
+        url: url,
+        product: true,
+        productOptions: {
+          extractFrom: 'httpResponseBody'
+        },
+        httpResponseBody: true
+      }, {
+        auth: {
+          username: this.apiKey,
+          password: ''
+        },
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        timeout: 60000
+      });
+
+      if (response.data && response.data.product) {
+        const product = response.data.product;
+        
+        const name = product.name || 'Unknown Product';
+        const price = parseFloat(product.price) || 0;
+        const image = product.mainImage || null;
+        const brand = product.brand?.name || null;
+        
+        // Default dimensions
+        let dimensions = { length: 24, width: 18, height: 12 };
+        
+        // Try to extract dimensions from size field
+        if (product.size) {
+          const sizeMatch = product.size.match(/(\d+\.?\d*)"?\s*[Ww]\s*x\s*(\d+\.?\d*)"?\s*[Dd]/);
+          if (sizeMatch) {
+            dimensions = {
+              length: parseFloat(sizeMatch[1]),
+              width: parseFloat(sizeMatch[2]),
+              height: 33
+            };
+          }
+        }
+
+        console.log(`✅ Zyte success! Product: "${name}" Price: $${price}`);
+        
+        return {
+          url,
+          name,
+          price,
+          currency: 'USD',
+          image,
+          brand,
+          dimensions,
+          inStock: true,
+          category: product.breadcrumbs?.[product.breadcrumbs.length - 1] || null,
+          variant: product.variants?.[0] || null,
+          manualEntryRequired: false
+        };
+      }
+      
+      throw new Error('No product data in Zyte response');
+      
+    } catch (error) {
+      console.error(`❌ Zyte failed: ${error.message}`);
+      throw error;
+    }
+  }
+}
+
+// GPT Backup Scraper
+class GPTScraper {
+  constructor() {
+    this.apiKey = process.env.OPENAI_API_KEY;
+    this.enabled = !!this.apiKey;
+    
+    if (this.enabled) {
+      console.log('🤖 GPT Backup scraper initialized');
+    } else {
+      console.log('🤖 GPT Backup scraper disabled - No OpenAI API Key');
+    }
+  }
+
+  async scrapeProduct(url) {
+    if (!this.enabled) {
+      throw new Error('OpenAI API key not configured');
+    }
+
+    console.log(`🤖 GPT backup scraping: ${url}`);
+    
+    // This would use the GPT parser as backup
+    const { parseProduct } = require('./gptParser');
+    return await parseProduct(url);
+  }
+}
+
+// Initialize scrapers
+const zyteScraper = new ZyteScraper();
+const gptScraper = new GPTScraper();
 
 // Health check
 app.get('/health', (req, res) => {
@@ -65,7 +180,37 @@ app.post('/api/scrape', async (req, res) => {
 
       try {
         console.log(`[Server] Scraping ${i + 1}/${urls.length}: ${url}`);
-        const product = await zyteScraper.scrapeProduct(url);
+        
+        let product = null;
+        
+        // Try Zyte first
+        if (zyteScraper.enabled) {
+          try {
+            product = await zyteScraper.scrapeProduct(url);
+            console.log(`✅ Zyte succeeded for ${url}`);
+          } catch (zyteError) {
+            console.log(`❌ Zyte failed for ${url}: ${zyteError.message}`);
+            
+            // Try GPT as backup
+            if (gptScraper.enabled) {
+              try {
+                console.log(`🤖 Trying GPT backup for ${url}`);
+                product = await gptScraper.scrapeProduct(url);
+                console.log(`✅ GPT backup succeeded for ${url}`);
+              } catch (gptError) {
+                console.log(`❌ GPT backup also failed for ${url}: ${gptError.message}`);
+                throw new Error(`Both Zyte and GPT failed: ${zyteError.message}`);
+              }
+            } else {
+              throw zyteError;
+            }
+          }
+        } else if (gptScraper.enabled) {
+          // Only GPT available
+          product = await gptScraper.scrapeProduct(url);
+        } else {
+          throw new Error('No scrapers configured');
+        }
         
         // Ensure we have minimum required data
         if (!product.name || !product.price) {
@@ -84,7 +229,7 @@ app.post('/api/scrape', async (req, res) => {
         else if (hostname.includes('crateandbarrel')) retailer = 'Crate & Barrel';
         else if (hostname.includes('ikea')) retailer = 'IKEA';
 
-        // Ensure dimensions exist (use defaults if missing)
+        // Ensure dimensions exist
         if (!product.dimensions) {
           product.dimensions = { length: 24, width: 18, height: 12 };
         }
@@ -148,6 +293,8 @@ app.listen(PORT, () => {
   console.log(`🚀 SDL Import Calculator running on port ${PORT}`);
   console.log(`📊 Admin panel: http://localhost:${PORT}/admin`);
   console.log(`🔧 Calculator: http://localhost:${PORT}/admin-calculator`);
+  console.log(`🕷️ Zyte enabled: ${zyteScraper.enabled}`);
+  console.log(`🤖 GPT backup enabled: ${gptScraper.enabled}`);
 });
 
 module.exports = app;
