@@ -5,7 +5,7 @@ const OpenAI = require('openai');
 
 const MODEL = process.env.GPT_PARSER_MODEL || 'gpt-4o-mini';
 const TIMEOUT_MS = 30000;
-const MAX_AXIOS_RETRIES = 1;
+const MAX_AXIOS_RETRIES = 3;
 const DEFAULT_CURRENCY = (process.env.DEFAULT_CURRENCY || 'USD').toUpperCase();
 const ALLOWED_CURRENCIES = ['USD','BMD','CAD','GBP','EUR'];
 const MAX_GPT_CALLS_PER_RUN = parseInt(process.env.MAX_GPT_CALLS_PER_RUN || '100', 10);
@@ -46,25 +46,30 @@ function detectRetailer(url){
 
 async function fetchViaAxios(url){
   let lastErr = null;
-  for (let i=0;i<MAX_AXIOS_RETRIES;i++){
+  for (let i=0;i<=MAX_AXIOS_RETRIES;i++){
       let waitMs; // Declare once at loop scope
       // Add random delay to avoid rate limits
       if (i > 0) {
-        await sleep(Math.random() * 2000 + 1000); // 1-3 second delay on retries
+        await sleep(Math.random() * 3000 + 2000); // 2-5 second delay on retries
       }
       
       try {
       const res = await axios.get(url, {
         timeout: TIMEOUT_MS,
         headers: {
-          'User-Agent': `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${rnd(120,125)}.0.0.0 Safari/537.36`,
+          'User-Agent': `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${rnd(118,125)}.0.0.0 Safari/537.36`,
           'Accept-Language': 'en-US,en;q=0.9',
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+          'Accept-Encoding': 'gzip, deflate, br',
           'Cache-Control': 'no-cache', 'Pragma': 'no-cache',
           'Sec-Fetch-Dest': 'document',
           'Sec-Fetch-Mode': 'navigate',
           'Sec-Fetch-Site': 'none',
-          'Upgrade-Insecure-Requests': '1'
+          'Upgrade-Insecure-Requests': '1',
+          'Sec-Ch-Ua': '"Google Chrome";v="119", "Chromium";v="119", "Not?A_Brand";v="24"',
+          'Sec-Ch-Ua-Mobile': '?0',
+          'Sec-Ch-Ua-Platform': '"Windows"',
+          'Connection': 'keep-alive'
         },
         validateStatus: () => true,
       });
@@ -72,41 +77,80 @@ async function fetchViaAxios(url){
         return res.data;
       }
       if (res.status === 429){
-        waitMs = 5000*(i+1) + rnd(2000,5000); // Much longer delays for 429
-        console.warn(`[Axios] 429. Retry ${i + 1}/3 after ${waitMs}ms`);
+        waitMs = 8000*(i+1) + rnd(3000,7000); // Much longer delays for 429
+        console.warn(`[Axios] 429 Rate Limited. Retry ${i + 1}/${MAX_AXIOS_RETRIES} after ${waitMs}ms`);
         await sleep(waitMs); continue;
       }
       if (res.status === 403){
-        waitMs = 8000*(i+1) + rnd(3000,5000); // Much longer for 403
-        console.warn(`[Axios] 403. Retry ${i + 1}/3 after ${waitMs}ms`);
+        waitMs = 10000*(i+1) + rnd(5000,8000); // Much longer for 403
+        console.warn(`[Axios] 403 Forbidden. Retry ${i + 1}/${MAX_AXIOS_RETRIES} after ${waitMs}ms`);
         await sleep(waitMs); continue;
       }
-      waitMs = 1000*(i+1) + rnd(500,1500);
-      console.warn(`[Axios] ${res.status}. Retry ${i + 1}/3 after ${waitMs}ms`);
+      if (res.status >= 500) {
+        waitMs = 3000*(i+1) + rnd(1000,3000);
+        console.warn(`[Axios] ${res.status} Server Error. Retry ${i + 1}/${MAX_AXIOS_RETRIES} after ${waitMs}ms`);
+      } else {
+        console.warn(`[Axios] ${res.status} - Not retrying non-server error`);
+        break;
+      }
       await sleep(waitMs);
     } catch (err) {
       lastErr = err;
-      waitMs = 1000*(i+1) + rnd(500,1500);
-      console.warn(`[Axios] Error. Retry ${i + 1}/3 after ${waitMs}ms: ${err.message}`);
+      waitMs = 2000*(i+1) + rnd(1000,2000);
+      console.warn(`[Axios] Network Error. Retry ${i + 1}/${MAX_AXIOS_RETRIES} after ${waitMs}ms: ${err.message}`);
       await sleep(waitMs);
     }
   }
   throw lastErr || new Error('Axios failed after retries');
 }
 
+// Add fallback scraping method for blocked sites
+async function fetchViaScrapingBee(url) {
+  const apiKey = process.env.SCRAPINGBEE_API_KEY;
+  if (!apiKey) {
+    console.log('[ScrapingBee] API key not configured, skipping');
+    return null;
+  }
+  
+  try {
+    console.log('[ScrapingBee] Attempting to fetch via ScrapingBee...');
+    const response = await axios.get('https://app.scrapingbee.com/api/v1', {
+      params: {
+        api_key: apiKey,
+        url: url,
+        render_js: 'true',
+        premium_proxy: 'true',
+        country_code: 'US'
+      },
+      timeout: 45000
+    });
+    
+    if (response.status === 200 && response.data) {
+      console.log('[ScrapingBee] Successfully fetched HTML');
+      return response.data;
+    }
+    
+    console.warn(`[ScrapingBee] Non-200 status: ${response.status}`);
+    return null;
+  } catch (error) {
+    console.warn('[ScrapingBee] Error:', error.message);
+    return null;
+  }
+}
+
 async function smartFetchHtml(url) {
   console.log('[GPT Parser] Starting smart HTML fetch...');
   let html = null;
   
-  // Try Apify first (if available)
+  // Try ScrapingBee first for blocked sites
   try {
-    // html = await fetchViaApify(url);
+    html = await fetchViaScrapingBee(url);
   } catch (err) {
-    console.warn('[GPT Parser] Apify failed:', err.message);
+    console.warn('[GPT Parser] ScrapingBee failed:', err.message);
   }
   
   if (html) {
-    console.log('[GPT Parser] Got HTML via Apify');
+    console.log('[GPT Parser] Got HTML via ScrapingBee');
     return html;
   }
   
@@ -120,7 +164,7 @@ async function smartFetchHtml(url) {
   if (html) {
     console.log('[GPT Parser] Got HTML via Axios');
   } else {
-    console.log('[GPT Parser] All fetch methods failed');
+    console.log('[GPT Parser] All fetch methods failed - site may be blocking requests');
   }
   
   return html;
