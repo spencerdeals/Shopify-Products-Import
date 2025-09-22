@@ -131,7 +131,6 @@ function vendorPromptHints(vendor){
   switch (vendor) {
     case 'Wayfair':
       return `For Wayfair: CRITICAL - Extract the MAIN SELLING PRICE that customers pay. Look for: 1. Sale prices (red text, highlighted, marked as "sale", "current", "now") - HIGHEST PRIORITY 2. If no sale price, use the main price near "Add to Cart" button 3. IGNORE "was" prices, financing options, and struck-through prices 4. The price should be clearly visible and prominent on the page 5. If multiple prices exist, choose the one customers would actually pay`;
-    case 'Amazon':
       return `For Amazon: CRITICAL - ONLY use SALE/DEAL prices. Look for prices in red, marked as "deal", "sale", or "current price". IGNORE struck-through list prices and subscription pricing.`;
     case 'Walmart':
       return `For Walmart: CRITICAL - ONLY use CURRENT/NOW prices. Look for highlighted prices marked as "now", "current", or "sale". IGNORE "was" prices and financing options.`;
