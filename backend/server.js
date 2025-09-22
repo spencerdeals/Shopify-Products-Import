@@ -2,10 +2,13 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const rateLimit = require('express-rate-limit');
-const { parseProduct } = require('./gptParser');
+const ZyteScraper = require('./zyteScraper');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Initialize Zyte scraper
+const zyteScraper = new ZyteScraper();
 
 // Trust proxy for Railway deployment
 app.set('trust proxy', 1);
@@ -62,7 +65,7 @@ app.post('/api/scrape', async (req, res) => {
 
       try {
         console.log(`[Server] Scraping ${i + 1}/${urls.length}: ${url}`);
-        const product = await parseProduct(url);
+        const product = await zyteScraper.scrapeProduct(url);
         
         // Ensure we have minimum required data
         if (!product.name || !product.price) {
