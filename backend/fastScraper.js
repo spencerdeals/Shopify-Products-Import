@@ -1,7 +1,11 @@
-// gptParser.js - Clean GPT-based product parsing
+// fastScraper.js - Fast product scraping with GPT parsing
 const axios = require('axios');
 const cheerio = require('cheerio');
 const OpenAI = require('openai');
+const express = require('express');
+const cors = require('cors');
+const path = require('path');
+const rateLimit = require('express-rate-limit');
 
 const MODEL = process.env.GPT_PARSER_MODEL || 'gpt-4o-mini';
 const TIMEOUT_MS = 30000;
@@ -283,5 +287,3 @@ async function parseProduct(url, opts = {}){
   if (!html) throw new Error('All HTML fetch methods failed (Apify/Axios).');
   return parseWithGPT({ url, html, currencyFallback });
 }
-
-module.exports = { parseProduct };
