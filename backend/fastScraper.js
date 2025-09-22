@@ -137,17 +137,17 @@ function vendorPromptHints(vendor){
         4. The price should be clearly visible and prominent on the page
         5. If multiple prices exist, choose the one customers would actually pay`;
     case 'Amazon':
-      return \`For Amazon: CRITICAL - ONLY use SALE/DEAL prices. Look for prices in red, marked as "deal", "sale", or "current price". IGNORE struck-through list prices and subscription pricing.`;
+      return `For Amazon: CRITICAL - ONLY use SALE/DEAL prices. Look for prices in red, marked as "deal", "sale", or "current price". IGNORE struck-through list prices and subscription pricing.`;
     case 'Walmart':
-      return \`For Walmart: CRITICAL - ONLY use CURRENT/NOW prices. Look for highlighted prices marked as "now", "current", or "sale". IGNORE "was\" prices and financing options.`;
+      return `For Walmart: CRITICAL - ONLY use CURRENT/NOW prices. Look for highlighted prices marked as "now", "current", or "sale". IGNORE "was" prices and financing options.`;
     case 'Target':
-      return \`For Target: CRITICAL - ONLY use SALE/CURRENT prices. Look for red prices, "sale\" prices, or "current\" prices. IGNORE "reg\" and "was\" prices.`;
+      return `For Target: CRITICAL - ONLY use SALE/CURRENT prices. Look for red prices, "sale" prices, or "current" prices. IGNORE "reg" and "was" prices.`;
     case 'BestBuy':
-      return \`For Best Buy: CRITICAL - ONLY use SALE/CURRENT prices. Look for highlighted sale prices. IGNORE regular prices and membership pricing.`;
+      return `For Best Buy: CRITICAL - ONLY use SALE/CURRENT prices. Look for highlighted sale prices. IGNORE regular prices and membership pricing.`;
     case 'HomeDepot':
-      return \`For Home Depot: CRITICAL - ONLY use SALE/SPECIAL prices. Look for highlighted special prices. IGNORE regular prices and bulk pricing.`;
+      return `For Home Depot: CRITICAL - ONLY use SALE/SPECIAL prices. Look for highlighted special prices. IGNORE regular prices and bulk pricing.`;
     case 'CrateAndBarrel':
-      return \`For Crate & Barrel: CRITICAL - ONLY use SALE/CURRENT prices. Look for highlighted sale prices. IGNORE regular prices and financing. Extract dimensions from format like "23.8\"H height 85.4"W width 37\"D depth".`;
+      return `For Crate & Barrel: CRITICAL - ONLY use SALE/CURRENT prices. Look for highlighted sale prices. IGNORE regular prices and financing. Extract dimensions from format like "23.8"H height 85.4"W width 37"D depth".`;
     case 'IKEA':
       return `For IKEA: CRITICAL - ONLY use MEMBER/SALE prices. Look for member prices or sale prices. IGNORE regular prices and service costs.`;
     case 'LunaFurniture':
