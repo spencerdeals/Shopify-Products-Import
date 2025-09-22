@@ -2,10 +2,13 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const rateLimit = require('express-rate-limit');
-const { parseProduct } = require('./fastScraper');
+const { parseProduct } = require('./gptParser');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Trust proxy for Railway deployment
+app.set('trust proxy', 1);
 
 // Middleware
 app.use(cors());
@@ -16,7 +19,8 @@ app.use(express.static(path.join(__dirname, '../frontend')));
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100, // limit each IP to 100 requests per windowMs
-  message: 'Too many requests from this IP, please try again later.'
+  message: 'Too many requests from this IP, please try again later.',
+  trustProxy: true
 });
 app.use('/api/', limiter);
 
