@@ -1,6 +1,5 @@
 name: Auto PR from Prompt
 
-
 on:
   workflow_dispatch:
 
@@ -20,8 +19,8 @@ jobs:
 
       - name: Preflight checks
         run: |
-          if [ -z "${{ secrets.OPENAI_API_KEY }}" ]; then
-            echo "Missing OPENAI_API_KEY secret"; exit 1;
+          if [ -z "${{ secrets.OPENAI_API_KEY_GITHUB }}" ]; then
+            echo "Missing OPENAI_API_KEY_GITHUB secret"; exit 1;
           fi
           if [ ! -f ".prompt.txt" ]; then
             echo "Missing .prompt.txt at repo root"; exit 1;
@@ -36,7 +35,7 @@ jobs:
       - name: Generate patch with OpenAI (Node script)
         id: gen
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY_GITHUB }}
         run: |
           cat > gen.mjs <<'EOF'
           import { readFile, writeFile } from 'node:fs/promises';
@@ -47,6 +46,7 @@ jobs:
             process.exit(1);
           }
 
+          // Read prompt from repo root
           const prompt = await readFile('.prompt.txt', 'utf8');
 
           const body = {
@@ -82,8 +82,8 @@ jobs:
           console.log('Patch first line:', firstLine);
 
           if (!firstLine.startsWith('diff --git')) {
-            console.error('OpenAI did not return a git diff. First 120 chars:');
-            console.error(content.slice(0, 120));
+            console.error('OpenAI did not return a git diff. First 200 chars:');
+            console.error(content.slice(0, 200));
             process.exit(1);
           }
           EOF
@@ -100,7 +100,7 @@ jobs:
           git checkout -b "$BRANCH"
 
           if ! git apply -p0 --whitespace=fix patch.diff; then
-            echo "Failed to apply patch. Showing first 120 lines:"
+            echo "Failed to apply patch. First 120 lines:"
             sed -n '1,120p' patch.diff
             exit 1
           fi
