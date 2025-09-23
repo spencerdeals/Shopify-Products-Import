@@ -261,6 +261,9 @@ class ZyteScraper {
 
       // Enhanced image extraction - prefer high-quality variant images
       if (product.images && product.images.length > 0) {
+        // Extract all variants using comprehensive method first
+        const extractedVariants = this.extractAllVariants(product);
+        
         // Try to find variant-specific image first
         let selectedImageUrl = null;
         
@@ -317,8 +320,6 @@ class ZyteScraper {
       // Enhanced variant extraction using Zyte's rich variant data
       const variants = [];
       
-      // Extract all variants using comprehensive method
-      const extractedVariants = this.extractAllVariants(product);
       variants.push(...extractedVariants.variants);
       
       // Extract dimensions using comprehensive method
