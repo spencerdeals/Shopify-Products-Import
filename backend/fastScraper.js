@@ -1,439 +1,176 @@
-// backend/fastScraper.js
-// SDL Instant Import — production server (Express)
+// backend/fastScraper.js — production-safe server for Instant Import
+const express = require('express');
+const cors = require('cors');
+const path = require('path');
 
-const express = require("express");
-const cors = require("cors");
-const rateLimit = require("express-rate-limit");
-const path = require("path");
+// Optional modules; handle if missing
+let zyte;
+try { zyte = require('./zyteScraper'); } catch { zyte = null; }
+let gpt;
+try { gpt = require('./gptParser'); } catch { gpt = null; }
 
-// ========= Scraper deps (your existing local modules) =========
-const ZyteScraper = require("./zyteScraper");     // must export class with .enabled and .scrapeProduct(url)
-const { parseProduct: parseWithGPT } = require("./gptParser"); // safe to call even if OPENAI key missing
-
-// ========= Server init =========
 const app = express();
-const PORT = process.env.PORT || 8080;
+app.set('trust proxy', 1); // behind proxy (Railway), avoids rate-limit XFF warning
+app.use(express.json({ limit: '1mb' }));
 
-// Behind Railway proxy => allow X-Forwarded-* from their LB
-app.set("trust proxy", true);
-
-// Body & static files
-app.use(express.json({ limit: "5mb" }));
-app.use(express.urlencoded({ extended: true }));
-
-// Serve frontend (index.html sits in ../frontend)
-app.use(express.static(path.join(__dirname, "../frontend")));
-
-// ========= CORS (strict allow-list + helpful logs) =========
-const allowedOrigins = new Set([
-  "https://sdl.bm",
-  "https://www.sdl.bm",
-  "https://bermuda-import-calculator-production.up.railway.app",
-  // keep localhost origins for dev / Bolt preview
-  "http://localhost:3000",
-  "http://localhost:5173",
-  "http://localhost:8080",
+// CORS allowlist: prod + common local dev ports
+const ALLOWED = new Set([
+  'https://sdl.bm',
+  'https://www.sdl.bm',
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'http://localhost:8080'
 ]);
-
-app.use(
-  cors({
-    origin: (origin, cb) => {
-      // allow curl/Postman/no-origin requests
-      if (!origin) return cb(null, true);
-      if (allowedOrigins.has(origin)) return cb(null, true);
-      console.warn(`CORS blocked origin: ${origin}`);
-      return cb(new Error("Not allowed by CORS"));
-    },
-    methods: ["GET", "POST", "OPTIONS"],
-    credentials: false,
-  })
-);
-
-// ========= Lightweight rate limit (trusts proxy) =========
-const limiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 120,
-  standardHeaders: true,
-  legacyHeaders: false,
-  trustProxy: true,
-  keyGenerator: (req) => {
-    // Use X-Forwarded-For from Railway proxy, fallback to connection IP
-    return req.ip || req.connection.remoteAddress || 'unknown';
+app.use(cors({
+  origin: (origin, cb) => {
+    if (!origin) return cb(null, true); // allow curl/postman
+    const ok = ALLOWED.has(origin);
+    if (!ok) console.log('CORS blocked origin:', origin);
+    cb(null, ok);
   },
-});
-app.use(limiter);
+  methods: ['GET','POST','OPTIONS'],
+  credentials: true
+}));
 
-// ========= Health + Form =========
-app.get("/ping", (_req, res) => {
-  res.json({ ok: true, service: "instant-import", ts: new Date().toISOString() });
-});
-app.get("/health", (_req, res) => {
-  res.json({ ok: true, service: "instant-import", ts: new Date().toISOString() });
-});
+// Health endpoints
+app.get('/ping', (_req, res) => res.json({ ok: true, service: 'instant-import' }));
+app.get('/health', (_req, res) => res.json({ ok: true }));
 
-// Explicit form route (so hitting /form never 404s)
-app.get("/form", (_req, res) => {
-  res.sendFile(path.join(__dirname, "../frontend/index.html"));
+// Serve the form (frontend)
+app.get('/form', (_req, res) => {
+  res.sendFile(path.join(process.cwd(), 'frontend', 'index.html'));
 });
 
-// ========= Scraping pipeline =========
-const zyte = new ZyteScraper();
-const USE_ZYTE = !!zyte && zyte.enabled;
-const USE_GPT = !!process.env.OPENAI_API_KEY;
-
-// Pick best price with tiered sanity guard
-function normalizeNumber(x) {
-  if (typeof x === "number") return x;
-  if (!x || typeof x !== "string") return NaN;
-  const cleaned = x.replace(/[^\d.,-]/g, "").replace(/,/g, "");
-  const n = parseFloat(cleaned);
-  return isFinite(n) ? n : NaN;
+// Price + image helpers
+function toNumber(x) {
+  if (typeof x === 'number') return x;
+  if (typeof x !== 'string') return NaN;
+  const cleaned = x.replace(/[\s,$£€¥A-Za-z]/g, '').replace(/,/g, '');
+  return parseFloat(cleaned);
 }
-
-function detectTier(meta) {
-  const nameish =
-    (meta?.name || "") +
-    " " +
-    (Array.isArray(meta?.breadcrumbs) ? meta.breadcrumbs.join(" ") : meta?.category || "");
-  const s = nameish.toLowerCase();
-  const volFt3 = Number(meta?.volumeFt3 || 0);
-
-  if (volFt3 > 20 || /(sectional|chaise|3[-\s]?seater|4[-\s]?seater)/.test(s)) {
-    return { tier: "LARGE", min: 200 };
-  }
-  if (volFt3 >= 10 || /(sofa|couch|loveseat)/.test(s)) {
-    return { tier: "MEDIUM", min: 100 };
-  }
-  return { tier: "SMALL", min: 50 };
+function tierFor(z) {
+  const name = ((z?.name || z?.title || '') + ' ' + (Array.isArray(z?.breadcrumbs) ? z.breadcrumbs.join(' ') : '')).toLowerCase();
+  const vol = Number(z?.volumeFt3 || z?.volume || 0);
+  if (vol > 20 || /(sectional|chaise|3-seater|4-seater)/.test(name)) return { tier: 'LARGE', min: 200 };
+  if (vol >= 10 || /(sofa|couch|loveseat)/.test(name)) return { tier: 'MEDIUM', min: 100 };
+  return { tier: 'SMALL', min: 50 };
 }
-
 function pickPrice(z) {
   const candidates = [
-    { k: "currentPrice", v: z?.currentPrice },
-    { k: "salePrice", v: z?.salePrice },
-    { k: "regularPrice", v: z?.regularPrice },
-    { k: "listPrice", v: z?.listPrice },
-    { k: "price", v: z?.price },
+    { k: 'currentPrice', v: z?.currentPrice },
+    { k: 'salePrice',    v: z?.salePrice },
+    { k: 'regularPrice', v: z?.regularPrice },
+    { k: 'listPrice',    v: z?.listPrice },
+    { k: 'price',        v: z?.price }
   ]
-    .filter((c) => c.v != null)
-    .map((c) => ({ k: c.k, n: normalizeNumber(c.v) }))
-    .filter((c) => isFinite(c.n) && c.n > 0);
-
+    .filter(c => c.v != null)
+    .map(c => ({ k: c.k, n: toNumber(c.v) }))
+    .filter(c => isFinite(c.n) && c.n > 0);
   if (!candidates.length) return null;
-
-  const priority = ["currentPrice", "salePrice", "regularPrice", "listPrice", "price"];
-  const byPriority = (a, b) => priority.indexOf(a.k) - priority.indexOf(b.k);
-
-  // Preferred by field
-  let best = [...candidates].sort(byPriority)[0];
-
-  // Tiered sanity
-  const { tier, min } = detectTier(z);
+  const order = ['currentPrice','salePrice','regularPrice','listPrice','price'];
+  const byPriority = [...candidates].sort((a,b) => order.indexOf(a.k) - order.indexOf(b.k));
+  const { min } = tierFor(z);
+  let best = byPriority[0];
   if (best.n < min) {
-    const alt = [...candidates].filter((c) => c.n >= min).sort(byPriority)[0];
-    if (alt) best = alt;
-    else return { k: null, n: null, tier, min, unsure: true };
+    const sane = byPriority.find(c => c.n >= min);
+    if (sane) best = sane; else return null;
   }
-
-  return { ...best, tier, min, unsure: false };
+  return best; // {k,n}
 }
-
-function isGoodImage(im) {
-  if (!im) return false;
-  const url = typeof im === "string" ? im : im.url;
-  if (!url) return false;
-  if (/sprite|placeholder|blank|transparent/.test(url)) return false;
-  const w = im?.width ?? 0;
-  const h = im?.height ?? 0;
-  return (w >= 600 && h >= 600) || (w === 0 && h === 0); // accept if dims unknown
-}
-
-function size(im) {
-  return (im?.width || 0) * (im?.height || 0);
-}
-
-function pickImage(z, selectedVariantText) {
-  const hero = z?.mainImage || z?.heroImage || z?.primary_image;
-  if (isGoodImage(hero)) return { url: hero.url || hero, reason: "hero" };
-
+function pickImage(z, selectedVariant) {
   const images = Array.isArray(z?.images) ? z.images : [];
-  if (selectedVariantText && images.length) {
-    const txt = String(selectedVariantText).toLowerCase();
-    const match = images.find((im) =>
-      String(im.alt || im.title || im.url || "").toLowerCase().includes(txt)
-    );
-    if (isGoodImage(match)) return { url: match.url || match, reason: "variant" };
+  const hero = z?.mainImage || z?.heroImage || z?.primary_image;
+  const isGood = (im) => {
+    if (!im) return false; const url = typeof im === 'string' ? im : im.url;
+    const w = im?.width ?? 0, h = im?.height ?? 0;
+    if (!url || /sprite|placeholder|blank/.test(String(url))) return false;
+    return (w >= 600 && h >= 600) || (w === 0 && h === 0);
+  };
+  const size = (im) => (im?.width||0) * (im?.height||0);
+  if (isGood(hero)) return hero.url || hero;
+  if (selectedVariant && images.length) {
+    const v = images.find(im => {
+      const txt = (im?.alt || im?.title || '').toLowerCase();
+      const c = String(selectedVariant?.color||'').toLowerCase();
+      return c && txt.includes(c);
+    });
+    if (isGood(v)) return v.url || v;
   }
-
-  const largest = images.filter(isGoodImage).sort((a, b) => size(b) - size(a))[0];
-  if (largest) return { url: largest.url || largest, reason: "largest" };
-
-  return { url: null, reason: "none" };
+  const good = images.filter(isGood).sort((a,b) => size(b)-size(a))[0];
+  return good ? (good.url || good) : null;
 }
 
-// GET /products?url=...
-app.get("/products", async (req, res) => {
-  const targetUrl = req.query.url;
-  if (!targetUrl) return res.status(400).json({ error: "MISSING_URL" });
-
-  let product = null;
-  let engine = "none";
-  let confidence = null;
-
+// Unified /products endpoint
+app.get('/products', async (req, res) => {
+  const url = String(req.query.url || '');
+  if (!url) return res.status(400).json({ error: 'MISSING_URL' });
   try {
+    let engine = 'Zyte';
+    let product = null;
+    let zyteConfidence = 0;
+
     // 1) Primary: Zyte
-    if (USE_ZYTE) {
+    if (zyte?.extract) {
       try {
-        const zyteData = await zyte.scrapeProduct(targetUrl);
-        if (zyteData && zyteData.name) {
-          // price selection + sanity
-          const pricePick = pickPrice(zyteData);
-          if (pricePick && !pricePick.unsure) {
-            zyteData.price = pricePick.n;
-            zyteData.priceSource = pricePick.k;
-            zyteData.priceTier = pricePick.tier;
-            console.log(
-              `Selected price: $${zyteData.price} (source: ${pricePick.k}, tier: ${pricePick.tier}, min: $${pricePick.min})`
-            );
-          } else if (pricePick && pricePick.unsure) {
-            zyteData.price = undefined;
-            zyteData.engineNote = "price_unsure";
-            zyteData.priceTier = pricePick.tier;
-            console.log("Selected price: none (price_unsure)");
-          }
-
-          // image selection
-          const pic = pickImage(zyteData, zyteData.variant || zyteData.primaryVariant);
-          zyteData.image = pic.url || zyteData.image || null;
-          console.log(`Selected image: ${zyteData.image || "none"} (reason: ${pic.reason})`);
-
-          product = zyteData;
-          engine = "Zyte";
-          confidence = zyteData.confidence ?? null;
-        }
+        const out = await zyte.extract(url);
+        const z = out?.data || out || {};
+        zyteConfidence = Number(out?.confidence || z?.confidence || 0);
+        const pricePick = pickPrice(z);
+        const imageUrl = pickImage(z, z?.selectedVariant);
+        product = {
+          title: z?.name || z?.title || '',
+          price: pricePick?.n,
+          priceSource: pricePick?.k,
+          image: imageUrl || null,
+          engineNote: pricePick ? undefined : 'price_unsure',
+          raw: undefined
+        };
+        console.log(`Selected price: ${pricePick ? `$${pricePick.n} (source: ${pricePick.k})` : 'none (price_unsure)'}`);
+        console.log(`Selected image: ${product.image ? product.image : 'none'}`);
       } catch (e) {
-        console.log(`Zyte failed: ${e.message}`);
+        console.log('Zyte failed:', String(e?.message || e));
+        product = null;
       }
     }
 
-    // 2) Enrich with GPT only if needed (no price, low confidence, or marked unsure)
-    const zyteSane =
-      product &&
-      product.price != null &&
-      product.engineNote !== "price_unsure" &&
-      (confidence == null || confidence >= 0.9);
-
-    let triedGPT = false;
-    if (!zyteSane && USE_GPT) {
-      triedGPT = true;
-      try {
-        const enriched = await parseWithGPT(targetUrl, product || {});
-        if (enriched) {
-          // prefer filled fields
-          product = { ...(product || {}), ...enriched };
-          engine = product && engine === "Zyte" ? "GPT-enriched" : "GPT-only";
-        }
-      } catch (err) {
-        // Don’t crash on 401 / missing key — just continue with Zyte
-        console.log(`GPT enhancement skipped/failed: ${err.message}`);
-      }
-    }
-
-    // 3) Fallback: GPT-only if we still have nothing
-    if (!product && !triedGPT && USE_GPT) {
-      try {
-        product = await parseWithGPT(targetUrl);
-        engine = "GPT-only";
-      } catch (err) {
-        console.log(`GPT-only failed: ${err.message}`);
-      }
-    }
-
-    if (!product) return res.status(502).json({ error: "SCRAPE_FAILED" });
-
-    // Response
-    console.log(`Handled by: ${engine}`);
-    return res.json({ products: product, engine });
-  } catch (err) {
-    console.error("UNEXPECTED:", err);
-    return res.status(500).json({ error: "UNEXPECTED", message: String(err) });
-  }
-});
-
-// POST /api/scrape - Frontend expects this endpoint
-app.post("/api/scrape", async (req, res) => {
-  const { urls } = req.body;
-  if (!urls || !Array.isArray(urls) || urls.length === 0) {
-    return res.status(400).json({ error: "MISSING_URLS", message: "Please provide an array of URLs" });
-  }
-
-  console.log(`📦 Processing ${urls.length} URLs for scraping...`);
-  const results = [];
-  
-  for (const url of urls) {
-    console.log(`🔍 Processing: ${url}`);
-    try {
-      let product = null;
-      let engine = "none";
-      let confidence = null;
-
-      // 1) Primary: Zyte
-      if (USE_ZYTE) {
+    // 2) Skip GPT if Zyte high confidence + sane price
+    const canSkipGPT = zyteConfidence >= 0.90 && product && !product.engineNote;
+    if (canSkipGPT) {
+      engine = 'Zyte';
+    } else {
+      // 3) Enrich with GPT (if available), else fallback
+      const keyPresent = !!process.env.OPENAI_API_KEY;
+      if (gpt?.enrich && keyPresent && product) {
         try {
-          console.log(`   🕷️ Trying Zyte for: ${url}`);
-          const zyteData = await zyte.scrapeProduct(url);
-          if (zyteData && zyteData.name) {
-            // price selection + sanity
-            const pricePick = pickPrice(zyteData);
-            if (pricePick && !pricePick.unsure) {
-              zyteData.price = pricePick.n;
-              zyteData.priceSource = pricePick.k;
-              zyteData.priceTier = pricePick.tier;
-              console.log(
-                `Selected price: $${zyteData.price} (source: ${pricePick.k}, tier: ${pricePick.tier}, min: $${pricePick.min})`
-              );
-            } else if (pricePick && pricePick.unsure) {
-              zyteData.price = undefined;
-              zyteData.engineNote = "price_unsure";
-              zyteData.priceTier = pricePick.tier;
-              console.log("Selected price: none (price_unsure)");
-            }
-
-            // image selection
-            const pic = pickImage(zyteData, zyteData.variant || zyteData.primaryVariant);
-            zyteData.image = pic.url || zyteData.image || null;
-            console.log(`Selected image: ${zyteData.image || "none"} (reason: ${pic.reason})`);
-
-            product = zyteData;
-            engine = "Zyte";
-            confidence = zyteData.confidence ?? null;
-            console.log(`   ✅ Zyte success for: ${url}`);
+          const enriched = await gpt.enrich(url, product);
+          if (enriched && typeof enriched === 'object') {
+            product = { ...product, ...enriched };
+            engine = 'GPT-enriched';
           }
         } catch (e) {
-          console.log(`   ❌ Zyte failed for ${url}: ${e.message}`);
+          const msg = String(e?.message || e);
+          if (/401|invalid api key/i.test(msg)) console.log('GPT skipped: no valid key');
+          else console.log('GPT enrich error:', msg);
         }
       }
-
-      // 2) Enrich with GPT only if needed
-      const zyteSane =
-        product &&
-        product.price != null &&
-        product.engineNote !== "price_unsure" &&
-        (confidence == null || confidence >= 0.9);
-
-      let triedGPT = false;
-      if (!zyteSane && USE_GPT) {
-        triedGPT = true;
-        console.log(`   🤖 Trying GPT enhancement for: ${url}`);
+      if (!product && gpt?.parseOnly && keyPresent) {
         try {
-          const enriched = await parseWithGPT(url, product || {});
-          if (enriched) {
-            product = { ...(product || {}), ...enriched };
-            engine = product && engine === "Zyte" ? "GPT-enriched" : "GPT-only";
-            console.log(`   ✅ GPT enhancement success for: ${url}`);
-          }
-        } catch (err) {
-          console.log(`   ❌ GPT enhancement failed for ${url}: ${err.message}`);
+          product = await gpt.parseOnly(url);
+          engine = 'GPT-only';
+        } catch (e) {
+          console.log('GPT-only parse error:', String(e?.message || e));
         }
       }
-
-      // 3) Fallback: GPT-only if we still have nothing
-      if (!product && !triedGPT && USE_GPT) {
-        console.log(`   🤖 Trying GPT-only for: ${url}`);
-        try {
-          product = await parseWithGPT(url);
-          engine = "GPT-only";
-          console.log(`   ✅ GPT-only success for: ${url}`);
-        } catch (err) {
-          console.log(`   ❌ GPT-only failed for ${url}: ${err.message}`);
-        }
-      }
-
-      if (product) {
-        // Add retailer detection
-        product.retailer = detectRetailer(url);
-        product.url = url;
-        product.engine = engine;
-        results.push(product);
-        console.log(`✅ Successfully scraped: ${url} (${engine})`);
-      } else {
-        console.log(`❌ Failed to scrape: ${url}`);
-        results.push({
-          url,
-          error: "SCRAPE_FAILED",
-          retailer: detectRetailer(url),
-          message: "No data extracted from any scraping method"
-        });
-      }
-    } catch (err) {
-      console.error(`Error processing ${url}:`, err);
-      results.push({
-        url,
-        error: "UNEXPECTED",
-        message: String(err),
-        retailer: detectRetailer(url)
-      });
     }
-  }
 
-  console.log(`📊 Scraping complete: ${results.length} total, ${results.filter(p => !p.error).length} successful`);
-  
-  return res.json({ 
-    success: true,
-    products: results,
-    total: results.length,
-    successful: results.filter(p => !p.error).length
-  });
-});
-
-// Helper function to detect retailer from URL
-function detectRetailer(url) {
-  try {
-    const hostname = new URL(url).hostname.toLowerCase();
-    if (hostname.includes('amazon')) return 'Amazon';
-    if (hostname.includes('wayfair')) return 'Wayfair';
-    if (hostname.includes('target')) return 'Target';
-    if (hostname.includes('walmart')) return 'Walmart';
-    if (hostname.includes('ikea')) return 'IKEA';
-    if (hostname.includes('homedepot')) return 'Home Depot';
-    if (hostname.includes('lowes')) return 'Lowes';
-    if (hostname.includes('crateandbarrel')) return 'Crate & Barrel';
-    if (hostname.includes('cb2')) return 'CB2';
-    if (hostname.includes('westelm')) return 'West Elm';
-    if (hostname.includes('potterybarn')) return 'Pottery Barn';
-    return 'Unknown';
-  } catch {
-    return 'Unknown';
-  }
-}
-
-// ========= 404 handler that still serves SPA if needed =========
-// Serve static files from frontend directory
-app.use(express.static(path.join(__dirname, "../frontend")));
-
-// Catch-all handler for SPA routing (must be LAST)
-app.get("*", (req, res) => {
-  // If it looks like a file extension, return 404
-  const looksLikeFile = /\.[a-z0-9]+$/i.test(req.path);
-  if (looksLikeFile) {
-    return res.status(404).send("Not Found");
-  }
-  
-  // Otherwise serve index.html for SPA routes
-  try {
-    return res.sendFile(path.join(__dirname, "../frontend/index.html"));
-  } catch (error) {
-    return res.status(404).send("Not Found");
+    if (!product) return res.status(502).json({ error: 'SCRAPE_FAILED' });
+    console.log(`Handled by: ${engine}`);
+    res.json({ products: product, engine });
+  } catch (e) {
+    console.error('UNEXPECTED:', e);
+    res.status(500).json({ error: 'UNEXPECTED', message: String(e?.message || e) });
   }
 });
 
-// ========= Start =========
-app.listen(PORT, () => {
-  console.log("Starting Container");
-  console.log("🕷️ ZyteScraper Constructor:");
-  console.log(`   API Key: ${USE_ZYTE ? "✅ SET" : "❌ MISSING"}`);
-  console.log(`   Status: ${USE_ZYTE ? "✅ ENABLED (v4.0 - Fixed Price Parsing)" : "❌ DISABLED"}`);
-  console.log("   🎯 Ready to use Zyte API with automatic product extraction and smart price parsing");
-  console.log(`🚀 SDL Import Calculator running on port ${PORT}`);
-  console.log(`📊 Health check: http://localhost:${PORT}/ping`);
-});
+const port = process.env.PORT || 8080;
+app.listen(port, () => console.log(`SDL Import Calculator running on port ${port}`));
