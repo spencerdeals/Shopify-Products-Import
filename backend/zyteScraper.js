@@ -261,11 +261,37 @@ class ZyteScraper {
 
       // Enhanced image extraction - prefer high-quality variant images
       if (product.images && product.images.length > 0) {
-        // Use the main image (highest quality) from Zyte
-        const mainImageUrl = product.mainImage?.url || product.images[0]?.url || product.images[0];
+        // Try to find variant-specific image first
+        let selectedImageUrl = null;
+        
+        // Look for images that might match the selected variant
+        if (extractedVariants.variantData.color) {
+          const selectedColor = extractedVariants.variantData.color.toLowerCase();
+          console.log(`   🎨 Looking for ${selectedColor} variant image...`);
+          
+          // Check if any images have variant-specific URLs or alt text
+          for (const img of product.images) {
+            const imgUrl = typeof img === 'object' ? img.url : img;
+            const imgAlt = typeof img === 'object' ? img.alt : '';
+            
+            if (imgUrl && (
+              imgUrl.toLowerCase().includes(selectedColor) ||
+              imgAlt.toLowerCase().includes(selectedColor) ||
+              imgUrl.toLowerCase().includes('green') ||
+              imgAlt.toLowerCase().includes('green')
+            )) {
+              selectedImageUrl = imgUrl;
+              console.log(`   ✅ Found variant image for ${selectedColor}`);
+              break;
+            }
+          }
+        }
+        
+        // Use variant image if found, otherwise use main image
+        const mainImageUrl = selectedImageUrl || product.mainImage?.url || product.images[0]?.url || product.images[0];
         if (mainImageUrl && mainImageUrl.startsWith('http')) {
           productData.image = mainImageUrl;
-          console.log('   🖼️ Main Image: Found');
+          console.log(`   🖼️ Main Image: Found ${selectedImageUrl ? '(variant-specific)' : '(default)'}`);
         }
       } else if (product.mainImage && product.mainImage.url) {
         productData.image = product.mainImage.url;
