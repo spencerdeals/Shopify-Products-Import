@@ -1,6 +1,8 @@
-Return ONLY a valid git unified diff patch for THIS repository. Start the first line with "diff --git".
+Return ONLY a raw git unified diff for THIS repository.
+Start the VERY FIRST CHARACTER of the response with: diff --git
+Do NOT wrap in backticks or Markdown fences. No prose, no code fences, no explanation.
 
-Task: Append one line to the end of README.md exactly:
+Task: Append ONE line to the end of README.md exactly:
 Auto PR test: it works.
 
 Do not change any other file. Keep the patch minimal and valid.
