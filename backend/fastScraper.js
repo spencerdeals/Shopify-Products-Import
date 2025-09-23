@@ -13,27 +13,22 @@ app.set('trust proxy', 1);
 // CORS configuration with production allowlist
 const corsOptions = {
   origin: function (origin, callback) {
-    const allowedOrigins = [
+    const allowed = [
       'https://sdl.bm', 
       'https://www.sdl.bm',
+      'https://bermuda-import-calculator-production.up.railway.app',
       'http://localhost:5173', // Vite dev server
       'http://localhost:4173', // Vite preview
       'http://localhost:3000', // Common dev server
-      'http://127.0.0.1:8080', // Local backend testing
-      'http://localhost:8000', // Static server for HTML files
       'http://localhost:8080', // Alternative local server
-      'http://localhost:8081', // Alternative local server
-      'http://127.0.0.1:5173', // Vite dev server (127.0.0.1)
-      'http://127.0.0.1:8000', // Static server (127.0.0.1)
-      'http://127.0.0.1:8081'  // Alternative static server (127.0.0.1)
     ];
     // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
-    if (allowedOrigins.indexOf(origin) !== -1) {
+    if (allowed.includes(origin)) {
       callback(null, true);
     } else {
       console.warn('CORS blocked origin:', origin);
-      callback(null, false);
+      callback(new Error('Not allowed by CORS'));
     }
   },
   methods: ['GET', 'POST', 'OPTIONS']
