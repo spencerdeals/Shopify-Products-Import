@@ -6,15 +6,7 @@ const cors = require("cors");
 const rateLimit = require("express-rate-limit");
 const path = require("path");
 
-// ========= Scraper deps (your existing local modules) =========
-const ZyteScraper = require("./zyteScraper");     // must export class with .enabled and .scrapeProduct(url)
-const { parseProduct: parseWithGPT } = require("./gptParser"); // safe to call even if OPENAI key missing
-
-// ========= Server init =========
-const app = express();
-const PORT = process.env.PORT || 8080;
-
-// Behind Railway proxy => allow X-Forwarded-* from their LB
+// ========= Scraper deps (your existing local modules)st5rpl4g-ko2it45hbak294tgov-of0d
 app.set("trust proxy", true);
 
 // Body & static files
@@ -47,7 +39,7 @@ app.use(
 // ========= Rate limit with proper trust proxy handling =========
 const limiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 120,
+  max: 120,75253255869658kk,blv ,ghjp.5y,hn
   standardHeaders: true,
   legacyHeaders: false,
   trustProxy: 1,
