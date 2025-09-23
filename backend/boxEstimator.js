@@ -78,15 +78,15 @@ class BoxEstimator {
     const boxes = [
       {
         // Main sofa section box (flat-packed)
-        length: Math.min(dims.length * 0.6, 50), // Max 50" for shipping
-        width: Math.min(dims.width * 0.7, 45),   // Max 45" for shipping  
+        length: Math.min(dims.length * 0.5, 45), // More realistic for flat-pack
+        width: Math.min(dims.width * 0.7, 43),   // Based on actual data
         height: 20, // Flat-packed height
         weight: (product.weight || 191) * 0.6
       },
       {
         // Chaise section box (flat-packed)
-        length: Math.min(dims.width * 0.7, 45),  // Chaise is usually width dimension
-        width: Math.min(dims.length * 0.4, 40),
+        length: Math.min(dims.width, 65),  // Based on actual: 45" × 65" × 20"
+        width: Math.min(dims.length * 0.5, 45), // Based on actual: 43" × 45" × 20"
         height: 20, // Flat-packed height
         weight: (product.weight || 191) * 0.4
       }
