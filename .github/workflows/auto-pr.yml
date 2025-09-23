@@ -27,46 +27,68 @@ jobs:
           fi
           echo "Preflight OK"
 
-      - name: Install jq
-        run: sudo apt-get update -y && sudo apt-get install -y jq
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
 
-      - name: Generate patch from prompt (OpenAI)
+      - name: Generate patch with OpenAI (Node script)
         id: gen
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
-          # Read .prompt.txt and JSON-escape it (produces a quoted JSON string)
-          PROMPT_ESCAPED=$(jq -Rs '.' .prompt.txt)
+          cat > gen.mjs <<'EOF'
+          import { readFile, writeFile } from 'node:fs/promises';
 
-          # Call OpenAI and capture the model output
-          RESP=$(curl -sS https://api.openai.com/v1/chat/completions \
-            -H "Authorization: Bearer $OPENAI_API_KEY" \
-            -H "Content-Type: application/json" \
-            -d @- <<JSON
-          {
-            "model": "gpt-4o-mini",
-            "temperature": 0.1,
-            "max_tokens": 4000,
-            "messages": [
-              { "role": "system", "content": "Return ONLY a valid git unified diff patch for this repository. No prose." },
-              { "role": "user", "content": ${PROMPT_ESCAPED} }
-            ]
+          const apiKey = process.env.OPENAI_API_KEY;
+          if (!apiKey) {
+            console.error('OPENAI_API_KEY is missing');
+            process.exit(1);
           }
-JSON
-          )
 
-          # Write the assistant message to patch.diff
-          echo "$RESP" | jq -r '.choices[0].message.content' > patch.diff
+          const prompt = await readFile('.prompt.txt', 'utf8');
 
-          echo "Patch header (first 3 lines):"
+          const body = {
+            model: 'gpt-4o-mini',
+            temperature: 0.1,
+            max_tokens: 4000,
+            messages: [
+              { role: 'system', content: 'Return ONLY a valid git unified diff patch for this repository. No prose.' },
+              { role: 'user', content: prompt }
+            ]
+          };
+
+          const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${apiKey}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(body)
+          });
+
+          if (!resp.ok) {
+            const text = await resp.text();
+            console.error('OpenAI API error:', resp.status, text);
+            process.exit(1);
+          }
+
+          const data = await resp.json();
+          const content = data?.choices?.[0]?.message?.content ?? '';
+          await writeFile('patch.diff', content, 'utf8');
+
+          const firstLine = content.split('\n', 1)[0] || '';
+          console.log('Patch first line:', firstLine);
+
+          if (!firstLine.startsWith('diff --git')) {
+            console.error('OpenAI did not return a git diff. First 120 chars:');
+            console.error(content.slice(0, 120));
+            process.exit(1);
+          }
+          EOF
+
+          node gen.mjs
           sed -n '1,3p' patch.diff || true
-
-          # Must start with a git diff header
-          if ! head -n1 patch.diff | grep -q '^diff --git'; then
-            echo "OpenAI did not return a git diff. First 120 lines below:"
-            sed -n '1,120p' patch.diff
-            exit 1
-          fi
 
       - name: Create branch & apply patch
         id: apply
@@ -77,7 +99,7 @@ JSON
           git checkout -b "$BRANCH"
 
           if ! git apply -p0 --whitespace=fix patch.diff; then
-            echo "Failed to apply patch. First 120 lines of patch:"
+            echo "Failed to apply patch. Showing first 120 lines:"
             sed -n '1,120p' patch.diff
             exit 1
           fi
