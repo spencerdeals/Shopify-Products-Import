@@ -28,7 +28,7 @@ class GPTWebScraper {
     try {
       const client = new OpenAI({ apiKey: this.apiKey });
       
-      const systemPrompt = `You are a precise e-commerce product data extractor. Browse the provided URL and extract detailed product information.
+      const systemPrompt = `You are a precise e-commerce product data extractor with web browsing capabilities. Browse the provided URL and extract detailed product information.
 
 CRITICAL REQUIREMENTS:
 1. ONLY extract SELECTED/CHOSEN variants from the URL - do not list all possible options
@@ -38,22 +38,6 @@ CRITICAL REQUIREMENTS:
 5. If no shipping dimensions, estimate box size based on product type and whether it's flat-packed
 6. Extract assembly fee if listed and apply 30% markup for Bermuda pricing
 7. Get the main product image URL
-
-Return STRICT JSON format with these fields:
-- name (string): Product name
-- price (number): Current selling price in USD
-- currency (string): "USD" 
-- image (string): Main product image URL
-- retailer (string): Retailer name
-- selectedVariants (object): Only the currently selected variants like {"color": "Dark Green", "orientation": "Left Facing"}
-- dimensions (object): Shipping dimensions if available {length, width, height} in inches
-- estimatedDimensions (object): If no shipping dims, estimate based on product type {length, width, height} in inches
-- weight (number): Product weight in lbs if available
-- assemblyFee (number): Assembly fee with 30% markup applied if available
-- inStock (boolean): Availability status
-- category (string): Product category
-- brand (string): Brand name if available
-- sku (string): SKU if available
 
 VARIANT EXTRACTION RULES:
 - Only extract what is currently selected/chosen on the page
@@ -69,7 +53,23 @@ DIMENSION ESTIMATION RULES:
 
 ASSEMBLY FEE RULES:
 - If assembly fee is listed, apply 30% markup for Bermuda pricing
-- Example: $50 assembly becomes $65 (50 * 1.30)`;
+- Example: $50 assembly becomes $65 (50 * 1.30)
+
+Return STRICT JSON format with these fields:
+- name (string): Product name
+- price (number): Current selling price in USD
+- currency (string): "USD" 
+- image (string): Main product image URL
+- retailer (string): Retailer name
+- selectedVariants (object): Only the currently selected variants like {"color": "Dark Green", "orientation": "Left Facing"}
+- dimensions (object): Shipping dimensions if available {length, width, height} in inches
+- estimatedDimensions (object): If no shipping dims, estimate based on product type {length, width, height} in inches
+- weight (number): Product weight in lbs if available
+- assemblyFee (number): Assembly fee with 30% markup applied if available
+- inStock (boolean): Availability status
+- category (string): Product category
+- brand (string): Brand name if available
+- sku (string): SKU if available`;
 
       const userPrompt = `Please browse this URL and extract the product data: ${url}
 
@@ -85,7 +85,7 @@ Return only JSON, no explanations.`;
       console.log('   🔍 Making GPT-4 web browsing request...');
       
       const response = await client.chat.completions.create({
-        model: 'gpt-4', // Using GPT-4 as requested (GPT-5 not yet available)
+        model: 'gpt-4',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt }
@@ -117,6 +117,9 @@ Return only JSON, no explanations.`;
       console.log(`   💰 Price: $${normalizedData.price}`);
       console.log(`   🎨 Selected Variants: ${JSON.stringify(normalizedData.selectedVariants)}`);
       console.log(`   📏 Dimensions: ${normalizedData.dimensions ? 'Found' : 'Estimated'}`);
+      if (normalizedData.assemblyFee) {
+        console.log(`   🔧 Assembly Fee (with 30% markup): $${normalizedData.assemblyFee}`);
+      }
       
       return normalizedData;
 
