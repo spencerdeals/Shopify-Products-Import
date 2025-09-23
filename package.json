@@ -5,8 +5,11 @@
   "main": "backend/fastScraper.js",
   "scripts": {
     "start": "node backend/fastScraper.js",
-    "dev": "node backend/fastScraper.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev:server": "node backend/fastScraper.js",
+    "dev:web": "vite",
+    "build": "vite build",
+    "preview": "vite preview --host",
+    "test": "node test-price-selection.js"
   },
   "keywords": [
     "scraping",
@@ -25,7 +28,9 @@
     "openai": "^4.20.1",
     "apify-client": "^2.7.1"
   },
-  "devDependencies": {},
+  "devDependencies": {
+    "vite": "^4.4.0"
+  },
   "engines": {
     "node": ">=16.0.0"
   }

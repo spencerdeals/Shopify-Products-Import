@@ -101,7 +101,7 @@ const testCases = [
   }
 ];
 
-console.log("Testing tiered price selection logic:\n");
+console.log("🧪 Testing tiered price selection logic:\n");
 
 testCases.forEach((test, index) => {
   console.log(`Test ${index + 1}: ${test.name}`);
@@ -125,4 +125,4 @@ testCases.forEach((test, index) => {
   console.log('---\n');
 });
 
-console.log("All tests completed!");
+console.log("✅ All tests completed!");

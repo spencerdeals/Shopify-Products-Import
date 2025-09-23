@@ -7,10 +7,15 @@ const { parseProduct } = require('./gptParser');
 const app = express();
 const PORT = process.env.PORT || 8080;
 
-// CORS configuration with allowlist
+// CORS configuration with production allowlist
 const corsOptions = {
   origin: function (origin, callback) {
-    const allowedOrigins = ['https://sdl.bm', 'https://www.sdl.bm'];
+    const allowedOrigins = [
+      'https://sdl.bm', 
+      'https://www.sdl.bm',
+      'http://localhost:5173', // Vite dev server
+      'http://localhost:4173'  // Vite preview
+    ];
     // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
     if (allowedOrigins.indexOf(origin) !== -1) {
@@ -34,7 +39,7 @@ app.use(limiter);
 // Initialize scrapers
 const zyteScraper = new ZyteScraper();
 
-// Price selection with tiered sanity guard
+// Enhanced price selection with tiered sanity guard
 function selectPrice(productData) {
   const candidates = [
     { k: "currentPrice", v: productData?.currentPrice },
@@ -94,7 +99,7 @@ function toNumber(x) {
   return parseFloat(cleaned);
 }
 
-// Image selection logic
+// Enhanced image selection logic
 function selectImage(productData, selectedVariant) {
   // Prefer hero/main image
   const hero = productData?.mainImage || productData?.heroImage || productData?.primary_image;
@@ -142,7 +147,7 @@ function isGoodImage(img) {
   return !/sprite|placeholder|blank|thumb/i.test(url);
 }
 
-// Health endpoints
+// Health endpoints - /ping primary, /health alias
 app.get('/health', (req, res) => {
   res.json({ ok: true, service: 'instant-import' });
 });
@@ -235,7 +240,7 @@ app.get('/products', async (req, res) => {
       }
     }
 
-    console.log(`Handled by: ${engine}`);
+    console.log(`Final engine: ${engine}`);
 
     // Calculate volume if dimensions available
     if (productData?.dimensions) {
