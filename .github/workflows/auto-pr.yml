@@ -99,7 +99,8 @@ jobs:
 
           git checkout -b "$BRANCH"
 
-          if ! git apply -p0 --whitespace=fix patch.diff; then
+          if ! git apply -p1 --whitespace=fix patch.diff
+; then
             echo "Failed to apply patch. First 120 lines:"
             sed -n '1,120p' patch.diff
             exit 1
