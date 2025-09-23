@@ -2,30 +2,8 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const rateLimit = require('express-rate-limit');
-const axios = require('axios');
 
-const app = express();
-const PORT = process.env.PORT || 3000;
-
-// Trust proxy for Railway deployment
-app.set('trust proxy', 1);
-
-// Middleware
-app.use(cors());
-app.use(express.json({ limit: '10mb' }));
-app.use(express.static(path.join(__dirname, '../frontend')));
-
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
-  message: 'Too many requests from this IP, please try again later.',
-  trustProxy: true
-});
-app.use('/api/', limiter);
-
-const axios = require('axios');
-
+// Zyte Scraper Class
 class ZyteScraper {
   constructor() {
     this.apiKey = process.env.ZYTE_API_KEY;
@@ -50,6 +28,8 @@ class ZyteScraper {
     }
 
     console.log(`🕷️ Zyte scraping: ${url.substring(0, 50)}...`);
+    
+    const axios = require('axios');
     
     try {
       const response = await axios.post('https://api.zyte.com/v1/extract', {
@@ -113,46 +93,32 @@ class ZyteScraper {
         };
       }
       
-      throw new Error('No product data in Zyte response');
-      
-    } catch (error) {
-      console.error('❌ Zyte scraping failed:', error.message);
-      throw error;
-    }
-  }
-}
+const GPTWebScraper = require('./gptWebScraper');
 
-module.exports = ZyteScraper;
-
-// GPT Backup Scraper
-class GPTScraper {
-  constructor() {
-    this.apiKey = process.env.OPENAI_API_KEY;
-    this.enabled = !!this.apiKey;
-    
-    if (this.enabled) {
-      console.log('🤖 GPT Backup scraper initialized');
-    } else {
-      console.log('🤖 GPT Backup scraper disabled - No OpenAI API Key');
-    }
-  }
-
-  async scrapeProduct(url) {
-    if (!this.enabled) {
-      throw new Error('OpenAI API key not configured');
-    }
-
-    console.log(`🤖 GPT backup scraping: ${url}`);
-    
-    // This would use the GPT parser as backup
-    const { parseProduct } = require('./gptParser');
-    return await parseProduct(url);
-  }
-}
+const app = express();
+const PORT = process.env.PORT || 3000;
 
 // Initialize scrapers
 const zyteScraper = new ZyteScraper();
-const gptScraper = new GPTScraper();
+const gptWebScraper = new GPTWebScraper();
+const gptBackupScraper = new GPTScraper();
+
+// Trust proxy for Railway deployment
+app.set('trust proxy', 1);
+
+// Middleware
+app.use(cors());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.static(path.join(__dirname, '../frontend')));
+
+// Rate limiting
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // limit each IP to 100 requests per windowMs
+  message: 'Too many requests from this IP, please try again later.',
+  trustProxy: true
+});
+app.use('/api/', limiter);
 
 // Health check
 app.get('/health', (req, res) => {
@@ -195,31 +161,47 @@ app.post('/api/scrape', async (req, res) => {
         
         let product = null;
         
-        // Try Zyte first
-        if (zyteScraper.enabled) {
+        // Try GPT Web browsing first (most reliable)
+        if (gptWebScraper.enabled) {
           try {
-            product = await zyteScraper.scrapeProduct(url);
-            console.log(`✅ Zyte succeeded for ${url}`);
-          } catch (zyteError) {
-            console.log(`❌ Zyte failed for ${url}: ${zyteError.message}`);
+            product = await gptWebScraper.scrapeProduct(url);
+            console.log(`✅ GPT Web browsing succeeded for ${url}`);
+          } catch (gptWebError) {
+            console.log(`❌ GPT Web browsing failed for ${url}: ${gptWebError.message}`);
             
-            // Try GPT as backup
-            if (gptScraper.enabled) {
+            // Try Zyte as backup
+            if (zyteScraper.enabled) {
               try {
-                console.log(`🤖 Trying GPT backup for ${url}`);
-                product = await gptScraper.scrapeProduct(url);
-                console.log(`✅ GPT backup succeeded for ${url}`);
-              } catch (gptError) {
-                console.log(`❌ GPT backup also failed for ${url}: ${gptError.message}`);
-                throw new Error(`Both Zyte and GPT failed: ${zyteError.message}`);
+                console.log(`🕷️ Trying Zyte backup for ${url}`);
+                product = await zyteScraper.scrapeProduct(url);
+                console.log(`✅ Zyte backup succeeded for ${url}`);
+              } catch (zyteError) {
+                console.log(`❌ Zyte backup also failed for ${url}: ${zyteError.message}`);
+                
+                // Try GPT HTML parsing as final backup
+                if (gptBackupScraper.enabled) {
+                  try {
+                    console.log(`🤖 Trying GPT HTML parsing as final backup for ${url}`);
+                    product = await gptBackupScraper.scrapeProduct(url);
+                    console.log(`✅ GPT HTML parsing succeeded for ${url}`);
+                  } catch (gptBackupError) {
+                    console.log(`❌ All scrapers failed for ${url}`);
+                    throw new Error(`All scrapers failed: ${gptWebError.message}`);
+                  }
+                } else {
+                  throw new Error(`GPT Web and Zyte failed: ${gptWebError.message}`);
+                }
               }
             } else {
-              throw zyteError;
+              throw gptWebError;
             }
           }
-        } else if (gptScraper.enabled) {
-          // Only GPT available
-          product = await gptScraper.scrapeProduct(url);
+        } else if (zyteScraper.enabled) {
+          // Only Zyte available
+          product = await zyteScraper.scrapeProduct(url);
+        } else if (gptBackupScraper.enabled) {
+          // Only GPT HTML parsing available
+          product = await gptBackupScraper.scrapeProduct(url);
         } else {
           throw new Error('No scrapers configured');
         }
@@ -241,7 +223,7 @@ app.post('/api/scrape', async (req, res) => {
         else if (hostname.includes('crateandbarrel')) retailer = 'Crate & Barrel';
         else if (hostname.includes('ikea')) retailer = 'IKEA';
 
-        // Ensure dimensions exist
+        // Ensure dimensions exist (use defaults if missing)
         if (!product.dimensions) {
           product.dimensions = { length: 24, width: 18, height: 12 };
         }
@@ -305,8 +287,9 @@ app.listen(PORT, () => {
   console.log(`🚀 SDL Import Calculator running on port ${PORT}`);
   console.log(`📊 Admin panel: http://localhost:${PORT}/admin`);
   console.log(`🔧 Calculator: http://localhost:${PORT}/admin-calculator`);
+  console.log(`🤖 GPT Web browsing enabled: ${gptWebScraper.enabled}`);
   console.log(`🕷️ Zyte enabled: ${zyteScraper.enabled}`);
-  console.log(`🤖 GPT backup enabled: ${gptScraper.enabled}`);
+  console.log(`🤖 GPT HTML backup enabled: ${gptBackupScraper.enabled}`);
 });
 
 module.exports = app;
