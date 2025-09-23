@@ -16,7 +16,13 @@ const corsOptions = {
       'http://localhost:5173', // Vite dev server
       'http://localhost:4173', // Vite preview
       'http://localhost:3000', // Common dev server
-      'http://127.0.0.1:8080'  // Local backend testing
+      'http://127.0.0.1:8080', // Local backend testing
+      'http://localhost:8000', // Static server for HTML files
+      'http://localhost:8080', // Alternative local server
+      'http://localhost:8081', // Alternative local server
+      'http://127.0.0.1:5173', // Vite dev server (127.0.0.1)
+      'http://127.0.0.1:8000', // Static server (127.0.0.1)
+      'http://127.0.0.1:8081'  // Alternative static server (127.0.0.1)
     ];
     // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
