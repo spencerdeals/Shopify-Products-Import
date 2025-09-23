@@ -255,14 +255,21 @@ app.get("/products", async (req, res) => {
 });
 
 // ========= 404 handler that still serves SPA if needed =========
-app.get("*", (req, res, next) => {
-  // If it looks like an asset, 404; otherwise serve index.html so deep-links
-  // to the form keep working.
+// Serve static files from frontend directory
+app.use(express.static(path.join(__dirname, "../frontend")));
+
+// Catch-all handler for SPA routing (must be LAST)
+app.get("*", (req, res) => {
+  // If it looks like a file extension, return 404
   const looksLikeFile = /\.[a-z0-9]+$/i.test(req.path);
-  if (looksLikeFile) return next();
+  if (looksLikeFile) {
+    return res.status(404).send("Not Found");
+  }
+  
+  // Otherwise serve index.html for SPA routes
   try {
     return res.sendFile(path.join(__dirname, "../frontend/index.html"));
-  } catch {
+  } catch (error) {
     return res.status(404).send("Not Found");
   }
 });
