@@ -7,6 +7,9 @@ const { parseProduct } = require('./gptParser');
 const app = express();
 const PORT = process.env.PORT || 8080;
 
+// Trust Railway proxy for correct IP handling (fixes express-rate-limit warning)
+app.set('trust proxy', 1);
+
 // CORS configuration with production allowlist
 const corsOptions = {
   origin: function (origin, callback) {
@@ -45,6 +48,9 @@ const limiter = rateLimit({
 app.use(cors(corsOptions));
 app.use(express.json());
 app.use(limiter);
+
+// Import path utilities for serving frontend
+const path = require('path');
 
 // Initialize scrapers
 const zyteScraper = new ZyteScraper();
@@ -272,6 +278,12 @@ app.get('/products', async (req, res) => {
       message: error.message 
     });
   }
+});
+
+// Serve frontend build (handles /form and other frontend routes)
+app.use(express.static(path.join(__dirname, '../frontend')));
+app.get('*', (_req, res) => {
+  res.sendFile(path.join(__dirname, '../frontend/index.html'));
 });
 
 app.listen(PORT, () => {
