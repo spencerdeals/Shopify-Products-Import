@@ -29,9 +29,11 @@ const corsOptions = {
     if (allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
     } else {
-      callback(new Error('Not allowed by CORS'));
+      console.warn('CORS blocked origin:', origin);
+      callback(null, false);
     }
-  }
+  },
+  methods: ['GET', 'POST', 'OPTIONS']
 };
 
 // Rate limiting
