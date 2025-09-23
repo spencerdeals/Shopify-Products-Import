@@ -44,50 +44,71 @@ jobs:
             console.error('OPENAI_API_KEY is missing');
             process.exit(1);
           }
-          // Read prompt
+
+          // Read user prompt
           const prompt = await readFile('.prompt.txt', 'utf8');
+
+          // Ask for RAW unified diff (no fences)
           const body = {
             model: 'gpt-4o-mini',
             temperature: 0.1,
             max_tokens: 4000,
             messages: [
-              { role: 'system', content: 'Return ONLY a valid git unified diff patch for this repository. No prose.' },
+              { role: 'system', content:
+                'Return ONLY a raw git unified diff for this repository. ' +
+                'Start the VERY FIRST CHARACTER with "diff --git". ' +
+                'DO NOT wrap in Markdown fences or add prose.' },
               { role: 'user', content: prompt }
             ]
           };
+
           const resp = await fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${apiKey}`,
-              'Content-Type': 'application/json'
-            },
+            headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
             body: JSON.stringify(body)
           });
+
           if (!resp.ok) {
             const text = await resp.text();
             console.error('OpenAI API error:', resp.status, text);
             process.exit(1);
           }
-          const data = await resp.json();
-          let content = data?.choices?.[0]?.message?.content ?? '';
 
-          // ✅ Sanitize: keep only valid diff lines
-          const valid = /^(diff --git|index|new file mode|deleted file mode|---|\+\+\+|@@|[ +-])/;
+          let content = (await resp.json())?.choices?.[0]?.message?.content ?? '';
+
+          // Strip code fences if any
+          content = content.replace(/^```[a-zA-Z]*\n/, '').replace(/\n```$/, '');
+
+          // Keep only valid diff lines
+          const valid = /^(diff --git|--- |\+\+\+ |@@ |[ +-])/;
           content = content
             .split('\n')
+            // Drop fragile lines that confuse git apply (index/new file mode/etc)
+            .filter(line => !/^index /.test(line))
+            .filter(line => !/^new file mode /.test(line))
+            .filter(line => !/^deleted file mode /.test(line))
             .filter(line => valid.test(line))
             .join('\n');
 
+          // If there's any leading noise before first header, trim to it
+          const idx = content.indexOf('diff --git ');
+          if (idx >= 0) content = content.slice(idx);
+
           await writeFile('patch.diff', content, 'utf8');
+
           const firstLine = content.split('\n', 1)[0] || '';
           console.log('Patch first line:', firstLine);
           if (!firstLine.startsWith('diff --git')) {
-            console.error('OpenAI did not return a valid git diff.');
+            console.error('OpenAI did not return a usable git diff after normalization. First 200 chars:');
+            console.error(content.slice(0, 200));
             process.exit(1);
           }
           EOF
+
           node gen.mjs
-          sed -n '1,10p' patch.diff || true
+          echo "----- PATCH HEAD -----"
+          sed -n '1,15p' patch.diff || true
+          echo "----------------------"
 
       - name: Create branch & apply patch
         id: apply
@@ -96,15 +117,36 @@ jobs:
           BRANCH="auto/fix-$(date +%s)"
           echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
           git checkout -b "$BRANCH"
-          if ! git apply -p1 --whitespace=fix patch.diff; then
-            echo "Failed to apply patch. First 120 lines:"
-            sed -n '1,120p' patch.diff
-            exit 1
+
+          echo "Trying git apply -p1…"
+          if git apply -p1 --whitespace=fix patch.diff; then
+            echo "git apply succeeded."
+          else
+            echo "::warning::git apply failed; trying GNU patch -p1 as fallback…"
+            if command -v patch >/dev/null 2>&1; then
+              # Dry-run first to show errors
+              if patch -p1 --dry-run < patch.diff; then
+                patch -p1 < patch.diff
+                echo "patch applied with GNU patch."
+              else
+                echo "GNU patch dry-run failed. Showing first 120 lines of patch:"
+                sed -n '1,120p' patch.diff || true
+                exit 1
+              fi
+            else
+              echo "::error::GNU patch not available and git apply failed."
+              sed -n '1,120p' patch.diff || true
+              exit 1
+            fi
           fi
 
-          git add -A
-          git commit -m "Auto patch from .prompt.txt" || echo "No changes to commit"
-          git push origin "$BRANCH"
+          if git status --porcelain | grep . >/dev/null 2>&1; then
+            git add -A
+            git commit -m "Auto patch from .prompt.txt"
+            git push origin "$BRANCH"
+          else
+            echo "No changes detected after applying patch."
+          fi
 
       - name: Open Pull Request
         uses: actions/github-script@v7
@@ -112,6 +154,21 @@ jobs:
           script: |
             const branch = '${{ steps.apply.outputs.branch }}';
             const { owner, repo } = context.repo;
+
+            // Only open a PR if there is at least one commit on the new branch
+            try {
+              const { data: commits } = await github.rest.repos.listCommits({
+                owner, repo, sha: branch, per_page: 1
+              });
+              if (!commits.length) {
+                core.info('No commit on new branch; skipping PR creation.');
+                return;
+              }
+            } catch {
+              core.info('Branch has no commits; skipping PR creation.');
+              return;
+            }
+
             const res = await github.rest.pulls.create({
               owner, repo,
               title: 'Auto-generated PR from .prompt.txt',
