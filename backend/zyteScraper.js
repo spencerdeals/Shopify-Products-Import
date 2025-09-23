@@ -1,6 +1,6 @@
 // backend/zyteScraper.js - Fixed Zyte API Integration with Automatic Extraction
-const axios = require('axios');
 const cheerio = require('cheerio');
+const axios = require('axios');
 
 class ZyteScraper {
   constructor() {

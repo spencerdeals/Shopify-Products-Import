@@ -1026,6 +1026,24 @@
             line-height: 1.5;
         }
 
+        .assembly-btn {
+            background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%);
+            margin-left: 10px;
+        }
+        
+        .assembly-btn.active {
+            background: linear-gradient(135deg, #4caf50 0%, #388e3c 100%);
+        }
+        
+        .assembly-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(255, 152, 0, 0.3);
+        }
+        
+        .assembly-btn.active:hover {
+            box-shadow: 0 8px 25px rgba(76, 175, 80, 0.3);
+        }
+
         /* MOBILE STYLES */
         @media (max-width: 768px) {
             .intro-page {
@@ -1499,6 +1517,9 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
         let confirmedPrices = new Set();
         let confirmedDeliveryFees = new Set();
         let productQuantities = {};
+        let currentProducts = [];
+        let isCalculating = false;
+        let assemblyServices = {}; // Track assembly services by product index
         
         // Manual entry variables (preserved)
         let manualEntryUrl = '';
@@ -1778,6 +1799,34 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
                 statusDiv.textContent = '✓ Confirmed - Free delivery to NJ';
             }
             statusDiv.className = 'price-status confirmed';
+        }
+
+        function toggleAssembly(index) {
+            const btn = document.getElementById(`assembly-btn-${index}`);
+            const product = currentProducts[index];
+            
+            if (assemblyServices[index]) {
+                // Remove assembly service
+                delete assemblyServices[index];
+                btn.classList.remove('active');
+                btn.innerHTML = '<i class="fas fa-tools"></i> Add Assembly Service';
+            } else {
+                // Add assembly service
+                const baseAssemblyFee = product.assemblyFee || 50; // Default $50 if not specified
+                assemblyServices[index] = {
+                    fee: baseAssemblyFee,
+                    description: 'Professional Assembly Service'
+                };
+                btn.classList.add('active');
+                btn.innerHTML = '<i class="fas fa-check"></i> Assembly Added';
+            }
+            
+            // Recalculate totals
+            updateCalculationDisplay();
+        }
+
+        function confirmProduct(index) {
+            // Implementation for confirming product
         }
 
         // Handle form submission
