@@ -1,11 +1,11 @@
-// Test script for price selection logic
-function pickPrice(z) {
+// Test script for tiered price selection logic
+function selectPrice(productData) {
   const candidates = [
-    {k: "currentPrice", v: z?.currentPrice},
-    {k: "salePrice",    v: z?.salePrice},
-    {k: "regularPrice", v: z?.regularPrice},
-    {k: "listPrice",    v: z?.listPrice},
-    {k: "price",        v: z?.price},
+    { k: "currentPrice", v: productData?.currentPrice },
+    { k: "salePrice", v: productData?.salePrice },
+    { k: "regularPrice", v: productData?.regularPrice },
+    { k: "listPrice", v: productData?.listPrice },
+    { k: "price", v: productData?.price }
   ]
   .filter(c => c.v != null)
   .map(c => ({ k: c.k, n: toNumber(c.v) }))
@@ -13,23 +13,42 @@ function pickPrice(z) {
 
   if (candidates.length === 0) return null;
 
-  // Heuristic: sofas/large items shouldn't be under $100
-  const categoryHint = (z?.category || z?.breadcrumbs?.join(" ") || "" + z?.name || "").toLowerCase();
-  const isLargeItem = (z?.volumeFt3 && z.volumeFt3 >= 10) || /sofa|sectional|couch|chaise/.test(categoryHint);
+  // Determine tier and minimum price
+  const volumeFt3 = productData?.volumeFt3 || 0;
+  const nameText = (productData?.name || '').toLowerCase();
+  const breadcrumbText = (productData?.breadcrumbs || []).join(' ').toLowerCase();
+  const searchText = `${nameText} ${breadcrumbText}`;
 
-  // Prefer by field priority first, then sanity
-  const byPriority = ["currentPrice","salePrice","regularPrice","listPrice","price"];
-  let best = candidates.sort((a,b) => byPriority.indexOf(a.k) - byPriority.indexOf(b.k))[0];
-
-  if (isLargeItem && best.n < 100) {
-    // try to find a saner candidate
-    const sane = candidates
-      .filter(c => c.n >= 100)
-      .sort((a,b) => byPriority.indexOf(a.k) - byPriority.indexOf(b.k))[0];
-    if (sane) best = sane;
+  let tier, minPrice;
+  if (volumeFt3 > 20 || /sectional|chaise|3-seater|4-seater/.test(searchText)) {
+    tier = 'LARGE';
+    minPrice = 200;
+  } else if (volumeFt3 >= 10 || /sofa|couch|loveseat/.test(searchText)) {
+    tier = 'MEDIUM';
+    minPrice = 100;
+  } else {
+    tier = 'SMALL';
+    minPrice = 50;
   }
 
-  return best; // {k, n}
+  // Try candidates in priority order
+  const priorityOrder = ["currentPrice", "salePrice", "regularPrice", "listPrice", "price"];
+  for (const fieldName of priorityOrder) {
+    const candidate = candidates.find(c => c.k === fieldName);
+    if (candidate && candidate.n >= minPrice) {
+      return { k: candidate.k, n: candidate.n, tier, minPrice };
+    }
+  }
+
+  // If none in priority order meet tier, pick highest that meets tier
+  const validCandidates = candidates.filter(c => c.n >= minPrice);
+  if (validCandidates.length > 0) {
+    const highest = validCandidates.sort((a, b) => b.n - a.n)[0];
+    return { k: highest.k, n: highest.n, tier, minPrice };
+  }
+
+  // None meet tier requirement
+  return { tier, minPrice, failed: true };
 }
 
 function toNumber(x) {
@@ -42,44 +61,68 @@ function toNumber(x) {
 // Test cases
 const testCases = [
   {
-    name: "Sofa with bad primary price",
+    name: "Large sectional with bad primary price",
     data: {
-      name: "Brittany Sofa Futon",
-      price: '40.5',
-      salePrice: undefined,
-      currentPrice: undefined,
-      regularPrice: '299.99',
-      category: "furniture"
-    }
+      name: "3-Piece Sectional Sofa",
+      price: '45.99',
+      regularPrice: '899.99',
+      volumeFt3: 25
+    },
+    expected: { source: 'regularPrice', price: 899.99, tier: 'LARGE' }
   },
   {
-    name: "Normal product with current price",
+    name: "Medium sofa with current price",
+    data: {
+      name: "Modern Loveseat",
+      currentPrice: '129.99',
+      volumeFt3: 12
+    },
+    expected: { source: 'currentPrice', price: 129.99, tier: 'MEDIUM' }
+  },
+  {
+    name: "Small item accepts lower price",
     data: {
       name: "Coffee Table",
-      price: '150.00',
-      currentPrice: '129.99',
-      salePrice: '119.99',
-      regularPrice: '150.00'
-    }
+      currentPrice: '65.99',
+      volumeFt3: 3
+    },
+    expected: { source: 'currentPrice', price: 65.99, tier: 'SMALL' }
   },
   {
-    name: "Large item with all low prices",
+    name: "Large item with all prices too low",
     data: {
       name: "Sectional Couch",
       price: '25.50',
       currentPrice: '30.00',
       salePrice: '22.99',
-      volumeFt3: 15
-    }
+      volumeFt3: 25
+    },
+    expected: { failed: true, tier: 'LARGE' }
   }
 ];
 
-console.log("Testing price selection logic:\n");
+console.log("Testing tiered price selection logic:\n");
 
-testCases.forEach(test => {
-  console.log(`Test: ${test.name}`);
+testCases.forEach((test, index) => {
+  console.log(`Test ${index + 1}: ${test.name}`);
   console.log(`Input:`, test.data);
-  const result = pickPrice(test.data);
+  
+  const result = selectPrice(test.data);
   console.log(`Result:`, result);
+  
+  // Validate result
+  if (test.expected.failed) {
+    const passed = result && result.failed && result.tier === test.expected.tier;
+    console.log(`✅ Test result: ${passed ? 'PASS' : 'FAIL'}`);
+  } else {
+    const passed = result && 
+      result.k === test.expected.source && 
+      result.n === test.expected.price && 
+      result.tier === test.expected.tier;
+    console.log(`✅ Test result: ${passed ? 'PASS' : 'FAIL'}`);
+  }
+  
   console.log('---\n');
 });
+
+console.log("All tests completed!");
