@@ -1,0 +1,6 @@
+Return a git unified diff patch for this repository. Only output the diff.
+
+Task: Append one line to the end of README.md:
+"Auto PR test: it works."
+
+Do not change any other files.
