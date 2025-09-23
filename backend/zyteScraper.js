@@ -1,286 +1,312 @@
-// gptParser.js - Clean GPT-based product parsing
+const express = require('express');
+const cors = require('cors');
+const path = require('path');
+const rateLimit = require('express-rate-limit');
 const axios = require('axios');
-const cheerio = require('cheerio');
-const OpenAI = require('openai');
 
-const MODEL = process.env.GPT_PARSER_MODEL || 'gpt-4o-mini';
-const TIMEOUT_MS = 30000;
-const MAX_AXIOS_RETRIES = 1;
-const DEFAULT_CURRENCY = (process.env.DEFAULT_CURRENCY || 'USD').toUpperCase();
-const ALLOWED_CURRENCIES = ['USD','BMD','CAD','GBP','EUR'];
-const MAX_GPT_CALLS_PER_RUN = parseInt(process.env.MAX_GPT_CALLS_PER_RUN || '100', 10);
+const app = express();
+const PORT = process.env.PORT || 3000;
 
-let gptCallsUsed = 0;
+// Trust proxy for Railway deployment
+app.set('trust proxy', 1);
 
-function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
-function rnd(min,max){ return Math.floor(Math.random()*(max-min+1))+min; }
-function htmlToVisibleText(html){
-  const $ = cheerio.load(html);
-  $('script,style,noscript').remove();
-  return $('body').text().replace(/\s+/g,' ').trim();
-}
-function coerceNumber(n){
-  if (typeof n === 'number') return n;
-  if (typeof n === 'string'){
-    const cleaned = n.replace(/[^0-9.\-]/g,'');
-    const val = Number(cleaned);
-    return Number.isFinite(val) ? val : null;
+// Middleware
+app.use(cors());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.static(path.join(__dirname, '../frontend')));
+
+// Rate limiting
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // limit each IP to 100 requests per windowMs
+  message: 'Too many requests from this IP, please try again later.',
+  trustProxy: true
+});
+app.use('/api/', limiter);
+
+const axios = require('axios');
+
+class ZyteScraper {
+  constructor() {
+    this.apiKey = process.env.ZYTE_API_KEY;
+    this.enabled = !!this.apiKey;
+    
+    if (this.enabled) {
+      console.log('🕷️ ZyteScraper Constructor:');
+      console.log('   API Key: ✅ SET');
+      console.log('   Status: ✅ ENABLED (v4.0 - Fixed Price Parsing)');
+      console.log('   🎯 Ready to use Zyte API with automatic product extraction and smart price parsing');
+    } else {
+      console.log('🕷️ ZyteScraper Constructor:');
+      console.log('   API Key: ❌ NOT SET');
+      console.log('   Status: ❌ DISABLED');
+      console.log('   🚨 Set ZYTE_API_KEY environment variable to enable');
+    }
   }
-  return null;
-}
-function detectRetailer(url){
-  try{
-    const host = new URL(url).hostname.toLowerCase();
-    if (host.includes('wayfair')) return 'Wayfair';
-    if (host.includes('amazon')) return 'Amazon';
-    if (host.includes('walmart')) return 'Walmart';
-    if (host.includes('target')) return 'Target';
-    if (host.includes('bestbuy')) return 'BestBuy';
-    if (host.includes('homedepot')) return 'HomeDepot';
-    if (host.includes('crateandbarrel')) return 'CrateAndBarrel';
-    if (host.includes('ikea')) return 'IKEA';
-    if (host.includes('lunafurn')) return 'LunaFurniture';
-    return 'Generic';
-  }catch{ return 'Generic'; }
-}
 
-async function fetchViaAxios(url){
-  let lastErr = null;
-  for (let i=0;i<MAX_AXIOS_RETRIES;i++){
-      let waitMs; // Declare once at loop scope
-      // Add random delay to avoid rate limits
-      if (i > 0) {
-        await sleep(Math.random() * 2000 + 1000); // 1-3 second delay on retries
+  async scrapeProduct(url) {
+    if (!this.enabled) {
+      throw new Error('Zyte API key not configured');
+    }
+
+    console.log(`🕷️ Zyte scraping: ${url.substring(0, 50)}...`);
+    
+    try {
+      const response = await axios.post('https://api.zyte.com/v1/extract', {
+        url: url,
+        product: true,
+        productOptions: {
+          extractFrom: 'httpResponseBody'
+        },
+        httpResponseBody: true
+      }, {
+        auth: {
+          username: this.apiKey,
+          password: ''
+        },
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        timeout: 60000
+      });
+
+      if (response.data && response.data.product) {
+        const product = response.data.product;
+        
+        // Extract basic info
+        const name = product.name || 'Unknown Product';
+        const price = parseFloat(product.price) || 0;
+        const image = product.mainImage || null;
+        const brand = product.brand?.name || null;
+        
+        // Extract dimensions if available
+        let dimensions = null;
+        if (product.size) {
+          const sizeMatch = product.size.match(/(\d+\.?\d*)"?\s*[Ww]\s*x\s*(\d+\.?\d*)"?\s*[Dd]/);
+          if (sizeMatch) {
+            dimensions = {
+              length: parseFloat(sizeMatch[1]),
+              width: parseFloat(sizeMatch[2]),
+              height: 33 // Default height
+            };
+          }
+        }
+        
+        if (!dimensions) {
+          dimensions = { length: 24, width: 18, height: 12 }; // Default
+        }
+
+        console.log(`✅ Zyte success! Product: "${name}" Price: $${price}`);
+        
+        return {
+          url,
+          name,
+          price,
+          currency: 'USD',
+          image,
+          brand,
+          dimensions,
+          inStock: true,
+          category: product.breadcrumbs?.[product.breadcrumbs.length - 1] || null,
+          variant: product.variants?.[0] || null,
+          manualEntryRequired: false
+        };
       }
       
-      try {
-      const res = await axios.get(url, {
-        timeout: TIMEOUT_MS,
-        headers: {
-          'User-Agent': `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${rnd(120,125)}.0.0.0 Safari/537.36`,
-          'Accept-Language': 'en-US,en;q=0.9',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-          'Cache-Control': 'no-cache', 'Pragma': 'no-cache',
-          'Sec-Fetch-Dest': 'document',
-          'Sec-Fetch-Mode': 'navigate',
-          'Sec-Fetch-Site': 'none',
-          'Upgrade-Insecure-Requests': '1'
-        },
-        validateStatus: () => true,
+      throw new Error('No product data in Zyte response');
+      
+    } catch (error) {
+      console.error('❌ Zyte scraping failed:', error.message);
+      throw error;
+    }
+  }
+}
+
+module.exports = ZyteScraper;
+
+// GPT Backup Scraper
+class GPTScraper {
+  constructor() {
+    this.apiKey = process.env.OPENAI_API_KEY;
+    this.enabled = !!this.apiKey;
+    
+    if (this.enabled) {
+      console.log('🤖 GPT Backup scraper initialized');
+    } else {
+      console.log('🤖 GPT Backup scraper disabled - No OpenAI API Key');
+    }
+  }
+
+  async scrapeProduct(url) {
+    if (!this.enabled) {
+      throw new Error('OpenAI API key not configured');
+    }
+
+    console.log(`🤖 GPT backup scraping: ${url}`);
+    
+    // This would use the GPT parser as backup
+    const { parseProduct } = require('./gptParser');
+    return await parseProduct(url);
+  }
+}
+
+// Initialize scrapers
+const zyteScraper = new ZyteScraper();
+const gptScraper = new GPTScraper();
+
+// Health check
+app.get('/health', (req, res) => {
+  res.json({ status: 'OK', timestamp: new Date().toISOString() });
+});
+
+// Main scraping endpoint
+app.post('/api/scrape', async (req, res) => {
+  try {
+    const { urls } = req.body;
+    
+    if (!urls || !Array.isArray(urls) || urls.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Please provide an array of URLs to scrape'
       });
-      if (res.status === 200 && res.data){
-        return res.data;
-      }
-      if (res.status === 429){
-        waitMs = 5000*(i+1) + rnd(2000,5000); // Much longer delays for 429
-        console.warn(`[Axios] 429. Retry ${i + 1}/3 after ${waitMs}ms`);
-        await sleep(waitMs); continue;
-      }
-      if (res.status === 403){
-        waitMs = 8000*(i+1) + rnd(3000,5000); // Much longer for 403
-        console.warn(`[Axios] 403. Retry ${i + 1}/3 after ${waitMs}ms`);
-        await sleep(waitMs); continue;
-      }
-      waitMs = 1000*(i+1) + rnd(500,1500);
-      console.warn(`[Axios] ${res.status}. Retry ${i + 1}/3 after ${waitMs}ms`);
-      await sleep(waitMs);
-    } catch (err) {
-      lastErr = err;
-      waitMs = 1000*(i+1) + rnd(500,1500);
-      console.warn(`[Axios] Error. Retry ${i + 1}/3 after ${waitMs}ms: ${err.message}`);
-      await sleep(waitMs);
     }
-  }
-  throw lastErr || new Error('Axios failed after retries');
-}
 
-async function smartFetchHtml(url) {
-  console.log('[GPT Parser] Starting smart HTML fetch...');
-  let html = null;
-  
-  // Try Apify first (if available)
-  try {
-    // html = await fetchViaApify(url);
-  } catch (err) {
-    console.warn('[GPT Parser] Apify failed:', err.message);
-  }
-  
-  if (html) {
-    console.log('[GPT Parser] Got HTML via Apify');
-    return html;
-  }
-  
-  // Fallback to Axios
-  try {
-    html = await fetchViaAxios(url);
-  } catch (err) {
-    console.warn('[GPT Parser] Axios failed:', err.message);
-  }
-  
-  if (html) {
-    console.log('[GPT Parser] Got HTML via Axios');
-  } else {
-    console.log('[GPT Parser] All fetch methods failed');
-  }
-  
-  return html;
-}
-
-// -------- Fetchers (Apify → Axios) --------
-function vendorPromptHints(vendor){
-  switch (vendor) {
-    case 'Wayfair':
-      return `For Wayfair: CRITICAL - Extract the MAIN SELLING PRICE that customers pay. Look for: 1. Sale prices (red text, highlighted, marked as "sale", "current", "now") - HIGHEST PRIORITY 2. If no sale price, use the main price near "Add to Cart" button 3. IGNORE "was" prices, financing options, and struck-through prices 4. The price should be clearly visible and prominent on the page 5. If multiple prices exist, choose the one customers would actually pay`;
-      return `For Amazon: CRITICAL - ONLY use SALE/DEAL prices. Look for prices in red, marked as "deal", "sale", or "current price". IGNORE struck-through list prices and subscription pricing.`;
-    case 'Walmart':
-      return `For Walmart: CRITICAL - ONLY use CURRENT/NOW prices. Look for highlighted prices marked as "now", "current", or "sale". IGNORE "was" prices and financing options.`;
-    case 'Target':
-      return `For Target: CRITICAL - ONLY use SALE/CURRENT prices. Look for red prices, "sale" prices, or "current" prices. IGNORE "reg" and "was" prices.`;
-    case 'BestBuy':
-      return `For Best Buy: CRITICAL - ONLY use SALE/CURRENT prices. Look for highlighted sale prices. IGNORE regular prices and membership pricing.`;
-    case 'HomeDepot':
-      return `For Home Depot: CRITICAL - ONLY use SALE/SPECIAL prices. Look for highlighted special prices. IGNORE regular prices and bulk pricing.`;
-    case 'CrateAndBarrel':
-      return `For Crate & Barrel: CRITICAL - ONLY use SALE/CURRENT prices. Look for highlighted sale prices. IGNORE regular prices and financing. Extract dimensions from format like "23.8"H height 85.4"W width 37"D depth".`;
-    case 'IKEA':
-      return `For IKEA: CRITICAL - ONLY use MEMBER/SALE prices. Look for member prices or sale prices. IGNORE regular prices and service costs.`;
-    case 'LunaFurniture':
-      return `For Luna Furniture: CRITICAL - ONLY use SALE/CURRENT prices. Look for sale prices. IGNORE "compare at" and "was" prices.`;
-    default:
-      return `CRITICAL - ONLY use SALE/CURRENT prices. Look for prices marked as "sale", "now", "current", or highlighted in red/bold. COMPLETELY IGNORE regular/list/was prices and financing options.`;
-  }
-}
-
-async function parseWithGPT({ url, html, currencyFallback = DEFAULT_CURRENCY }){
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error('OPENAI_API_KEY is missing for gptParser.');
-  if (gptCallsUsed >= MAX_GPT_CALLS_PER_RUN) throw new Error('GPT budget limit reached for this run.');
-
-  const client = new OpenAI({ apiKey });
-  const vendor = detectRetailer(url);
-
-  // Trim context to control tokens
-  const visibleText = htmlToVisibleText(html).slice(0, 20000);
-  const htmlSlice = html.slice(0, 20000);
-
-  const system = `
-You are a precise e-commerce product extractor.
-Return STRICT JSON format with fields:
-- url (string)
-- name (string)
-- price (number, no currency symbols - MUST be the SALE/CURRENT price, NOT regular/list price)
-- currency (ISO code)
-- image (string URL)
-- brand (string, optional)
-- sku (string, optional)
-- availability (in_stock | out_of_stock | preorder | unknown)
-- breadcrumbs (array of strings, optional)
-- package_dimensions (object with length,width,height in inches, optional)
-- package_weight_lbs (number, optional)
-- variant (string, optional - primary selected variant)
-- allVariants (array of strings, optional - all available variants like ["Color: Navy", "Size: King"])
-
-Rules:
-- ${vendorPromptHints(vendor)}
-- If currency is unclear, use "${currencyFallback}".
-- CRITICAL: "price" field MUST ONLY contain the SALE/CURRENT price that customers actually pay.
-- Look ONLY for prices that are highlighted, in red, bold, or explicitly marked as "sale", "now", "current", "special".
-- COMPLETELY IGNORE and DO NOT USE: struck-through prices, "was" prices, "reg" prices, "list" prices, "MSRP", financing options, or any crossed-out prices.
-- If you see multiple prices, ALWAYS choose the sale/current price over the regular price.
-- The sale price is usually more prominent, larger, or in a different color (often red).
-- CRITICAL: You MUST extract a valid product name and price. If you cannot find these, make reasonable assumptions based on page content.
-- For name: Use the main product title, even if it's in the page title or meta tags.
-- CRITICAL: You MUST extract a valid product name and price. If you cannot find these, make reasonable assumptions based on page content.
-- For name: Use the main product title, even if it's in the page title or meta tags.
-- If you see an explicit "Package Dimensions" or "Box Dimensions", include them.
-- For dimensions like "23.8"H height 85.4"W width 37"D depth", convert to: length=85.4, width=37, height=23.8
-- "image" should be the main product image URL if visible.
-- Extract ALL variant info: color, size, style, material, orientation if clearly selected.
-- "allVariants" should be array like ["Color: Navy Blue", "Size: King", "Style: Left-facing"]
-- "variant" should be the primary combined variant like "Navy Blue King Left-facing"
-- Look for SKU numbers in the content.
-`.trim();
-
-  const user = `URL: ${url}\nExtract product data from the provided HTML and visible text.\nReturn ONLY JSON, no explanations.`;
-
-  console.log(`[GPT Parser] Making GPT call ${gptCallsUsed}/${MAX_GPT_CALLS_PER_RUN} for ${vendor}`);
-  
-  gptCallsUsed += 1;
-  const response = await client.chat.completions.create({
-    model: MODEL,
-    temperature: 0,
-    response_format: { type: 'json_object' },
-    messages: [
-      { role: 'system', content: system },
-      { role: 'user', content: user },
-      { role: 'user', content: `VISIBLE_TEXT:\n${visibleText}` },
-      { role: 'user', content: `HTML:\n${htmlSlice}` },
-    ],
-  });
-
-  let data = {};
-  try { data = JSON.parse(response.choices[0].message.content || '{}'); }
-  catch (e) { throw new Error(`LLM returned invalid JSON: ${e.message}`); }
-
-  let currency = (typeof data.currency === 'string' ? data.currency.toUpperCase().trim() : '') || currencyFallback;
-  if (!ALLOWED_CURRENCIES.includes(currency)) currency = currencyFallback;
-
-  const price = coerceNumber(data.price);
-  const name = typeof data.name === 'string' ? data.name.trim() : null;
-  const image = typeof data.image === 'string' && data.image.startsWith('http') ? data.image : null;
-  const brand = typeof data.brand === 'string' && data.brand.trim() ? data.brand.trim() : null;
-  const sku = typeof data.sku === 'string' && data.sku.trim() ? data.sku.trim() : null;
-  const variant = typeof data.variant === 'string' && data.variant.trim() ? data.variant.trim() : null;
-  const allVariants = Array.isArray(data.allVariants) ? data.allVariants.filter(v => typeof v === 'string' && v.trim()) : [];
-
-  // Optional package dims normalization
-  let pkgDims = null;
-  if (data.package_dimensions && typeof data.package_dimensions === 'object') {
-    const l = coerceNumber(data.package_dimensions.length);
-    const w = coerceNumber(data.package_dimensions.width);
-    const h = coerceNumber(data.package_dimensions.height);
-    if ([l, w, h].every(Number.isFinite)) {
-      pkgDims = { length: l, width: w, height: h };
+    if (urls.length > 10) {
+      return res.status(400).json({
+        success: false,
+        error: 'Maximum 10 URLs allowed per request'
+      });
     }
+
+    console.log(`[Server] Starting scrape for ${urls.length} URLs`);
+    const results = [];
+    const errors = [];
+
+    for (let i = 0; i < urls.length; i++) {
+      const url = urls[i].trim();
+      
+      if (!url) {
+        errors.push({ url: '', error: 'Empty URL provided' });
+        continue;
+      }
+
+      try {
+        console.log(`[Server] Scraping ${i + 1}/${urls.length}: ${url}`);
+        
+        let product = null;
+        
+        // Try Zyte first
+        if (zyteScraper.enabled) {
+          try {
+            product = await zyteScraper.scrapeProduct(url);
+            console.log(`✅ Zyte succeeded for ${url}`);
+          } catch (zyteError) {
+            console.log(`❌ Zyte failed for ${url}: ${zyteError.message}`);
+            
+            // Try GPT as backup
+            if (gptScraper.enabled) {
+              try {
+                console.log(`🤖 Trying GPT backup for ${url}`);
+                product = await gptScraper.scrapeProduct(url);
+                console.log(`✅ GPT backup succeeded for ${url}`);
+              } catch (gptError) {
+                console.log(`❌ GPT backup also failed for ${url}: ${gptError.message}`);
+                throw new Error(`Both Zyte and GPT failed: ${zyteError.message}`);
+              }
+            } else {
+              throw zyteError;
+            }
+          }
+        } else if (gptScraper.enabled) {
+          // Only GPT available
+          product = await gptScraper.scrapeProduct(url);
+        } else {
+          throw new Error('No scrapers configured');
+        }
+        
+        // Ensure we have minimum required data
+        if (!product.name || !product.price) {
+          throw new Error('Missing required product data (name or price)');
+        }
+
+        // Add retailer detection
+        const hostname = new URL(url).hostname.toLowerCase();
+        let retailer = 'Unknown';
+        if (hostname.includes('wayfair')) retailer = 'Wayfair';
+        else if (hostname.includes('amazon')) retailer = 'Amazon';
+        else if (hostname.includes('walmart')) retailer = 'Walmart';
+        else if (hostname.includes('target')) retailer = 'Target';
+        else if (hostname.includes('bestbuy')) retailer = 'Best Buy';
+        else if (hostname.includes('homedepot')) retailer = 'Home Depot';
+        else if (hostname.includes('crateandbarrel')) retailer = 'Crate & Barrel';
+        else if (hostname.includes('ikea')) retailer = 'IKEA';
+
+        // Ensure dimensions exist
+        if (!product.dimensions) {
+          product.dimensions = { length: 24, width: 18, height: 12 };
+        }
+
+        results.push({
+          ...product,
+          retailer,
+          success: true
+        });
+
+      } catch (error) {
+        console.error(`[Server] Error scraping ${url}:`, error.message);
+        errors.push({
+          url,
+          error: error.message,
+          success: false
+        });
+      }
+    }
+
+    // Return results
+    const response = {
+      success: results.length > 0,
+      products: results,
+      errors: errors,
+      summary: {
+        total: urls.length,
+        successful: results.length,
+        failed: errors.length
+      }
+    };
+
+    console.log(`[Server] Scraping complete: ${results.length}/${urls.length} successful`);
+    res.json(response);
+
+  } catch (error) {
+    console.error('[Server] Scraping endpoint error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error during scraping',
+      details: error.message
+    });
   }
-  const pkgWeight = data.package_weight_lbs != null ? coerceNumber(data.package_weight_lbs) : null;
+});
 
-  if (!name || !price || price <= 0 || price > 200000) {
-    throw new Error('GPT parse missing/invalid required fields (name/price).');
-  }
+// Serve frontend
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, '../frontend/index.html'));
+});
 
-  const availabilityRaw = (data.availability || '').toString().toLowerCase();
-  const availability = ['in_stock','out_of_stock','preorder','unknown'].includes(availabilityRaw) ? availabilityRaw : 'unknown';
+app.get('/admin', (req, res) => {
+  res.sendFile(path.join(__dirname, '../frontend/admin.html'));
+});
 
-  const breadcrumbs = Array.isArray(data.breadcrumbs)
-    ? data.breadcrumbs.map(s => (typeof s === 'string' ? s.trim() : '')).filter(Boolean).slice(0, 10)
-    : [];
+app.get('/admin-calculator', (req, res) => {
+  res.sendFile(path.join(__dirname, '../frontend/admin-calculator.html'));
+});
 
-  if (response.usage) {
-    console.log(`[GPT usage] prompt_tokens=${response.usage.prompt_tokens} completion_tokens=${response.usage.completion_tokens}`);
-  } else {
-    console.log(`[GPT Parser] Usage: ${response.usage.prompt_tokens} prompt + ${response.usage.completion_tokens} completion tokens`);
-  }
+// Start server
+app.listen(PORT, () => {
+  console.log(`🚀 SDL Import Calculator running on port ${PORT}`);
+  console.log(`📊 Admin panel: http://localhost:${PORT}/admin`);
+  console.log(`🔧 Calculator: http://localhost:${PORT}/admin-calculator`);
+  console.log(`🕷️ Zyte enabled: ${zyteScraper.enabled}`);
+  console.log(`🤖 GPT backup enabled: ${gptScraper.enabled}`);
+});
 
-  return {
-    url, name, price, currency, image, brand, sku, availability, breadcrumbs, variant, allVariants,
-    package_dimensions: pkgDims,
-    package_weight_lbs: pkgWeight,
-    dimensions: pkgDims, // Map to expected field name
-    weight: pkgWeight, // Map to expected field name
-    category: breadcrumbs[breadcrumbs.length - 1] || null,
-    inStock: availability === 'in_stock',
-    _meta: { vendor, model: MODEL, gptCallsUsed },
-  };
-}
-
-async function parseProduct(url, opts = {}){
-  const { currencyFallback = DEFAULT_CURRENCY } = opts;
-  await sleep(rnd(200, 600));
-  console.log(`[GPT Parser] Starting product parsing for: ${url}`);
-  const html = await smartFetchHtml(url);
-  if (!html) throw new Error('All HTML fetch methods failed (Apify/Axios).');
-  return parseWithGPT({ url, html, currencyFallback });
-}
-
-module.exports = { parseProduct };
+module.exports = app;
