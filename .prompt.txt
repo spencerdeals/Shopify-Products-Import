@@ -1,6 +1,6 @@
 Return ONLY a raw git unified diff for THIS repository.
-Start the VERY FIRST CHARACTER of the response with: diff --git
-Do NOT wrap in backticks or Markdown fences. No prose, no code fences, no explanation.
+Start the VERY FIRST CHARACTER with: diff --git
+Do NOT wrap in backticks or Markdown. No prose.
 
 Task: Append ONE line to the end of README.md exactly:
 Auto PR test: it works.
