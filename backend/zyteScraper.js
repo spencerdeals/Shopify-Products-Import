@@ -93,6 +93,9 @@ class ZyteScraper {
         };
       }
       
+    }
+  }
+}
 const GPTWebScraper = require('./gptWebScraper');
 
 const app = express();
