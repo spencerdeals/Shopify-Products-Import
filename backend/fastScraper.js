@@ -28,6 +28,7 @@ app.use(express.static(path.join(__dirname, "../frontend")));
 const allowedOrigins = new Set([
   "https://sdl.bm",
   "https://www.sdl.bm",
+  "https://bermuda-import-calculator-production.up.railway.app",
   // keep localhost origins for dev / Bolt preview
   "http://localhost:3000",
   "http://localhost:5173",
@@ -54,6 +55,11 @@ const limiter = rateLimit({
   max: 120,
   standardHeaders: true,
   legacyHeaders: false,
+  trustProxy: true,
+  keyGenerator: (req) => {
+    // Use X-Forwarded-For from Railway proxy, fallback to connection IP
+    return req.ip || req.connection.remoteAddress || 'unknown';
+  },
 });
 app.use(limiter);
 
