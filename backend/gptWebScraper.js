@@ -28,7 +28,7 @@ class GPTWebScraper {
     try {
       const client = new OpenAI({ apiKey: this.apiKey });
       
-      const systemPrompt = `You are a precise e-commerce product data extractor with web browsing capabilities. Browse the provided URL and extract detailed product information.
+      const systemPrompt = `You are a precise e-commerce product data extractor. Browse the provided URL and extract detailed product information.
 
 CRITICAL REQUIREMENTS:
 1. ONLY extract SELECTED/CHOSEN variants from the URL - do not list all possible options
@@ -38,22 +38,6 @@ CRITICAL REQUIREMENTS:
 5. If no shipping dimensions, estimate box size based on product type and whether it's flat-packed
 6. Extract assembly fee if listed and apply 30% markup for Bermuda pricing
 7. Get the main product image URL
-
-VARIANT EXTRACTION RULES:
-- Only extract what is currently selected/chosen on the page
-- Look for "selected", "chosen", "current" indicators
-- For furniture: extract selected color, size, orientation (left/right facing)
-- Do NOT list all available options - only what's currently selected
-
-DIMENSION ESTIMATION RULES:
-- Sofas/Sectionals: Estimate based on seating capacity and style
-- Tables/Desks: Consider if flat-packed (smaller box) vs assembled
-- Chairs: Usually flat-packed, estimate accordingly
-- Large furniture: Add 10-20% to product dimensions for packaging
-
-ASSEMBLY FEE RULES:
-- If assembly fee is listed, apply 30% markup for Bermuda pricing
-- Example: $50 assembly becomes $65 (50 * 1.30)
 
 Return STRICT JSON format with these fields:
 - name (string): Product name
@@ -69,7 +53,23 @@ Return STRICT JSON format with these fields:
 - inStock (boolean): Availability status
 - category (string): Product category
 - brand (string): Brand name if available
-- sku (string): SKU if available`;
+- sku (string): SKU if available
+
+VARIANT EXTRACTION RULES:
+- Only extract what is currently selected/chosen on the page
+- Look for "selected", "chosen", "current" indicators
+- For furniture: extract selected color, size, orientation (left/right facing)
+- Do NOT list all available options - only what's currently selected
+
+DIMENSION ESTIMATION RULES:
+- Sofas/Sectionals: Estimate based on seating capacity and style
+- Tables/Desks: Consider if flat-packed (smaller box) vs assembled
+- Chairs: Usually flat-packed, estimate accordingly
+- Large furniture: Add 10-20% to product dimensions for packaging
+
+ASSEMBLY FEE RULES:
+- If assembly fee is listed, apply 30% markup for Bermuda pricing
+- Example: $50 assembly becomes $65 (50 * 1.30)`;
 
       const userPrompt = `Please browse this URL and extract the product data: ${url}
 
@@ -85,7 +85,7 @@ Return only JSON, no explanations.`;
       console.log('   🔍 Making GPT-4 web browsing request...');
       
       const response = await client.chat.completions.create({
-        model: 'gpt-4',
+        model: 'gpt-4', // Using GPT-4 as requested (GPT-5 not yet available)
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt }
@@ -117,9 +117,6 @@ Return only JSON, no explanations.`;
       console.log(`   💰 Price: $${normalizedData.price}`);
       console.log(`   🎨 Selected Variants: ${JSON.stringify(normalizedData.selectedVariants)}`);
       console.log(`   📏 Dimensions: ${normalizedData.dimensions ? 'Found' : 'Estimated'}`);
-      if (normalizedData.assemblyFee) {
-        console.log(`   🔧 Assembly Fee (with 30% markup): $${normalizedData.assemblyFee}`);
-      }
       
       return normalizedData;
 

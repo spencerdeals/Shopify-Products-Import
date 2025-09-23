@@ -25,7 +25,7 @@ class ZyteScraper {
     }
 
     const retailer = this.detectRetailer(url);
-    console.log(`🕷️ Zyte backup scraping ${retailer}: ${url.substring(0, 60)}...`);
+    console.log(`🕷️ Zyte scraping ${retailer}: ${url.substring(0, 60)}...`);
     
     try {
       const strategies = [
@@ -60,7 +60,7 @@ class ZyteScraper {
       let lastGoodResult = null;
       
       for (const strategy of strategies) {
-        console.log(`   🎯 Zyte strategy: ${strategy.name}`);
+        console.log(`   🎯 Trying strategy: ${strategy.name}`);
         
         try {
           const response = await axios.post(this.baseURL, strategy.payload, {
@@ -76,26 +76,27 @@ class ZyteScraper {
             timeout: 60000
           });
           
-          console.log(`   ✅ Zyte strategy ${strategy.name} succeeded!`);
+          console.log(`   ✅ Strategy ${strategy.name} succeeded!`);
+          console.log('📊 Response status:', response.status);
           
           if (response.data && response.data.product) {
             const confidence = response.data.product.metadata?.probability;
-            console.log(`   🎯 Zyte confidence: ${confidence ? (confidence * 100).toFixed(1) + '%' : 'unknown'}`);
+            console.log(`   🎯 Confidence: ${confidence ? (confidence * 100).toFixed(1) + '%' : 'unknown'}`);
             
             if (confidence && confidence > 0.8) {
-              console.log(`   🚀 High confidence Zyte result: ${strategy.name}`);
+              console.log(`   🚀 High confidence result with strategy: ${strategy.name}`);
               return this.parseZyteResponse(response.data, url, retailer);
             } else if (confidence && confidence > 0.3) {
-              console.log(`   ⚠️ Medium confidence Zyte result: ${strategy.name}, continuing...`);
+              console.log(`   ⚠️ Medium confidence result with strategy: ${strategy.name}, continuing...`);
               // Store this result but try next strategy
               lastGoodResult = { data: response.data, strategy: strategy.name };
             }
           }
           
-          console.log(`   ⚠️ Zyte strategy ${strategy.name} low confidence, trying next...`);
+          console.log(`   ⚠️ Strategy ${strategy.name} low/no confidence, trying next...`);
           
         } catch (error) {
-          console.log(`   ❌ Zyte strategy ${strategy.name} failed: ${error.message}`);
+          console.log(`   ❌ Strategy ${strategy.name} failed: ${error.message}`);
           lastError = error;
           continue;
         }
@@ -103,11 +104,11 @@ class ZyteScraper {
       
       // If we have a medium confidence result, use it
       if (lastGoodResult) {
-        console.log(`   📊 Using medium confidence Zyte result from ${lastGoodResult.strategy}`);
+        console.log(`   📊 Using medium confidence result from ${lastGoodResult.strategy}`);
         return this.parseZyteResponse(lastGoodResult.data, url, retailer);
       }
       
-      throw lastError || new Error('All Zyte strategies failed');
+      throw lastError || new Error('All strategies failed');
       
     } catch (error) {
       return this.handleZyteError(error);
@@ -200,15 +201,16 @@ class ZyteScraper {
   }
 
   parseZyteResponse(data, url, retailer) {
-    console.log('🔍 Parsing Zyte backup response...');
+    console.log('🔍 Parsing Zyte response with automatic extraction...');
     
     // Debug what we received
-    console.log('📊 Zyte confidence:', data.product?.metadata?.probability);
-    console.log('📊 Zyte has product data:', !!data.product);
+    console.log('📊 Response confidence:', data.product?.metadata?.probability);
+    console.log('📊 Has product data:', !!data.product);
+    console.log('📊 Browser HTML length:', data.browserHtml?.length || 0);
     
     // Enhanced debugging - log ALL available data
     if (data.product) {
-      console.log('📊 Zyte product data structure:');
+      console.log('📊 Full Zyte product data structure:');
       console.log('   - Name:', data.product.name);
       console.log('   - Price fields:', {
         price: data.product.price,
@@ -242,19 +244,19 @@ class ZyteScraper {
     // Priority 1: Use Zyte's automatic product extraction
     if (data.product) {
       const product = data.product;
-      console.log('   ✅ Using Zyte backup extraction, confidence:', product.metadata?.probability);
+      console.log('   ✅ Using Zyte automatic extraction data with confidence:', product.metadata?.probability);
       
       // Product name
       productData.name = product.name || null;
       if (productData.name) {
         productData.name = productData.name.trim().substring(0, 200);
-        console.log('   📝 Zyte name:', productData.name.substring(0, 50) + '...');
+        console.log('   📝 Product name:', productData.name.substring(0, 50) + '...');
       }
 
       // Enhanced price parsing - use the main price from Zyte (it's already the correct sale price)
       if (product.price) {
         productData.price = this.extractBestPrice(product);
-        console.log('   💰 Zyte price: $' + productData.price);
+        console.log('   💰 Final Price: $' + productData.price);
       }
 
       // Enhanced image extraction - prefer high-quality variant images
@@ -263,27 +265,27 @@ class ZyteScraper {
         const mainImageUrl = product.mainImage?.url || product.images[0]?.url || product.images[0];
         if (mainImageUrl && mainImageUrl.startsWith('http')) {
           productData.image = mainImageUrl;
-          console.log('   🖼️ Zyte image: Found');
+          console.log('   🖼️ Main Image: Found');
         }
       } else if (product.mainImage && product.mainImage.url) {
         productData.image = product.mainImage.url;
-        console.log('   🖼️ Zyte image: Found');
+        console.log('   🖼️ Main Image: Found');
       }
 
       // Brand
       if (product.brand && product.brand.name) {
         productData.brand = product.brand.name;
-        console.log('   🏷️ Zyte brand:', productData.brand);
+        console.log('   🏷️ Brand:', productData.brand);
       }
 
       // Category from breadcrumbs
       if (product.breadcrumbs && Array.isArray(product.breadcrumbs) && product.breadcrumbs.length > 0) {
         const lastCrumb = product.breadcrumbs[product.breadcrumbs.length - 1];
         productData.category = typeof lastCrumb === 'object' ? lastCrumb.name : lastCrumb;
-        console.log('   📂 Zyte category:', productData.category);
+        console.log('   📂 Category:', productData.category);
       } else if (product.breadcrumbs && typeof product.breadcrumbs === 'string') {
         productData.category = product.breadcrumbs.split(' / ').pop() || null;
-        console.log('   📂 Zyte category:', productData.category);
+        console.log('   📂 Category:', productData.category);
       }
 
       // Enhanced variant extraction using Zyte's rich variant data
@@ -296,13 +298,13 @@ class ZyteScraper {
       // Extract dimensions using comprehensive method
       productData.dimensions = this.extractDimensions(product);
       if (productData.dimensions) {
-        console.log('   📏 Zyte dimensions:', `${productData.dimensions.length}" × ${productData.dimensions.width}" × ${productData.dimensions.height}"`);
+        console.log('   📏 Dimensions extracted:', `${productData.dimensions.length}" × ${productData.dimensions.width}" × ${productData.dimensions.height}"`);
       }
       
       // Extract weight if available
       productData.weight = this.extractWeight(product);
       if (productData.weight) {
-        console.log('   ⚖️ Zyte weight:', productData.weight, 'lbs');
+        console.log('   ⚖️ Weight extracted:', productData.weight, 'lbs');
       }
       
       // Store all variants
@@ -311,27 +313,27 @@ class ZyteScraper {
       // Create a comprehensive primary variant
       if (variants.length > 0) {
         productData.variant = variants.join(' • ');
-        console.log('   🎯 Zyte variants:', productData.variant);
+        console.log('   🎯 Final variants:', productData.variant);
       }
 
       // Availability
       if (product.availability) {
         productData.inStock = product.availability.toLowerCase() === 'instock';
-        console.log('   📦 Zyte stock:', productData.inStock);
+        console.log('   📦 In Stock:', productData.inStock);
       }
 
 
       // Confidence score
       if (product.metadata && product.metadata.probability) {
         productData.confidence = parseFloat(product.metadata.probability);
-        console.log('   🎯 Zyte confidence:', (productData.confidence * 100).toFixed(1) + '%');
+        console.log('   🎯 Confidence:', (productData.confidence * 100).toFixed(1) + '%');
       }
 
-      console.log('   ✅ Zyte backup extraction successful!');
+      console.log('   ✅ Zyte extraction successful!');
       return productData;
     }
 
-    console.log('   ✅ Zyte backup parsing completed!');
+    console.log('   ✅ Zyte parsing completed!');
 
     return productData;
   }
