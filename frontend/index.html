@@ -317,11 +317,9 @@ class ZyteScraper {
         console.log('   📂 Category:', productData.category);
       }
 
-      // Enhanced variant extraction using Zyte's rich variant data
-      const variants = [];
-      
+      // Extract all variants using comprehensive method first
       const extractedVariants = this.extractAllVariants(product);
-      variants.push(...extractedVariants.variants);
+      const variants = extractedVariants.variants;
       
       // Extract dimensions using comprehensive method
       productData.dimensions = this.extractDimensions(product);
