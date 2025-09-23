@@ -1,1 +1,1 @@
-# bermuda-import-calculator
+# bermuda-import-calculator BINGO
