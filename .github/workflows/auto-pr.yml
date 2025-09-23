@@ -1,4 +1,4 @@
-name: Auto PR from Prompt (No-Diff JSON Mode)
+name: Auto PR from Prompt
 
 on:
   workflow_dispatch:
@@ -16,6 +16,11 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Configure Git identity
+        run: |
+          git config user.name "${{ github.actor }}"
+          git config user.email "${{ github.actor }}@users.noreply.github.com"
 
       - name: Preflight checks
         run: |
@@ -49,7 +54,7 @@ jobs:
           // Load prompt
           const prompt = await readFile('.prompt.txt', 'utf8');
 
-          // Ask for a strict JSON edit plan:
+          // Strict JSON edit plan:
           // {
           //   "changes": [
           //     { "path": "README.md", "op": "append", "text": "..." },
@@ -90,7 +95,7 @@ jobs:
           const data = await resp.json();
           const plan = data?.choices?.[0]?.message?.content ?? '';
 
-          // Basic validation: must look like JSON with "changes"
+          // Basic validation: must be JSON with "changes"
           let parsed;
           try {
             parsed = JSON.parse(plan);
