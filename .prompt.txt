@@ -1,6 +1,6 @@
-Return a git unified diff patch for this repository. Only output the diff.
+Return ONLY a valid git unified diff patch for THIS repository. Start with "diff --git".
 
-Task: Append one line to the end of README.md:
-"Auto PR test: it works."
+Task: Append ONE line to the end of README.md exactly:
+Auto PR test: it works.
 
-Do not change any other files.
+Do not change any other file. Keep the patch minimal and valid.
