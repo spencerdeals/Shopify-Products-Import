@@ -2,7 +2,9 @@ Return ONLY a raw git unified diff for THIS repository.
 Start the VERY FIRST CHARACTER with: diff --git
 Do NOT wrap in backticks or Markdown. No prose.
 
-Task: Append ONE line to the end of README.md exactly:
+Task: Ensure README.md exists at the repo root.
+If it does not exist, create it.
+If it does exist, append exactly one new line to the end:
 Auto PR test: it works.
 
 Do not change any other file. Keep the patch minimal and valid.
