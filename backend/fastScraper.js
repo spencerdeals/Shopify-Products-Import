@@ -28,7 +28,6 @@ const allowedOrigins = new Set([
   "http://localhost:5173",
   "https://sdl.bm",
   "https://www.sdl.bm",
-  "https://bermuda-import-calculator-production.up.railway.app",
 ]);
 
 app.use(
@@ -51,7 +50,7 @@ const limiter = rateLimit({
   max: 120,
   standardHeaders: true,
   legacyHeaders: false,
-  trustProxy: true,
+  trustProxy: 1,
   keyGenerator: (req) => {
     return req.ip || 'unknown';
   },
@@ -93,7 +92,7 @@ function detectTier(meta) {
   const s = nameish.toLowerCase();
   const volFt3 = Number(meta?.volumeFt3 || 0);
 
-  if (volFt3 > 20 || /(sectional|chaise|3[-\s]?seater|4[-\s]?seater)/.test(s)) {
+  if (volFt3 > 20 || /(sectional|chaise|3-seater|4-seater)/.test(s)) {
     return { tier: "LARGE", min: 200 };
   }
   if (volFt3 >= 10 || /(sofa|couch|loveseat)/.test(s)) {
@@ -117,25 +116,27 @@ function pickPrice(z) {
   if (!candidates.length) return null;
 
   const priority = ["currentPrice", "salePrice", "regularPrice", "listPrice", "price"];
-  const byPriority = (a, b) => priority.indexOf(a.k) - priority.indexOf(b.k);
 
   // Get tier requirements
   const { tier, min } = detectTier(z);
 
-  // Try priority order first
-  let best = [...candidates].sort(byPriority)[0];
-
-  if (best.n < min) {
-    // Scan for any valid price that meets tier requirement
-    const alt = [...candidates].filter((c) => c.n >= min).sort(byPriority)[0];
-    if (alt) best = alt;
-    else {
-      // No valid price found for this tier
-      return { k: null, n: null, tier, min, unsure: true };
+  // Try candidates in priority order
+  for (const fieldName of priority) {
+    const candidate = candidates.find(c => c.k === fieldName);
+    if (candidate && candidate.n >= min) {
+      return { k: candidate.k, n: candidate.n, tier, min };
     }
   }
 
-  return { ...best, tier, min, unsure: false };
+  // If none in priority order meet tier, pick highest that meets tier
+  const validCandidates = candidates.filter(c => c.n >= min);
+  if (validCandidates.length > 0) {
+    const highest = validCandidates.sort((a, b) => b.n - a.n)[0];
+    return { k: highest.k, n: highest.n, tier, min };
+  }
+
+  // No valid price found for this tier
+  return { tier, min, failed: true };
 }
 
 function isGoodImage(im) {
@@ -188,14 +189,14 @@ app.get("/products", async (req, res) => {
         if (zyteData && zyteData.name) {
           // price selection + sanity
           const pricePick = pickPrice(zyteData);
-          if (pricePick && !pricePick.unsure) {
+          if (pricePick && !pricePick.failed) {
             zyteData.price = pricePick.n;
             zyteData.priceSource = pricePick.k;
             zyteData.priceTier = pricePick.tier;
             console.log(
               `Selected price: $${zyteData.price} (source: ${pricePick.k}, tier: ${pricePick.tier}, min: $${pricePick.min})`
             );
-          } else if (pricePick && pricePick.unsure) {
+          } else if (pricePick && pricePick.failed) {
             zyteData.price = undefined;
             zyteData.engineNote = "price_unsure";
             zyteData.priceTier = pricePick.tier;
@@ -285,14 +286,14 @@ app.post("/api/scrape", async (req, res) => {
           if (zyteData && zyteData.name) {
             // price selection + sanity
             const pricePick = pickPrice(zyteData);
-            if (pricePick && !pricePick.unsure) {
+            if (pricePick && !pricePick.failed) {
               zyteData.price = pricePick.n;
               zyteData.priceSource = pricePick.k;
               zyteData.priceTier = pricePick.tier;
               console.log(
                 `Selected price: $${zyteData.price} (source: ${pricePick.k}, tier: ${pricePick.tier}, min: $${pricePick.min})`
               );
-            } else if (pricePick && pricePick.unsure) {
+            } else if (pricePick && pricePick.failed) {
               zyteData.price = undefined;
               zyteData.engineNote = "price_unsure";
               zyteData.priceTier = pricePick.tier;
