@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const BoxEstimator = require('./boxEstimator');
 const GPTWebScraper = require('./gptWebScraper');
 const ZyteScraper = require('./zyteScraper');
 
@@ -10,6 +11,7 @@ const PORT = process.env.PORT || 8080;
 // Initialize scrapers in priority order
 const gptWebScraper = new GPTWebScraper();
 const zyteScraper = new ZyteScraper();
+const boxEstimator = new BoxEstimator();
 
 // Middleware
 
