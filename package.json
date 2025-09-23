@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node backend/fastScraper.js",
     "dev": "nodemon backend/fastScraper.js",
+    "dev:server": "nodemon backend/fastScraper.js",
     "build": "echo 'Build completed successfully'",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
