@@ -1,4 +1,4 @@
-// backend/fastScraper.js - Enhanced Multi-Method Scraper with ChatGPT-5 Primary
+// backend/fastScraper.js - Enhanced Multi-Method Scraper with Zyte Primary, GPT Secondary
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -31,13 +31,29 @@ console.log('=== SERVER STARTUP ===');
 console.log('Port:', PORT);
 console.log('');
 console.log('🔍 SCRAPING CONFIGURATION:');
-console.log('1. Primary: ChatGPT-5 Parser -', gptParser ? '✅ ENABLED' : '❌ DISABLED');
-console.log('2. Secondary: Zyte API -', zyteScraper.enabled ? '✅ ENABLED' : '❌ DISABLED');
+console.log('1. Primary: Zyte API -', zyteScraper.enabled ? '✅ ENABLED' : '❌ DISABLED');
+console.log('2. Secondary: GPT Parser -', gptParser ? '✅ ENABLED' : '❌ DISABLED');
 console.log('3. Fallback: Adaptive Scraper - ✅ ENABLED');
 console.log('');
 
+// Enhanced CORS configuration
+const corsOptions = {
+  origin: [
+    'http://localhost:3000',
+    'http://localhost:8080',
+    'https://sdl.bm',
+    'https://www.sdl.bm',
+    /\.railway\.app$/,
+    /\.vercel\.app$/,
+    /\.netlify\.app$/
+  ],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+};
+
 // Middleware
-app.use(cors());
+app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
@@ -52,106 +68,176 @@ app.use('/api/', limiter);
 // Serve static files
 app.use(express.static(path.join(__dirname, '../frontend')));
 
-// Enhanced scraping function with multiple methods
-async function scrapeProductData(url) {
-  console.log(`[FastScraper] Starting enhanced scraping for: ${url.substring(0, 60)}...`);
-  
-  let lastError = null;
-  let result = null;
-  
-  // Method 1: Try ChatGPT-5 Parser (Primary)
-  if (gptParser && gptParser.parseProduct) {
-    try {
-      console.log('[FastScraper] Trying ChatGPT-5 parser as primary...');
-      result = await gptParser.parseProduct(url);
-      
-      if (result && result.name && result.price && result.price > 0) {
-        console.log('[FastScraper] ✅ ChatGPT-5 parsing successful');
-        
-        // Enhance with box estimation if needed
-        if (!result.dimensions && !result.estimatedBoxes) {
-          const boxes = boxEstimator.estimateBoxDimensions(result);
-          result.estimatedBoxes = boxes;
-          result.dimensions = boxes[0];
-        }
-        
-        // Record success
-        await adaptiveScraper.recordScrapingAttempt(url, result.retailer || 'Unknown', true, result);
-        
-        return result;
-      }
-    } catch (error) {
-      console.log('[FastScraper] ⚠️ ChatGPT-5 parsing failed:', error.message);
-      lastError = error;
+// Health endpoints
+app.get('/ping', (req, res) => {
+  res.json({ ok: true });
+});
+
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'healthy', 
+    timestamp: new Date().toISOString(),
+    scrapers: {
+      zyte: zyteScraper.enabled ? 'enabled' : 'disabled',
+      gpt: gptParser ? 'enabled' : 'disabled',
+      adaptive: 'enabled'
     }
-  }
+  });
+});
+
+// Helper function to check if critical fields are missing
+function missingCritical(product) {
+  if (!product) return true;
   
-  // Method 2: Try Zyte API (Secondary)
+  const hasCriticalFields = product.name && 
+                           product.price && 
+                           product.price > 0;
+  
+  const hasOptionalFields = product.dimensions || 
+                           product.weight || 
+                           product.image;
+  
+  // Missing critical fields or lacking any optional enrichment data
+  return !hasCriticalFields || !hasOptionalFields;
+}
+
+// Helper function to detect which engine was used
+function detectEngine(product, zyteUsed, gptUsed, enriched) {
+  if (zyteUsed && gptUsed && enriched) return 'Zyte + GPT-enriched';
+  if (zyteUsed && !gptUsed) return 'Zyte-only';
+  if (!zyteUsed && gptUsed) return 'GPT-only';
+  if (zyteUsed && gptUsed && !enriched) return 'Zyte + GPT-fallback';
+  return 'Adaptive-fallback';
+}
+
+// Enhanced scraping function with Zyte primary, GPT secondary
+async function scrapeProductData(url) {
+  console.log(`[Scraper] Starting enhanced scraping for: ${url.substring(0, 60)}...`);
+  
+  let zyteResult = null;
+  let gptResult = null;
+  let finalResult = null;
+  let zyteUsed = false;
+  let gptUsed = false;
+  let enriched = false;
+  
+  const retailer = detectRetailer(url);
+  
+  // Step 1: Try Zyte API (Primary)
   if (zyteScraper.enabled) {
     try {
-      console.log('[FastScraper] Trying Zyte API as secondary...');
-      result = await zyteScraper.scrapeProduct(url);
+      console.log('[Scraper] 🕷️ Trying Zyte API as primary...');
+      zyteResult = await zyteScraper.scrapeProduct(url);
+      zyteUsed = true;
       
-      if (result && result.name && result.price && result.price > 0) {
-        console.log('[FastScraper] ✅ Zyte scraping successful');
+      if (zyteResult && zyteResult.name) {
+        console.log(`[Scraper] ✅ Zyte extraction successful: ${zyteResult.name.substring(0, 50)}...`);
+        console.log(`[Scraper] 📊 Zyte data quality: Price=${!!zyteResult.price}, Image=${!!zyteResult.image}, Dimensions=${!!zyteResult.dimensions}`);
         
-        // Enhance with box estimation if needed
-        if (!result.dimensions && !result.estimatedBoxes) {
-          const boxes = boxEstimator.estimateBoxDimensions(result);
-          result.estimatedBoxes = boxes;
-          result.dimensions = boxes[0];
-        }
-        
-        // Record success
-        await adaptiveScraper.recordScrapingAttempt(url, result.retailer || 'Unknown', true, result);
-        
-        return result;
+        finalResult = zyteResult;
       }
     } catch (error) {
-      console.log('[FastScraper] ⚠️ Zyte scraping failed:', error.message);
-      lastError = error;
+      console.log('[Scraper] ⚠️ Zyte API failed:', error.message);
+      zyteResult = null;
     }
   }
   
-  // Method 3: Fallback to basic extraction (if all else fails)
-  try {
-    console.log('[FastScraper] Using fallback method...');
-    
-    const retailer = detectRetailer(url);
-    result = {
-      url: url,
-      name: `Product from ${retailer}`,
-      price: 100, // Default price for demo
-      currency: 'USD',
-      image: null,
-      retailer: retailer,
-      dimensions: { length: 24, width: 18, height: 12 },
-      weight: null,
-      variant: null,
-      selectedVariants: {},
-      assemblyFee: null,
-      isFlatPacked: false,
-      inStock: true,
-      category: 'Unknown',
-      brand: null,
-      confidence: 0.1,
-      _fallback: true
-    };
-    
-    console.log('[FastScraper] ⚠️ Using fallback data');
-    
-    // Record failure
-    await adaptiveScraper.recordScrapingAttempt(url, retailer, false, null, ['all_methods_failed']);
-    
-    return result;
-    
-  } catch (error) {
-    console.log('[FastScraper] ❌ Even fallback failed:', error.message);
-    lastError = error;
+  // Step 2: GPT Enrichment (if Zyte data incomplete) or GPT Fallback (if Zyte failed)
+  if (gptParser && gptParser.parseProduct) {
+    try {
+      if (zyteResult && missingCritical(zyteResult)) {
+        // GPT Enrichment mode
+        console.log('[Scraper] 🤖 Running GPT enrichment for incomplete Zyte data...');
+        gptResult = await gptParser.parseProduct(url);
+        gptUsed = true;
+        enriched = true;
+        
+        if (gptResult) {
+          // Merge GPT data into Zyte result, prioritizing non-null values
+          finalResult = {
+            ...zyteResult,
+            name: zyteResult.name || gptResult.name,
+            price: zyteResult.price || gptResult.price,
+            image: zyteResult.image || gptResult.image,
+            dimensions: zyteResult.dimensions || gptResult.dimensions,
+            weight: zyteResult.weight || gptResult.weight,
+            variant: zyteResult.variant || gptResult.variant,
+            selectedVariants: zyteResult.selectedVariants || gptResult.selectedVariants,
+            assemblyFee: zyteResult.assemblyFee || gptResult.assemblyFee,
+            isFlatPacked: zyteResult.isFlatPacked !== null ? zyteResult.isFlatPacked : gptResult.isFlatPacked,
+            brand: zyteResult.brand || gptResult.brand,
+            category: zyteResult.category || gptResult.category,
+            confidence: Math.max(zyteResult.confidence || 0, gptResult.confidence || 0)
+          };
+          console.log('[Scraper] ✅ GPT enrichment completed');
+        }
+      } else if (!zyteResult) {
+        // GPT Fallback mode
+        console.log('[Scraper] 🤖 Running GPT as fallback (Zyte failed)...');
+        gptResult = await gptParser.parseProduct(url);
+        gptUsed = true;
+        
+        if (gptResult && gptResult.name && gptResult.price) {
+          finalResult = gptResult;
+          console.log('[Scraper] ✅ GPT fallback successful');
+        }
+      }
+    } catch (error) {
+      console.log('[Scraper] ⚠️ GPT processing failed:', error.message);
+    }
   }
   
-  // If everything fails, throw the last error
-  throw lastError || new Error('All scraping methods failed');
+  // Step 3: Final validation and box estimation
+  if (finalResult && finalResult.name && finalResult.price) {
+    // Add box estimation if dimensions missing
+    if (!finalResult.dimensions && !finalResult.estimatedBoxes) {
+      const boxes = boxEstimator.estimateBoxDimensions(finalResult);
+      finalResult.estimatedBoxes = boxes;
+      finalResult.dimensions = boxes[0];
+    }
+    
+    // Add metadata
+    finalResult.url = url;
+    finalResult.retailer = finalResult.retailer || retailer;
+    finalResult.scrapedAt = new Date().toISOString();
+    finalResult.engine = detectEngine(finalResult, zyteUsed, gptUsed, enriched);
+    
+    // Record success
+    await adaptiveScraper.recordScrapingAttempt(url, retailer, true, finalResult);
+    
+    console.log(`[Scraper] ✅ Final result - Engine: ${finalResult.engine}`);
+    return finalResult;
+  }
+  
+  // Step 4: Adaptive fallback (last resort)
+  console.log('[Scraper] 🔄 Using adaptive fallback...');
+  const fallbackResult = {
+    url: url,
+    name: `Product from ${retailer}`,
+    price: 100, // Default price for demo
+    currency: 'USD',
+    image: null,
+    retailer: retailer,
+    dimensions: { length: 24, width: 18, height: 12 },
+    weight: null,
+    variant: null,
+    selectedVariants: {},
+    assemblyFee: null,
+    isFlatPacked: false,
+    inStock: true,
+    category: 'Unknown',
+    brand: null,
+    confidence: 0.1,
+    engine: 'Adaptive-fallback',
+    scrapedAt: new Date().toISOString(),
+    _fallback: true
+  };
+  
+  // Record failure
+  await adaptiveScraper.recordScrapingAttempt(url, retailer, false, null, ['all_methods_failed']);
+  
+  console.log('[Scraper] ⚠️ Using adaptive fallback data');
+  return fallbackResult;
 }
 
 function detectRetailer(url) {
@@ -175,18 +261,6 @@ function detectRetailer(url) {
 }
 
 // API Routes
-app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'healthy', 
-    timestamp: new Date().toISOString(),
-    scrapers: {
-      gpt: gptParser ? 'enabled' : 'disabled',
-      zyte: zyteScraper.enabled ? 'enabled' : 'disabled',
-      adaptive: 'enabled'
-    }
-  });
-});
-
 app.post('/api/scrape', async (req, res) => {
   try {
     const { urls } = req.body;
@@ -206,10 +280,11 @@ app.post('/api/scrape', async (req, res) => {
       return res.status(400).json({ error: 'Maximum 10 URLs allowed per request' });
     }
     
-    console.log(`[API] Processing ${urls.length} URLs...`);
+    console.log(`[API] Processing ${urls.length} URLs with Zyte primary, GPT secondary...`);
     
     const products = [];
     const errors = [];
+    const engineStats = {};
     
     for (let i = 0; i < urls.length; i++) {
       const url = urls[i].trim();
@@ -232,7 +307,12 @@ app.post('/api/scrape', async (req, res) => {
         
         if (productData) {
           products.push(productData);
-          console.log(`[API] ✅ Successfully processed: ${productData.name?.substring(0, 50)}...`);
+          
+          // Track engine usage
+          const engine = productData.engine || 'Unknown';
+          engineStats[engine] = (engineStats[engine] || 0) + 1;
+          
+          console.log(`[API] ✅ Successfully processed: ${productData.name?.substring(0, 50)}... (Engine: ${engine})`);
         } else {
           throw new Error('No product data returned');
         }
@@ -248,17 +328,20 @@ app.post('/api/scrape', async (req, res) => {
           error: error.message,
           name: 'Failed to load',
           price: 0,
-          retailer: detectRetailer(url)
+          retailer: detectRetailer(url),
+          engine: 'Error'
         });
       }
     }
     
     console.log(`[API] Completed processing: ${products.length} products, ${errors.length} errors`);
+    console.log(`[API] Engine usage:`, engineStats);
     
     const response = {
       success: true,
       products: products,
       total: products.length,
+      engineStats: engineStats,
       errors: errors.length > 0 ? errors : undefined,
       timestamp: new Date().toISOString()
     };
@@ -268,9 +351,41 @@ app.post('/api/scrape', async (req, res) => {
   } catch (error) {
     console.error('[API] Scraping error:', error);
     res.status(500).json({ 
-      error: error.message,
+      error: 'SCRAPE_FAILED',
+      message: error.message,
       success: false,
       timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Legacy /products endpoint for compatibility
+app.get('/products', async (req, res) => {
+  try {
+    const { url } = req.query;
+    
+    if (!url) {
+      return res.status(400).json({ error: 'URL parameter is required' });
+    }
+    
+    console.log(`[API] Single product request: ${url.substring(0, 60)}...`);
+    
+    const productData = await scrapeProductData(url);
+    
+    const response = {
+      products: [productData],
+      engine: productData.engine,
+      timestamp: new Date().toISOString()
+    };
+    
+    console.log(`[API] ✅ Single product processed (Engine: ${productData.engine})`);
+    res.json(response);
+    
+  } catch (error) {
+    console.error('[API] Single product error:', error);
+    res.status(500).json({ 
+      error: 'SCRAPE_FAILED', 
+      message: error.message 
     });
   }
 });
@@ -283,8 +398,8 @@ app.get('/api/stats', async (req, res) => {
       success: true,
       stats: stats,
       scrapers: {
-        gpt: gptParser ? 'enabled' : 'disabled',
-        zyte: zyteScraper.enabled ? 'enabled' : 'disabled'
+        zyte: zyteScraper.enabled ? 'enabled' : 'disabled',
+        gpt: gptParser ? 'enabled' : 'disabled'
       }
     });
   } catch (error) {
@@ -321,6 +436,7 @@ app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📍 Frontend: http://localhost:${PORT}`);
   console.log(`📍 API Health: http://localhost:${PORT}/health`);
+  console.log(`📍 Ping: http://localhost:${PORT}/ping`);
   console.log(`📍 Admin Panel: http://localhost:${PORT}/admin`);
 });
 
