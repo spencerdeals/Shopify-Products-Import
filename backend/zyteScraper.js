@@ -261,44 +261,28 @@ class ZyteScraper {
 
       // Enhanced image extraction - prefer high-quality variant images
       if (product.images && product.images.length > 0) {
-        // Extract all variants using comprehensive method first
-        const extractedVariants = this.extractAllVariants(product);
+        // Find the best image (prefer main image or first high-quality image)
+        let mainImageUrl = null;
         
-        // Try to find variant-specific image first
-        let selectedImageUrl = null;
-        
-        // Look for images that might match the selected variant
-        if (extractedVariants.variantData.color) {
-          const selectedColor = extractedVariants.variantData.color.toLowerCase();
-          console.log(`   🎨 Looking for ${selectedColor} variant image...`);
-          
-          // Check if any images have variant-specific URLs or alt text
-          for (const img of product.images) {
-            const imgUrl = typeof img === 'object' ? img.url : img;
-            const imgAlt = typeof img === 'object' ? img.alt : '';
-            
-            if (imgUrl && (
-              imgUrl.toLowerCase().includes(selectedColor) ||
-              imgAlt.toLowerCase().includes(selectedColor) ||
-              imgUrl.toLowerCase().includes('green') ||
-              imgAlt.toLowerCase().includes('green')
-            )) {
-              selectedImageUrl = imgUrl;
-              console.log(`   ✅ Found variant image for ${selectedColor}`);
-              break;
-            }
-          }
+        // Look for main image first
+        const mainImage = product.images.find(img => img.main === true || img.type === 'main');
+        if (mainImage && mainImage.url) {
+          mainImageUrl = mainImage.url;
+        } else {
+          // Use first available image
+          mainImageUrl = product.images[0].url;
         }
         
-        // Use variant image if found, otherwise use main image
-        const mainImageUrl = selectedImageUrl || product.mainImage?.url || product.images[0]?.url || product.images[0];
-        if (mainImageUrl && mainImageUrl.startsWith('http')) {
+        if (mainImageUrl) {
+          // Extract variants from image data
+          const extractedVariants = this.extractAllVariants(product);
+          variants.push(...extractedVariants.variants);
           productData.image = mainImageUrl;
-          console.log(`   🖼️ Main Image: Found ${selectedImageUrl ? '(variant-specific)' : '(default)'}`);
+          console.log(`   🖼️ Main Image: Found ${product.mainImage?.url ? '(main image)' : '(first image)'}`);
         }
       } else if (product.mainImage && product.mainImage.url) {
         productData.image = product.mainImage.url;
-        console.log('   🖼️ Main Image: Found');
+        console.log('   🖼️ Main Image: Found (main image)');
       }
 
       // Brand
