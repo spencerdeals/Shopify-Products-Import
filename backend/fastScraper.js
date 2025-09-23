@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
+const path = require('path');
 const ZyteScraper = require('./zyteScraper');
 const { parseProduct } = require('./gptParser');
 
@@ -11,24 +12,24 @@ const PORT = process.env.PORT || 8080;
 app.set('trust proxy', 1);
 
 // CORS configuration with production allowlist
+const allowed = [
+  'https://sdl.bm',
+  'https://www.sdl.bm',
+  'https://bermuda-import-calculator-production.up.railway.app',
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'http://localhost:8080'
+];
+
 const corsOptions = {
   origin: function (origin, callback) {
-    const allowed = [
-      'https://sdl.bm', 
-      'https://www.sdl.bm',
-      'https://bermuda-import-calculator-production.up.railway.app',
-      'http://localhost:5173', // Vite dev server
-      'http://localhost:4173', // Vite preview
-      'http://localhost:3000', // Common dev server
-      'http://localhost:8080', // Alternative local server
-    ];
     // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
     if (allowed.includes(origin)) {
       callback(null, true);
     } else {
       console.warn('CORS blocked origin:', origin);
-      callback(new Error('Not allowed by CORS'));
+      callback(null, false);
     }
   },
   methods: ['GET', 'POST', 'OPTIONS']
@@ -44,70 +45,40 @@ app.use(cors(corsOptions));
 app.use(express.json());
 app.use(limiter);
 
-// Import path utilities for serving frontend
-const path = require('path');
-
 // Initialize scrapers
 const zyteScraper = new ZyteScraper();
 
-// Enhanced price selection with tiered sanity guard
-function selectPrice(productData) {
-  const candidates = [
-    { k: "currentPrice", v: productData?.currentPrice },
-    { k: "salePrice", v: productData?.salePrice },
-    { k: "regularPrice", v: productData?.regularPrice },
-    { k: "listPrice", v: productData?.listPrice },
-    { k: "price", v: productData?.price }
-  ]
-  .filter(c => c.v != null)
-  .map(c => ({ k: c.k, n: toNumber(c.v) }))
-  .filter(c => isFinite(c.n) && c.n > 0);
-
-  if (candidates.length === 0) return null;
-
-  // Determine tier and minimum price
-  const volumeFt3 = productData?.volumeFt3 || 0;
-  const nameText = (productData?.name || '').toLowerCase();
-  const breadcrumbText = (productData?.breadcrumbs || []).join(' ').toLowerCase();
-  const searchText = `${nameText} ${breadcrumbText}`;
-
-  let tier, minPrice;
-  if (volumeFt3 > 20 || /sectional|chaise|3-seater|4-seater/.test(searchText)) {
-    tier = 'LARGE';
-    minPrice = 200;
-  } else if (volumeFt3 >= 10 || /sofa|couch|loveseat/.test(searchText)) {
-    tier = 'MEDIUM';
-    minPrice = 100;
-  } else {
-    tier = 'SMALL';
-    minPrice = 50;
-  }
-
-  // Try candidates in priority order
-  const priorityOrder = ["currentPrice", "salePrice", "regularPrice", "listPrice", "price"];
-  for (const fieldName of priorityOrder) {
-    const candidate = candidates.find(c => c.k === fieldName);
-    if (candidate && candidate.n >= minPrice) {
-      return { k: candidate.k, n: candidate.n, tier, minPrice };
-    }
-  }
-
-  // If none in priority order meet tier, pick highest that meets tier
-  const validCandidates = candidates.filter(c => c.n >= minPrice);
-  if (validCandidates.length > 0) {
-    const highest = validCandidates.sort((a, b) => b.n - a.n)[0];
-    return { k: highest.k, n: highest.n, tier, minPrice };
-  }
-
-  // None meet tier requirement
-  return { tier, minPrice, failed: true };
+// Tiered price sanity guard helpers
+function toNumber(x) {
+  if (typeof x === 'number') return x;
+  if (!x) return NaN;
+  const cleaned = String(x).replace(/[^\d.\-]/g, '').replace(/,/g, '');
+  return parseFloat(cleaned);
 }
 
-function toNumber(x) {
-  if (typeof x === "number") return x;
-  if (typeof x !== "string") return NaN;
-  const cleaned = x.replace(/[^\d.,-]/g, "").replace(/,/g, "");
-  return parseFloat(cleaned);
+function detectTier(item) {
+  const name = ((item.name || '') + ' ' + (item.breadcrumbs || []).join(' ')).toLowerCase();
+  const vol = Number(item.volumeFt3) || 0;
+  if (vol > 20 || /sectional|chaise|3-?seater|4-?seater/.test(name)) return { tier: 'LARGE', min: 200 };
+  if (vol >= 10 || /sofa|couch|loveseat/.test(name)) return { tier: 'MEDIUM', min: 100 };
+  return { tier: 'SMALL', min: 50 };
+}
+
+function pickPrice(z) {
+  const order = ['currentPrice', 'salePrice', 'regularPrice', 'listPrice', 'price'];
+  const candidates = order.map(k => ({ k, n: toNumber(z?.[k]) })).filter(c => Number.isFinite(c.n) && c.n > 0);
+  if (candidates.length === 0) return null;
+  const { tier, min } = detectTier(z || {});
+  
+  // Pick first in priority that meets min
+  for (const c of candidates) {
+    if (c.n >= min) return { ...c, tier };
+  }
+  
+  // Else pick highest candidate that meets min
+  const sane = candidates.filter(c => c.n >= min);
+  if (sane.length) return { ...sane.sort((a, b) => b.n - a.n)[0], tier };
+  return { tier, none: true };
 }
 
 // Enhanced image selection logic
@@ -159,11 +130,11 @@ function isGoodImage(img) {
 }
 
 // Health endpoints - /ping primary, /health alias
-app.get('/health', (req, res) => {
+app.get('/ping', (req, res) => {
   res.json({ ok: true, service: 'instant-import' });
 });
 
-app.get('/ping', (req, res) => {
+app.get('/health', (req, res) => {
   res.json({ ok: true, service: 'instant-import' });
 });
 
@@ -186,6 +157,32 @@ app.get('/products', async (req, res) => {
     try {
       productData = await zyteScraper.scrapeProduct(url);
       
+      // Apply price selection logic
+      if (productData) {
+        const priceResult = pickPrice(productData);
+        
+        if (priceResult && !priceResult.none) {
+          productData.price = priceResult.n;
+          productData.priceSource = priceResult.k;
+          console.log(`Selected price: $${priceResult.n} (source: ${priceResult.k}) - tier: ${priceResult.tier}`);
+        } else {
+          productData.price = undefined;
+          productData.engineNote = 'price_unsure';
+          const tier = priceResult?.tier || 'UNKNOWN';
+          console.log(`Selected price: none (price_unsure) - tier: ${tier}`);
+        }
+
+        // Apply image selection logic
+        const imageResult = selectImage(productData, productData.variant);
+        if (imageResult.url) {
+          productData.image = imageResult.url;
+          productData.imageReason = imageResult.reason;
+          console.log(`Selected image: ${imageResult.url} (reason: ${imageResult.reason})`);
+        } else {
+          console.log('Selected image: none (reason: none)');
+        }
+      }
+      
       // Check if we should skip GPT
       const confidence = productData?.confidence || 0;
       const hasSanePrice = productData?.price && productData.price > 0;
@@ -197,31 +194,6 @@ app.get('/products', async (req, res) => {
       }
     } catch (error) {
       console.log('Zyte scraping failed:', error.message);
-    }
-
-    // Apply price selection logic
-    if (productData) {
-      const priceResult = selectPrice(productData);
-      
-      if (priceResult && !priceResult.failed) {
-        productData.price = priceResult.n;
-        productData.priceSource = priceResult.k;
-        console.log(`Selected price: $${priceResult.n} (source: ${priceResult.k}) - tier: ${priceResult.tier}`);
-      } else {
-        productData.price = undefined;
-        productData.engineNote = 'price_unsure';
-        const tier = priceResult?.tier || 'UNKNOWN';
-        console.log(`Selected price: none (price_unsure) - tier: ${tier}`);
-      }
-
-      // Apply image selection logic
-      const imageResult = selectImage(productData, productData.variant);
-      if (imageResult.url) {
-        productData.image = imageResult.url;
-        console.log(`Selected image: ${imageResult.url} (reason: ${imageResult.reason})`);
-      } else {
-        console.log('Selected image: none');
-      }
     }
 
     // GPT enrichment/fallback
@@ -240,7 +212,7 @@ app.get('/products', async (req, res) => {
         }
       } catch (error) {
         if (error.message.includes('401') || error.message.includes('invalid key')) {
-          console.log('GPT skipped: no valid key or 401');
+          console.log('GPT skipped: no valid key (401)');
         } else {
           console.log('GPT failed:', error.message);
         }
@@ -251,7 +223,7 @@ app.get('/products', async (req, res) => {
       }
     }
 
-    console.log(`Final engine: ${engine}`);
+    console.log(`Handled by: ${engine}`);
 
     // Calculate volume if dimensions available
     if (productData?.dimensions) {
