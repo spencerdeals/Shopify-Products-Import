@@ -1,5 +1,5 @@
 // backend/fastScraper.js
-// SDL Instant Import — production server (Express)
+// SDL Instant Import - production server with tiered price validation
 
 const express = require("express");
 const cors = require("cors");
@@ -21,18 +21,14 @@ app.set("trust proxy", true);
 app.use(express.json({ limit: "5mb" }));
 app.use(express.urlencoded({ extended: true }));
 
-// Serve frontend (index.html sits in ../frontend)
-app.use(express.static(path.join(__dirname, "../frontend")));
-
 // ========= CORS (strict allow-list + helpful logs) =========
 const allowedOrigins = new Set([
+  "http://localhost:8080",
+  "http://localhost:3000", 
+  "http://localhost:5173",
   "https://sdl.bm",
   "https://www.sdl.bm",
   "https://bermuda-import-calculator-production.up.railway.app",
-  // keep localhost origins for dev / Bolt preview
-  "http://localhost:3000",
-  "http://localhost:5173",
-  "http://localhost:8080",
 ]);
 
 app.use(
@@ -49,7 +45,7 @@ app.use(
   })
 );
 
-// ========= Lightweight rate limit (trusts proxy) =========
+// ========= Rate limit with proper trust proxy handling =========
 const limiter = rateLimit({
   windowMs: 60 * 1000,
   max: 120,
@@ -57,21 +53,20 @@ const limiter = rateLimit({
   legacyHeaders: false,
   trustProxy: true,
   keyGenerator: (req) => {
-    // Use X-Forwarded-For from Railway proxy, fallback to connection IP
-    return req.ip || req.connection.remoteAddress || 'unknown';
+    return req.ip || 'unknown';
   },
 });
 app.use(limiter);
 
 // ========= Health + Form =========
 app.get("/ping", (_req, res) => {
-  res.json({ ok: true, service: "instant-import", ts: new Date().toISOString() });
+  res.json({ ok: true, service: "instant-import" });
 });
 app.get("/health", (_req, res) => {
-  res.json({ ok: true, service: "instant-import", ts: new Date().toISOString() });
+  res.json({ ok: true, service: "instant-import" });
 });
 
-// Explicit form route (so hitting /form never 404s)
+// Form route
 app.get("/form", (_req, res) => {
   res.sendFile(path.join(__dirname, "../frontend/index.html"));
 });
@@ -81,7 +76,7 @@ const zyte = new ZyteScraper();
 const USE_ZYTE = !!zyte && zyte.enabled;
 const USE_GPT = !!process.env.OPENAI_API_KEY;
 
-// Pick best price with tiered sanity guard
+// Tiered price validation
 function normalizeNumber(x) {
   if (typeof x === "number") return x;
   if (!x || typeof x !== "string") return NaN;
@@ -124,15 +119,20 @@ function pickPrice(z) {
   const priority = ["currentPrice", "salePrice", "regularPrice", "listPrice", "price"];
   const byPriority = (a, b) => priority.indexOf(a.k) - priority.indexOf(b.k);
 
-  // Preferred by field
+  // Get tier requirements
+  const { tier, min } = detectTier(z);
+
+  // Try priority order first
   let best = [...candidates].sort(byPriority)[0];
 
-  // Tiered sanity
-  const { tier, min } = detectTier(z);
   if (best.n < min) {
+    // Scan for any valid price that meets tier requirement
     const alt = [...candidates].filter((c) => c.n >= min).sort(byPriority)[0];
     if (alt) best = alt;
-    else return { k: null, n: null, tier, min, unsure: true };
+    else {
+      // No valid price found for this tier
+      return { k: null, n: null, tier, min, unsure: true };
+    }
   }
 
   return { ...best, tier, min, unsure: false };
