@@ -254,6 +254,141 @@ app.get("/products", async (req, res) => {
   }
 });
 
+// POST /api/scrape - Frontend expects this endpoint
+app.post("/api/scrape", async (req, res) => {
+  const { urls } = req.body;
+  if (!urls || !Array.isArray(urls) || urls.length === 0) {
+    return res.status(400).json({ error: "MISSING_URLS", message: "Please provide an array of URLs" });
+  }
+
+  const results = [];
+  
+  for (const url of urls) {
+    try {
+      let product = null;
+      let engine = "none";
+      let confidence = null;
+
+      // 1) Primary: Zyte
+      if (USE_ZYTE) {
+        try {
+          const zyteData = await zyte.scrapeProduct(url);
+          if (zyteData && zyteData.name) {
+            // price selection + sanity
+            const pricePick = pickPrice(zyteData);
+            if (pricePick && !pricePick.unsure) {
+              zyteData.price = pricePick.n;
+              zyteData.priceSource = pricePick.k;
+              zyteData.priceTier = pricePick.tier;
+              console.log(
+                `Selected price: $${zyteData.price} (source: ${pricePick.k}, tier: ${pricePick.tier}, min: $${pricePick.min})`
+              );
+            } else if (pricePick && pricePick.unsure) {
+              zyteData.price = undefined;
+              zyteData.engineNote = "price_unsure";
+              zyteData.priceTier = pricePick.tier;
+              console.log("Selected price: none (price_unsure)");
+            }
+
+            // image selection
+            const pic = pickImage(zyteData, zyteData.variant || zyteData.primaryVariant);
+            zyteData.image = pic.url || zyteData.image || null;
+            console.log(`Selected image: ${zyteData.image || "none"} (reason: ${pic.reason})`);
+
+            product = zyteData;
+            engine = "Zyte";
+            confidence = zyteData.confidence ?? null;
+          }
+        } catch (e) {
+          console.log(`Zyte failed for ${url}: ${e.message}`);
+        }
+      }
+
+      // 2) Enrich with GPT only if needed
+      const zyteSane =
+        product &&
+        product.price != null &&
+        product.engineNote !== "price_unsure" &&
+        (confidence == null || confidence >= 0.9);
+
+      let triedGPT = false;
+      if (!zyteSane && USE_GPT) {
+        triedGPT = true;
+        try {
+          const enriched = await parseWithGPT(url, product || {});
+          if (enriched) {
+            product = { ...(product || {}), ...enriched };
+            engine = product && engine === "Zyte" ? "GPT-enriched" : "GPT-only";
+          }
+        } catch (err) {
+          console.log(`GPT enhancement skipped/failed for ${url}: ${err.message}`);
+        }
+      }
+
+      // 3) Fallback: GPT-only if we still have nothing
+      if (!product && !triedGPT && USE_GPT) {
+        try {
+          product = await parseWithGPT(url);
+          engine = "GPT-only";
+        } catch (err) {
+          console.log(`GPT-only failed for ${url}: ${err.message}`);
+        }
+      }
+
+      if (product) {
+        // Add retailer detection
+        product.retailer = detectRetailer(url);
+        product.url = url;
+        results.push(product);
+        console.log(`✅ Successfully scraped: ${url} (${engine})`);
+      } else {
+        console.log(`❌ Failed to scrape: ${url}`);
+        results.push({
+          url,
+          error: "SCRAPE_FAILED",
+          retailer: detectRetailer(url)
+        });
+      }
+    } catch (err) {
+      console.error(`Error processing ${url}:`, err);
+      results.push({
+        url,
+        error: "UNEXPECTED",
+        message: String(err),
+        retailer: detectRetailer(url)
+      });
+    }
+  }
+
+  return res.json({ 
+    success: true,
+    products: results,
+    total: results.length,
+    successful: results.filter(p => !p.error).length
+  });
+});
+
+// Helper function to detect retailer from URL
+function detectRetailer(url) {
+  try {
+    const hostname = new URL(url).hostname.toLowerCase();
+    if (hostname.includes('amazon')) return 'Amazon';
+    if (hostname.includes('wayfair')) return 'Wayfair';
+    if (hostname.includes('target')) return 'Target';
+    if (hostname.includes('walmart')) return 'Walmart';
+    if (hostname.includes('ikea')) return 'IKEA';
+    if (hostname.includes('homedepot')) return 'Home Depot';
+    if (hostname.includes('lowes')) return 'Lowes';
+    if (hostname.includes('crateandbarrel')) return 'Crate & Barrel';
+    if (hostname.includes('cb2')) return 'CB2';
+    if (hostname.includes('westelm')) return 'West Elm';
+    if (hostname.includes('potterybarn')) return 'Pottery Barn';
+    return 'Unknown';
+  } catch {
+    return 'Unknown';
+  }
+}
+
 // ========= 404 handler that still serves SPA if needed =========
 // Serve static files from frontend directory
 app.use(express.static(path.join(__dirname, "../frontend")));
