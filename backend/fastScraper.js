@@ -14,7 +14,9 @@ const corsOptions = {
       'https://sdl.bm', 
       'https://www.sdl.bm',
       'http://localhost:5173', // Vite dev server
-      'http://localhost:4173'  // Vite preview
+      'http://localhost:4173', // Vite preview
+      'http://localhost:3000', // Common dev server
+      'http://127.0.0.1:8080'  // Local backend testing
     ];
     // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
