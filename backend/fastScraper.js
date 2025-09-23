@@ -261,9 +261,11 @@ app.post("/api/scrape", async (req, res) => {
     return res.status(400).json({ error: "MISSING_URLS", message: "Please provide an array of URLs" });
   }
 
+  console.log(`📦 Processing ${urls.length} URLs for scraping...`);
   const results = [];
   
   for (const url of urls) {
+    console.log(`🔍 Processing: ${url}`);
     try {
       let product = null;
       let engine = "none";
@@ -272,6 +274,7 @@ app.post("/api/scrape", async (req, res) => {
       // 1) Primary: Zyte
       if (USE_ZYTE) {
         try {
+          console.log(`   🕷️ Trying Zyte for: ${url}`);
           const zyteData = await zyte.scrapeProduct(url);
           if (zyteData && zyteData.name) {
             // price selection + sanity
@@ -298,9 +301,10 @@ app.post("/api/scrape", async (req, res) => {
             product = zyteData;
             engine = "Zyte";
             confidence = zyteData.confidence ?? null;
+            console.log(`   ✅ Zyte success for: ${url}`);
           }
         } catch (e) {
-          console.log(`Zyte failed for ${url}: ${e.message}`);
+          console.log(`   ❌ Zyte failed for ${url}: ${e.message}`);
         }
       }
 
@@ -314,24 +318,28 @@ app.post("/api/scrape", async (req, res) => {
       let triedGPT = false;
       if (!zyteSane && USE_GPT) {
         triedGPT = true;
+        console.log(`   🤖 Trying GPT enhancement for: ${url}`);
         try {
           const enriched = await parseWithGPT(url, product || {});
           if (enriched) {
             product = { ...(product || {}), ...enriched };
             engine = product && engine === "Zyte" ? "GPT-enriched" : "GPT-only";
+            console.log(`   ✅ GPT enhancement success for: ${url}`);
           }
         } catch (err) {
-          console.log(`GPT enhancement skipped/failed for ${url}: ${err.message}`);
+          console.log(`   ❌ GPT enhancement failed for ${url}: ${err.message}`);
         }
       }
 
       // 3) Fallback: GPT-only if we still have nothing
       if (!product && !triedGPT && USE_GPT) {
+        console.log(`   🤖 Trying GPT-only for: ${url}`);
         try {
           product = await parseWithGPT(url);
           engine = "GPT-only";
+          console.log(`   ✅ GPT-only success for: ${url}`);
         } catch (err) {
-          console.log(`GPT-only failed for ${url}: ${err.message}`);
+          console.log(`   ❌ GPT-only failed for ${url}: ${err.message}`);
         }
       }
 
@@ -339,6 +347,7 @@ app.post("/api/scrape", async (req, res) => {
         // Add retailer detection
         product.retailer = detectRetailer(url);
         product.url = url;
+        product.engine = engine;
         results.push(product);
         console.log(`✅ Successfully scraped: ${url} (${engine})`);
       } else {
@@ -346,7 +355,8 @@ app.post("/api/scrape", async (req, res) => {
         results.push({
           url,
           error: "SCRAPE_FAILED",
-          retailer: detectRetailer(url)
+          retailer: detectRetailer(url),
+          message: "No data extracted from any scraping method"
         });
       }
     } catch (err) {
@@ -360,6 +370,8 @@ app.post("/api/scrape", async (req, res) => {
     }
   }
 
+  console.log(`📊 Scraping complete: ${results.length} total, ${results.filter(p => !p.error).length} successful`);
+  
   return res.json({ 
     success: true,
     products: results,
