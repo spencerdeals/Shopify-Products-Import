@@ -49,7 +49,8 @@ Return STRICT JSON format with these fields:
 - dimensions (object): Shipping dimensions if available {length, width, height} in inches
 - estimatedDimensions (object): If no shipping dims, estimate based on product type {length, width, height} in inches
 - weight (number): Product weight in lbs if available
-- assemblyFee (number): Assembly fee with 30% markup applied if available
+- assemblyFee (number): Raw assembly fee if available (30% markup will be applied later)
+- isFlatPacked (boolean): Whether item ships flat-packed
 - inStock (boolean): Availability status
 - category (string): Product category
 - brand (string): Brand name if available
@@ -68,8 +69,8 @@ DIMENSION ESTIMATION RULES:
 - Large furniture: Add 10-20% to product dimensions for packaging
 
 ASSEMBLY FEE RULES:
-- If assembly fee is listed, apply 30% markup for Bermuda pricing
-- Example: $50 assembly becomes $65 (50 * 1.30)`;
+- If assembly fee is listed, extract the raw amount (markup will be applied later)
+- Look for "assembly", "installation", "setup" fees`;
 
       const userPrompt = `Please browse this URL and extract the product data: ${url}
 
@@ -85,7 +86,7 @@ Return only JSON, no explanations.`;
       console.log('   🔍 Making GPT-4 web browsing request...');
       
       const response = await client.chat.completions.create({
-        model: 'gpt-4', // Using GPT-4 as requested (GPT-5 not yet available)
+        model: 'gpt-5', // Using ChatGPT-5 as requested
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt }
@@ -135,15 +136,15 @@ Return only JSON, no explanations.`;
       retailer: data.retailer || retailer,
       selectedVariants: data.selectedVariants || {},
       variant: this.formatSelectedVariants(data.selectedVariants),
-      allVariants: [], // We don't want all variants, only selected ones
+      assemblyFee: data.assemblyFee ? Math.round(data.assemblyFee * 1.30 * 100) / 100 : null, // Apply 30% markup
+      isFlatPacked: data.isFlatPacked || null,
       dimensions: data.dimensions || data.estimatedDimensions || null,
       weight: data.weight || null,
-      assemblyFee: data.assemblyFee || null,
       inStock: data.inStock !== false, // Default to true unless explicitly false
       category: data.category || null,
       brand: data.brand || null,
       sku: data.sku || null,
-      confidence: 0.95, // High confidence for GPT-4 web browsing
+      confidence: 0.95, // High confidence for ChatGPT-5 web browsing
       url: url
     };
 

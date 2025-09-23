@@ -3,7 +3,7 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 const OpenAI = require('openai');
 
-const MODEL = process.env.GPT_PARSER_MODEL || 'gpt-4o-mini';
+const MODEL = process.env.GPT_PARSER_MODEL || 'gpt-5';
 const TIMEOUT_MS = 30000;
 const MAX_AXIOS_RETRIES = 1;
 const DEFAULT_CURRENCY = (process.env.DEFAULT_CURRENCY || 'USD').toUpperCase();
@@ -130,25 +130,25 @@ async function smartFetchHtml(url) {
 function vendorPromptHints(vendor){
   switch (vendor) {
     case 'Wayfair':
-      return `For Wayfair: CRITICAL - ONLY use SALE/CURRENT prices. Look for prices in red text, highlighted boxes, or marked as "sale", "current", "now". IGNORE regular prices, "was" prices, and financing options. The sale price is usually larger and more prominent near "Add to Cart".`;
+      return `For Wayfair: CRITICAL - ONLY use SALE/CURRENT prices. Look for prices in red text, highlighted boxes, or marked as "sale", "current", "now". IGNORE regular prices, "was" prices, and financing options. The sale price is usually larger and more prominent near "Add to Cart". ONLY extract SELECTED variants (chosen color, size, style) - NOT all available options.`;
     case 'Amazon':
-      return `For Amazon: CRITICAL - ONLY use SALE/DEAL prices. Look for prices in red, marked as "deal", "sale", or "current price". IGNORE struck-through list prices and subscription pricing.`;
+      return `For Amazon: CRITICAL - ONLY use SALE/DEAL prices. Look for prices in red, marked as "deal", "sale", or "current price". IGNORE struck-through list prices and subscription pricing. ONLY extract SELECTED variants (chosen color, size, style) - NOT all available options.`;
     case 'Walmart':
-      return `For Walmart: CRITICAL - ONLY use CURRENT/NOW prices. Look for highlighted prices marked as "now", "current", or "sale". IGNORE "was" prices and financing options.`;
+      return `For Walmart: CRITICAL - ONLY use CURRENT/NOW prices. Look for highlighted prices marked as "now", "current", or "sale". IGNORE "was" prices and financing options. ONLY extract SELECTED variants (chosen color, size, style) - NOT all available options.`;
     case 'Target':
-      return `For Target: CRITICAL - ONLY use SALE/CURRENT prices. Look for red prices, "sale" prices, or "current" prices. IGNORE "reg" and "was" prices.`;
+      return `For Target: CRITICAL - ONLY use SALE/CURRENT prices. Look for red prices, "sale" prices, or "current" prices. IGNORE "reg" and "was" prices. ONLY extract SELECTED variants (chosen color, size, style) - NOT all available options.`;
     case 'BestBuy':
-      return `For Best Buy: CRITICAL - ONLY use SALE/CURRENT prices. Look for highlighted sale prices. IGNORE regular prices and membership pricing.`;
+      return `For Best Buy: CRITICAL - ONLY use SALE/CURRENT prices. Look for highlighted sale prices. IGNORE regular prices and membership pricing. ONLY extract SELECTED variants (chosen color, size, style) - NOT all available options.`;
     case 'HomeDepot':
-      return `For Home Depot: CRITICAL - ONLY use SALE/SPECIAL prices. Look for highlighted special prices. IGNORE regular prices and bulk pricing.`;
+      return `For Home Depot: CRITICAL - ONLY use SALE/SPECIAL prices. Look for highlighted special prices. IGNORE regular prices and bulk pricing. ONLY extract SELECTED variants (chosen color, size, style) - NOT all available options.`;
     case 'CrateAndBarrel':
-      return `For Crate & Barrel: CRITICAL - ONLY use SALE/CURRENT prices. Look for highlighted sale prices. IGNORE regular prices and financing. Extract dimensions from format like "23.8"H height 85.4"W width 37"D depth".`;
+      return `For Crate & Barrel: CRITICAL - ONLY use SALE/CURRENT prices. Look for highlighted sale prices. IGNORE regular prices and financing. Extract dimensions from format like "23.8"H height 85.4"W width 37"D depth". ONLY extract SELECTED variants (chosen color, size, style) - NOT all available options.`;
     case 'IKEA':
-      return `For IKEA: CRITICAL - ONLY use MEMBER/SALE prices. Look for member prices or sale prices. IGNORE regular prices and service costs.`;
+      return `For IKEA: CRITICAL - ONLY use MEMBER/SALE prices. Look for member prices or sale prices. IGNORE regular prices and service costs. ONLY extract SELECTED variants (chosen color, size, style) - NOT all available options.`;
     case 'LunaFurniture':
-      return `For Luna Furniture: CRITICAL - ONLY use SALE/CURRENT prices. Look for sale prices. IGNORE "compare at" and "was" prices.`;
+      return `For Luna Furniture: CRITICAL - ONLY use SALE/CURRENT prices. Look for sale prices. IGNORE "compare at" and "was" prices. ONLY extract SELECTED variants (chosen color, size, style) - NOT all available options.`;
     default:
-      return `CRITICAL - ONLY use SALE/CURRENT prices. Look for prices marked as "sale", "now", "current", or highlighted in red/bold. COMPLETELY IGNORE regular/list/was prices and financing options.`;
+      return `CRITICAL - ONLY use SALE/CURRENT prices. Look for prices marked as "sale", "now", "current", or highlighted in red/bold. COMPLETELY IGNORE regular/list/was prices and financing options. ONLY extract SELECTED variants (chosen color, size, style) - NOT all available options.`;
   }
 }
 
@@ -178,8 +178,10 @@ Return STRICT JSON format with fields:
 - breadcrumbs (array of strings, optional)
 - package_dimensions (object with length,width,height in inches, optional)
 - package_weight_lbs (number, optional)
-- variant (string, optional - primary selected variant)
-- allVariants (array of strings, optional - all available variants like ["Color: Navy", "Size: King"])
+- variant (string, optional - ONLY the currently selected/chosen variant)
+- selectedVariants (object, optional - ONLY selected variants like {"color": "Navy Blue", "size": "King"})
+- assembly_fee (number, optional - assembly fee if available)
+- is_flat_packed (boolean, optional - whether item ships flat-packed)
 
 Rules:
 - ${vendorPromptHints(vendor)}
@@ -192,9 +194,11 @@ Rules:
 - If you see an explicit "Package Dimensions" or "Box Dimensions", include them.
 - For dimensions like "23.8"H height 85.4"W width 37"D depth", convert to: length=85.4, width=37, height=23.8
 - "image" should be the main product image URL if visible.
-- Extract ALL variant info: color, size, style, material, orientation if clearly selected.
-- "allVariants" should be array like ["Color: Navy Blue", "Size: King", "Style: Left-facing"]
-- "variant" should be the primary combined variant like "Navy Blue King Left-facing"
+- CRITICAL: Extract ONLY SELECTED/CHOSEN variants - look for "selected", "chosen", "current" indicators.
+- "selectedVariants" should be object like {"color": "Navy Blue", "size": "King", "orientation": "Left-facing"}
+- "variant" should be the combined selected variant like "Navy Blue King Left-facing"
+- If assembly fee is found, extract the exact amount (will be marked up 30% later)
+- Determine if item is flat-packed based on product type and description
 - Look for SKU numbers in the content.
 `.trim();
 
@@ -228,7 +232,9 @@ Rules:
   const brand = typeof data.brand === 'string' && data.brand.trim() ? data.brand.trim() : null;
   const sku = typeof data.sku === 'string' && data.sku.trim() ? data.sku.trim() : null;
   const variant = typeof data.variant === 'string' && data.variant.trim() ? data.variant.trim() : null;
-  const allVariants = Array.isArray(data.allVariants) ? data.allVariants.filter(v => typeof v === 'string' && v.trim()) : [];
+  const selectedVariants = data.selectedVariants && typeof data.selectedVariants === 'object' ? data.selectedVariants : {};
+  const assemblyFee = data.assembly_fee ? coerceNumber(data.assembly_fee) : null;
+  const isFlatPacked = typeof data.is_flat_packed === 'boolean' ? data.is_flat_packed : null;
 
   // Optional package dims normalization
   let pkgDims = null;
@@ -260,14 +266,16 @@ Rules:
   }
 
   return {
-    url, name, price, currency, image, brand, sku, availability, breadcrumbs, variant, allVariants,
+    url, name, price, currency, image, brand, sku, availability, breadcrumbs, variant, selectedVariants,
+    assemblyFee: assemblyFee ? Math.round(assemblyFee * 1.30 * 100) / 100 : null, // Apply 30% markup
+    isFlatPacked,
     package_dimensions: pkgDims,
     package_weight_lbs: pkgWeight,
     dimensions: pkgDims, // Map to expected field name
     weight: pkgWeight, // Map to expected field name
     category: breadcrumbs[breadcrumbs.length - 1] || null,
     inStock: availability === 'in_stock',
-    _meta: { vendor, model: MODEL, gptCallsUsed },
+    _meta: { vendor, model: MODEL, gptCallsUsed, extractedSelectedVariantsOnly: true },
   };
 }
 
