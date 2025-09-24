@@ -5,7 +5,7 @@
 const express = require('express');
 
 // Import retailer detection utility
-const { detectRetailerFromUrl } = require("../utils/retailer");
+const { detectRetailerFromUrl } = require("../utils/retailer.cjs");
 
 // Optional normalizer - handle if missing
 let normalizeZyteProduct = null;

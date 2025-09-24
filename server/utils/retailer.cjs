@@ -1,7 +1,7 @@
 "use strict";
 
 /**
- * Robust retailer detection from URL or hostname.
+ * Robust retailer detection from URL or hostname (CommonJS).
  */
 function detectRetailerFromUrl(urlOrHost = "") {
   if (!urlOrHost) return "";

@@ -1,8 +1,8 @@
 "use strict";
 
-const test = require("node:test");
-const assert = require("node:assert");
-const { detectRetailerFromUrl } = require("../server/utils/retailer");
+import test from "node:test";
+import assert from "node:assert/strict";
+import { detectRetailerFromUrl } from "../server/utils/retailer.mjs";
 
 test("detects Wayfair from full URL", () => {
   assert.equal(
