@@ -1,202 +1,176 @@
-// backend/fastScraper.js
-// Production-safe server for Instant Import
-// - trust proxy = 1 (Railway)
-// - rate limit 120/min on API routes
-// - Routes:
-//     GET  /            -> landing
-//     GET  /ui          -> simple in-browser tester (paste URL, see JSON below)
-//     GET  /scrape?url= -> browser-friendly test
-//     POST /scrape      -> JSON body: { "url": "https://..." }
-//     POST /            -> same as /scrape (form or JSON)
-
+// backend/fastScraper.js — production-safe server for Instant Import
 const express = require('express');
 const cors = require('cors');
-const rateLimit = require('express-rate-limit');
+const path = require('path');
 
-// CORS allowlist helper
-const parseAllowlist = () => (process.env.CORS_ALLOWLIST || "https://sdl.bm,https://www.sdl.bm")
-  .split(",")
-  .map(s => s.trim())
-  .filter(Boolean);
-
-const ALLOWLIST = new Set(parseAllowlist());
-
-// CORS allowlist helper
-const parseAllowlist = () => (process.env.CORS_ALLOWLIST || "https://sdl.bm,https://www.sdl.bm")
-  .split(",")
-  .map(s => s.trim())
-  .filter(Boolean);
-
-const ALLOWLIST = new Set(parseAllowlist());
-
-// Import instant import router
-const createInstantImportRouter = require('../server/routes/instantImport');
-
-let ZyteScraper = null;
-let parseProduct = null;
-try { ZyteScraper = require('./zyteScraper'); } catch (_) {}
-try { ({ parseProduct } = require('./gptParser')); } catch (_) {}
+// Optional modules; handle if missing
+let zyte;
+try { zyte = require('./zyteScraper'); } catch { zyte = null; }
+let gpt;
+try { gpt = require('./gptParser'); } catch { gpt = null; }
 
 const app = express();
-const PORT = process.env.PORT || 8080;
-
-// Railway sits behind one proxy hop
-app.set('trust proxy', 1);
-
-// Environment-driven CORS middleware
-app.use((req, res, next) => {
-  const origin = req.headers.origin;
-  if (origin && ALLOWLIST.has(origin)) {
-    res.setHeader("Access-Control-Allow-Origin", origin);
-    res.setHeader("Vary", "Origin");
-  }
-  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  // Uncomment if you use cookies/auth headers across origins:
-  // res.setHeader("Access-Control-Allow-Credentials", "true");
-  if (req.method === "OPTIONS") return res.sendStatus(204);
-  next();
-});
-
-// Parsers
+app.set('trust proxy', 1); // behind proxy (Railway), avoids rate-limit XFF warning
 app.use(express.json({ limit: '1mb' }));
-app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
-// Mount instant import routes at root to handle POST / and /instant-import
-app.use('/', createInstantImportRouter());
+// CORS allowlist: prod + common local dev ports
+const ALLOWED = new Set([
+  'https://sdl.bm',
+  'https://www.sdl.bm',
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'http://localhost:8080'
+]);
+app.use(cors({
+  origin: (origin, cb) => {
+    if (!origin) return cb(null, true); // allow curl/postman
+    const ok = ALLOWED.has(origin);
+    if (!ok) console.log('CORS blocked origin:', origin);
+    cb(null, ok);
+  },
+  methods: ['GET','POST','OPTIONS'],
+  credentials: true
+}));
 
-// Rate limit API endpoints
-const apiLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 120,
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-app.use(['/scrape'], apiLimiter);
+// Health endpoints
+app.get('/ping', (_req, res) => res.json({ ok: true, service: 'instant-import' }));
+app.get('/health', (_req, res) => res.json({ ok: true }));
 
-// Health + ping
-app.get('/ping', (_req, res) => {
-  res.status(200).json({ ok: true, t: new Date().toISOString() });
-});
-app.get('/health', (_req, res) => {
-  const zyteEnabled = !!(process.env.ZYTE_API_KEY && process.env.ZYTE_API_KEY.trim());
-  const gptEnabled  = !!(process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY.trim());
-  res.status(200).json({
-    status: 'healthy',
-    timestamp: new Date().toISOString(),
-    scrapers: { zyte: zyteEnabled ? 'enabled' : 'disabled', gpt: gptEnabled ? 'enabled' : 'disabled', adaptive: 'enabled' },
-  });
-});
-
-// Landing page
-app.get('/', (_req, res) => {
-  res.status(200).type('html').send(`<!doctype html>
-<html><head><meta charset="utf-8"><title>SDL Instant Import</title></head>
-<body style="font-family: system-ui, sans-serif; line-height:1.4; padding:20px;">
-  <h1>SDL Instant Import is running.</h1>
-  <p><b>Health:</b> GET <code>/health</code><br>
-     <b>Ping:</b> GET <code>/ping</code><br>
-     <b>Scrape (browser):</b> GET <code>/scrape?url=&lt;product-url&gt;</code><br>
-     <b>Scrape (API):</b> POST <code>/scrape</code> with JSON <code>{"url":"https://..."}</code><br>
-     <b>Tester UI:</b> <a href="/ui">/ui</a> (paste URL, see JSON)
-  </p>
-  <hr>
-  <h2>Quick test (GET redirect)</h2>
-  <form method="GET" action="/scrape">
-    <label>Product URL:
-      <input name="url" type="url" style="width:480px" placeholder="https://example.com/product" required>
-    </label>
-    <button type="submit">Scrape (GET)</button>
-  </form>
-</body></html>`);
+// Serve the form (frontend)
+app.get('/form', (_req, res) => {
+  res.sendFile(path.join(process.cwd(), 'frontend', 'index.html'));
 });
 
-// Simple in-browser tester UI (no external tools)
-app.get('/ui', (_req, res) => {
-  res.status(200).type('html').send(`<!doctype html>
-<html><head><meta charset="utf-8"><title>SDL Import Tester</title></head>
-<body style="font-family: system-ui, sans-serif; line-height:1.4; padding:20px;">
-  <h1>Scrape Tester</h1>
-  <p>Paste a product URL, click Scrape, see the JSON result below.</p>
-  <input id="url" type="url" style="width:600px" placeholder="https://example.com/product" />
-  <button id="btn">Scrape</button>
-  <pre id="out" style="background:#f6f7f9;padding:12px;border-radius:8px;white-space:pre-wrap;word-break:break-word;"></pre>
-  <script>
-    const $ = (s)=>document.querySelector(s);
-    $('#btn').addEventListener('click', async () => {
-      const url = $('#url').value.trim();
-      $('#out').textContent = 'Loading...';
-      if (!url) { $('#out').textContent = 'Please paste a product URL.'; return; }
-      try {
-        const resp = await fetch('/scrape?url=' + encodeURIComponent(url));
-        const json = await resp.json();
-        $('#out').textContent = JSON.stringify(json, null, 2);
-      } catch (e) {
-        $('#out').textContent = 'Error: ' + (e && e.message || e);
-      }
-    });
-  </script>
-</body></html>`);
-});
-
-// Shared scrape core
-async function runScrape(url) {
-  if (ZyteScraper) {
-    try {
-      const zyte = new ZyteScraper();
-      if (zyte.enabled) {
-        const data = await zyte.scrapeProduct(url);
-        return { ok: true, method: 'zyte', data };
-      }
-    } catch (e) { console.log('Zyte failed:', e?.message || e); }
+// Price + image helpers
+function toNumber(x) {
+  if (typeof x === 'number') return x;
+  if (typeof x !== 'string') return NaN;
+  const cleaned = x.replace(/[\s,$£€¥A-Za-z]/g, '').replace(/,/g, '');
+  return parseFloat(cleaned);
+}
+function tierFor(z) {
+  const name = ((z?.name || z?.title || '') + ' ' + (Array.isArray(z?.breadcrumbs) ? z.breadcrumbs.join(' ') : '')).toLowerCase();
+  const vol = Number(z?.volumeFt3 || z?.volume || 0);
+  if (vol > 20 || /(sectional|chaise|3-seater|4-seater)/.test(name)) return { tier: 'LARGE', min: 200 };
+  if (vol >= 10 || /(sofa|couch|loveseat)/.test(name)) return { tier: 'MEDIUM', min: 100 };
+  return { tier: 'SMALL', min: 50 };
+}
+function pickPrice(z) {
+  const candidates = [
+    { k: 'currentPrice', v: z?.currentPrice },
+    { k: 'salePrice',    v: z?.salePrice },
+    { k: 'regularPrice', v: z?.regularPrice },
+    { k: 'listPrice',    v: z?.listPrice },
+    { k: 'price',        v: z?.price }
+  ]
+    .filter(c => c.v != null)
+    .map(c => ({ k: c.k, n: toNumber(c.v) }))
+    .filter(c => isFinite(c.n) && c.n > 0);
+  if (!candidates.length) return null;
+  const order = ['currentPrice','salePrice','regularPrice','listPrice','price'];
+  const byPriority = [...candidates].sort((a,b) => order.indexOf(a.k) - order.indexOf(b.k));
+  const { min } = tierFor(z);
+  let best = byPriority[0];
+  if (best.n < min) {
+    const sane = byPriority.find(c => c.n >= min);
+    if (sane) best = sane; else return null;
   }
-  if (typeof parseProduct === 'function') {
-    try {
-      const data = await parseProduct(url);
-      return { ok: true, method: 'gpt', data };
-    } catch (e) { console.log('GPT failed:', e?.message || e); }
-  }
-  return {
-    ok: true,
-    method: 'basic',
-    data: {
-      url,
-      message: 'Advanced scrapers not configured. Set ZYTE_API_KEY and/or OPENAI_API_KEY in Railway for richer results.',
-    },
+  return best; // {k,n}
+}
+function pickImage(z, selectedVariant) {
+  const images = Array.isArray(z?.images) ? z.images : [];
+  const hero = z?.mainImage || z?.heroImage || z?.primary_image;
+  const isGood = (im) => {
+    if (!im) return false; const url = typeof im === 'string' ? im : im.url;
+    const w = im?.width ?? 0, h = im?.height ?? 0;
+    if (!url || /sprite|placeholder|blank/.test(String(url))) return false;
+    return (w >= 600 && h >= 600) || (w === 0 && h === 0);
   };
+  const size = (im) => (im?.width||0) * (im?.height||0);
+  if (isGood(hero)) return hero.url || hero;
+  if (selectedVariant && images.length) {
+    const v = images.find(im => {
+      const txt = (im?.alt || im?.title || '').toLowerCase();
+      const c = String(selectedVariant?.color||'').toLowerCase();
+      return c && txt.includes(c);
+    });
+    if (isGood(v)) return v.url || v;
+  }
+  const good = images.filter(isGood).sort((a,b) => size(b)-size(a))[0];
+  return good ? (good.url || good) : null;
 }
 
-// GET /scrape?url=...
-app.get('/scrape', async (req, res) => {
-  const url = (req.query?.url || '').toString().trim();
-  if (!url) return res.status(400).json({ error: 'Missing url query param' });
+// Unified /products endpoint
+app.get('/products', async (req, res) => {
+  const url = String(req.query.url || '');
+  if (!url) return res.status(400).json({ error: 'MISSING_URL' });
   try {
-    const result = await runScrape(url);
-    res.status(200).json(result);
+    let engine = 'Zyte';
+    let product = null;
+    let zyteConfidence = 0;
+
+    // 1) Primary: Zyte
+    if (zyte?.extract) {
+      try {
+        const out = await zyte.extract(url);
+        const z = out?.data || out || {};
+        zyteConfidence = Number(out?.confidence || z?.confidence || 0);
+        const pricePick = pickPrice(z);
+        const imageUrl = pickImage(z, z?.selectedVariant);
+        product = {
+          title: z?.name || z?.title || '',
+          price: pricePick?.n,
+          priceSource: pricePick?.k,
+          image: imageUrl || null,
+          engineNote: pricePick ? undefined : 'price_unsure',
+          raw: undefined
+        };
+        console.log(`Selected price: ${pricePick ? `$${pricePick.n} (source: ${pricePick.k})` : 'none (price_unsure)'}`);
+        console.log(`Selected image: ${product.image ? product.image : 'none'}`);
+      } catch (e) {
+        console.log('Zyte failed:', String(e?.message || e));
+        product = null;
+      }
+    }
+
+    // 2) Skip GPT if Zyte high confidence + sane price
+    const canSkipGPT = zyteConfidence >= 0.90 && product && !product.engineNote;
+    if (canSkipGPT) {
+      engine = 'Zyte';
+    } else {
+      // 3) Enrich with GPT (if available), else fallback
+      const keyPresent = !!process.env.OPENAI_API_KEY;
+      if (gpt?.enrich && keyPresent && product) {
+        try {
+          const enriched = await gpt.enrich(url, product);
+          if (enriched && typeof enriched === 'object') {
+            product = { ...product, ...enriched };
+            engine = 'GPT-enriched';
+          }
+        } catch (e) {
+          const msg = String(e?.message || e);
+          if (/401|invalid api key/i.test(msg)) console.log('GPT skipped: no valid key');
+          else console.log('GPT enrich error:', msg);
+        }
+      }
+      if (!product && gpt?.parseOnly && keyPresent) {
+        try {
+          product = await gpt.parseOnly(url);
+          engine = 'GPT-only';
+        } catch (e) {
+          console.log('GPT-only parse error:', String(e?.message || e));
+        }
+      }
+    }
+
+    if (!product) return res.status(502).json({ error: 'SCRAPE_FAILED' });
+    console.log(`Handled by: ${engine}`);
+    res.json({ products: product, engine });
   } catch (e) {
-    console.error('GET /scrape error:', e);
-    res.status(500).json({ error: 'Internal error' });
+    console.error('UNEXPECTED:', e);
+    res.status(500).json({ error: 'UNEXPECTED', message: String(e?.message || e) });
   }
 });
 
-// POST /scrape and POST / alias
-async function handlePost(req, res) {
-  const bodyUrl = (req.body?.url || '').toString().trim();
-  if (!bodyUrl) return res.status(400).json({ error: 'Missing "url" in body' });
-  try {
-    const result = await runScrape(bodyUrl);
-    res.status(200).json(result);
-  } catch (e) {
-    console.error('POST /scrape error:', e);
-    res.status(500).json({ error: 'Internal error' });
-  }
-}
-app.post('/scrape', handlePost);
-app.post('/', handlePost);
-
-// Start
-app.listen(PORT, () => {
-  console.log("[cors] allowlist:", Array.from(ALLOWLIST));
-  console.log("[cors] allowlist:", Array.from(ALLOWLIST));
-  console.log(`Server listening on ${PORT}`);
-});
+const port = process.env.PORT || 8080;
+app.listen(port, () => console.log(`SDL Import Calculator running on port ${port}`));
