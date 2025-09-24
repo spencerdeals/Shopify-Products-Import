@@ -4,7 +4,7 @@ const express = require("express");
 module.exports = function devTools() {
   const r = express.Router();
 
-  // Alias so your old link works too
+  // Alias so old link works too
   r.get("/instant-import/health", (_req, res) => {
     res.status(200).json({ ok: true, aliasOf: "/health" });
   });
@@ -47,7 +47,7 @@ module.exports = function devTools() {
   <button onclick="openPath('/instant-import/health')">Open /instant-import/health</button>
   <button onclick="openPath('/__version')">Open /__version</button>
 </div>
-<small>This page calls your server from the same origin (no CORS). Nothing is stored on your Mac.</small>
+<small>This page calls your server from the same origin (no CORS). Nothing is stored on my Mac.</small>
 <pre id="out">(results will appear here)</pre>
 <script>
 async function post(path){

@@ -9,6 +9,8 @@ try { zyte = require('./zyteScraper'); } catch { zyte = null; }
 let gpt;
 try { gpt = require('./gptParser'); } catch { gpt = null; }
 
+const devTools = require("./routes/devTools");
+
 const app = express();
 app.set('trust proxy', 1); // behind proxy (Railway), avoids rate-limit XFF warning
 app.use(express.json({ limit: '1mb' }));
@@ -175,7 +177,6 @@ app.get('/products', async (req, res) => {
 const port = process.env.PORT || 8080;
 
 // Mount dev tools (browser-only testing helpers)
-const devTools = require("./routes/devTools");
 app.use("/", devTools());
 
 app.listen(port, () => console.log(`SDL Import Calculator running on port ${port}`));
