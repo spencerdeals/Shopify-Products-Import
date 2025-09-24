@@ -173,4 +173,9 @@ app.get('/products', async (req, res) => {
 });
 
 const port = process.env.PORT || 8080;
+
+// Mount dev tools (browser-only testing helpers)
+const devTools = require("./routes/devTools");
+app.use("/", devTools());
+
 app.listen(port, () => console.log(`SDL Import Calculator running on port ${port}`));
