@@ -4,6 +4,9 @@
 
 const express = require('express');
 
+// Import retailer detection utility
+const { detectRetailerFromUrl } = require("../utils/retailer");
+
 // Optional normalizer - handle if missing
 let normalizeZyteProduct = null;
 try {
@@ -102,7 +105,7 @@ function createInstantImportRouter() {
               // GPT data is already normalized
               result = {
                 ...gptData,
-                retailer: detectRetailer(url),
+                retailer: detectRetailerFromUrl(url),
                 extractedAt: new Date().toISOString()
               };
               engine = result ? 'gpt-enhanced' : 'gpt-only';
@@ -130,7 +133,7 @@ function createInstantImportRouter() {
           weight: null,
           variant: null,
           allVariants: [],
-          retailer: detectRetailer(url),
+          retailer: detectRetailerFromUrl(url),
           extractedAt: new Date().toISOString(),
           confidence: 0
         };
@@ -143,6 +146,16 @@ function createInstantImportRouter() {
       if (result.dimensions && result.price) {
         result.shippingEstimate = calculateShippingEstimate(result);
       }
+
+      // Extract sample URL and detect retailer for logging
+      const sampleUrl =
+        (Array.isArray(req.body?.items) && req.body.items[0]?.url) ||
+        (Array.isArray(req.body) && req.body[0]?.url) ||
+        req.body?.url ||
+        "";
+
+      const retailer = getRetailerFromReq(req, sampleUrl);
+      console.log("[instant-import] meta:", JSON.stringify(result._meta || {}), "retailer:", retailer || "unknown");
 
       // Log meta summary
       console.log(`[META] ${engine} | ${result.retailer} | $${result.price} | ${result.name?.substring(0, 50)}...`);
@@ -186,6 +199,19 @@ function createInstantImportRouter() {
   });
 
   return router;
+}
+
+/**
+ * Get retailer from request context
+ */
+function getRetailerFromReq(req, itemUrl) {
+  return detectRetailerFromUrl(
+    itemUrl ||
+    req.headers.origin ||
+    req.headers.referer ||
+    req.headers.host ||
+    ""
+  );
 }
 
 /**
@@ -239,37 +265,6 @@ function calculateShippingEstimate(product) {
     totalImportCost: Math.round(totalImportCost * 100) / 100,
     currency: product.currency || 'USD'
   };
-}
-
-/**
- * Detect retailer from URL
- */
-function detectRetailer(url) {
-  if (!url) return 'Unknown';
-  
-  try {
-    const hostname = new URL(url).hostname.toLowerCase();
-    
-    if (hostname.includes('amazon')) return 'Amazon';
-    if (hostname.includes('wayfair')) return 'Wayfair';
-    if (hostname.includes('target')) return 'Target';
-    if (hostname.includes('walmart')) return 'Walmart';
-    if (hostname.includes('bestbuy')) return 'Best Buy';
-    if (hostname.includes('homedepot')) return 'Home Depot';
-    if (hostname.includes('lowes')) return 'Lowes';
-    if (hostname.includes('costco')) return 'Costco';
-    if (hostname.includes('macys')) return 'Macys';
-    if (hostname.includes('ikea')) return 'IKEA';
-    if (hostname.includes('crateandbarrel')) return 'Crate & Barrel';
-    if (hostname.includes('cb2')) return 'CB2';
-    if (hostname.includes('westelm')) return 'West Elm';
-    if (hostname.includes('potterybarn') return 'Pottery Barn';
-    )
-    
-    return 'Unknown';
-  } catch (e) {
-    return 'Unknown';
-  }
 }
 
 module.exports = createInstantImportRouter;
