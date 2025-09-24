@@ -21,6 +21,14 @@ const parseAllowlist = () => (process.env.CORS_ALLOWLIST || "https://sdl.bm,http
 
 const ALLOWLIST = new Set(parseAllowlist());
 
+// CORS allowlist helper
+const parseAllowlist = () => (process.env.CORS_ALLOWLIST || "https://sdl.bm,https://www.sdl.bm")
+  .split(",")
+  .map(s => s.trim())
+  .filter(Boolean);
+
+const ALLOWLIST = new Set(parseAllowlist());
+
 // Import instant import router
 const createInstantImportRouter = require('../server/routes/instantImport');
 
@@ -188,6 +196,7 @@ app.post('/', handlePost);
 
 // Start
 app.listen(PORT, () => {
+  console.log("[cors] allowlist:", Array.from(ALLOWLIST));
   console.log("[cors] allowlist:", Array.from(ALLOWLIST));
   console.log(`Server listening on ${PORT}`);
 });
