@@ -13,6 +13,14 @@ const express = require('express');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 
+// CORS allowlist helper
+const parseAllowlist = () => (process.env.CORS_ALLOWLIST || "https://sdl.bm,https://www.sdl.bm")
+  .split(",")
+  .map(s => s.trim())
+  .filter(Boolean);
+
+const ALLOWLIST = new Set(parseAllowlist());
+
 // Import instant import router
 const createInstantImportRouter = require('../server/routes/instantImport');
 
@@ -27,8 +35,22 @@ const PORT = process.env.PORT || 8080;
 // Railway sits behind one proxy hop
 app.set('trust proxy', 1);
 
-// Parsers + CORS
-app.use(cors());
+// Environment-driven CORS middleware
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin && ALLOWLIST.has(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Vary", "Origin");
+  }
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  // Uncomment if you use cookies/auth headers across origins:
+  // res.setHeader("Access-Control-Allow-Credentials", "true");
+  if (req.method === "OPTIONS") return res.sendStatus(204);
+  next();
+});
+
+// Parsers
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
@@ -166,5 +188,6 @@ app.post('/', handlePost);
 
 // Start
 app.listen(PORT, () => {
+  console.log("[cors] allowlist:", Array.from(ALLOWLIST));
   console.log(`Server listening on ${PORT}`);
 });
