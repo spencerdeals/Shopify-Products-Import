@@ -219,3 +219,66 @@ node -e "const http=require('http');const data=JSON.stringify({url:'https://exam
 ## License
 
 This project is part of the Bermuda Import Calculator system.
+
+## Operations Guide
+
+### Quick Start
+1. **Environment Setup**: Configure required API keys in Railway
+2. **Health Check**: Verify `/instant-import/health` returns `{ ok: true }`
+3. **Test Request**: Send POST to `/` with product URL
+4. **Monitor Logs**: Watch for `[META]` lines showing successful processing
+
+### Troubleshooting
+
+#### Common Issues
+
+**"Scrapers not configured" error**
+- Missing `ZYTE_API_KEY` or `OPENAI_API_KEY`
+- Check Railway environment variables
+- Restart service after adding keys
+
+**CORS blocked requests**
+- Update `CORS_ALLOWLIST` environment variable
+- Include your domain: `https://yourdomain.com`
+- Restart service after CORS changes
+
+**Low extraction confidence**
+- Zyte confidence < 80% triggers GPT fallback
+- Check OpenAI API quota and key validity
+- Some retailers have lower success rates
+
+**Empty product data**
+- Verify product URL is accessible
+- Check if retailer is supported
+- Review extraction logs for specific errors
+
+#### Log Analysis
+
+**Successful extraction:**
+```
+[META] zyte | Wayfair | $899.99 | Modern 3-Seat Sofa...
+```
+
+**Fallback to GPT:**
+```
+[META] gpt-enhanced | Amazon | $129.99 | Coffee Table...
+```
+
+**Configuration issues:**
+```
+[instant-import] error: Zyte not configured - missing API key
+```
+
+### Performance Optimization
+
+1. **Zyte First**: Primary scraper with highest accuracy
+2. **GPT Fallback**: Activates when Zyte confidence < 80%
+3. **Mock Data**: Final fallback when scrapers unavailable
+4. **Caching**: Consider implementing for frequently requested products
+
+### Scaling Considerations
+
+- **Rate Limits**: Zyte and OpenAI have API quotas
+- **Cost Management**: Monitor usage across both services
+- **Error Handling**: Graceful degradation when services unavailable
+- **Monitoring**: Track success rates and response times
