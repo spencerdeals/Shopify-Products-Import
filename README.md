@@ -62,3 +62,6 @@ Look for a concise line per request:
 - **Costs**: Monitor Zyte and OpenAI API usage
 
 ---
+
+## Docs
+- **Instant Import Project Recap:** [docs/instant-import-recap.md](docs/instant-import-recap.md)
