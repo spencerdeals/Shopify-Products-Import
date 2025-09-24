@@ -1,0 +1,242 @@
+diff --git a/importer/normalize.js b/importer/normalize.js
+new file mode 100644
+index 0000000..1234567
+--- /dev/null
++++ b/importer/normalize.js
+@@ -0,0 +1,400 @@
++// importer/normalize.js
++// Zyte→product normalizer for Instant Import API
++// Converts raw Zyte extraction data to standardized product format
++
++/**
++ * Normalize Zyte extraction data to standard product format
++ * @param {Object} zyteData - Raw data from Zyte API
++ * @param {string} url - Original product URL
++ * @returns {Object} Normalized product data
++ */
++function normalizeZyteProduct(zyteData, url) {
++  if (!zyteData || typeof zyteData !== 'object') {
++    throw new Error('Invalid Zyte data provided');
++  }
++
++  const product = zyteData.product || zyteData;
++  
++  // Extract basic product information
++  const normalized = {
++    url: url || product.url || '',
++    name: extractName(product),
++    price: extractPrice(product),
++    currency: extractCurrency(product),
++    image: extractImage(product),
++    brand: extractBrand(product),
++    category: extractCategory(product),
++    inStock: extractAvailability(product),
++    dimensions: extractDimensions(product),
++    weight: extractWeight(product),
++    variant: extractVariant(product),
++    allVariants: extractAllVariants(product),
++    confidence: extractConfidence(zyteData),
++    retailer: detectRetailer(url),
++    extractedAt: new Date().toISOString()
++  };
++
++  // Validate required fields
++  if (!normalized.name || !normalized.price) {
++    throw new Error('Missing required fields: name and price');
++  }
++
++  return normalized;
++}
++
++// ... (rest of normalize.js functions)
++
++module.exports = {
++  normalizeZyteProduct,
++  extractName,
++  extractPrice,
++  extractCurrency,
++  extractImage,
++  extractBrand,
++  extractCategory,
++  extractAvailability,
++  extractDimensions,
++  extractWeight,
++  extractVariant,
++  extractAllVariants,
++  extractConfidence,
++  detectRetailer
++};
+diff --git a/server/routes/instantImport.js b/server/routes/instantImport.js
+new file mode 100644
+index 0000000..2345678
+--- /dev/null
++++ b/server/routes/instantImport.js
+@@ -0,0 +1,250 @@
++// server/routes/instantImport.js
++// Instant Import API endpoints for Bermuda Import Calculator
++// Handles POST / and /instant-import with Zyte integration
++
++const express = require('express');
++
++// Optional normalizer - handle if missing
++let normalizeZyteProduct = null;
++try {
++  ({ normalizeZyteProduct } = require('../../importer/normalize'));
++} catch (e) {
++  console.warn('Normalizer not available:', e.message);
++}
++
++/**
++ * Create instant import router
++ */
++function createInstantImportRouter() {
++  const router = express.Router();
++
++  // Health check endpoint
++  router.get('/instant-import/health', (req, res) => {
++    const zyteEnabled = !!(process.env.ZYTE_API_KEY && process.env.ZYTE_API_KEY.trim());
++    const gptEnabled = !!(process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY.trim());
++    
++    res.json({
++      ok: true,
++      status: 'healthy',
++      timestamp: new Date().toISOString(),
++      scrapers: {
++        zyte: zyteEnabled ? 'enabled' : 'disabled',
++        gpt: gptEnabled ? 'enabled' : 'disabled',
++        normalizer: normalizeZyteProduct ? 'enabled' : 'disabled'
++      }
++    });
++  });
++
++  // Main instant import endpoint
++  const handleInstantImport = async (req, res) => {
++    // ... (implementation)
++  };
++
++  // Mount the handler on both routes
++  router.post('/', handleInstantImport);
++  router.post('/instant-import', handleInstantImport);
++
++  return router;
++}
++
++module.exports = createInstantImportRouter;
+diff --git a/README_INSTANT_IMPORT.md b/README_INSTANT_IMPORT.md
+new file mode 100644
+index 0000000..3456789
+--- /dev/null
++++ b/README_INSTANT_IMPORT.md
+@@ -0,0 +1,200 @@
++# Instant Import API
++
++The Instant Import API provides automated product data extraction and shipping cost calculation for the Bermuda Import Calculator.
++
++## Overview
++
++This API accepts product URLs from major retailers and returns normalized product data including:
++- Product name, price, and images
++- Dimensions and weight (when available)
++- Variant information (color, size, style)
++- Shipping cost estimates for Bermuda import
++
++## Endpoints
++
++### POST /
++### POST /instant-import
++
++Extract product data from a URL and calculate shipping estimates.
++
++// ... (rest of documentation)
+diff --git a/package.json b/package.json
+index 4567890..5678901 100644
+--- a/package.json
++++ b/package.json
+@@ -6,8 +6,8 @@
+   "main": "backend/fastScraper.js",
+   "scripts": {
+-    "start": "node backend/fastScraper.js",
+-    "dev": "nodemon backend/fastScraper.js",
++    "start": "node server.js",
++    "dev": "node server.js",
+     "build": "echo 'Build completed successfully'",
+     "test": "echo \"Error: no test specified\" && exit 1"
+   },
+diff --git a/server.js b/server.js
+new file mode 100644
+index 0000000..6789012
+--- /dev/null
++++ b/server.js
+@@ -0,0 +1,80 @@
++// server.js - Main server for Bermuda Import Calculator
++// Handles instant import API with Zyte normalization
++const express = require('express');
++const cors = require('cors');
++const path = require('path');
++
++// Import instant import router
++let instantImportRouter = null;
++try {
++  const createInstantImportRouter = require('./server/routes/instantImport');
++  instantImportRouter = createInstantImportRouter();
++} catch (e) {
++  console.warn('Instant import router not available:', e.message);
++}
++
++const app = express();
++const PORT = process.env.PORT || 8080;
++
++// Middleware
++app.use(cors());
++app.use(express.json({ limit: '5mb' }));
++app.use(express.urlencoded({ extended: true }));
++
++// Mount instant import routes at root if available
++if (instantImportRouter) {
++  app.use('/', instantImportRouter);
++  console.log('✅ Instant Import API mounted at root');
++} else {
++  // Fallback minimal endpoints
++  app.post('/', (req, res) => {
++    res.json({ 
++      error: 'Instant import not configured',
++      message: 'Missing dependencies or configuration'
++    });
++  });
++  
++  app.post('/instant-import', (req, res) => {
++    res.json({ 
++      error: 'Instant import not configured',
++      message: 'Missing dependencies or configuration'
++    });
++  });
++}
++
++// Health check endpoint
++app.get('/instant-import/health', (req, res) => {
++  res.json({ 
++    ok: true,
++    timestamp: new Date().toISOString(),
++    status: 'healthy'
++  });
++});
++
++// Root endpoint
++app.get('/', (req, res) => {
++  res.status(200).send(`
++    <h1>Bermuda Import Calculator API</h1>
++    <p>Server is running on port ${PORT}</p>
++    <ul>
++      <li><a href="/instant-import/health">Health Check</a></li>
++      <li>POST / - Instant Import</li>
++      <li>POST /instant-import - Instant Import</li>
++    </ul>
++  `);
++});
++
++// Start server
++app.listen(PORT, () => {
++  console.log(`🚀 Server listening on port ${PORT}`);
++  console.log(`📍 Health check: http://localhost:${PORT}/instant-import/health`);
++  console.log(`📦 Instant Import: POST http://localhost:${PORT}/`);
++});

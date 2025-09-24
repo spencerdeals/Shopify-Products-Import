@@ -264,6 +264,7 @@ function detectRetailer(url) {
     if (hostname.includes('cb2')) return 'CB2';
     if (hostname.includes('westelm')) return 'West Elm';
     if (hostname.includes('potterybarn') return 'Pottery Barn';
+    )
     
     return 'Unknown';
   } catch (e) {
