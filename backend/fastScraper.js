@@ -42,10 +42,10 @@ app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// ---- Rate limit (this is where the garbage text landed before) ----
+// ---- Rate limit (clean) ----
 const limiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: 120,            // allow up to 120 requests/min per IP
+  max: 120,            // up to 120 requests/min per IP
   standardHeaders: true,
   legacyHeaders: false
 });
