@@ -1,10 +1,8 @@
 // backend/fastScraper.js
 // Production-safe server for Instant Import
-// - trust proxy (fixes express-rate-limit X-Forwarded-For warning)
-// - clean rate limit (max: 120 / minute)
-// - /ping, /health
-// - /scrape POST  (and POST / alias)
-// - helpful GET / landing
+// - trust proxy = 1 (Railway) → fixes express-rate-limit warning
+// - clean rate limit (120/min) applied only to API endpoints
+// - /, /ping, /health, /scrape (and POST / alias)
 
 const express = require('express');
 const cors = require('cors');
@@ -19,22 +17,22 @@ try { ({ parseProduct } = require('./gptParser')); } catch (_) {}
 const app = express();
 const PORT = process.env.PORT || 8080;
 
-// ⚙️ Behind Railway proxy → required for correct client IPs
-app.set('trust proxy', true);
+// ✅ Behind one proxy hop on Railway
+app.set('trust proxy', 1);
 
 // CORS + parsers
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
-// ✅ Rate limit (apply to API endpoints only)
-const limiter = rateLimit({
+// ✅ Rate limit (API routes only)
+const apiLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 120,
   standardHeaders: true,
   legacyHeaders: false,
 });
-app.use(['/scrape', '/ping', '/health', '/'], limiter);
+app.use(['/scrape'], apiLimiter);
 
 // --- Health + ping ---
 app.get('/ping', (_req, res) => {
@@ -55,7 +53,7 @@ app.get('/health', (_req, res) => {
   });
 });
 
-// --- Landing page (fixes "Cannot GET /") ---
+// --- Landing page ---
 app.get('/', (_req, res) => {
   res
     .status(200)
@@ -78,7 +76,7 @@ async function handleScrape(req, res) {
       return res.status(400).json({ error: 'Missing "url" string in JSON body.' });
     }
 
-    // Try Zyte first (if present & enabled)
+    // Try Zyte first if available
     if (ZyteScraper) {
       try {
         const zyte = new ZyteScraper();
