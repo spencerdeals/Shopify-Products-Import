@@ -140,3 +140,7 @@ app.get('/products', async (req, res) => {
     }
 
     const
+
+  }
+}
+)
