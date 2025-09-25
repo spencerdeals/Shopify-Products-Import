@@ -21,7 +21,7 @@ const app = express();
 app.set('trust proxy', 1); // behind proxy (Railway), avoids rate-limit XFF warning
 app.use(express.json({ limit: '1mb' }));
 
-// CORS allowlist: prod + common local dev ports
+// CORS allowlist
 const ALLOWED = new Set([
   'https://sdl.bm',
   'https://www.sdl.bm',
@@ -32,7 +32,7 @@ const ALLOWED = new Set([
 ]);
 app.use(cors({
   origin: (origin, cb) => {
-    if (!origin) return cb(null, true); // allow curl/postman
+    if (!origin) return cb(null, true);
     const ok = ALLOWED.has(origin);
     if (!ok) console.log('CORS blocked origin:', origin);
     cb(null, ok);
@@ -50,7 +50,7 @@ app.get('/form', (_req, res) => {
   res.sendFile(path.join(process.cwd(), 'frontend', 'index.html'));
 });
 
-// Price + image helpers
+// Helpers
 function toNumber(x) {
   if (typeof x === 'number') return x;
   if (typeof x !== 'string') return NaN;
@@ -84,7 +84,7 @@ function pickPrice(z) {
     const sane = byPriority.find(c => c.n >= min);
     if (sane) best = sane; else return null;
   }
-  return best; // {k,n}
+  return best;
 }
 function pickImage(z, selectedVariant) {
   const images = Array.isArray(z?.images) ? z.images : [];
@@ -118,7 +118,6 @@ app.get('/products', async (req, res) => {
     let product = null;
     let zyteConfidence = 0;
 
-    // 1) Primary: Zyte
     if (zyte?.extract) {
       try {
         const out = await zyte.extract(url);
@@ -131,61 +130,13 @@ app.get('/products', async (req, res) => {
           price: pricePick?.n,
           priceSource: pricePick?.k,
           image: imageUrl || null,
-          engineNote: pricePick ? undefined : 'price_unsure',
-          raw: undefined
+          engineNote: pricePick ? undefined : 'price_unsure'
         };
-        console.log(`Selected price: ${pricePick ? `$${pricePick.n} (source: ${pricePick.k})` : 'none (price_unsure)'}`);
-        console.log(`Selected image: ${product.image ? product.image : 'none'}`);
+        console.log(`Selected price: ${pricePick ? `$${pricePick.n} (${pricePick.k})` : 'none'}`);
       } catch (e) {
         console.log('Zyte failed:', String(e?.message || e));
         product = null;
       }
     }
 
-    // 2) Skip GPT if Zyte high confidence + sane price
-    const canSkipGPT = zyteConfidence >= 0.90 && product && !product.engineNote;
-    if (canSkipGPT) {
-      engine = 'Zyte';
-    } else {
-      // 3) Enrich with GPT (if available), else fallback
-      const keyPresent = !!process.env.OPENAI_API_KEY;
-      if (gpt?.enrich && keyPresent && product) {
-        try {
-          const enriched = await gpt.enrich(url, product);
-          if (enriched && typeof enriched === 'object') {
-            product = { ...product, ...enriched };
-            engine = 'GPT-enriched';
-          }
-        } catch (e) {
-          const msg = String(e?.message || e);
-          if (/401|invalid api key/i.test(msg)) console.log('GPT skipped: no valid key');
-          else console.log('GPT enrich error:', msg);
-        }
-      }
-      if (!product && gpt?.parseOnly && keyPresent) {
-        try {
-          product = await gpt.parseOnly(url);
-          engine = 'GPT-only';
-        } catch (e) {
-          console.log('GPT-only parse error:', String(e?.message || e));
-        }
-      }
-    }
-
-    if (!product) return res.status(502).json({ error: 'SCRAPE_FAILED' });
-    console.log(`Handled by: ${engine}`);
-    res.json({ products: product, engine });
-  } catch (e) {
-    console.error('UNEXPECTED:', e);
-    res.status(500).json({ error: 'UNEXPECTED', message: String(e?.message || e) });
-  }
-});
-
-const port = process.env.PORT || 8080;
-
-// Mount dev tools only in non-production
-if (devTools) {
-  app.use('/', devTools());
-}
-
-app.listen(port, () => console.log(`SDL Import Calculator running on port ${port}`));
+    const
