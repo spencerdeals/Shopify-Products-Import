@@ -9,7 +9,13 @@ try { zyte = require('./zyteScraper'); } catch { zyte = null; }
 let gpt;
 try { gpt = require('./gptParser'); } catch { gpt = null; }
 
-const devTools = require("./routes/devTools");
+// Dev tools only in non-production; optional
+let devTools = null;
+try {
+  if (process.env.NODE_ENV !== 'production') {
+    devTools = require('./routes/devTools');
+  }
+} catch { devTools = null; }
 
 const app = express();
 app.set('trust proxy', 1); // behind proxy (Railway), avoids rate-limit XFF warning
@@ -19,6 +25,7 @@ app.use(express.json({ limit: '1mb' }));
 const ALLOWED = new Set([
   'https://sdl.bm',
   'https://www.sdl.bm',
+  'https://bermuda-import-calculator-production.up.railway.app',
   'http://localhost:3000',
   'http://localhost:5173',
   'http://localhost:8080'
@@ -176,7 +183,9 @@ app.get('/products', async (req, res) => {
 
 const port = process.env.PORT || 8080;
 
-// Mount dev tools (browser-only testing helpers)
-app.use("/", devTools());
+// Mount dev tools only in non-production
+if (devTools) {
+  app.use('/', devTools());
+}
 
 app.listen(port, () => console.log(`SDL Import Calculator running on port ${port}`));
