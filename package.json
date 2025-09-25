@@ -4,8 +4,8 @@
   "description": "SDL Instant Import Calculator for Bermuda shipping estimates",
   "main": "backend/fastScraper.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node server.js",
+    "start": "node backend/fastScraper.js",
+    "dev": "nodemon backend/fastScraper.js",
     "test": "node --test",
     "build": "echo 'Build completed successfully'"
   },
