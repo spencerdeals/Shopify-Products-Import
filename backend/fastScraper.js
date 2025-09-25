@@ -18,7 +18,7 @@ try {
 } catch { devTools = null; }
 
 const app = express();
-app.set('trust proxy', 1); // behind proxy (Railway), avoids rate-limit XFF warning
+app.set('trust proxy', 1); // behind Railway
 app.use(express.json({ limit: '1mb' }));
 
 // CORS allowlist
@@ -118,6 +118,7 @@ app.get('/products', async (req, res) => {
     let product = null;
     let zyteConfidence = 0;
 
+    // 1) Primary: Zyte
     if (zyte?.extract) {
       try {
         const out = await zyte.extract(url);
@@ -139,8 +140,35 @@ app.get('/products', async (req, res) => {
       }
     }
 
-    const
+    // 2) Optional GPT enrichment
+    const canSkipGPT = zyteConfidence >= 0.90 && product && !product.engineNote;
+    if (!canSkipGPT) {
+      const keyPresent = !!process.env.OPENAI_API_KEY;
+      if (gpt?.enrich && keyPresent && product) {
+        try {
+          const enriched = await gpt.enrich(url, product);
+          if (enriched && typeof enriched === 'object') {
+            product = { ...product, ...enriched };
+            engine = 'GPT-enriched';
+          }
+        } catch (e) { console.log('GPT enrich error:', String(e?.message || e)); }
+      }
+      if (!product && gpt?.parseOnly && keyPresent) {
+        try {
+          product = await gpt.parseOnly(url);
+          engine = 'GPT-only';
+        } catch (e) { console.log('GPT-only parse error:', String(e?.message || e)); }
+      }
+    }
 
+    if (!product) return res.status(502).json({ error: 'SCRAPE_FAILED' });
+    res.json({ products: product, engine });
+  } catch (e) {
+    res.status(500).json({ error: 'UNEXPECTED', message: String(e?.message || e) });
   }
-}
-)
+});
+
+const port = process.env.PORT || 8080;
+if (devTools) app.use('/', devTools());
+
+app.listen(port, () => console.log(`SDL Import Calculator running on port ${port}`));

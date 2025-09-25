@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "SDL Import Calculator backend + frontend",
   "main": "backend/fastScraper.js",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "dev": "nodemon backend/fastScraper.js",
     "start": "node backend/fastScraper.js"
