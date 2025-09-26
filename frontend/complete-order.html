@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Complete Your Order - SDL Import Calculator</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <div class="max-w-4xl mx-auto">
+            <!-- Header -->
+            <div class="text-center mb-8">
+                <h1 class="text-3xl font-bold text-gray-800 mb-2">Complete Your Order</h1>
+                <p class="text-gray-600">Review your import calculation and finalize your order</p>
+            </div>
+
+            <!-- Loading State -->
+            <div id="loading" class="text-center py-12">
+                <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                <p class="text-gray-600">Loading your order details...</p>
+            </div>
+
+            <!-- Error State -->
+            <div id="error" class="hidden bg-red-50 border border-red-200 rounded-lg p-6 text-center">
+                <i class="fas fa-exclamation-triangle text-red-500 text-2xl mb-4"></i>
+                <h3 class="text-lg font-semibold text-red-800 mb-2">Order Not Found</h3>
+                <p class="text-red-600 mb-4">This order has expired or doesn't exist.</p>
+                <a href="/" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors">
+                    Start New Calculation
+                </a>
+            </div>
+
+            <!-- Order Content -->
+            <div id="orderContent" class="hidden">
+                <!-- Customer Information -->
+                <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+                    <h2 class="text-xl font-semibold text-gray-800 mb-4">
+                        <i class="fas fa-user text-blue-600 mr-2"></i>Customer Information
+                    </h2>
+                    <div id="customerInfo" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <!-- Customer details will be populated here -->
+                    </div>
+                </div>
+
+                <!-- Products -->
+                <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+                    <h2 class="text-xl font-semibold text-gray-800 mb-4">
+                        <i class="fas fa-shopping-cart text-blue-600 mr-2"></i>Products
+                    </h2>
+                    <div id="productsList" class="space-y-4">
+                        <!-- Products will be populated here -->
+                    </div>
+                </div>
+
+                <!-- Order Summary -->
+                <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+                    <h2 class="text-xl font-semibold text-gray-800 mb-4">
+                        <i class="fas fa-calculator text-blue-600 mr-2"></i>Order Summary
+                    </h2>
+                    <div id="orderSummary" class="space-y-3">
+                        <!-- Summary will be populated here -->
+                    </div>
+                </div>
+
+                <!-- Actions -->
+                <div class="bg-white rounded-lg shadow-md p-6">
+                    <div class="flex flex-col sm:flex-row gap-4 justify-center">
+                        <button id="createOrderBtn" class="bg-green-600 text-white px-8 py-3 rounded-lg hover:bg-green-700 transition-colors font-semibold">
+                            <i class="fas fa-check mr-2"></i>Create Shopify Order
+                        </button>
+                        <a href="/" class="bg-gray-600 text-white px-8 py-3 rounded-lg hover:bg-gray-700 transition-colors font-semibold text-center">
+                            <i class="fas fa-arrow-left mr-2"></i>Back to Calculator
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Get order ID from URL parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const orderId = urlParams.get('orderId');
+
+        if (!orderId) {
+            showError();
+        } else {
+            loadOrderData(orderId);
+        }
+
+        async function loadOrderData(orderId) {
+            try {
+                const response = await fetch(`/api/get-pending-order/${orderId}`);
+                
+                if (!response.ok) {
+                    throw new Error('Order not found');
+                }
+
+                const orderData = await response.json();
+                displayOrderData(orderData);
+                
+            } catch (error) {
+                console.error('Error loading order:', error);
+                showError();
+            }
+        }
+
+        function displayOrderData(data) {
+            document.getElementById('loading').classList.add('hidden');
+            document.getElementById('orderContent').classList.remove('hidden');
+
+            // Display customer information
+            const customerInfo = document.getElementById('customerInfo');
+            customerInfo.innerHTML = `
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                    <p class="text-gray-900">${data.customer.name}</p>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                    <p class="text-gray-900">${data.customer.email}</p>
+                </div>
+            `;
+
+            // Display products
+            const productsList = document.getElementById('productsList');
+            productsList.innerHTML = data.products.map(product => `
+                <div class="border border-gray-200 rounded-lg p-4">
+                    <div class="flex items-start space-x-4">
+                        <img src="${product.image}" alt="${product.name}" class="w-16 h-16 object-cover rounded">
+                        <div class="flex-1">
+                            <h3 class="font-semibold text-gray-800">${product.name}</h3>
+                            <p class="text-sm text-gray-600">${product.retailer}</p>
+                            <p class="text-lg font-bold text-green-600">$${product.price.toFixed(2)}</p>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+
+            // Display order summary
+            const orderSummary = document.getElementById('orderSummary');
+            orderSummary.innerHTML = `
+                <div class="flex justify-between">
+                    <span>Subtotal:</span>
+                    <span>$${data.totals.subtotal.toFixed(2)}</span>
+                </div>
+                <div class="flex justify-between">
+                    <span>Shipping:</span>
+                    <span>$${data.totals.totalShippingCost.toFixed(2)}</span>
+                </div>
+                <div class="flex justify-between">
+                    <span>Duty (26.5%):</span>
+                    <span>$${data.totals.dutyAmount.toFixed(2)}</span>
+                </div>
+                <div class="border-t pt-3 flex justify-between font-bold text-lg">
+                    <span>Total:</span>
+                    <span>$${data.totals.grandTotal.toFixed(2)}</span>
+                </div>
+            `;
+
+            // Set up create order button
+            document.getElementById('createOrderBtn').addEventListener('click', () => {
+                createShopifyOrder(data);
+            });
+        }
+
+        async function createShopifyOrder(orderData) {
+            const btn = document.getElementById('createOrderBtn');
+            const originalText = btn.innerHTML;
+            
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Creating Order...';
+
+            try {
+                const response = await fetch('/apps/instant-import/create-draft-order', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(orderData)
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    // Show success message
+                    btn.innerHTML = '<i class="fas fa-check mr-2"></i>Order Created!';
+                    btn.classList.remove('bg-green-600', 'hover:bg-green-700');
+                    btn.classList.add('bg-green-500');
+                    
+                    // Redirect to invoice URL if available
+                    if (result.invoiceUrl) {
+                        setTimeout(() => {
+                            window.open(result.invoiceUrl, '_blank');
+                        }, 1500);
+                    }
+                } else {
+                    throw new Error(result.error || 'Failed to create order');
+                }
+
+            } catch (error) {
+                console.error('Error creating order:', error);
+                btn.innerHTML = '<i class="fas fa-exclamation-triangle mr-2"></i>Error - Try Again';
+                btn.classList.remove('bg-green-600', 'hover:bg-green-700');
+                btn.classList.add('bg-red-600', 'hover:bg-red-700');
+                btn.disabled = false;
+                
+                setTimeout(() => {
+                    btn.innerHTML = originalText;
+                    btn.classList.remove('bg-red-600', 'hover:bg-red-700');
+                    btn.classList.add('bg-green-600', 'hover:bg-green-700');
+                }, 3000);
+            }
+        }
+
+        function showError() {
+            document.getElementById('loading').classList.add('hidden');
+            document.getElementById('error').classList.remove('hidden');
+        }
+    </script>
+</body>
+</html>
