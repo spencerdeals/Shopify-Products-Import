@@ -42,9 +42,9 @@ if (instantImportRouter) {
   });
 }
 
-// Mount dev tools (browser-only testing helpers)
-const devTools = require("./routes/devTools");
-app.use("/", devTools());
+// Mount dev tools (browser-only testing helpers) - commented out due to missing file
+// const devTools = require("./routes/devTools");
+// app.use("/", devTools());
 
 // Health check endpoint
 app.get('/instant-import/health', (req, res) => {
