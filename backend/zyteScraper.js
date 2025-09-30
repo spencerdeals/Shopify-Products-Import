@@ -107,11 +107,13 @@ class ZyteScraper {
         console.log(`   📊 Using medium confidence result from ${lastGoodResult.strategy}`);
         return this.parseZyteResponse(lastGoodResult.data, url, retailer);
       }
-      
-      throw lastError || new Error('All strategies failed');
-      
+
+      // All strategies failed - throw error to trigger fallback
+      throw lastError || new Error('All Zyte strategies failed to extract product data');
+
     } catch (error) {
-      return this.handleZyteError(error);
+      // Don't call handleZyteError - just throw so fastScraper can try GPT fallback
+      throw error;
     }
   }
 
@@ -177,7 +179,8 @@ class ZyteScraper {
       return productData;
 
     } catch (error) {
-      return this.handleZyteError(error);
+      console.error('❌ Zyte scraping failed:', error.message);
+      throw error;
     }
   }
 
