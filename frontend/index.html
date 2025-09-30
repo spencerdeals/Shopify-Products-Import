@@ -1826,20 +1826,10 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
                 const data = await response.json();
                 scrapedProducts = data.products || [];
                 
-                // Handle manual entry and IKEA components (preserved logic)
-                pendingManualProducts = scrapedProducts.filter(p => p.manualEntryRequired);
-                pendingIkeaProducts = scrapedProducts.filter(p => p.ikeaComponentsRequired);
-                currentManualIndex = 0;
-                
-                if (pendingManualProducts.length > 0 || pendingIkeaProducts.length > 0) {
-                    document.getElementById('loading').classList.remove('active');
-                    processNextManualPrompt();
-                } else {
-                    // No manual prompts needed, proceed directly
-                    vendorGroups = groupProductsByVendor(scrapedProducts);
-                    displayVendorGroups();
-                    document.getElementById('loading').classList.remove('active');
-                }
+                // Skip manual prompts - proceed directly
+                vendorGroups = groupProductsByVendor(scrapedProducts);
+                displayVendorGroups();
+                document.getElementById('loading').classList.remove('active');
                 
             } catch (error) {
                 document.getElementById('loading').classList.remove('active');
