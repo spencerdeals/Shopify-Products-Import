@@ -780,48 +780,51 @@ async function scrapeProduct(url) {
         if (productData.confidence && productData.confidence > 0.95 && productData.allVariants && productData.allVariants.length > 2) {
           console.log('   ✅ Skipping GPT enhancement - Zyte data is excellent');
         } else {
-          const gptResult = await parseWithGPT({ 
-            url: productData.url, 
-            html: `Product: ${productData.name}\nPrice: $${productData.price}\nVariants: ${productData.allVariants?.join(', ') || productData.variant || 'None'}\nImage: ${productData.image || 'None'}`, 
-            currencyFallback: 'USD' 
-          });
-          
-          // Only use GPT enhancements if they're significantly different or better
-          if (gptResult.allVariants && gptResult.allVariants.length > (productData.allVariants?.length || 0)) {
-            productData.allVariants = gptResult.allVariants;
-            productData.variant = gptResult.variant;
-            console.log('   🎨 Enhanced variants:', gptResult.allVariants);
-          }
-          
-          if (gptResult.variant && gptResult.variant.length > (productData.variant?.length || 0)) {
-            const cleanVariant = gptResult.variant.replace(/[|•]/g, ' ').replace(/\s+/g, ' ').trim();
-            productData.variant = cleanVariant;
-            console.log(`   🎨 Enhanced variant: "${productData.variant}" → "${cleanVariant}"`);
-          }
-          
-          if (gptResult.image && gptResult.image !== productData.image && gptResult.image.startsWith('http')) {
-            productData.image = gptResult.image;
-            console.log('   🖼️ Enhanced image URL');
-          }
-          
-          // Only use GPT price if it's significantly different (>10% difference)
-          if (gptResult.price && Math.abs(gptResult.price - productData.price) > (productData.price * 0.1)) {
-            console.log(`   💰 GPT found different price: $${gptResult.price} vs $${productData.price}`);
-            productData.price = gptResult.price;
-          }
-          
-          if (gptResult.dimensions && !productData.dimensions) {
-            productData.dimensions = gptResult.dimensions;
-            console.log('   📦 Enhanced dimensions:', (gptResult.dimensions.length * gptResult.dimensions.width * gptResult.dimensions.height / 1728).toFixed(1), 'ft³ vs', (productData.dimensions?.length * productData.dimensions?.width * productData.dimensions?.height / 1728 || 0).toFixed(1), 'ft³');
+          try {
+            const gptResult = await parseWithGPT({
+              url: url,
+              html: `Product: ${productData.name}\nPrice: $${productData.price}\nVariants: ${productData.allVariants?.join(', ') || productData.variant || 'None'}\nImage: ${productData.image || 'None'}`,
+              currencyFallback: 'USD'
+            });
+
+            // Only use GPT enhancements if they're significantly different or better
+            if (gptResult && gptResult.allVariants && gptResult.allVariants.length > (productData.allVariants?.length || 0)) {
+              productData.allVariants = gptResult.allVariants;
+              productData.variant = gptResult.variant;
+              console.log('   🎨 Enhanced variants:', gptResult.allVariants);
+            }
+
+            if (gptResult && gptResult.variant && gptResult.variant.length > (productData.variant?.length || 0)) {
+              const cleanVariant = gptResult.variant.replace(/[|•]/g, ' ').replace(/\s+/g, ' ').trim();
+              productData.variant = cleanVariant;
+              console.log(`   🎨 Enhanced variant: "${productData.variant}" → "${cleanVariant}"`);
+            }
+
+            if (gptResult && gptResult.image && gptResult.image !== productData.image && gptResult.image.startsWith('http')) {
+              productData.image = gptResult.image;
+              console.log('   🖼️ Enhanced image URL');
+            }
+
+            // Only use GPT price if it's significantly different (>10% difference)
+            if (gptResult && gptResult.price && Math.abs(gptResult.price - productData.price) > (productData.price * 0.1)) {
+              console.log(`   💰 GPT found different price: $${gptResult.price} vs $${productData.price}`);
+              productData.price = gptResult.price;
+            }
+
+            if (gptResult && gptResult.dimensions && !productData.dimensions) {
+              productData.dimensions = gptResult.dimensions;
+              console.log('   📦 Enhanced dimensions:', (gptResult.dimensions.length * gptResult.dimensions.width * gptResult.dimensions.height / 1728).toFixed(1), 'ft³ vs', (productData.dimensions?.length * productData.dimensions?.width * productData.dimensions?.height / 1728 || 0).toFixed(1), 'ft³');
+            }
+          } catch (gptEnhanceError) {
+            console.log('   ⚠️ GPT variant enhancement failed, using Zyte data:', gptEnhanceError.message);
           }
         }
-        
+
         try {
           productData = await enhanceProductDataWithGPT(productData, url, retailer);
           console.log('   ✅ GPT enhancement successful');
         } catch (gptError) {
           console.log('   ⚠️ GPT enhancement failed, using original Zyte data:', gptError.message);
-          // Continue with original Zyte data - no harm done!
         }
       }
     
