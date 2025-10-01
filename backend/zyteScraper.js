@@ -257,9 +257,14 @@ class ZyteScraper {
       }
 
       // Enhanced price parsing - use the main price from Zyte (it's already the correct sale price)
-      if (product.price) {
-        productData.price = this.extractBestPrice(product);
+      const priceResult = this.extractBestPrice(product, data);
+      productData.price = priceResult.price;
+      productData.priceDebug = priceResult.debug;
+
+      if (productData.price) {
         console.log('   💰 Final Price: $' + productData.price);
+      } else {
+        console.log('   ⚠️ WARNING: No valid price extracted from Zyte data');
       }
 
       // Enhanced image extraction - prefer high-quality variant images
@@ -341,45 +346,107 @@ class ZyteScraper {
     return productData;
   }
 
-  // Enhanced price extraction with priority for sale prices
-  extractBestPrice(product) {
+  // Enhanced price extraction with priority for sale prices and extensive field search
+  extractBestPrice(product, data = null) {
     console.log('   🔍 Extracting best price from Zyte data...');
-    
-    // Priority order: sale/current prices first, then regular prices
+
+    const priceDebug = {
+      attemptedFields: [],
+      rawValues: {},
+      chosenField: null,
+      chosenValue: null
+    };
+
+    // Comprehensive price field candidates (ordered by priority)
     const priceFields = [
-      { field: 'salePrice', label: 'Sale Price' },
-      { field: 'currentPrice', label: 'Current Price' },
-      { field: 'specialPrice', label: 'Special Price' },
-      { field: 'price', label: 'Main Price' },
-      { field: 'regularPrice', label: 'Regular Price' },
-      { field: 'listPrice', label: 'List Price' }
+      { field: 'salePrice', label: 'Sale Price', path: ['product', 'salePrice'] },
+      { field: 'currentPrice', label: 'Current Price', path: ['product', 'currentPrice'] },
+      { field: 'price', label: 'Main Price', path: ['product', 'price'] },
+      { field: 'specialPrice', label: 'Special Price', path: ['product', 'specialPrice'] },
+      { field: 'regularPrice', label: 'Regular Price', path: ['product', 'regularPrice'] },
+      { field: 'listPrice', label: 'List Price', path: ['product', 'listPrice'] },
+      { field: 'offers.price', label: 'Offers Price', path: ['product', 'offers', 'price'] },
+      { field: 'offers[0].price', label: 'First Offer Price', path: ['product', 'offers', '0', 'price'] },
+      { field: 'pricing.price', label: 'Pricing Price', path: ['pricing', 'price'] },
+      { field: 'raw.priceText', label: 'Raw Price Text', path: ['raw', 'priceText'] },
+      { field: 'schema.offers.price', label: 'Schema Offers Price', path: ['schema', 'offers', 'price'] },
+      { field: 'schema.offers[0].price', label: 'Schema First Offer', path: ['schema', 'offers', '0', 'price'] }
     ];
-    
-    for (const { field, label } of priceFields) {
-      const priceValue = product[field];
+
+    for (const { field, label, path } of priceFields) {
+      priceDebug.attemptedFields.push(field);
+
+      // Try direct product field first
+      let priceValue = product[field.split('.')[0]];
+
+      // Try nested paths if available
+      if (data && path) {
+        let current = data;
+        for (const key of path) {
+          if (current && typeof current === 'object') {
+            current = current[key];
+          } else {
+            current = null;
+            break;
+          }
+        }
+        if (current) priceValue = current;
+      }
+
+      // Handle nested field names (e.g., "offers.price")
+      if (!priceValue && field.includes('.')) {
+        const parts = field.split('.');
+        priceValue = product;
+        for (const part of parts) {
+          if (priceValue && typeof priceValue === 'object') {
+            priceValue = priceValue[part];
+          } else {
+            priceValue = null;
+            break;
+          }
+        }
+      }
+
       if (priceValue) {
+        priceDebug.rawValues[field] = priceValue;
         let parsedPrice = null;
-        
+
         if (typeof priceValue === 'string') {
           // Handle string prices like "$299.99" or "299.99"
           const cleanPrice = priceValue.replace(/[$,\s]/g, '');
           parsedPrice = parseFloat(cleanPrice);
+
+          // Also try extracting from text like "Price: $299.99" or "$299.99 USD"
+          if (!parsedPrice || isNaN(parsedPrice)) {
+            const match = priceValue.match(/\$?([0-9]+(?:,[0-9]{3})*(?:\.[0-9]{2})?)/);
+            if (match) {
+              parsedPrice = parseFloat(match[1].replace(/,/g, ''));
+            }
+          }
         } else if (typeof priceValue === 'number') {
           parsedPrice = priceValue;
-        } else if (typeof priceValue === 'object' && priceValue.value) {
+        } else if (typeof priceValue === 'object' && priceValue !== null) {
           // Handle price objects like { value: 299.99, currency: "USD" }
-          parsedPrice = parseFloat(priceValue.value);
+          if (priceValue.value) {
+            parsedPrice = parseFloat(priceValue.value);
+          } else if (priceValue.amount) {
+            parsedPrice = parseFloat(priceValue.amount);
+          }
         }
-        
-        if (parsedPrice && parsedPrice > 0 && parsedPrice < 50000) {
-          console.log(`   💰 Using ${label}: $${parsedPrice}`);
-          return parsedPrice;
+
+        // Validate: must be positive, finite, and under $200,000
+        if (parsedPrice && !isNaN(parsedPrice) && isFinite(parsedPrice) && parsedPrice > 0 && parsedPrice < 200000) {
+          priceDebug.chosenField = field;
+          priceDebug.chosenValue = parsedPrice;
+          console.log(`   💰 Using ${label}: $${parsedPrice} (from field: ${field})`);
+          return { price: parsedPrice, debug: priceDebug };
         }
       }
     }
-    
+
     console.log('   ❌ No valid price found in any field');
-    return null;
+    console.log('   🔍 Price debug:', JSON.stringify(priceDebug, null, 2));
+    return { price: null, debug: priceDebug };
   }
 
   // Comprehensive variant extraction
@@ -661,36 +728,78 @@ class ZyteScraper {
     return null;
   }
 
-  extractPriceFromHTML(html) {
+  extractPriceFromHTML(html, retailer = null) {
     if (!html) return null;
-    
+
     const $ = cheerio.load(html);
-    
-    // Wayfair-specific price selectors - PRIORITIZE SALE PRICES
-    const priceSelectors = [
-      // Sale/current prices first (highest priority)
-      '.SalePriceBlock .MoneyPrice',
-      '.CurrentPriceBlock .MoneyPrice', 
-      '.price-current',
-      '.sale-price',
-      '.current-price',
+
+    // Wayfair-specific enhanced selectors
+    const wayfairSelectors = [
+      '[data-hb-price]',
+      '[data-enzyme-id*="price"]',
+      '[data-testid="price"]',
       '[data-testid="current-price"]',
       '[data-testid="sale-price"]',
-      '.price-now',
-      '.price-special',
-      // Standard price selectors (lower priority)
+      '.SalePriceBlock .MoneyPrice',
+      '.CurrentPriceBlock .MoneyPrice',
+      '.price-current',
+      '.sale-price',
       '.MoneyPrice',
-      '[data-testid="price"]',
-      '.BasePriceBlock .MoneyPrice',
       '.PriceBlock .MoneyPrice'
     ];
 
+    const genericSelectors = [
+      '.price',
+      '[data-price]',
+      '.product-price',
+      '[itemprop="price"]',
+      '.sale-price',
+      '.current-price'
+    ];
+
+    const selectors = retailer === 'Wayfair' ? wayfairSelectors : [...wayfairSelectors, ...genericSelectors];
+
+    // Try direct selectors first
+    for (const selector of selectors) {
+      try {
+        const elements = $(selector);
+        if (elements.length > 0) {
+          const priceText = elements.first().text().trim() || elements.first().attr('content') || elements.first().attr('data-hb-price');
+          if (priceText) {
+            const price = this.parsePrice(priceText);
+            if (price && price > 0 && price < 200000) {
+              console.log(`   💰 Extracted price from HTML selector ${selector}: $${price}`);
+              return { price, source: `html:${selector}` };
+            }
+          }
+        }
+      } catch (e) {
+        // Continue to next selector
+      }
+    }
+
+    // Fallback to text search
     return this.extractSalePriceFromHTML(html);
   }
 
+  parsePrice(text) {
+    if (!text || typeof text !== 'string') return null;
+
+    // Remove currency symbols, commas, and extract numeric value
+    const cleaned = text.replace(/[$,\s]/g, '');
+    const match = cleaned.match(/([0-9]+(?:\.[0-9]{2})?)/);
+    if (match) {
+      const price = parseFloat(match[1]);
+      if (!isNaN(price) && isFinite(price)) {
+        return price;
+      }
+    }
+    return null;
+  }
+
   extractSalePriceFromHTML(html) {
-    if (!html) return null;
-    
+    if (!html) return { price: null, source: 'html:none' };
+
     const $ = cheerio.load(html);
     
     // Enhanced Wayfair-specific sale price selectors
@@ -738,7 +847,7 @@ class ZyteScraper {
           const price = parseFloat(priceMatch[1].replace(/,/g, ''));
           if (price >= 10 && price <= 10000) {
             console.log(`   ✅ SALE PRICE FOUND: $${price} from ${selector}`);
-            return price;
+            return { price, source: `html:${selector}` };
           }
         }
       });
@@ -759,7 +868,7 @@ class ZyteScraper {
         const priceMatch = priceText.match(/\$?(\d{1,4}(?:,\d{3})*(?:\.\d{2})?)/);
         if (priceMatch) {
           const price = parseFloat(priceMatch[1].replace(/,/g, ''));
-          if (price >= 10 && price <= 10000) {
+          if (price >= 10 && price <= 200000) {
             foundPrices.push({ price, selector, text: priceText });
             console.log(`   ✅ Regular price found: $${price} from ${selector}`);
           }
@@ -771,7 +880,7 @@ class ZyteScraper {
     if (foundPrices.length > 0) {
       const bestPrice = foundPrices[0];
       console.log(`   🎯 Using regular price $${bestPrice.price} from ${bestPrice.selector}`);
-      return bestPrice.price;
+      return { price: bestPrice.price, source: `html:${bestPrice.selector}` };
     }
     
     // Final fallback: Search for price patterns in raw HTML with sale priority
@@ -797,21 +906,21 @@ class ZyteScraper {
       if (validPrices.length > 0) {
         if (pattern.source.includes('sale|now|current|special|save')) {
           console.log(`   ✅ SALE PRICE found in HTML pattern: $${validPrices[0]}`);
-          return validPrices[0];
+          return { price: validPrices[0], source: 'html:pattern:sale' };
         } else {
           const priceFreq = {};
           validPrices.forEach(p => priceFreq[p] = (priceFreq[p] || 0) + 1);
-          const mostCommonPrice = Object.keys(priceFreq).reduce((a, b) => 
+          const mostCommonPrice = Object.keys(priceFreq).reduce((a, b) =>
             priceFreq[a] > priceFreq[b] ? a : b
           );
           console.log(`   ✅ Most common regular price in HTML: $${mostCommonPrice}`);
-          return parseFloat(mostCommonPrice);
+          return { price: parseFloat(mostCommonPrice), source: 'html:pattern:common' };
         }
       }
     }
-    
+
     console.log('   ❌ No valid price found in HTML at all');
-    return null;
+    return { price: null, source: 'html:none' };
   }
 
   extractDimensionsFromProperties(properties) {
@@ -852,7 +961,8 @@ class ZyteScraper {
       dimensions: null,
       weight: null,
       allVariants: [],
-      variant: null
+      variant: null,
+      priceSource: null
     };
 
     // Extract product name from HTML title
@@ -862,7 +972,9 @@ class ZyteScraper {
     }
 
     // Extract price from HTML
-    productData.price = this.extractPriceFromHTML(html);
+    const priceResult = this.extractPriceFromHTML(html, retailer);
+    productData.price = priceResult.price;
+    productData.priceSource = priceResult.source;
 
     return productData;
   }

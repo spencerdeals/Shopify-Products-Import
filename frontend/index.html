@@ -2114,9 +2114,24 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
                                 </div>
                                 <div class="product-info">
                                     <span>📦 ${product.category}</span>
-                                    <span>🚢 Est. shipping: $${product.shippingCost || 0}</span>
+                                    ${product.quoteStatus === 'blocked_missing_price' ?
+                                        `<span style="color: #d32f2f;">🚢 Est. shipping: — (waiting for price)</span>` :
+                                    product.shipping && product.shipping.status === 'pending' ?
+                                        `<span style="color: #ff9800;">📐 Shipping: Pending (${product.shipping.reason})</span>` :
+                                    product.shipping && product.shipping.status === 'reverse_calculated' ?
+                                        `<span title="Estimated via reverse calculation">🚢 Est. shipping: $${product.shippingCost || 0} (estimated)</span>` :
+                                        `<span>🚢 Est. shipping: $${product.shippingCost || 0}</span>`}
                                     <span>📊 Data: ${completenessScore}/${totalMetrics}</span>
                                 </div>
+                                ${product.quoteStatus === 'blocked_missing_price' && product.retailer === 'Wayfair' ? `
+                                <div style="margin: 8px 0; padding: 8px; background: #fff3cd; border-radius: 4px; font-size: 13px;">
+                                    <strong>⚠️ Price required</strong> — please re-check on retailer
+                                    <button type="button"
+                                            onclick="retryWayfairScrape('${product.url}', '${productId}')"
+                                            style="margin-left: 10px; padding: 4px 12px; background: #7cb342; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">
+                                        🔄 Re-scrape (Wayfair)
+                                    </button>
+                                </div>` : ''}
                                 
                                 <div class="quantity-selector">
                                     <span class="quantity-label">Quantity:</span>
@@ -2232,6 +2247,60 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
             });
             
             checkAllPricesConfirmed();
+        }
+
+        async function retryWayfairScrape(url, productId) {
+            const retryBtn = event.target;
+            retryBtn.disabled = true;
+            retryBtn.textContent = '🔄 Scraping...';
+
+            try {
+                const response = await fetch('/api/scrape', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        urls: [url],
+                        retry: true,
+                        forceVendor: 'wayfair'
+                    })
+                });
+
+                const data = await response.json();
+                if (data.products && data.products[0]) {
+                    const product = data.products[0];
+
+                    // Update price if found
+                    const priceInput = document.getElementById(`price-${productId}`);
+                    if (product.price && product.price > 0) {
+                        priceInput.value = product.price.toFixed(2);
+                        priceInput.classList.add('has-value');
+
+                        // Update the product in vendorGroups
+                        for (const vendor in vendorGroups) {
+                            const idx = vendorGroups[vendor].findIndex(p => p.id === productId);
+                            if (idx !== -1) {
+                                vendorGroups[vendor][idx].price = product.price;
+                                vendorGroups[vendor][idx].quoteStatus = product.quoteStatus;
+                                vendorGroups[vendor][idx].canQuote = product.canQuote;
+                                vendorGroups[vendor][idx].shippingCost = product.shippingCost;
+                                break;
+                            }
+                        }
+
+                        alert(`✅ Price found: $${product.price.toFixed(2)}\\n\\nPlease verify and confirm.`);
+                        displayResults(scrapedProducts);
+                    } else {
+                        alert('⚠️ Price still not found. Please enter manually.');
+                        retryBtn.disabled = false;
+                        retryBtn.textContent = '🔄 Re-scrape (Wayfair)';
+                    }
+                }
+            } catch (error) {
+                console.error('Retry scrape error:', error);
+                alert('❌ Retry failed. Please enter price manually.');
+                retryBtn.disabled = false;
+                retryBtn.textContent = '🔄 Re-scrape (Wayfair)';
+            }
         }
 
         function handlePriceChange(productId, vendor, productIndex) {

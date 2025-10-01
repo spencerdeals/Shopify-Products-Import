@@ -899,6 +899,27 @@ async function scrapeProduct(url) {
         hasWeight: false,
         hasPrice: false,
         hasVariant: false
+      },
+      telemetry: {
+        dataSource: null,
+        missingFields: ['name', 'price', 'dimensions', 'weight', 'image'],
+        overrideReason: 'all_methods_failed',
+        freightSource: null,
+        gptStatus: gptStatus,
+        priceDebug: null,
+        priceSource: null
+      },
+      quoteStatus: 'blocked_missing_price',
+      canQuote: false,
+      shipping: {
+        cost: 0,
+        status: 'blocked',
+        reason: 'all_methods_failed'
+      },
+      fieldSources: {
+        price: 'missing',
+        dimensions: 'missing',
+        weight: 'missing'
       }
     };
   }
@@ -989,13 +1010,52 @@ async function scrapeProduct(url) {
     console.log('   ⚖️ Estimated weight based on dimensions');
   }
   
-  // Calculate shipping cost
-  const shippingCost = calculateShippingCost(
-    productData.dimensions,
-    productData.weight,
-    (productData && productData.price) ? productData.price : 100
-  );
-  
+  // VALIDATION GATES
+  const validPrice = productData && productData.price && productData.price > 0;
+  const hasDimensions = productData && productData.dimensions && productData.dimensions.length > 0 && productData.dimensions.width > 0 && productData.dimensions.height > 0;
+  const hasWeight = productData && productData.weight && productData.weight > 0;
+  const validDims = hasDimensions || hasWeight || freightSource === 'reverse_calc';
+  const canQuote = validPrice && validDims;
+
+  let quoteStatus = 'ok';
+  let shippingStatus = 'calculated';
+  let shippingReason = null;
+
+  if (!validPrice) {
+    quoteStatus = 'blocked_missing_price';
+    overrideReason = 'price_missing';
+    console.log('   ⚠️ BLOCKED: Missing valid price - cannot quote');
+  } else if (!validDims && !freightSource) {
+    quoteStatus = 'needs_dimensions';
+    shippingStatus = 'pending';
+    shippingReason = 'dimensions_missing';
+    console.log('   ⚠️ WARNING: Missing dimensions - shipping pending');
+  }
+
+  // Calculate shipping cost ONLY if we have valid price and dimensions
+  let shippingCost = 0;
+  if (validPrice && (hasDimensions || freightSource === 'reverse_calc')) {
+    if (freightSource !== 'reverse_calc') {
+      shippingCost = calculateShippingCost(
+        productData.dimensions,
+        productData.weight,
+        productData.price
+      );
+      shippingStatus = 'calculated';
+    } else {
+      shippingCost = productData.shippingCost || 0;
+      shippingStatus = 'reverse_calculated';
+    }
+  } else if (!validPrice) {
+    shippingStatus = 'blocked';
+    shippingReason = 'price_required';
+    console.log('   🚫 SHIPPING BLOCKED: Price required');
+  } else {
+    shippingStatus = 'pending';
+    shippingReason = 'dimensions_missing';
+    console.log('   ⏸️ SHIPPING PENDING: Dimensions required');
+  }
+
   // Prepare final product object
   const product = {
     id: productId,
@@ -1018,6 +1078,28 @@ async function scrapeProduct(url) {
       hasWeight: !!(productData && productData.weight),
       hasPrice: !!(productData && productData.price),
       hasVariant: !!(productData && productData.variant)
+    },
+    telemetry: {
+      dataSource: dataSource || 'estimation',
+      missingFields: missingFields,
+      overrideReason: overrideReason,
+      freightSource: freightSource,
+      gptStatus: gptStatus,
+      zyteConfidence: confidence,
+      priceDebug: productData?.priceDebug || null,
+      priceSource: productData?.priceSource || null
+    },
+    quoteStatus: quoteStatus,
+    canQuote: canQuote,
+    shipping: {
+      cost: shippingCost,
+      status: shippingStatus,
+      reason: shippingReason
+    },
+    fieldSources: {
+      price: productData?.priceSource || dataSource,
+      dimensions: hasDimensions ? (productData?.dimensionsSource || 'zyte') : 'missing',
+      weight: hasWeight ? 'zyte' : 'estimated'
     }
   };
   
@@ -1058,29 +1140,34 @@ async function processBatch(urls, batchSize = MAX_CONCURRENT) {
 // API endpoint for scraping
 app.post('/api/scrape', async (req, res) => {
   try {
-    const { urls } = req.body;
-    
+    const { urls, retry = false, forceVendor = null } = req.body;
+
     if (!urls || !Array.isArray(urls) || urls.length === 0) {
       return res.status(400).json({ error: 'No URLs provided' });
     }
-    
+
     // Check for SDL domains
     const sdlUrls = urls.filter(url => isSDLDomain(url));
     if (sdlUrls.length > 0) {
-      return res.status(400).json({ 
-        error: 'SDL domain detected. This calculator is for importing products from other retailers.' 
+      return res.status(400).json({
+        error: 'SDL domain detected. This calculator is for importing products from other retailers.'
       });
     }
-    
+
+    if (retry) {
+      console.log(`\n🔄 RETRY mode enabled${forceVendor ? ` for ${forceVendor}` : ''}`);
+    }
+
     console.log(`\n🚀 Starting batch scrape for ${urls.length} products...`);
-    
+
     const products = await processBatch(urls);
     console.log(`\n✅ Completed scraping ${products.length} products\n`);
-    
-    res.json({ 
-      products
+
+    res.json({
+      products,
+      retry: retry || false
     });
-    
+
   } catch (error) {
     console.error('Scraping error:', error);
     res.status(500).json({ error: 'Failed to scrape products' });
