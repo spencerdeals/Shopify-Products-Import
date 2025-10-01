@@ -1056,12 +1056,30 @@ async function scrapeProduct(url) {
     console.log('   ⏸️ SHIPPING PENDING: Dimensions required');
   }
 
+  // Calculate landed unit price (final customer price per item)
+  let landed_unit_price = null;
+  let priceBreakdown = null;
+
+  if (validPrice && shippingCost > 0) {
+    const quote = calculateFinalQuoteWith20PercentMargin(productData.price, shippingCost);
+    landed_unit_price = quote.finalTotal;
+    priceBreakdown = quote.breakdown;
+  } else if (validPrice) {
+    const defaultShipping = productData.price * 0.15;
+    const quote = calculateFinalQuoteWith20PercentMargin(productData.price, defaultShipping);
+    landed_unit_price = quote.finalTotal;
+    priceBreakdown = quote.breakdown;
+  }
+
   // Prepare final product object
   const product = {
     id: productId,
     url: url,
     name: productName,
+    title: productName,
+    sku: productData?.sku || productId,
     price: (productData && productData.price) ? productData.price : null,
+    landed_unit_price: landed_unit_price,
     image: (productData && productData.image) ? productData.image : 'https://placehold.co/400x400/7CB342/FFFFFF/png?text=SDL',
     category: category,
     retailer: retailer,
@@ -1087,7 +1105,10 @@ async function scrapeProduct(url) {
       gptStatus: gptStatus,
       zyteConfidence: confidence,
       priceDebug: productData?.priceDebug || null,
-      priceSource: productData?.priceSource || null
+      priceSource: productData?.priceSource || null,
+      priceBreakdown: priceBreakdown,
+      dimension_source: dimension_source,
+      estimation_notes: estimation_notes
     },
     quoteStatus: quoteStatus,
     canQuote: canQuote,
@@ -1371,6 +1392,74 @@ app.post('/api/orders/:orderId/stop-tracking', async (req, res) => {
 });
 
 // Shopify Draft Order Creation
+// Shopify Draft Order endpoint (simplified with landed_unit_price)
+app.post('/api/shopify/draft-order', async (req, res) => {
+  try {
+    const { currency = 'USD', email, note = 'Instant Import Quote', items } = req.body;
+
+    if (!SHOPIFY_ACCESS_TOKEN) {
+      return res.status(500).json({ error: 'Shopify not configured. Please check API credentials.' });
+    }
+
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'Items array required' });
+    }
+
+    const lineItems = items.map(item => ({
+      title: `${item.retailer}: ${item.title}`,
+      quantity: item.quantity || 1,
+      price: item.landed_unit_price.toFixed(2),
+      sku: item.sku || undefined,
+      taxable: false
+    }));
+
+    const draftOrderData = {
+      draft_order: {
+        line_items: lineItems,
+        currency: currency,
+        note: note,
+        use_customer_default_address: true,
+        tax_exempt: true,
+        send_receipt: false
+      }
+    };
+
+    if (email) {
+      draftOrderData.draft_order.email = email;
+    }
+
+    console.log(`📝 Creating Shopify draft order with ${items.length} items...`);
+
+    const shopifyResponse = await axios.post(
+      `https://${SHOPIFY_DOMAIN}/admin/api/2024-01/draft_orders.json`,
+      draftOrderData,
+      {
+        headers: {
+          'X-Shopify-Access-Token': SHOPIFY_ACCESS_TOKEN,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    const draftOrder = shopifyResponse.data.draft_order;
+    console.log(`✅ Draft order ${draftOrder.name} created: $${draftOrder.total_price}`);
+
+    res.json({
+      success: true,
+      draftOrderId: draftOrder.id,
+      invoiceUrl: draftOrder.invoice_url,
+      draftOrderUrl: `https://${SHOPIFY_DOMAIN}/admin/draft_orders/${draftOrder.id}`
+    });
+
+  } catch (error) {
+    console.error('❌ Draft order creation error:', error.response?.data || error.message);
+    res.status(500).json({
+      error: 'Failed to create draft order',
+      details: error.response?.data?.errors || error.message
+    });
+  }
+});
+
 app.post('/apps/instant-import/create-draft-order', async (req, res) => {
   try {
     const { products, deliveryFees, totals, customer, originalUrls } = req.body;

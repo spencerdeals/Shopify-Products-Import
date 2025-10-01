@@ -2181,20 +2181,15 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
                                 </div>
                                 <div class="product-cost-summary" id="cost-summary-${productId}">
                                     <div class="cost-summary-row">
-                                        <span>Item Cost:</span>
-                                        <span id="item-cost-${productId}">$0.00</span>
-                                    </div>
-                                    <div class="cost-summary-row">
-                                        <span>Import Duty (26.5%):</span>
-                                        <span id="duty-cost-${productId}">$0.00</span>
-                                    </div>
-                                    <div class="cost-summary-row">
-                                        <span>Shipping & Handling:</span>
-                                        <span id="shipping-cost-${productId}">$0.00</span>
+                                        <span>SKU:</span>
+                                        <span id="sku-${productId}">${product.sku || productId}</span>
                                     </div>
                                     <div class="cost-summary-row cost-summary-total">
-                                        <span>Total Landed Cost:</span>
-                                        <span id="total-cost-${productId}">$0.00</span>
+                                        <span>Landed in Bermuda:</span>
+                                        <span id="landed-price-${productId}">$${product.landed_unit_price ? product.landed_unit_price.toFixed(2) : '0.00'}</span>
+                                    </div>
+                                    <div style="font-size: 11px; color: #666; margin-top: 4px; text-align: center;">
+                                        Price includes shipping, duty & fees
                                     </div>
                                     <button type="button" class="delete-product-btn"
                                             onclick="deleteProduct('${vendor}', ${index}, '${productId}')">
