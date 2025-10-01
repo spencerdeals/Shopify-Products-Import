@@ -2082,16 +2082,17 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
                 
                 products.forEach((product, index) => {
                     if (product.deleted) return;
-                    
+
                     const productId = `${vendor.replace(/\s+/g, '')}-${index}`;
                     const hasScrapedPrice = product.price && product.price > 0;
                     const displayPrice = hasScrapedPrice ? product.price.toFixed(2) : '';
-                    
+
+                    // Define loaded_ok: has title + valid price with confidence ≥0.80 OR data source = "zyte"
+                    const hasValidConfidence = product.confidence && product.confidence >= 0.80;
+                    const isZyteSource = product.telemetry && product.telemetry.dataSource === 'zyte';
+                    const loaded_ok = product.name && hasScrapedPrice && (hasValidConfidence || isZyteSource);
+
                     productQuantities[productId] = 1;
-                    
-                    const dataStatus = product.dataCompleteness || {};
-                    const completenessScore = Object.values(dataStatus).filter(v => v).length;
-                    const totalMetrics = Object.keys(dataStatus).length || 5;
                     
                     let productNameHTML = product.name;
                     if (product.variant) {
@@ -2114,16 +2115,8 @@ We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
                                 </div>
                                 <div class="product-info">
                                     <span>📦 ${product.category}</span>
-                                    ${product.quoteStatus === 'blocked_missing_price' ?
-                                        `<span style="color: #d32f2f;">🚢 Est. shipping: — (waiting for price)</span>` :
-                                    product.shipping && product.shipping.status === 'pending' ?
-                                        `<span style="color: #ff9800;">📐 Shipping: Pending (${product.shipping.reason})</span>` :
-                                    product.shipping && product.shipping.status === 'reverse_calculated' ?
-                                        `<span title="Estimated via reverse calculation">🚢 Est. shipping: $${product.shippingCost || 0} (estimated)</span>` :
-                                        `<span>🚢 Est. shipping: $${product.shippingCost || 0}</span>`}
-                                    <span>📊 Data: ${completenessScore}/${totalMetrics}</span>
                                 </div>
-                                ${product.quoteStatus === 'blocked_missing_price' && product.retailer === 'Wayfair' ? `
+                                ${!loaded_ok && product.quoteStatus === 'blocked_missing_price' && product.retailer === 'Wayfair' ? `
                                 <div style="margin: 8px 0; padding: 8px; background: #fff3cd; border-radius: 4px; font-size: 13px;">
                                     <strong>⚠️ Price required</strong> — please re-check on retailer
                                     <button type="button"

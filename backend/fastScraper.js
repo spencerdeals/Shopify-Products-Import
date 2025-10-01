@@ -371,6 +371,27 @@ function calculateShippingCost(dimensions, weight, price) {
   return Math.round(totalShippingCost * 100) / 100;
 }
 
+// Calculate final quote with 20% margin enforcement
+// Formula: final_total = non_margin_costs / (1 - 0.20) = non_margin_costs / 0.80
+function calculateFinalQuoteWith20PercentMargin(itemPrice, shippingCost) {
+  const dutyRate = BERMUDA_DUTY_RATE; // 26.5%
+  const dutyAmount = itemPrice * dutyRate;
+  const nonMarginCosts = itemPrice + shippingCost + dutyAmount;
+  const finalTotal = nonMarginCosts / 0.80; // Enforce 20% margin
+  const marginAmount = finalTotal - nonMarginCosts;
+
+  return {
+    finalTotal: Math.round(finalTotal * 100) / 100,
+    breakdown: {
+      itemPrice: Math.round(itemPrice * 100) / 100,
+      shippingCost: Math.round(shippingCost * 100) / 100,
+      dutyAmount: Math.round(dutyAmount * 100) / 100,
+      marginAmount: Math.round(marginAmount * 100) / 100,
+      nonMarginCosts: Math.round(nonMarginCosts * 100) / 100
+    }
+  };
+}
+
 // Enhanced GPT enhancement function
 async function enhanceProductDataWithGPT(zyteData, url, retailer) {
   if (!process.env.OPENAI_API_KEY) {

@@ -357,14 +357,14 @@ class ZyteScraper {
       chosenValue: null
     };
 
-    // Comprehensive price field candidates (ordered by priority)
+    // Price field candidates ordered by priority: price, currentPrice, salePrice, regularPrice, listPrice
     const priceFields = [
-      { field: 'salePrice', label: 'Sale Price', path: ['product', 'salePrice'] },
-      { field: 'currentPrice', label: 'Current Price', path: ['product', 'currentPrice'] },
       { field: 'price', label: 'Main Price', path: ['product', 'price'] },
-      { field: 'specialPrice', label: 'Special Price', path: ['product', 'specialPrice'] },
+      { field: 'currentPrice', label: 'Current Price', path: ['product', 'currentPrice'] },
+      { field: 'salePrice', label: 'Sale Price', path: ['product', 'salePrice'] },
       { field: 'regularPrice', label: 'Regular Price', path: ['product', 'regularPrice'] },
       { field: 'listPrice', label: 'List Price', path: ['product', 'listPrice'] },
+      { field: 'specialPrice', label: 'Special Price', path: ['product', 'specialPrice'] },
       { field: 'offers.price', label: 'Offers Price', path: ['product', 'offers', 'price'] },
       { field: 'offers[0].price', label: 'First Offer Price', path: ['product', 'offers', '0', 'price'] },
       { field: 'pricing.price', label: 'Pricing Price', path: ['pricing', 'price'] },
