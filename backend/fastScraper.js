@@ -8,6 +8,7 @@ require('dotenv').config();
 // const OrderTracker = require('./orderTracking');
 const ZyteScraper = require('./zyteScraper');
 const { parseProduct: parseWithGPT } = require('./gptParser');
+const { estimateCarton, applyMultiplierGuardrails, OCEAN_RATE_PER_FT3 } = require('./cartonEstimator');
 
 // Simple, working scraper approach
 const MAX_CONCURRENT = 1; // Process one at a time to avoid issues
@@ -21,7 +22,6 @@ const SHOPIFY_ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN || '';
 const SCRAPING_TIMEOUT = 30000;
 const MAX_CONCURRENT_SCRAPES = 2;
 const BERMUDA_DUTY_RATE = 0.265;
-const SHIPPING_RATE_PER_CUBIC_FOOT = 8;
 
 // Initialize scrapers
 const zyteScraper = new ZyteScraper();
@@ -338,37 +338,79 @@ function estimateBoxDimensions(productDimensions, category) {
   };
 }
 
-function calculateShippingCost(dimensions, weight, price) {
-  if (!dimensions) {
-    // No dimensions available, use a default based on price
-    return Math.max(25, price * 0.15);
+function calculateShippingCost(dimensions, weight, price, product = null) {
+  let cartonEstimate = null;
+  let freightEstimated = null;
+  let dimensionSource = 'none';
+  let freightSource = 'none';
+
+  if (!dimensions && product) {
+    cartonEstimate = estimateCarton(product);
+    const cubicFeet = cartonEstimate.cubic_feet;
+    freightEstimated = cubicFeet * OCEAN_RATE_PER_FT3;
+    dimensionSource = 'estimated';
+    freightSource = 'estimated';
+
+    console.log(`   🧮 CARTON ESTIMATION:`);
+    console.log(`   📦 Estimated ${cartonEstimate.boxes} box(es): ${cartonEstimate.dimensions.length}" × ${cartonEstimate.dimensions.width}" × ${cartonEstimate.dimensions.height}"`);
+    console.log(`   📊 Total volume: ${cubicFeet.toFixed(2)} ft³`);
+    console.log(`   💰 Freight: ${cubicFeet.toFixed(2)} × $${OCEAN_RATE_PER_FT3} = $${freightEstimated.toFixed(2)}`);
+    console.log(`   📝 Notes: ${cartonEstimate.estimation_notes}`);
+
+    const handlingFee = 15;
+    const totalShippingCost = freightEstimated + handlingFee;
+    console.log(`   💰 TOTAL SHIPPING: $${freightEstimated.toFixed(2)} + $${handlingFee} = $${totalShippingCost.toFixed(2)}`);
+
+    return {
+      shippingCost: Math.round(totalShippingCost * 100) / 100,
+      carton_cuft: cubicFeet,
+      box_count: cartonEstimate.boxes,
+      dimension_source: dimensionSource,
+      freight_source: freightSource,
+      estimation_notes: cartonEstimate.estimation_notes
+    };
   }
-  
+
+  if (!dimensions) {
+    const fallbackCost = Math.max(25, price * 0.15);
+    return {
+      shippingCost: fallbackCost,
+      carton_cuft: null,
+      box_count: null,
+      dimension_source: 'none',
+      freight_source: 'fallback',
+      estimation_notes: 'No dimensions available; used price-based fallback'
+    };
+  }
+
   console.log(`   🧮 DETAILED Shipping calculation:`);
   console.log(`   📦 Input dimensions: ${dimensions.length}" × ${dimensions.width}" × ${dimensions.height}"`);
-  
-  // Calculate volume in cubic feet
+
   const cubicInches = dimensions.length * dimensions.width * dimensions.height;
   const cubicFeet = cubicInches / 1728;
   console.log(`   📊 VOLUME CALCULATION:`);
   console.log(`   📊   ${dimensions.length} × ${dimensions.width} × ${dimensions.height} = ${cubicInches.toFixed(0)} cubic inches`);
   console.log(`   📊   ${cubicInches.toFixed(0)} ÷ 1728 = ${cubicFeet.toFixed(3)} cubic feet`);
-  
-  // Base rate: $8 per cubic foot, minimum $15
-  const baseCost = Math.max(15, cubicFeet * SHIPPING_RATE_PER_CUBIC_FOOT);
+
+  const baseCost = Math.max(15, cubicFeet * OCEAN_RATE_PER_FT3);
   console.log(`   💰 BASE COST CALCULATION:`);
-  console.log(`   💰   ${cubicFeet.toFixed(3)} × $${SHIPPING_RATE_PER_CUBIC_FOOT} = $${(cubicFeet * SHIPPING_RATE_PER_CUBIC_FOOT).toFixed(2)}`);
-  console.log(`   💰   Math.max(15, ${(cubicFeet * SHIPPING_RATE_PER_CUBIC_FOOT).toFixed(2)}) = $${baseCost.toFixed(2)}`);
-  
-  // Add handling fee
+  console.log(`   💰   ${cubicFeet.toFixed(3)} × $${OCEAN_RATE_PER_FT3} = $${(cubicFeet * OCEAN_RATE_PER_FT3).toFixed(2)}`);
+  console.log(`   💰   Math.max(15, ${(cubicFeet * OCEAN_RATE_PER_FT3).toFixed(2)}) = $${baseCost.toFixed(2)}`);
+
   const handlingFee = 15;
   console.log(`   📋 HANDLING FEE: $${handlingFee}`);
-  
-  // Total shipping cost
+
   const totalShippingCost = baseCost + handlingFee;
   console.log(`   💰 TOTAL SHIPPING: $${baseCost.toFixed(2)} + $${handlingFee} = $${totalShippingCost.toFixed(2)}`);
-  
-  return Math.round(totalShippingCost * 100) / 100;
+
+  return {
+    shippingCost: Math.round(totalShippingCost * 100) / 100,
+    carton_cuft: cubicFeet,
+    box_count: 1,
+    dimension_source: 'scraped',
+    freight_source: 'scraped',
+    estimation_notes: 'Used scraped dimensions'
+  };
 }
 
 // Enhanced GPT enhancement function
@@ -989,14 +1031,24 @@ async function scrapeProduct(url) {
     console.log('   ⚖️ Estimated weight based on dimensions');
   }
   
-  // Calculate shipping cost
-  const shippingCost = calculateShippingCost(
+  // Calculate shipping cost with carton estimation
+  const shippingResult = calculateShippingCost(
     productData.dimensions,
     productData.weight,
-    (productData && productData.price) ? productData.price : 100
+    (productData && productData.price) ? productData.price : 100,
+    {
+      name: productName,
+      price: (productData && productData.price) ? productData.price : null,
+      brand: (productData && productData.brand) ? productData.brand : null,
+      category: category,
+      retailer: retailer,
+      url: url,
+      weight: productData.weight,
+      breadcrumbs: (productData && productData.breadcrumbs) ? productData.breadcrumbs : []
+    }
   );
-  
-  // Prepare final product object
+
+  // Prepare final product object with telemetry
   const product = {
     id: productId,
     url: url,
@@ -1007,7 +1059,7 @@ async function scrapeProduct(url) {
     retailer: retailer,
     dimensions: productData.dimensions,
     weight: productData.weight,
-    shippingCost: shippingCost,
+    shippingCost: shippingResult.shippingCost,
     scrapingMethod: scrapingMethod,
     confidence: confidence,
     variant: (productData && productData.variant) ? productData.variant : null,
@@ -1018,10 +1070,15 @@ async function scrapeProduct(url) {
       hasWeight: !!(productData && productData.weight),
       hasPrice: !!(productData && productData.price),
       hasVariant: !!(productData && productData.variant)
-    }
+    },
+    carton_cuft: shippingResult.carton_cuft,
+    box_count: shippingResult.box_count,
+    dimension_source: shippingResult.dimension_source,
+    freight_source: shippingResult.freight_source,
+    estimation_notes: shippingResult.estimation_notes
   };
   
-  console.log(`   💰 Shipping cost: $${shippingCost}`);
+  console.log(`   💰 Shipping cost: $${shippingResult.shippingCost}`);
   console.log(`   📊 Data source: ${scrapingMethod}`);
   if (confidence !== null) {
     console.log(`   🎯 Confidence: ${(confidence * 100).toFixed(1)}%`);
@@ -1178,13 +1235,23 @@ Content: ${trimmedContent}`;
         if (!productData.weight) {
           productData.weight = estimateWeight(productData.dimensions, category);
         }
-        
-        const shippingCost = calculateShippingCost(
+
+        const shippingResult = calculateShippingCost(
           productData.dimensions,
           productData.weight,
-          productData.price
+          productData.price,
+          {
+            name: productData.name,
+            price: productData.price,
+            brand: productData.brand,
+            category: category,
+            retailer: retailer,
+            url: url,
+            weight: productData.weight,
+            breadcrumbs: productData.breadcrumbs || []
+          }
         );
-        
+
         const product = {
           id: generateProductId(),
           url: url,
@@ -1195,7 +1262,7 @@ Content: ${trimmedContent}`;
           retailer: retailer,
           dimensions: productData.dimensions,
           weight: productData.weight,
-          shippingCost: shippingCost,
+          shippingCost: shippingResult.shippingCost,
           scrapingMethod: 'manual-gpt',
           confidence: null,
           variant: productData.variant,
@@ -1206,7 +1273,12 @@ Content: ${trimmedContent}`;
             hasWeight: !!productData.weight,
             hasPrice: !!productData.price,
             hasVariant: !!productData.variant
-          }
+          },
+          carton_cuft: shippingResult.carton_cuft,
+          box_count: shippingResult.box_count,
+          dimension_source: shippingResult.dimension_source,
+          freight_source: shippingResult.freight_source,
+          estimation_notes: shippingResult.estimation_notes
         };
         
         console.log('   ✅ Manual content processed successfully');
@@ -1287,13 +1359,22 @@ app.post('/api/orders/:orderId/stop-tracking', async (req, res) => {
 app.post('/apps/instant-import/create-draft-order', async (req, res) => {
   try {
     const { products, deliveryFees, totals, customer, originalUrls } = req.body;
-    
+
     if (!SHOPIFY_ACCESS_TOKEN) {
       return res.status(500).json({ error: 'Shopify not configured. Please check API credentials.' });
     }
-    
+
     if (!customer || !customer.email || !customer.name) {
       return res.status(400).json({ error: 'Customer information required' });
+    }
+
+    const totalItemPrice = products.reduce((sum, p) => sum + (p.price || 0), 0);
+    const guardrailResult = applyMultiplierGuardrails(totals.grandTotal, totalItemPrice);
+
+    if (guardrailResult.multiplier_fallback_used) {
+      console.log(`⚠️ Multiplier guardrail triggered: ${guardrailResult.implied_multiplier.toFixed(2)} outside bounds [${guardrailResult.multiplier_bounds[0]}, ${guardrailResult.multiplier_bounds[1]}]`);
+      console.log(`   Using fallback multiplier ${guardrailResult.fallback_multiplier}`);
+      totals.grandTotal = guardrailResult.adjustedTotal;
     }
     
     // Create line items for the draft order
@@ -1389,7 +1470,10 @@ app.post('/apps/instant-import/create-draft-order', async (req, res) => {
       draftOrderNumber: draftOrder.name,
       invoiceUrl: draftOrder.invoice_url,
       checkoutUrl: `https://${SHOPIFY_DOMAIN}/admin/draft_orders/${draftOrder.id}`,
-      totalAmount: totals.grandTotal
+      totalAmount: totals.grandTotal,
+      multiplier_fallback_used: guardrailResult.multiplier_fallback_used,
+      fallback_multiplier: guardrailResult.fallback_multiplier,
+      multiplier_bounds: guardrailResult.multiplier_bounds
     });
     
   } catch (error) {
