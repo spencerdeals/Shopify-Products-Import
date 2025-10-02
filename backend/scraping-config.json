@@ -1,0 +1,140 @@
+{
+  "version": "1.0",
+  "lastUpdated": "2025-09-18T12:41:55.795Z",
+  "retailers": {
+    "amazon": {
+      "successRate": 0.8,
+      "commonFailures": [],
+      "titleSelectors": [
+        "#productTitle",
+        "h1.a-size-large",
+        "h1[data-automation-id='product-title']"
+      ],
+      "priceSelectors": [
+        ".a-price-whole",
+        ".a-price .a-offscreen",
+        ".a-price-range .a-price .a-offscreen"
+      ],
+      "imageSelectors": [
+        "#landingImage",
+        ".a-dynamic-image",
+        "img[data-old-hires]",
+        ".imgTagWrapper img"
+      ],
+      "variantSelectors": [
+        ".a-button-selected .a-button-text",
+        ".a-dropdown-prompt",
+        "#variation_color_name .selection",
+        "#variation_size_name .selection",
+        "#variation_style_name .selection",
+        ".swatches .a-button-selected span"
+      ]
+    },
+    "wayfair": {
+      "successRate": 0.75,
+      "commonFailures": [],
+      "titleSelectors": [
+        "h1[data-testid='product-title']",
+        "h1.ProductTitle"
+      ],
+      "priceSelectors": [
+        ".MoneyPrice",
+        "[data-testid='price']"
+      ],
+      "imageSelectors": [
+        "img[data-testid='product-image']",
+        ".ProductImages img"
+      ],
+      "variantSelectors": [
+        ".SelectedOption",
+        ".option-selected",
+        ".selected-swatch",
+        "[data-testid='selected-option']",
+        ".ProductOptionPills .selected",
+        ".OptionPill.selected"
+      ]
+    },
+    "target": {
+      "successRate": 0.7,
+      "commonFailures": [],
+      "titleSelectors": [
+        "h1[data-test='product-title']",
+        "h1.ProductTitle"
+      ],
+      "priceSelectors": [
+        "[data-test='product-price']",
+        ".h-text-red"
+      ],
+      "imageSelectors": [
+        ".ProductImages img",
+        "img[data-test='product-image']"
+      ],
+      "variantSelectors": [
+        ".selected-variant",
+        ".h-text-bold",
+        "[data-test='selected-variant']",
+        ".swatch--selected"
+      ]
+    },
+    "ikea": {
+      "successRate": 0.6,
+      "commonFailures": [
+        "variants_incomplete"
+      ],
+      "titleSelectors": [
+        "h1.notranslate",
+        ".range-revamp-header-section h1",
+        ".pip-header-section h1"
+      ],
+      "priceSelectors": [
+        ".notranslate .range-revamp-price",
+        ".pip-price-module__current-price",
+        ".range-revamp-price__integer"
+      ],
+      "imageSelectors": [
+        ".range-revamp-media-grid img",
+        ".pip-media-grid img",
+        ".range-revamp-aspect-ratio-image img"
+      ],
+      "variantSelectors": [
+        ".range-revamp-pip-selected",
+        ".pip-selected",
+        ".range-revamp-color-image.selected",
+        ".range-revamp-size-option.selected",
+        "[aria-pressed='true']",
+        ".range-revamp-pip-color-image[aria-pressed='true']",
+        ".range-revamp-pip-size[aria-pressed='true']"
+      ]
+    },
+    "crate & barrel": {
+      "successRate": 0.5,
+      "commonFailures": [
+        "low_success_rate"
+      ],
+      "titleSelectors": [
+        "h1.product-name",
+        ".pdp-product-name h1",
+        ".product-details h1"
+      ],
+      "priceSelectors": [
+        ".price-current",
+        ".product-price .price",
+        ".pdp-price .price-current"
+      ],
+      "imageSelectors": [
+        ".product-images img",
+        ".pdp-images img",
+        ".hero-image img"
+      ],
+      "variantSelectors": [
+        ".selected-swatch",
+        ".swatch.selected",
+        ".option-selected",
+        ".variant-selected",
+        "[data-selected='true']",
+        ".color-swatch.selected",
+        ".size-option.selected"
+      ]
+    }
+  }
+}
