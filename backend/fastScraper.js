@@ -20,6 +20,8 @@ try {
   });
 }
 const { calculatePricing } = require('./pricing');
+const { loadScrapeByKey, saveScrape } = require('./utils/db');
+const adminRoutes = require('./routes/admin');
 const { extractProPriceFromHTML } = require('./utils/extractProPriceFromHTML');
 
 // Simple, working scraper approach
@@ -155,6 +157,9 @@ const limiter = rateLimit({
   keyGenerator: (req) => req.ip
 });
 app.use('/api/', limiter);
+
+// Mount admin routes
+app.use('/api/admin', adminRoutes);
 
 // Utilities
 function generateProductId() {
@@ -773,13 +778,26 @@ function mergeProductData(primary, secondary) {
 async function scrapeProduct(url) {
   const productId = generateProductId();
   const retailer = detectRetailer(url);
-  
+
   let productData = null;
   let scrapingMethod = 'none';
   let confidence = null;
-  
+  let dbApplied = false;
+
   console.log(`\n🔍 Scraping: ${url}`);
   console.log(`   🏪 Retailer: ${retailer}`);
+
+  // Load any admin overrides from DB
+  try {
+    const key = { retailer, url };
+    const dbRecord = await loadScrapeByKey(key);
+    if (dbRecord) {
+      console.log(`   📂 DB record found - admin overrides will be applied`);
+      dbApplied = true;
+    }
+  } catch (err) {
+    console.warn(`   ⚠️  DB load failed: ${err.message}`);
+  }
   
   // STEP 1: Try Zyte API first
   if (USE_ZYTE) {
@@ -1068,9 +1086,60 @@ async function scrapeProduct(url) {
       hasWeight: !!(productData && productData.weight),
       hasPrice: !!(productData && productData.price),
       hasVariant: !!(productData && productData.variant)
-    }
+    },
+    db_applied: dbApplied
   };
-  
+
+  // Apply DB overrides (dutyPct, cubic_feet, carton, dimension_source, estimation_notes)
+  try {
+    const key = { retailer, url };
+    const dbRecord = await loadScrapeByKey(key);
+    if (dbRecord) {
+      if (dbRecord.dutyPct !== null && dbRecord.dutyPct !== undefined) {
+        product.dutyPct = dbRecord.dutyPct;
+        console.log(`   🔧 Applied admin dutyPct override: ${dbRecord.dutyPct}`);
+      }
+      if (dbRecord.cubic_feet !== null && dbRecord.cubic_feet !== undefined) {
+        product.cubic_feet = dbRecord.cubic_feet;
+        console.log(`   🔧 Applied admin cubic_feet override: ${dbRecord.cubic_feet}`);
+      }
+      if (dbRecord.carton) {
+        product.carton = dbRecord.carton;
+        console.log(`   🔧 Applied admin carton override`);
+      }
+      if (dbRecord.dimension_source) {
+        product.dimension_source = dbRecord.dimension_source;
+      }
+      if (dbRecord.estimation_notes) {
+        product.estimation_notes = dbRecord.estimation_notes;
+      }
+    }
+  } catch (err) {
+    console.warn(`   ⚠️  DB override apply failed: ${err.message}`);
+  }
+
+  // Save to DB
+  try {
+    const cubicFeet = productData.dimensions
+      ? (productData.dimensions.length * productData.dimensions.width * productData.dimensions.height) / 1728
+      : null;
+
+    await saveScrape({
+      retailer,
+      sku: null,
+      url,
+      title: productName,
+      price: itemPrice,
+      dutyPct: product.dutyPct,
+      cubic_feet: product.cubic_feet || cubicFeet,
+      carton: product.carton || null,
+      dimension_source: product.dimension_source || scrapingMethod,
+      estimation_notes: product.estimation_notes || null
+    });
+  } catch (err) {
+    console.warn(`   ⚠️  DB save failed: ${err.message}`);
+  }
+
   console.log(`   💰 Shipping cost: $${shippingCost}`);
   console.log(`   📊 Data source: ${scrapingMethod}`);
   if (confidence !== null) {
