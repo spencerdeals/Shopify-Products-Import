@@ -793,11 +793,11 @@ async function scrapeProduct(url) {
         confidence = zyteResult.confidence || null;
         console.log(`   ✅ Zyte success! Product: "${zyteResult.name.substring(0, 50)}..." Price: $${zyteResult.price}`);
 
-        // Check for Wayfair Pro price override
-        if (retailer === 'Wayfair' && zyteResult.browserHtml) {
-          const proPrice = extractProPriceFromHTML(zyteResult.browserHtml);
-          if (proPrice && proPrice > 0) {
-            console.log(`   💰 Wayfair Pro price override: $${zyteResult.price} → $${proPrice}`);
+        // Check for vendor-specific discount/pro price override from HTML
+        if (zyteResult.browserHtml) {
+          const proPrice = extractProPriceFromHTML(zyteResult.browserHtml, url);
+          if (proPrice && proPrice > 0 && proPrice !== zyteResult.price) {
+            console.log(`   💰 ${retailer} discount price override: $${zyteResult.price} → $${proPrice}`);
             productData.price = proPrice;
           }
         }
