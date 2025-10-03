@@ -30,6 +30,17 @@ class ZyteScraper {
     try {
       const strategies = [
         {
+          name: "browser-ai-extraction",
+          payload: {
+            url: url,
+            browserHtml: true,
+            product: true,
+            productOptions: {
+              extractFrom: "browserHtml"
+            }
+          }
+        },
+        {
           name: "ai-extraction",
           payload: {
             url: url,
@@ -40,7 +51,7 @@ class ZyteScraper {
           }
         },
         {
-          name: "browser-request", 
+          name: "browser-request",
           payload: {
             url: url,
             browserHtml: true,
