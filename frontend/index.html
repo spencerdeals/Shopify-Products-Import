@@ -278,12 +278,25 @@
             display: inline-block;
         }
 
+        .banner-text {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
         .banner-title {
             font-size: 24px;
             font-weight: 700;
             color: white;
             margin: 0;
             text-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }
+
+        .banner-tagline {
+            font-size: 14px;
+            color: rgba(255, 255, 255, 0.9);
+            margin: 0;
+            font-weight: 400;
         }
 
         .calculator-content {
@@ -1267,6 +1280,7 @@
                 gap: 12px;
                 flex-wrap: wrap;
                 justify-content: center;
+                text-align: center;
             }
 
             .banner-route {
@@ -1281,8 +1295,16 @@
                 font-size: 22px;
             }
 
+            .banner-text {
+                width: 100%;
+            }
+
             .banner-title {
                 font-size: 20px;
+            }
+
+            .banner-tagline {
+                font-size: 12px;
             }
 
             .calculator-content {
@@ -1466,7 +1488,10 @@
                 <span class="banner-ship">🚢</span>
                 <span class="banner-flag">🇧🇲</span>
             </div>
-            <h1 class="banner-title">⚡ Instant Import</h1>
+            <div class="banner-text">
+                <h1 class="banner-title">⚡ Instant Import</h1>
+                <p class="banner-tagline">We take care of everything for you</p>
+            </div>
         </div>
         <div class="calculator-content">
             <h1>Instant Imports <span class="new-badge">NEW</span></h1>
