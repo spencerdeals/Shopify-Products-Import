@@ -252,6 +252,40 @@
             display: block;
         }
 
+        .calculator-header-banner {
+            background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+            padding: 15px 20px;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            box-shadow: 0 4px 15px rgba(59, 130, 246, 0.2);
+        }
+
+        .banner-route {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .banner-flag {
+            font-size: 24px;
+            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));
+        }
+
+        .banner-ship {
+            font-size: 26px;
+            animation: floatAndPoint 3s ease-in-out infinite;
+            display: inline-block;
+        }
+
+        .banner-title {
+            font-size: 24px;
+            font-weight: 700;
+            color: white;
+            margin: 0;
+            text-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }
+
         .calculator-content {
             max-width: 1200px;
             margin: 0 auto;
@@ -1227,24 +1261,30 @@
                 justify-content: flex-start;
                 gap: 15px;
             }
-            
-            .step-icon {
-                font-size: 32px;
-                margin-bottom: 0;
+
+            .calculator-header-banner {
+                padding: 12px 15px;
+                gap: 12px;
+                flex-wrap: wrap;
+                justify-content: center;
             }
-            
-            .step-title {
-                font-size: 15px;
-                text-align: left;
+
+            .banner-route {
+                gap: 6px;
             }
-            
-            .start-button {
-                padding: 15px 30px;
-                font-size: 16px;
-                width: 100%;
-                max-width: 280px;
+
+            .banner-flag {
+                font-size: 20px;
             }
-            
+
+            .banner-ship {
+                font-size: 22px;
+            }
+
+            .banner-title {
+                font-size: 20px;
+            }
+
             .calculator-content {
                 padding: 20px 15px;
             }
@@ -1420,6 +1460,14 @@
 
     <!-- CALCULATOR PAGE -->
     <div class="calculator-page" id="calculatorPage">
+        <div class="calculator-header-banner">
+            <div class="banner-route">
+                <span class="banner-flag">🇺🇸</span>
+                <span class="banner-ship">🚢</span>
+                <span class="banner-flag">🇧🇲</span>
+            </div>
+            <h1 class="banner-title">⚡ Instant Import</h1>
+        </div>
         <div class="calculator-content">
             <h1>Instant Imports <span class="new-badge">NEW</span></h1>
             <p class="subtitle">Ocean Freight Calculator - Get accurate shipping costs for your Bermuda imports</p>
