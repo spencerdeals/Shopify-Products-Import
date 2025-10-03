@@ -20,6 +20,7 @@ try {
   });
 }
 const { calculatePricing } = require('./pricing');
+const { extractProPriceFromHTML } = require('./utils/extractProPriceFromHTML');
 
 // Simple, working scraper approach
 const MAX_CONCURRENT = 1; // Process one at a time to avoid issues
@@ -791,7 +792,16 @@ async function scrapeProduct(url) {
         scrapingMethod = 'zyte';
         confidence = zyteResult.confidence || null;
         console.log(`   ✅ Zyte success! Product: "${zyteResult.name.substring(0, 50)}..." Price: $${zyteResult.price}`);
-        
+
+        // Check for Wayfair Pro price override
+        if (retailer === 'Wayfair' && zyteResult.browserHtml) {
+          const proPrice = extractProPriceFromHTML(zyteResult.browserHtml);
+          if (proPrice && proPrice > 0) {
+            console.log(`   💰 Wayfair Pro price override: $${zyteResult.price} → $${proPrice}`);
+            productData.price = proPrice;
+          }
+        }
+
         // Skip GPT enhancement if we already have good Zyte data
         if (productData.confidence && productData.confidence > 0.95 && productData.allVariants && productData.allVariants.length > 2) {
           console.log('   ✅ Skipping GPT enhancement - Zyte data is excellent');

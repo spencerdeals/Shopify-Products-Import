@@ -333,10 +333,12 @@ class ZyteScraper {
       }
 
       console.log('   ✅ Zyte extraction successful!');
+      productData.browserHtml = data.browserHtml || null;
       return productData;
     }
 
     console.log('   ✅ Zyte parsing completed!');
+    productData.browserHtml = data.browserHtml || null;
 
     return productData;
   }
