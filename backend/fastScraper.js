@@ -8,7 +8,17 @@ require('dotenv').config();
 // const OrderTracker = require('./orderTracking');
 const ZyteScraper = require('./zyteScraper');
 const { parseProduct: parseWithGPT } = require('./gptParser');
-const { estimateCarton } = require('./utils/cartonEstimator');
+let estimateCarton;
+try {
+  ({ estimateCarton } = require('./utils/cartonEstimator'));
+} catch (e) {
+  estimateCarton = (p) => ({
+    carton: { length_in: 36, width_in: 24, height_in: 18, boxes: 1 },
+    cubic_feet: (36 * 24 * 18) / 1728,
+    dimension_source: 'estimated',
+    estimation_notes: 'fallback default'
+  });
+}
 const { calculatePricing } = require('./pricing');
 
 // Simple, working scraper approach
