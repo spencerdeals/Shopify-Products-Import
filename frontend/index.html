@@ -37,72 +37,77 @@
         }
 
         .intro-hero {
-            background: linear-gradient(135deg, #7cb342 0%, #2e7d32 100%);
-            color: white;
+            background: white;
+            color: #1f2937;
             padding: 40px 30px;
-            border-radius: 12px;
+            border-bottom: 1px solid #e5e7eb;
             margin-bottom: 30px;
             width: 100%;
-            max-width: 600px;
-            box-shadow: 0 10px 30px rgba(124, 179, 66, 0.3);
+            max-width: 800px;
         }
 
         .intro-hero h1 {
-            font-size: 32px;
-            font-weight: 700;
-            margin-bottom: 15px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 15px;
-        }
-
-        .ship-icon {
             font-size: 36px;
+            font-weight: 700;
+            margin-bottom: 10px;
+            color: #111827;
         }
 
         .intro-subtitle {
-            font-size: 16px;
-            opacity: 0.95;
-            line-height: 1.4;
+            font-size: 18px;
+            color: #6b7280;
+            line-height: 1.6;
             margin-bottom: 0;
         }
 
         .steps-container {
             display: flex;
-            flex-direction: column;
-            gap: 15px;
+            flex-direction: row;
+            flex-wrap: wrap;
+            gap: 20px;
+            align-items: center;
+            justify-content: center;
             margin-bottom: 30px;
             width: 100%;
-            max-width: 600px;
+            max-width: 800px;
+            padding: 0 20px;
         }
 
         .step-card {
-            border: 1px solid rgba(0, 0, 0, 0.12);
+            background: #f3f4f6;
             border-radius: 8px;
-            padding: 20px;
-            transition: all 0.3s ease;
+            padding: 12px 18px;
             display: flex;
-            flex-direction: column;
             align-items: center;
-            background: transparent;
-            box-shadow: none;
-            cursor: default;
-        }
-
-        .step-card:hover {
-            border-color: rgba(0, 0, 0, 0.2);
+            gap: 10px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            flex: 0 0 auto;
         }
 
         .step-icon {
-            font-size: 40px;
-            margin-bottom: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            color: #1f2937;
+            background: white;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .step-arrow {
+            font-size: 24px;
+            color: #d1d5db;
+            flex-shrink: 0;
         }
 
         .step-title {
-            font-size: 16px;
-            font-weight: 600;
-            color: #2e7d32;
+            font-size: 14px;
+            font-weight: 500;
+            color: #1f2937;
             margin: 0;
         }
 
@@ -125,23 +130,23 @@
         }
 
         .start-button {
-            background: linear-gradient(135deg, #7cb342 0%, #2e7d32 100%);
+            background: #16a34a;
             color: white;
-            padding: 18px 40px;
+            padding: 12px 24px;
             border: none;
-            border-radius: 8px;
-            font-size: 18px;
-            font-weight: 700;
+            border-radius: 12px;
+            font-size: 14px;
+            font-weight: 600;
             cursor: pointer;
-            transition: all 0.3s ease;
-            box-shadow: 0 5px 20px rgba(124, 179, 66, 0.3);
-            width: 100%;
+            transition: all 0.2s ease;
+            box-shadow: 0 2px 6px rgba(22, 163, 74, 0.3);
+            width: auto;
             max-width: 300px;
         }
 
         .start-button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(124, 179, 66, 0.4);
+            background: #15803d;
+            box-shadow: 0 4px 10px rgba(22, 163, 74, 0.4);
         }
 
         /* CALCULATOR STYLES */
@@ -1049,28 +1054,28 @@
             .intro-page {
                 padding: 15px;
             }
-            
+
             .intro-hero {
                 padding: 25px 20px;
                 margin-bottom: 20px;
             }
-            
+
             .intro-hero h1 {
-                font-size: 22px;
-                flex-direction: column;
-                gap: 8px;
-            }
-            
-            .ship-icon {
                 font-size: 28px;
             }
-            
+
             .intro-subtitle {
-                font-size: 14px;
+                font-size: 16px;
             }
-            
+
             .steps-container {
+                flex-direction: column;
                 gap: 12px;
+            }
+
+            .step-arrow {
+                transform: rotate(90deg);
+                font-size: 20px;
                 margin-bottom: 25px;
             }
             
@@ -1218,28 +1223,27 @@
     <!-- INTRO PAGE -->
     <div class="intro-page" id="introPage">
         <div class="intro-hero">
-            <h1>
-                <span class="ship-icon">🚢</span>
-                SDL Instant Import Calculator
-            </h1>
-            <p class="intro-subtitle">Get exact shipping costs for your Bermuda imports in minutes</p>
+            <h1>Instant Import</h1>
+            <p class="intro-subtitle">Get landed cost quotes instantly — just paste product links and confirm prices.</p>
         </div>
-        
+
         <div class="steps-container">
             <div class="step-card">
-                <span class="step-icon">📋</span>
+                <span class="step-icon">1</span>
                 <h3 class="step-title">Add Product URLs</h3>
             </div>
+            <div class="step-arrow">➜</div>
             <div class="step-card">
-                <span class="step-icon">💰</span>
+                <span class="step-icon">2</span>
                 <h3 class="step-title">Verify Prices & Fees</h3>
             </div>
+            <div class="step-arrow">➜</div>
             <div class="step-card">
-                <span class="step-icon">🚚</span>
+                <span class="step-icon">3</span>
                 <h3 class="step-title">Place Your Order</h3>
             </div>
         </div>
-        
+
         <button class="start-button" onclick="startCalculator()">
             Start Now
         </button>
