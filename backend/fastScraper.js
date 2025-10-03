@@ -795,11 +795,19 @@ async function scrapeProduct(url) {
 
         // Check for vendor-specific discount/pro price override from HTML
         if (zyteResult.browserHtml) {
-          const proPrice = extractProPriceFromHTML(zyteResult.browserHtml, url);
+          console.log(`   🔍 Checking for Pro/Sale price in HTML (browserHtml length: ${zyteResult.browserHtml.length} chars)`);
+          const proPrice = extractProPriceFromHTML(zyteResult.browserHtml, url, true); // Enable debug
+          console.log(`   🔍 Pro price extraction result: ${proPrice ? '$' + proPrice : 'null'} (Zyte price: $${zyteResult.price})`);
           if (proPrice && proPrice > 0 && proPrice !== zyteResult.price) {
             console.log(`   💰 ${retailer} discount price override: $${zyteResult.price} → $${proPrice}`);
             productData.price = proPrice;
+          } else if (proPrice === zyteResult.price) {
+            console.log(`   ℹ️  Pro price matches Zyte price, no override needed`);
+          } else {
+            console.log(`   ℹ️  No Pro/Sale price found in HTML, using Zyte price: $${zyteResult.price}`);
           }
+        } else {
+          console.log(`   ⚠️  No browserHtml available from Zyte, cannot check for Pro/Sale price`);
         }
 
         // Skip GPT enhancement if we already have good Zyte data

@@ -1,5 +1,7 @@
-function extractProPriceFromHTML(html, url) {
+function extractProPriceFromHTML(html, url, debug = false) {
   if (!html) return null;
+
+  if (debug) console.log('   [extractProPriceFromHTML] Starting price extraction...');
 
   // Vendor-specific price override patterns
   const pricePatterns = [
@@ -57,9 +59,11 @@ function extractProPriceFromHTML(html, url) {
                           (vendorDomain && vendors.some(v => vendorDomain.includes(v)));
 
     if (isVendorMatch) {
+      if (debug) console.log(`   [extractProPriceFromHTML] Trying pattern for vendors: ${vendors.join(', ')}`);
       const match = html.match(pattern);
       if (match && match[1]) {
         const price = parseFloat(match[1]);
+        if (debug) console.log(`   [extractProPriceFromHTML] Match found! Extracted: $${price}`);
         if (price > 0) {
           return price;
         }
@@ -67,6 +71,7 @@ function extractProPriceFromHTML(html, url) {
     }
   }
 
+  if (debug) console.log('   [extractProPriceFromHTML] No price pattern matched');
   return null;
 }
 
