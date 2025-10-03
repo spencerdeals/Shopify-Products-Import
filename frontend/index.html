@@ -78,20 +78,20 @@
         }
 
         .step-card {
-            background: linear-gradient(135deg, rgba(124, 179, 66, 0.1) 0%, rgba(46, 125, 50, 0.1) 100%);
-            border: 2px solid rgba(124, 179, 66, 0.2);
+            border: 1px solid rgba(0, 0, 0, 0.12);
             border-radius: 8px;
             padding: 20px;
             transition: all 0.3s ease;
             display: flex;
             flex-direction: column;
             align-items: center;
+            background: transparent;
+            box-shadow: none;
+            cursor: default;
         }
 
         .step-card:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 5px 15px rgba(124, 179, 66, 0.2);
-            border-color: #7cb342;
+            border-color: rgba(0, 0, 0, 0.2);
         }
 
         .step-icon {
@@ -104,6 +104,24 @@
             font-weight: 600;
             color: #2e7d32;
             margin: 0;
+        }
+
+        .stepper-horizontal {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+            font-size: 0.9rem;
+            list-style: none;
+            padding: 0;
+            margin: 0 0 1.5rem 0;
+        }
+
+        .stepper-horizontal .active {
+            font-weight: 600;
+        }
+
+        .stepper-horizontal .muted {
+            opacity: 0.75;
         }
 
         .start-button {
@@ -1252,17 +1270,25 @@
 
             <!-- PAGE 1: Add Products -->
             <div class="page active" id="page1">
+                <nav aria-label="Progress">
+                    <ol role="list" class="stepper-horizontal">
+                        <li class="active">Step 1: Add links</li>
+                        <li aria-hidden="true">→</li>
+                        <li class="muted">Step 2: Review quote</li>
+                        <li aria-hidden="true">→</li>
+                        <li class="muted">Step 3: Approve & Pay</li>
+                    </ol>
+                </nav>
+
                 <div class="warning-box">
-                    <div class="warning-header">Important: Select Correct Variants</div>
                     <div class="warning-text">
-                        Before pasting your links, make sure you've selected the correct size, color, or variant on each product page. 
-                        We cannot be responsible for mix-ups if the wrong variant gets ordered!
+                        Select correct size/color on each product page before pasting links.
                     </div>
                 </div>
 
                 <form id="urlForm">
                     <div class="input-group">
-                        <label for="productUrls">Product URLs (One per line)</label>
+                        <label for="productUrls">Paste product links (one per line)</label>
                         <textarea 
                             id="productUrls" 
                             name="productUrls" 
@@ -1271,11 +1297,10 @@
 https://www.amazon.com/product1
 https://www.wayfair.com/product2
 https://www.walmart.com/product3
-https://www.target.com/product4
-
-We support Amazon, Wayfair, Walmart, Target, Best Buy, Home Depot, and more!"
+https://www.target.com/product4"
                             required
                         ></textarea>
+                        <small style="color: #666; font-size: 0.875rem; margin-top: 0.25rem; display: block;">You can add links from Wayfair, Amazon, IKEA, etc.</small>
                     </div>
 
                     <div class="button-group">
