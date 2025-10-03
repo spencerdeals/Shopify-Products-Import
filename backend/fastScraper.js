@@ -9,6 +9,7 @@ require('dotenv').config();
 const ZyteScraper = require('./zyteScraper');
 const { parseProduct: parseWithGPT } = require('./gptParser');
 const { estimateCarton } = require('./utils/cartonEstimator');
+const { calculatePricing } = require('./pricing');
 
 // Simple, working scraper approach
 const MAX_CONCURRENT = 1; // Process one at a time to avoid issues
@@ -1000,19 +1001,35 @@ async function scrapeProduct(url) {
     productData.weight,
     (productData && productData.price) ? productData.price : 100
   );
-  
+
+  // Calculate dynamic duty
+  const itemPrice = (productData && productData.price) ? productData.price : null;
+  const { dutyPct, dutyAmount, dutySource } = calculatePricing({
+    price: itemPrice || 0,
+    category: category,
+    name: productName,
+    brand: (productData && productData.brand) ? productData.brand : null,
+    retailer: retailer,
+    hsCode: (productData && productData.hsCode) ? productData.hsCode : null
+  });
+
   // Prepare final product object
   const product = {
     id: productId,
     url: url,
     name: productName,
-    price: (productData && productData.price) ? productData.price : null,
+    title: productName,
+    price: itemPrice,
+    brand: (productData && productData.brand) ? productData.brand : null,
     image: (productData && productData.image) ? productData.image : 'https://placehold.co/400x400/7CB342/FFFFFF/png?text=SDL',
     category: category,
     retailer: retailer,
     dimensions: productData.dimensions,
     weight: productData.weight,
     shippingCost: shippingCost,
+    dutyPct: dutyPct,
+    dutyAmount: dutyAmount,
+    dutySource: dutySource,
     scrapingMethod: scrapingMethod,
     confidence: confidence,
     variant: (productData && productData.variant) ? productData.variant : null,

@@ -1666,7 +1666,8 @@ https://www.target.com/product4"
             // Calculate costs with quantity
             const product = vendorGroups[vendor][productIndex];
             const totalPrice = price * quantity;
-            const duty = totalPrice * 0.265;
+            const dutyPct = product.dutyPct || 26.5;
+            const duty = totalPrice * (dutyPct / 100);
             const shipping = (product.shippingCost || 50) * quantity;
             const deliveryFee = 25; // Per retailer, not per item
             const subtotal = totalPrice + duty + shipping + deliveryFee;
@@ -2195,7 +2196,7 @@ https://www.target.com/product4"
                                         <span id="item-cost-${productId}">$0.00</span>
                                     </div>
                                     <div class="cost-summary-row">
-                                        <span>Import Duty (26.5%):</span>
+                                        <span>Duty (est.):</span>
                                         <span id="duty-cost-${productId}">$0.00</span>
                                     </div>
                                     <div class="cost-summary-row">
@@ -2369,7 +2370,11 @@ https://www.target.com/product4"
                 totalDeliveryFees += fee;
             });
             
-            const dutyAmount = totalItemCost * 0.265;
+            const dutyAmount = activeProducts.reduce((sum, p) => {
+                const itemTotal = p.price * (p.quantity || 1);
+                const dutyPct = p.dutyPct || 26.5;
+                return sum + (itemTotal * (dutyPct / 100));
+            }, 0);
             const subtotal = totalItemCost + dutyAmount + totalDeliveryFees + totalShippingCost;
             const margin = subtotal * 0.20; // 20% margin
             const totalShippingAndHandling = totalShippingCost + margin;
@@ -2403,7 +2408,8 @@ https://www.target.com/product4"
                 products.forEach(product => {
                     const quantity = product.quantity || 1;
                     const totalPrice = product.price * quantity;
-                    const duty = totalPrice * 0.265;
+                    const dutyPct = product.dutyPct || 26.5;
+                    const duty = totalPrice * (dutyPct / 100);
                     const shipping = (product.shippingCost || 50) * quantity;
                     const subtotal = totalPrice + duty + shipping;
                     const margin = subtotal * 0.20;
@@ -2442,7 +2448,7 @@ https://www.target.com/product4"
                     <span class="cost-value">$${totals.totalItemCost.toFixed(2)}</span>
                 </div>
                 <div class="cost-item">
-                    <span class="cost-label">Bermuda Import Duty (26.5%):</span>
+                    <span class="cost-label">Duty (est.):</span>
                     <span class="cost-value">$${totals.dutyAmount.toFixed(2)}</span>
                 </div>
                 <div class="cost-item">
