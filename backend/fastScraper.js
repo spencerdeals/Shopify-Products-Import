@@ -8,6 +8,7 @@ require('dotenv').config();
 // const OrderTracker = require('./orderTracking');
 const ZyteScraper = require('./zyteScraper');
 const { parseProduct: parseWithGPT } = require('./gptParser');
+const { estimateCarton } = require('./utils/cartonEstimator');
 
 // Simple, working scraper approach
 const MAX_CONCURRENT = 1; // Process one at a time to avoid issues
@@ -22,6 +23,10 @@ const SCRAPING_TIMEOUT = 30000;
 const MAX_CONCURRENT_SCRAPES = 2;
 const BERMUDA_DUTY_RATE = 0.265;
 const SHIPPING_RATE_PER_CUBIC_FOOT = 8;
+const OCEAN_RATE_PER_FT3 = Number(process.env.OCEAN_RATE_PER_FT3 || 7);
+const MULTIPLIER_FALLBACK = 1.95;
+const MULTIPLIER_MIN = 1.7;
+const MULTIPLIER_MAX = 2.5;
 
 // Initialize scrapers
 const zyteScraper = new ZyteScraper();
