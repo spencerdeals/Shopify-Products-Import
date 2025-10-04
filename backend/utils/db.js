@@ -1,135 +1,187 @@
-const { createClient } = require('@libsql/client');
+const TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS scrapes (
+  id TEXT PRIMARY KEY,
+  retailer TEXT,
+  sku TEXT,
+  url TEXT,
+  title TEXT,
+  price REAL,
+  dutyPct REAL,
+  cubic_feet REAL,
+  carton TEXT,
+  dimension_source TEXT,
+  estimation_notes TEXT,
+  updated_at TEXT
+);
+`;
 
-let client = null;
-let dbAvailable = false;
+let _client = null;
+let _warned = false;
 
-function getClient() {
-  if (client) return client;
+function warnOnce(msg) {
+  if (_warned) return;
+  _warned = true;
+  console.warn(msg);
+}
+
+function tryLibsql() {
+  try {
+    const { createClient } = require('@libsql/client');
+    const url = process.env.TORSO_DATABASE_URL;
+    const authToken = process.env.TORSO_AUTH_TOKEN;
+    if (!url || !authToken) return null;
+    return createClient({ url, authToken });
+  } catch (_e) {
+    return null;
+  }
+}
+
+async function fetchExecute(sql, params = []) {
+  const url = process.env.TORSO_DATABASE_URL;
+  const token = process.env.TORSO_AUTH_TOKEN;
+  if (!url || !token) throw new Error('TORSO envs missing for fetch fallback');
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ sql, params }),
+  });
+  if (!r.ok) {
+    const text = await r.text();
+    throw new Error(`DB HTTP error ${r.status}: ${text}`);
+  }
+  return r.json();
+}
+
+async function initSchema(client) {
+  if (client && client.execute) {
+    await client.execute(TABLE_SQL);
+    return;
+  }
+  await fetchExecute(TABLE_SQL, []);
+}
+
+async function getClient() {
+  if (_client) return _client;
 
   const url = process.env.TORSO_DATABASE_URL;
-  const authToken = process.env.TORSO_AUTH_TOKEN;
-
-  if (!url || !authToken) {
-    console.warn('⚠️  TORSO_DATABASE_URL or TORSO_AUTH_TOKEN not configured - DB persistence disabled');
-    dbAvailable = false;
-    return null;
+  const token = process.env.TORSO_AUTH_TOKEN;
+  if (!url || !token) {
+    warnOnce('⚠️  TORSO_DATABASE_URL or TORSO_AUTH_TOKEN not configured - DB persistence disabled');
+    _client = { disabled: true };
+    return _client;
   }
 
-  try {
-    client = createClient({ url, authToken });
-    dbAvailable = true;
-    console.log('✅ Turso DB client initialized');
-    initializeTable();
-    return client;
-  } catch (err) {
-    console.warn('⚠️  Failed to initialize Turso client:', err.message);
-    dbAvailable = false;
-    return null;
-  }
-}
-
-async function initializeTable() {
-  const db = getClient();
-  if (!db) return;
-
-  try {
-    await db.execute(`
-      CREATE TABLE IF NOT EXISTS scrapes (
-        id TEXT PRIMARY KEY,
-        retailer TEXT,
-        sku TEXT,
-        url TEXT,
-        title TEXT,
-        price REAL,
-        dutyPct REAL,
-        cubic_feet REAL,
-        carton TEXT,
-        dimension_source TEXT,
-        estimation_notes TEXT,
-        updated_at TEXT
-      )
-    `);
-    console.log('✅ scrapes table ready');
-  } catch (err) {
-    console.warn('⚠️  DB table init failed:', err.message);
-  }
-}
-
-async function saveScrape(obj) {
-  const db = getClient();
-  if (!db) return;
-
-  try {
-    const id = `${obj.retailer}:${obj.sku || obj.url}`;
-    const cartonJson = obj.carton ? JSON.stringify(obj.carton) : null;
-
-    await db.execute({
-      sql: `INSERT INTO scrapes (id, retailer, sku, url, title, price, dutyPct, cubic_feet, carton, dimension_source, estimation_notes, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET
-              title = excluded.title,
-              price = excluded.price,
-              dutyPct = COALESCE(scrapes.dutyPct, excluded.dutyPct),
-              cubic_feet = COALESCE(scrapes.cubic_feet, excluded.cubic_feet),
-              carton = COALESCE(scrapes.carton, excluded.carton),
-              dimension_source = COALESCE(scrapes.dimension_source, excluded.dimension_source),
-              estimation_notes = COALESCE(scrapes.estimation_notes, excluded.estimation_notes),
-              updated_at = excluded.updated_at`,
-      args: [
-        id,
-        obj.retailer,
-        obj.sku || null,
-        obj.url,
-        obj.title || obj.name,
-        obj.price,
-        obj.dutyPct || null,
-        obj.cubic_feet || null,
-        cartonJson,
-        obj.dimension_source || null,
-        obj.estimation_notes || null,
-        new Date().toISOString()
-      ]
-    });
-  } catch (err) {
-    console.warn('⚠️  DB save failed:', err.message);
-  }
-}
-
-async function loadScrapeByKey(key) {
-  const db = getClient();
-  if (!db) return null;
-
-  try {
-    const id = `${key.retailer}:${key.sku || key.url}`;
-    const result = await db.execute({
-      sql: 'SELECT * FROM scrapes WHERE id = ?',
-      args: [id]
-    });
-
-    if (result.rows.length === 0) return null;
-
-    const row = result.rows[0];
-    return {
-      retailer: row.retailer,
-      sku: row.sku,
-      url: row.url,
-      title: row.title,
-      price: row.price,
-      dutyPct: row.dutyPct,
-      cubic_feet: row.cubic_feet,
-      carton: row.carton ? JSON.parse(row.carton) : null,
-      dimension_source: row.dimension_source,
-      estimation_notes: row.estimation_notes,
-      updated_at: row.updated_at
+  const libsqlClient = tryLibsql();
+  if (libsqlClient) {
+    _client = {
+      disabled: false,
+      kind: 'libsql',
+      execute: (sql, params) => libsqlClient.execute({ sql, args: params }),
     };
-  } catch (err) {
-    console.warn('⚠️  DB load failed:', err.message);
-    return null;
+  } else {
+    _client = {
+      disabled: false,
+      kind: 'http',
+      execute: (sql, params) => fetchExecute(sql, params),
+    };
   }
+
+  try {
+    await initSchema(_client);
+  } catch (e) {
+    warnOnce(`⚠️  DB init failed: ${e.message}`);
+    _client = { disabled: true };
+  }
+  return _client;
+}
+
+function makeId(retailer, sku, url) {
+  const key = sku || url || '';
+  return `${(retailer || '').trim()}:${key.trim()}`;
+}
+
+async function saveScrape(obj = {}) {
+  const client = await getClient();
+  if (client.disabled) return { ok: false, reason: 'disabled' };
+
+  const {
+    retailer = null,
+    sku = null,
+    url = null,
+    title = null,
+    price = null,
+    dutyPct = null,
+    cubic_feet = null,
+    carton = null,
+    dimension_source = null,
+    estimation_notes = null,
+  } = obj;
+
+  const id = makeId(retailer, sku, url);
+  const cartonStr = carton ? JSON.stringify(carton) : null;
+  const updated_at = new Date().toISOString();
+
+  const sql = `
+    INSERT INTO scrapes (id, retailer, sku, url, title, price, dutyPct, cubic_feet, carton, dimension_source, estimation_notes, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      retailer=excluded.retailer,
+      sku=excluded.sku,
+      url=excluded.url,
+      title=excluded.title,
+      price=excluded.price,
+      dutyPct=excluded.dutyPct,
+      cubic_feet=excluded.cubic_feet,
+      carton=excluded.carton,
+      dimension_source=excluded.dimension_source,
+      estimation_notes=excluded.estimation_notes,
+      updated_at=excluded.updated_at
+  `;
+  const params = [id, retailer, sku, url, title, price, dutyPct, cubic_feet, cartonStr, dimension_source, estimation_notes, updated_at];
+  await client.execute(sql, params);
+  return { ok: true, id };
+}
+
+async function loadScrapeByKey({ retailer, sku, url }) {
+  const client = await getClient();
+  if (client.disabled) return null;
+
+  const id = makeId(retailer, sku, url);
+  const sql = `SELECT * FROM scrapes WHERE id = ? LIMIT 1`;
+  const params = [id];
+
+  const res = await client.execute(sql, params);
+  const row = (res && (res.rows || res.data || res))?.[0];
+  if (!row) return null;
+
+  const get = (k) => (row[k] !== undefined ? row[k] : (row.value && row.value[k]));
+  const cartonStr = get('carton');
+  let carton = null;
+  if (cartonStr && typeof cartonStr === 'string') {
+    try { carton = JSON.parse(cartonStr); } catch { carton = null; }
+  }
+
+  return {
+    id: get('id'),
+    retailer: get('retailer'),
+    sku: get('sku'),
+    url: get('url'),
+    title: get('title'),
+    price: get('price'),
+    dutyPct: get('dutyPct'),
+    cubic_feet: get('cubic_feet'),
+    carton,
+    dimension_source: get('dimension_source'),
+    estimation_notes: get('estimation_notes'),
+    updated_at: get('updated_at'),
+  };
 }
 
 module.exports = {
   getClient,
   saveScrape,
-  loadScrapeByKey
+  loadScrapeByKey,
 };
