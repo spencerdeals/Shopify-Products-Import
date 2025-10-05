@@ -23,6 +23,7 @@ const { calculatePricing } = require('./pricing');
 const { loadScrapeByKey, saveScrape } = require('./utils/db');
 const adminRoutes = require('./routes/admin');
 const { extractProPriceFromHTML } = require('./utils/extractProPriceFromHTML');
+const { pickSelectedVariants } = require('./utils/variants');
 
 // Simple, working scraper approach
 const MAX_CONCURRENT = 1; // Process one at a time to avoid issues
@@ -828,6 +829,20 @@ async function scrapeProduct(url) {
           console.log(`   ⚠️  No browserHtml available from Zyte, cannot check for Pro/Sale price`);
         }
 
+        // Apply variant selection logic
+        const { selectedVariants, allVariantsNormalized } = pickSelectedVariants({
+          retailer,
+          url: url,
+          variants: productData.allVariants || []
+        });
+        productData.variants_all = allVariantsNormalized;
+        productData.variants = selectedVariants;
+        if (selectedVariants.length > 0) {
+          productData.variant = selectedVariants.join(' • ');
+          console.log('   🎯 Selected variants:', selectedVariants.join(', '));
+        }
+        console.log('   📋 Total variants available:', allVariantsNormalized.length);
+
         // Skip GPT enhancement if we already have good Zyte data
         if (productData.confidence && productData.confidence > 0.95 && productData.allVariants && productData.allVariants.length > 2) {
           console.log('   ✅ Skipping GPT enhancement - Zyte data is excellent');
@@ -1079,6 +1094,8 @@ async function scrapeProduct(url) {
     scrapingMethod: scrapingMethod,
     confidence: confidence,
     variant: (productData && productData.variant) ? productData.variant : null,
+    variants: (productData && productData.variants) ? productData.variants : [],
+    variants_all: (productData && productData.variants_all) ? productData.variants_all : [],
     dataCompleteness: {
       hasName: !!(productData && productData.name),
       hasImage: !!(productData && productData.image),
@@ -1144,6 +1161,9 @@ async function scrapeProduct(url) {
   console.log(`   📊 Data source: ${scrapingMethod}`);
   if (confidence !== null) {
     console.log(`   🎯 Confidence: ${(confidence * 100).toFixed(1)}%`);
+  }
+  if (product.variants && product.variants.length > 0) {
+    console.log(`   🎨 Final variants: ${product.variants.join(', ')}`);
   }
   console.log(`   ✅ Product processed\n`);
 
