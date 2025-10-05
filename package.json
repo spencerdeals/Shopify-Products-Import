@@ -21,6 +21,7 @@
   "license": "ISC",
   "dependencies": {
     "@libsql/client": "0.5.6",
+    "@supabase/supabase-js": "^2.58.0",
     "apify-client": "2.9.3",
     "axios": "^1.7.7",
     "cheerio": "^1.0.0",
