@@ -1,2 +1,2 @@
-# bermuda-import-calculator BINGO
+# bermuda-import-calculator
 Auto PR test: it works.
