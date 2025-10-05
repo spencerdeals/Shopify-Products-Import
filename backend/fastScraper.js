@@ -19,7 +19,18 @@ try {
     estimation_notes: 'fallback default'
   });
 }
-const { calculatePricing } = require('./pricing');
+
+let calculatePricing;
+try {
+  ({ calculatePricing } = require('./pricing'));
+} catch (e) {
+  console.warn('⚠️  pricing.js not found, using fallback');
+  calculatePricing = () => ({
+    dutyPct: 0.265,
+    dutyAmount: 0,
+    dutySource: 'fallback'
+  });
+}
 const { loadScrapeByKey, saveScrape } = require('./utils/db');
 const adminRoutes = require('./routes/admin');
 const { extractProPriceFromHTML } = require('./utils/extractProPriceFromHTML');
