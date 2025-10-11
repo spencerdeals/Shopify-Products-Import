@@ -1,0 +1,204 @@
+# Single-File Diff: frontend/index.html
+# Feature: Page 3 Single Required Consent Checkbox
+
+## HTML Structure Changes (Lines 1639-1659)
+
+### BEFORE:
+```html
+<div class="confirmation-checkbox">
+    <div class="checkbox-container">
+        <input type="checkbox" id="confirmVariants">
+        <label for="confirmVariants" class="checkbox-label">
+            <strong>I understand and confirm:</strong>
+            • I have double-checked that all product links have the correct sizes, colors, and variants selected<br>
+            • I have verified and confirmed all product prices<br>
+            • These shipping costs are estimates based on intelligent analysis - actual costs may vary slightly<br>
+            • SDL may contact me with an updated quote if significant differences are found<br>
+            • If I don't hear from SDL, my items are confirmed and I can expect delivery within 3-5 weeks<br>
+            • SDL will not be responsible for customer errors if wrong items are ordered<br><br>
+            ✅ I agree to these terms and wish to proceed with my import request.
+        </label>
+    </div>
+</div>
+```
+
+### AFTER:
+```html
+<div class="attention-confirm" id="attentionConfirm">
+    <div class="attention-title">✅ Final check before creating your order</div>
+
+    <ul class="attention-points">
+        <li>I have double-checked that all product links have the correct sizes, colors, and variants selected</li>
+        <li>I have verified and confirmed all product prices</li>
+        <li>These shipping costs are estimates based on intelligent analysis — actual costs may vary slightly</li>
+        <li>SDL may contact me with an updated quote if significant differences are found</li>
+        <li>If I don't hear from SDL, my items are confirmed and I can expect delivery within 3–5 weeks</li>
+        <li>SDL will not be responsible for customer errors if wrong items are ordered</li>
+    </ul>
+
+    <label class="confirm-row">
+        <input type="checkbox" id="confirmVariants" />
+        <span>I agree to these terms and wish to proceed with my import request.</span>
+    </label>
+
+    <div class="error-inline" id="confirmError" aria-live="polite" style="display:none;">
+        ⚠️ Please check the box above to continue.
+    </div>
+</div>
+```
+
+## CSS Style Changes (Lines 1104-1171)
+
+### REMOVED:
+```css
+.confirmation-checkbox {
+    background: linear-gradient(to right, rgba(255, 243, 224, 0.5) 0%, transparent 100%);
+    border-left: 4px solid #ff9800;
+    padding: 20px;
+    margin-bottom: 25px;
+}
+
+.checkbox-container {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+}
+
+.checkbox-container input[type="checkbox"] {
+    margin-top: 4px;
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+    cursor: pointer;
+}
+
+.checkbox-label {
+    color: #e65100;
+    font-size: 14px;
+    line-height: 1.6;
+    cursor: pointer;
+}
+```
+
+### ADDED:
+```css
+.attention-confirm {
+    border: 2px solid #ff9800;
+    background: #fff8e1;
+    border-radius: 14px;
+    padding: 22px 22px 16px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.04);
+    margin-bottom: 25px;
+}
+
+.attention-title {
+    font-weight: 700;
+    color: #e65100;
+    margin-bottom: 10px;
+    font-size: 18px;
+}
+
+.attention-points {
+    margin: 0 0 10px 0;
+    padding-left: 20px;
+    color: #444;
+    line-height: 1.45;
+}
+
+.attention-points li {
+    margin: 6px 0;
+}
+
+.confirm-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin-top: 6px;
+    font-weight: 600;
+    color: #1b5e20;
+    cursor: pointer;
+}
+
+.confirm-row input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+}
+
+.error-inline {
+    margin-top: 10px;
+    background: #ffebee;
+    color: #c62828;
+    border: 1px solid #ffcdd2;
+    padding: 8px 10px;
+    border-radius: 8px;
+    font-size: 14px;
+}
+
+button.btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+@keyframes shake {
+    10%, 90% { transform: translateX(-1px); }
+    20%, 80% { transform: translateX(2px); }
+    30%, 50%, 70% { transform: translateX(-4px); }
+    40%, 60% { transform: translateX(4px); }
+}
+
+.shake {
+    animation: shake 0.4s linear 1;
+}
+```
+
+## JavaScript Changes (Lines 2767-2796)
+
+### BEFORE:
+```javascript
+// Handle confirmation checkbox
+document.getElementById('confirmVariants').addEventListener('change', function() {
+    document.getElementById('createOrderBtn').disabled = !this.checked;
+});
+```
+
+### AFTER:
+```javascript
+// Handle confirmation checkbox with validation
+(function wireConfirmOnlyOnce(){
+    const cb  = document.getElementById('confirmVariants');
+    const btn = document.getElementById('createOrderBtn');
+    const err = document.getElementById('confirmError');
+    if (!cb || !btn) return;
+
+    // Ensure this is the only checkbox with that id (defensive cleanup)
+    // If Bolt missed any duplicates, disable them:
+    document.querySelectorAll('#confirmVariants').forEach((el, i) => {
+        if (i > 0 && el.parentElement) el.parentElement.style.display = 'none';
+    });
+
+    // Initial state
+    btn.disabled = !cb.checked;
+
+    cb.addEventListener('change', () => {
+        btn.disabled = !cb.checked;
+        if (cb.checked && err) err.style.display = 'none';
+    });
+
+    // Block submits when unchecked; show warning + shake
+    btn.addEventListener('click', (e) => {
+        if (!cb.checked) {
+            e.preventDefault();
+            if (err) err.style.display = '';
+            btn.classList.remove('shake'); void btn.offsetWidth; btn.classList.add('shake');
+        }
+    }, { capture:true });
+})();
+```
+
+## Summary
+- **Lines Changed**: ~100 lines total
+- **Files Modified**: 1 (frontend/index.html only)
+- **Element IDs**: Preserved (confirmVariants, createOrderBtn)
+- **Backward Compatible**: Yes
+- **Breaking Changes**: None
