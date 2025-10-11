@@ -79,6 +79,28 @@ async function parseAmazon(url, html){
   const desc = bullets || $('#productDescription').text().trim() || $('meta[name="description"]').attr('content') || '';
   return { title, price, image, images: image?[image]:[], vendor, body_html: bullets? `<ul>${bullets}</ul>`: desc, source_url:url };
 }
+async function parseWayfair(url, html){
+  const $ = cheerio.load(html);
+  const title = $('h1[data-enzyme-id="ProductTitle"]').text().trim() || $('meta[property="og:title"]').attr('content') || $('h1').first().text().trim();
+  const priceStr = $('[data-enzyme-id="ProductPrice"]').text().trim() || $('.ProductPrice').text().trim() || $('meta[property="product:price:amount"]').attr('content') || '';
+  const price = cleanPriceLike(priceStr);
+  const image = $('meta[property="og:image"]').attr('content') || $('img').first().attr('src') || '';
+  const desc = $('meta[name="description"]').attr('content') || '';
+  const vendor = 'Wayfair';
+  const boxes = [];
+  const hxwxdPattern = /(\d+(?:\.\d+)?)\s*H\s*[xX×]\s*(\d+(?:\.\d+)?)\s*W\s*[xX×]\s*(\d+(?:\.\d+)?)\s*D/g;
+  let match;
+  while ((match = hxwxdPattern.exec(html)) !== null) {
+    const H = parseFloat(match[1]);
+    const W = parseFloat(match[2]);
+    const D = parseFloat(match[3]);
+    if (H > 0 && W > 0 && D > 0 && H < 500 && W < 500 && D < 500) {
+      boxes.push({ h: H, w: W, l: D });
+    }
+    if (boxes.length >= 6) break;
+  }
+  return { title:(title||'').trim(), price, image, images:image?[image]:[], vendor, body_html:desc, source_url:url, boxes };
+}
 async function parseLuna(url, html){
   const $ = cheerio.load(html);
   const title = $('meta[property="og:title"]').attr('content') || $('h1').first().text().trim() || $('title').text().trim();
@@ -103,6 +125,7 @@ async function parseGeneric(url, html){
 function pickParser(url){
   const host = new URL(url).hostname.replace(/^www\./,'');
   if(host.includes('amazon.')) return parseAmazon;
+  if(host.includes('wayfair.')) return parseWayfair;
   if(host.includes('lunafurniture')) return parseLuna;
   return parseGeneric;
 }
@@ -241,21 +264,24 @@ app.post('/api/preview', async (req,res)=>{
   try{
     const { urls = [], marginPercent = 45, overrides = {} } = req.body || {};
     if(!Array.isArray(urls) || !urls.length) return res.status(400).json({ error: 'Provide { urls: string[] }' });
-    
+
     cachedCollections = await fetchShopifyCollections();
-    
+
     const items = [];
     for(const url of urls){
       try{
+        console.log(`[Preview] Fetching: ${url}`);
         const html = await fetchHtml(url);
+        console.log(`[Preview] HTML length: ${html?.length || 0}`);
         const p = await parseProduct(url, html);
+        console.log(`[Preview] Parsed:`, { title: p.title, price: p.price, vendor: p.vendor, boxes: p.boxes?.length });
         const handle = slugify(p.title || p.vendor || 'item');
 
         const o = overrides[handle] || {};
         const margin = Number(o.marginPercent ?? marginPercent);
         const cost = Number(o.cost ?? p.price ?? 0);
 
-        const boxes = Array.isArray(o.boxes) ? o.boxes.map(b=>({ l:Number(b.l)||'', w:Number(b.w)||'', h:Number(b.h)||'' })) : [];
+        const boxes = Array.isArray(p.boxes) && p.boxes.length ? p.boxes : (Array.isArray(o.boxes) ? o.boxes.map(b=>({ l:Number(b.l)||'', w:Number(b.w)||'', h:Number(b.h)||'' })) : []);
 
         const price_rounded = computeRetail(cost, margin);
         const tags = Array.from(new Set([p.vendor, new URL(url).hostname].filter(Boolean)));
@@ -274,14 +300,15 @@ app.post('/api/preview', async (req,res)=>{
           boxes
         });
       }catch(e){
+        console.error(`[Preview] Error scraping ${url}:`, e.message);
         items.push({
           title: 'FAILED TO SCRAPE', vendor:'', price:0, image:'', images:[], body_html:'', source_url:url,
           handle: slugify('failed-'+url), cost:0, price_rounded:0, margin_percent:Number(marginPercent),
-          tags:[], product_category:'', auto_collections:[], boxes:[]
+          tags:[], product_category:'', auto_collections:[], boxes:[], error: e.message
         });
       }
     }
-    
+
     res.json({ items });
   }catch(err){ res.status(500).json({ error: err.message || 'Server error' }); }
 });
