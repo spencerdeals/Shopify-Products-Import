@@ -7,7 +7,7 @@ import OpenAI from "openai";
 
 const app = express();
 app.use(express.json({ limit: "2mb" }));
-app.use(express.static("public"));
+app.use(express.static("frontend"));
 
 const PORT = process.env.PORT || 8080;
 
