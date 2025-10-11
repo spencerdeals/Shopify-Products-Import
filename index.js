@@ -52,22 +52,28 @@ function textTruncate(str, max = 110000) {
   return `${head}\n<!-- TRUNCATED -->\n${tail}`;
 }
 
-// --- Fetchers
+// --- Fetchers using Zyte product extraction
 async function fetchViaZyte(url) {
   if (!ZYTE_API_KEY) throw new Error("Missing ZYTE_API_KEY");
   const endpoint = "https://api.zyte.com/v1/extract";
+
+  // Use Zyte's automatic product extraction
   const resp = await axios.post(
     endpoint,
-    { url, browserHtml: true, httpResponseBody: true },
-    { auth: { username: ZYTE_API_KEY, password: "" }, timeout: 45000 }
+    {
+      url,
+      browserHtml: true,
+      product: true,
+      productOptions: {
+        extractFrom: "browserHtml"
+      }
+    },
+    { auth: { username: ZYTE_API_KEY, password: "" }, timeout: 60000 }
   );
-  const body = resp?.data?.httpResponseBody || resp?.data?.browserHtml || "";
-  if (typeof body === "string") return body;
-  if (body && body.type === "Buffer" && Array.isArray(body.data)) {
-    return Buffer.from(body.data).toString("utf8");
-  }
-  return String(body || "");
+
+  return resp.data;
 }
+
 async function fetchDirect(url) {
   const resp = await axios.get(url, {
     timeout: 30000,
@@ -75,9 +81,17 @@ async function fetchDirect(url) {
   });
   return resp.data;
 }
-async function fetchHtml(url) {
-  try { return await fetchViaZyte(url); }
-  catch { return await fetchDirect(url); }
+
+async function fetchProductData(url) {
+  try {
+    const zyteData = await fetchViaZyte(url);
+    return { type: 'zyte', data: zyteData };
+  }
+  catch (err) {
+    console.log('Zyte failed, trying direct:', err.message);
+    const html = await fetchDirect(url);
+    return { type: 'html', data: html };
+  }
 }
 
 // --- Backup parsing with OpenAI
@@ -255,16 +269,54 @@ function computeRetail(scrapedPrice, marginPct=45) {
 }
 
 // --- Unified parse
-async function parseProduct(url, html) {
+async function parseProduct(url, productData) {
+  // Handle Zyte product extraction data
+  if (productData.type === 'zyte' && productData.data.product) {
+    const product = productData.data.product;
+    console.log('Using Zyte product extraction');
+
+    // Extract price with priority for sale/current prices
+    let price = 0;
+    if (product.price) {
+      if (typeof product.price === 'number') price = product.price;
+      else if (typeof product.price === 'string') price = cleanPriceLike(product.price);
+      else if (product.price.value) price = parseFloat(product.price.value);
+    }
+
+    // Fallback prices
+    if (!price && product.currentPrice) price = typeof product.currentPrice === 'number' ? product.currentPrice : cleanPriceLike(product.currentPrice);
+    if (!price && product.regularPrice) price = typeof product.regularPrice === 'number' ? product.regularPrice : cleanPriceLike(product.regularPrice);
+
+    const title = product.name || "";
+    const image = product.mainImage?.url || product.images?.[0]?.url || product.images?.[0] || "";
+    const images = product.images ? product.images.map(img => typeof img === 'string' ? img : img.url).filter(Boolean) : (image ? [image] : []);
+    const vendor = product.brand?.name || new URL(url).hostname;
+    const body_html = product.description || "";
+
+    return {
+      title: (title || "").trim(),
+      price,
+      image,
+      images,
+      vendor,
+      body_html,
+      source_url: url
+    };
+  }
+
+  // Fallback to HTML parsing
+  const html = typeof productData.data === 'string' ? productData.data : '';
   const parser = pickParser(url);
   let parsed = await parser(url, html);
   const missingCore = !parsed?.title || (!parsed?.price && !parsed?.image);
+
   if (missingCore) {
     const ai = await parseWithOpenAI({ url, html });
     if (ai) {
       parsed = { ...parsed, ...ai, price: Number(ai.price || parsed.price || 0), images: ai.images?.length ? ai.images : parsed.images };
     }
   }
+
   parsed.price = Number(parsed.price || 0);
   if (!parsed.images || !parsed.images.length) parsed.images = parsed.image ? [parsed.image] : [];
   return parsed;
@@ -280,8 +332,8 @@ app.post("/api/preview", async (req, res) => {
     const items = [];
     for (const url of urls) {
       try {
-        const html = await fetchHtml(url);
-        const p = await parseProduct(url, html);
+        const productData = await fetchProductData(url);
+        const p = await parseProduct(url, productData);
         const handle = slugify(p.title || p.vendor || "item");
 
         const o = (overrides[handle] || {});
@@ -355,8 +407,8 @@ app.post("/api/build-csv", async (req, res) => {
     const rows = [];
     for (const url of urls) {
       try {
-        const html = await fetchHtml(url);
-        const p = await parseProduct(url, html);
+        const productData = await fetchProductData(url);
+        const p = await parseProduct(url, productData);
         const handle = slugify(p.title || p.vendor || "item");
 
         const o = (overrides[handle] || {});
