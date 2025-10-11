@@ -4,6 +4,8 @@ import axios from "axios";
 import * as cheerio from "cheerio";
 import Papa from "papaparse";
 import OpenAI from "openai";
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 const app = express();
 app.use(express.json({ limit: "2mb" }));
@@ -479,7 +481,11 @@ app.post("/api/build-csv", async (req, res) => {
 });
 
 // --- Routes
-app.get("/", (_req, res) => res.sendFile("shopify-import.html", { root: "frontend" }));
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+app.get("/", (_req, res) => {
+  res.sendFile(path.join(__dirname, 'frontend', 'shopify-import.html'));
+});
 
 // --- Health
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
