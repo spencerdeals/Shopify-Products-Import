@@ -478,6 +478,9 @@ app.post("/api/build-csv", async (req, res) => {
   }
 });
 
+// --- Routes
+app.get("/", (_req, res) => res.sendFile("shopify-import.html", { root: "frontend" }));
+
 // --- Health
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
 
