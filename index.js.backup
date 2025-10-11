@@ -330,7 +330,7 @@ app.post('/api/build-csv', async (req,res)=>{
         }
       }catch{
         const handle = slugify('failed-'+url);
-        const emptyRow = {
+        rows.push({
           'Handle': handle, 'Title':'FAILED TO SCRAPE', 'Body (HTML)':'', 'Vendor':'',
           'Product Category':'', 'Type':'', 'Tags':'', 'Published':'TRUE',
           'Option1 Name':'Title', 'Option1 Value':'Default Title', 'Variant SKU':'',
@@ -339,15 +339,14 @@ app.post('/api/build-csv', async (req,res)=>{
           'Variant Requires Shipping':'TRUE', 'Variant Taxable':'TRUE', 'Variant Barcode':'',
           'Image Src':'', 'Image Position':'1', 'Image Alt Text':'', 'SEO Title':'', 'SEO Description':'',
           'Variant Image':'', 'Variant Weight Unit':'lb', 'Variant Tax Code':'', 'Cost per item':'', 'Status':'active',
-          'Meta: Source URL': url, 'Meta: Auto Collections':'', 'Meta: Box Count':'', 'Meta: Box Total Volume (ft3)':'', 'Meta: Boxes JSON':''
-        };
-        for(let i=1;i<=6;i++){
-          emptyRow[`Meta: Box${i} L (in)`]='';
-          emptyRow[`Meta: Box${i} W (in)`]='';
-          emptyRow[`Meta: Box${i} H (in)`]='';
-          emptyRow[`Meta: Box${i} ft3`]='';
-        }
-        rows.push(emptyRow);
+          'Meta: Source URL': url, 'Meta: Auto Collections':'', 'Meta: Box Count':'', 'Meta: Box Total Volume (ft3)':'', 'Meta: Boxes JSON':'',
+          'Meta: Box1 L (in)':'','Meta: Box1 W (in)':'','Meta: Box1 H (in)':'','Meta: Box1 ft3':'',
+          'Meta: Box2 L (in)':'','Meta: Box2 W (in)':'','Meta: Box2 H (in)':'','Meta: Box2 ft3':'',
+          'Meta: Box3 L (in)':'','Meta: Box3 W (in)':'','Meta: Box3 H (in)':'','Meta: Box3 ft3':'',
+          'Meta: Box4 L (in)':'','Meta: Box4 W (in)':'','Meta: Box4 H (in)':'','Meta: Box4 ft3':'',
+          'Meta: Box5 L (in)':'','Meta: Box5 W (in)':'','Meta: Box5 H (in)':'','Meta: Box5 ft3':'',
+          'Meta: Box6 L (in)':'','Meta: Box6 W (in)':'','Meta: Box6 H (in)':'','Meta: Box6 ft3':''
+        });
       }
     }
     

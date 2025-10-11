@@ -1,7 +1,7 @@
 {
-  "name": "sdl-shopify-importer",
-  "version": "1.1.0",
-  "description": "SDL — Paste product links (Amazon, Luna, generic) → scrape (Zyte primary, ChatGPT parsing backup) → per-item L/W/H + margin → compute retail rounded to $5 → export Shopify Product CSV.",
+  "name": "sdl-shopify-product-import",
+  "version": "2.0.0",
+  "description": "SDL — Paste product links → Zyte scrape (primary), ChatGPT parsing (backup) → per-item multi-box dims + margin → $5 rounding → Shopify CSV export.",
   "main": "index.js",
   "type": "module",
   "scripts": {
@@ -15,8 +15,5 @@
     "express": "^4.19.2",
     "openai": "^4.57.0",
     "papaparse": "^5.4.1"
-  },
-  "engines": {
-    "node": ">=20.0.0"
   }
 }

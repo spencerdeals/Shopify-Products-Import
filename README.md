@@ -1,44 +1,49 @@
-# SDL — Shopify Product Import Calculator
+# SDL — Shopify Product Import
 
-Paste product links → Zyte fetch → parser (Amazon/Luna/generic) → (backup) ChatGPT parsing → per-item Box L/W/H (in) and Margin → compute retail rounded up to the nearest $5 → export Shopify Product CSV.
+New app (separate from "Instant Import"). Paste links → Zyte fetch → parser (Amazon/Luna/generic) → (backup) ChatGPT parsing → per-item multi-box dimensions (add with "+" button) and margin → retail rounded up to nearest $5 → export Shopify Product CSV.
 
-## Deploy (Railway)
+## Run (Railway or local)
 
-1. Create a new Railway project and connect your repo.
-2. Add env vars:
-   - `ZYTE_API_KEY` (required)
-   - `OPENAI_API_KEY` (optional)
-   - `SHOPIFY_STORE_DOMAIN` (optional)
-   - `SHOPIFY_ADMIN_TOKEN` (optional)
-   - `PORT` (optional, default 8080)
-3. `npm i` → `npm start`. Open your Railway URL.
+Env: `ZYTE_API_KEY` (required), `OPENAI_API_KEY` (optional), `SHOPIFY_STORE_DOMAIN`/`SHOPIFY_ADMIN_TOKEN` (optional), `PORT=8080`
 
-## Use
+```
+npm i → npm start
+```
 
-1. Paste URLs → Preview.
-2. Edit per row: Cost, Margin %, Box L/W/H (in) (auto-calcs Volume (ft³)).
-3. Click Export CSV to download `sdl_shopify_import.csv`.
+Open `/api/health` → `{ ok: true }`
 
-## CSV Columns
+Visit `/` → paste URLs → Preview → per-row edits (Cost, Margin, Boxes) → Export CSV
 
-Includes your needed Shopify fields plus meta columns for dimensions:
+## CSV
 
-- **Core**: Handle, Title, Body (HTML), Vendor, Product Category, Type, Tags, Published, Option1 Name/Value, Variant Price (rounded), Image Src/Alt, Cost per item, Status, SEO fields.
-- **Meta**: Meta: Source URL, Meta: Auto Collections, Meta: Box Length (in), Meta: Box Width (in), Meta: Box Height (in), Meta: Box Volume (ft3).
+Includes core Shopify columns plus meta columns:
 
-Note: Shopify ignores unknown columns, but keeps recognized ones. Dimension fields are exported as meta columns for your records.
+- `Meta: Box Count`, `Meta: Box Total Volume (ft3)`, `Meta: Boxes JSON`
+- Per-box columns for up to 6 boxes: `Meta: BoxN L/W/H (in)`, `Meta: BoxN ft3`
 
-## Endpoints
+Shopify ignores unknown columns safely; these metas are for operations/records.
 
-- **POST /api/preview** → `{ urls, marginPercent?, overrides? }` → returns items with computed retail & volume.
-- **POST /api/build-csv** → same payload → returns CSV.
-- **GET /api/collections** → optional; fetches collections if Shopify creds set.
-- **GET /api/health** → `{ ok: true }`.
+## Notes
 
-## Validation
+- Default margin 45%; per-row override.
+- Retail prices have no cents and are divisible by 5.
+- Optional Shopify connection fetches collections for auto-suggestions.
 
-- Preview shows image/title/vendor; default margin 45%; retail rounded to $5.
-- Per-row edits for cost, margin, L/W/H recompute retail and volume.
-- Exported CSV contains dimension meta columns and required Shopify columns.
+## Validation checklist
 
-Rollback: revert to previous commit.
+- Fresh repo root reflects SDL — Shopify Product Import files (no legacy Instant Import files).
+- `/api/health` returns `{ ok: true }`.
+- Preview: paste 1–2 URLs → see image/title/vendor; edit Cost/Margin; expand Boxes → add multiple boxes (L/W/H); values persist in row state.
+- Retail auto-updates on margin/cost; rounded up to nearest $5.
+- Export: CSV contains Shopify fields + box metas; price divisible by 5; meta JSON contains all entered boxes.
+
+## (Optional) Git steps
+
+If git is available, commit & push:
+
+```bash
+git checkout -B feat/shopify-product-import
+git add -A
+git commit -m "feat: new SDL Shopify Product Import app w/ multi-box dims, margin, $5 rounding, Zyte+GPT parsing"
+git push -u origin feat/shopify-product-import
+```
