@@ -902,136 +902,401 @@ Paste your product URLs here..."></textarea>
             `;
         }
 
-        // Export Shopify CSV
+        // ========================================
+        // SHOPIFY CSV BUILDER (AdminCalc + Zyte)
+        // ========================================
+
+        // Normalization Helpers
+        function normalizeHandle(name) {
+            return (name || 'product')
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, '-')
+                .replace(/^-|-$/g, '');
+        }
+
+        function cleanOptionValue(value) {
+            if (!value) return '';
+            return value.toString()
+                .trim()
+                .replace(/\s+selected$/i, '')
+                .replace(/^(color|size|style|material):\s*/i, '')
+                .trim();
+        }
+
+        function extractLeafType(breadcrumbs) {
+            if (!breadcrumbs || breadcrumbs.length === 0) return 'Furniture';
+
+            // Get leaf node
+            let leaf = breadcrumbs[breadcrumbs.length - 1];
+            if (typeof leaf === 'object') leaf = leaf.name || '';
+
+            // Skip if it's a SKU pattern
+            if (/^SKU:\s*/i.test(leaf)) {
+                return breadcrumbs.length > 1
+                    ? extractLeafType(breadcrumbs.slice(0, -1))
+                    : 'Furniture';
+            }
+
+            return leaf || 'Furniture';
+        }
+
+        function buildTags(product, breadcrumbs, variantValues = {}) {
+            const tagSet = new Set();
+
+            // Add Wayfair if from Wayfair
+            if (product.url && product.url.includes('wayfair')) {
+                tagSet.add('Wayfair');
+            }
+
+            // Add breadcrumb nodes (exclude SKU: patterns)
+            breadcrumbs.forEach(b => {
+                const crumb = typeof b === 'object' ? b.name : b;
+                if (crumb && !/^SKU:\s*/i.test(crumb)) {
+                    tagSet.add(crumb);
+                }
+            });
+
+            // Add SKU tag
+            if (product.sku) {
+                tagSet.add(`SKU:${product.sku}`);
+            }
+
+            // Add rating/reviews
+            if (product.rating) {
+                tagSet.add(`Rating:${product.rating}`);
+            }
+            if (product.reviews || product.reviewCount) {
+                tagSet.add(`Reviews:${product.reviews || product.reviewCount}`);
+            }
+
+            // Add variant-specific tags
+            if (variantValues.color) {
+                tagSet.add(`Color:${variantValues.color}`);
+            }
+            if (variantValues.size) {
+                tagSet.add(`Size:${variantValues.size}`);
+            }
+
+            // Sort and join
+            return Array.from(tagSet).sort().join(', ');
+        }
+
+        function buildComboKey(color, size) {
+            if (!color && !size) return 'DEFAULT';
+            if (color && size) return `Color:${color}|Size:${size}`;
+            if (color) return `Color:${color}`;
+            return `Size:${size}`;
+        }
+
+        // Extract variant axes from Zyte data
+        function extractVariantAxes(product) {
+            const colors = new Set();
+            const sizes = new Set();
+
+            // Method 1: From variantOptions.colors/sizes
+            if (product.variants) {
+                if (product.variants.colors && Array.isArray(product.variants.colors)) {
+                    product.variants.colors.forEach(c => {
+                        const val = cleanOptionValue(c.value || c);
+                        if (val) colors.add(val);
+                    });
+                }
+                if (product.variants.sizes && Array.isArray(product.variants.sizes)) {
+                    product.variants.sizes.forEach(s => {
+                        const val = cleanOptionValue(s.value || s);
+                        if (val) sizes.add(val);
+                    });
+                }
+            }
+
+            // Method 2: Parse allVariants array
+            if (product.allVariants && Array.isArray(product.allVariants)) {
+                product.allVariants.forEach(v => {
+                    const colorMatch = v.match(/(?:Color|Colour):\s*([^,•|]+)/i);
+                    if (colorMatch) {
+                        const val = cleanOptionValue(colorMatch[1]);
+                        if (val) colors.add(val);
+                    }
+
+                    const sizeMatch = v.match(/(?:Size):\s*([^,•|]+)/i);
+                    if (sizeMatch) {
+                        const val = cleanOptionValue(sizeMatch[1]);
+                        if (val) sizes.add(val);
+                    }
+                });
+            }
+
+            return {
+                colors: Array.from(colors),
+                sizes: Array.from(sizes)
+            };
+        }
+
+        // Build variant SKU
+        function buildVariantSku(baseSku, color, size) {
+            if (!baseSku) return '';
+
+            let suffix = '';
+            if (color && size) {
+                suffix = `-${color.toUpperCase().replace(/[\s'"]+/g, '-')}-${size.toUpperCase().replace(/[\s'"]+/g, '-')}`;
+            } else if (color) {
+                suffix = `-${color.toUpperCase().replace(/[\s'"]+/g, '-')}`;
+            } else if (size) {
+                suffix = `-${size.toUpperCase().replace(/[\s'"]+/g, '-')}`;
+            }
+
+            return baseSku + suffix;
+        }
+
+        // Export Shopify CSV with full validation
         function exportShopifyCSV() {
             if (!products.length) {
                 alert('No products to export');
                 return;
             }
 
+            console.log('========================================');
+            console.log('SHOPIFY CSV BUILDER - Starting Export');
+            console.log('========================================');
+
             const headers = [
                 'Handle', 'Title', 'Body (HTML)', 'Vendor', 'Type', 'Tags', 'Published',
-                'Option1 Name', 'Option1 Value', 'Variant SKU', 'Variant Grams',
-                'Variant Inventory Tracker', 'Variant Inventory Policy', 'Variant Fulfillment Service',
-                'Variant Price', 'Variant Compare At Price', 'Variant Requires Shipping',
-                'Variant Taxable', 'Image Src', 'Image Position', 'Gift Card',
-                'Status', 'Cost per item', 'Collection', 'Collection_Unsure'
+                'Option1 Name', 'Option1 Value', 'Option2 Name', 'Option2 Value',
+                'Variant SKU', 'Variant Grams', 'Variant Inventory Tracker', 'Variant Inventory Qty',
+                'Variant Inventory Policy', 'Variant Fulfillment Service',
+                'Variant Price', 'Variant Compare At Price', 'Variant Requires Shipping', 'Variant Taxable',
+                'Variant Barcode',
+                'Image Src', 'Image Position', 'Gift Card', 'Status',
+                'Cost per item', 'Collection'
             ];
 
             const rows = [headers];
+            const validationErrors = [];
 
-            products.forEach(product => {
+            products.forEach((product, productIdx) => {
                 const calc = product.calculated || {};
                 const collectionInfo = autoAssignCollection(product);
 
-                const handle = (product.name || 'product')
-                    .toLowerCase()
-                    .replace(/[^a-z0-9]+/g, '-')
-                    .replace(/^-|-$/g, '');
+                // AdminCalc data (source of truth for pricing)
+                const variantPrice = calc.msrpRounded || 0;
+                const costPerItem = calc.landedCost || 0;
 
-                // Determine Type from breadcrumbs (leaf node)
+                // Zyte data
+                const handle = normalizeHandle(product.name);
                 const breadcrumbs = product.breadcrumbs || [];
-                const productType = breadcrumbs.length > 0
-                    ? (typeof breadcrumbs[breadcrumbs.length - 1] === 'object'
-                        ? breadcrumbs[breadcrumbs.length - 1].name
-                        : breadcrumbs[breadcrumbs.length - 1])
-                    : 'Furniture';
+                const productType = extractLeafType(breadcrumbs);
+                const vendor = product.vendor || product.brand || 'SDL';
+                const baseSku = product.sku || '';
 
-                // Build Tags from full breadcrumb path + rating/reviews
-                let tags = breadcrumbs.map(b => typeof b === 'object' ? b.name : b).join(', ');
-                if (product.rating && product.reviews) {
-                    tags += tags ? ', ' : '';
-                    tags += `Rating: ${product.rating} (${product.reviews} reviews)`;
-                }
-
-                // Build Body (HTML) with description + canonical link
+                // Build body HTML
                 let bodyHtml = product.descriptionHtml || product.description || '';
                 if (product.url) {
-                    bodyHtml += bodyHtml ? '<br><br>' : '';
-                    bodyHtml += `<p>Original product: <a href="${product.url}" target="_blank">${product.url}</a></p>`;
+                    const sourceLink = `<p><small>Source: <a href="${product.url}" target="_blank" rel="nofollow">Wayfair product page</a></small></p>`;
+                    bodyHtml += bodyHtml ? '<br><br>' + sourceLink : sourceLink;
                 }
 
-                // Extract color variants if available
-                const colorVariants = [];
-                if (product.variants && product.variants.colors && Array.isArray(product.variants.colors)) {
-                    colorVariants.push(...product.variants.colors.map(c => c.value || c));
-                } else if (product.allVariants && Array.isArray(product.allVariants)) {
-                    // Parse allVariants for color options
-                    product.allVariants.forEach(v => {
-                        const colorMatch = v.match(/(?:Color|Colour):\s*([^,•|]+)/i);
-                        if (colorMatch) {
-                            colorVariants.push(colorMatch[1].trim());
-                        }
+                // Extract variant axes
+                const axes = extractVariantAxes(product);
+
+                console.log(`\n[Product ${productIdx + 1}] ${product.name}`);
+                console.log(`ZYTE_KEYS: name, sku, vendor, breadcrumbs(${breadcrumbs.length}), variants, rating, reviews`);
+                console.log(`AXES: Color(${axes.colors.length}), Size(${axes.sizes.length})`);
+                console.log(`TYPE_FROM_BREADCRUMBS: "${productType}" from [${breadcrumbs.map(b => typeof b === 'object' ? b.name : b).join(' / ')}]`);
+                console.log(`PRICE_LOCK: Variant Price = $${variantPrice.toFixed(2)}, Cost per item = $${costPerItem.toFixed(2)}`);
+
+                // Generate variant rows
+                let variantRows = [];
+                let imagePosition = 1;
+
+                if (axes.colors.length > 0 && axes.sizes.length > 0) {
+                    // Two options: Color × Size Cartesian product
+                    axes.colors.forEach(color => {
+                        axes.sizes.forEach(size => {
+                            const tags = buildTags(product, breadcrumbs, { color, size });
+                            const comboKey = buildComboKey(color, size);
+                            const variantSku = buildVariantSku(baseSku, color, size);
+
+                            variantRows.push([
+                                handle,
+                                product.name || 'Unnamed Product',
+                                bodyHtml,
+                                vendor,
+                                productType,
+                                tags,
+                                'TRUE',
+                                'Color',
+                                color,
+                                'Size',
+                                size,
+                                variantSku,
+                                product.weight ? Math.round(product.weight * 453.592) : '0',
+                                'shopify',
+                                '0', // Inventory Qty
+                                'deny',
+                                'manual',
+                                variantPrice,
+                                '', // Compare At Price
+                                'TRUE',
+                                'TRUE',
+                                '', // Barcode
+                                product.image || '',
+                                imagePosition.toString(),
+                                'FALSE',
+                                'active',
+                                costPerItem,
+                                collectionInfo.collection
+                            ]);
+                            imagePosition++;
+                        });
                     });
-                }
-
-                // If we have color variants, create multiple rows
-                if (colorVariants.length > 0) {
-                    colorVariants.forEach((color, colorIdx) => {
-                        const variantSku = product.sku ? `${product.sku}-${color.toUpperCase().replace(/\s+/g, '')}` : '';
-                        const variantImage = product.images && product.images[colorIdx]
-                            ? (product.images[colorIdx].url || product.images[colorIdx])
+                } else if (axes.colors.length > 0) {
+                    // One option: Color only
+                    axes.colors.forEach((color, idx) => {
+                        const tags = buildTags(product, breadcrumbs, { color });
+                        const comboKey = buildComboKey(color, null);
+                        const variantSku = buildVariantSku(baseSku, color, null);
+                        const variantImage = product.images && product.images[idx]
+                            ? (product.images[idx].url || product.images[idx])
                             : product.image || '';
 
-                        rows.push([
+                        variantRows.push([
                             handle,
                             product.name || 'Unnamed Product',
                             bodyHtml,
-                            product.vendor || 'SDL',
+                            vendor,
                             productType,
                             tags,
                             'TRUE',
                             'Color',
                             color,
+                            '', // Option2 Name
+                            '', // Option2 Value
                             variantSku,
-                            product.weight ? Math.round(product.weight * 453.592) : '', // Convert lbs to grams
+                            product.weight ? Math.round(product.weight * 453.592) : '0',
                             'shopify',
+                            '0',
                             'deny',
                             'manual',
-                            calc.msrpRounded || 0,
-                            '', // Compare At Price (leave blank)
+                            variantPrice,
+                            '',
                             'TRUE',
                             'TRUE',
+                            '',
                             variantImage,
-                            (colorIdx + 1).toString(),
+                            imagePosition.toString(),
                             'FALSE',
                             'active',
-                            calc.landedCost || 0,
-                            collectionInfo.uncertain ? 'REVIEW_COLLECTION' : collectionInfo.collection,
-                            collectionInfo.uncertain ? 'TRUE' : 'FALSE'
+                            costPerItem,
+                            collectionInfo.collection
                         ]);
+                        imagePosition++;
+                    });
+                } else if (axes.sizes.length > 0) {
+                    // One option: Size only
+                    axes.sizes.forEach(size => {
+                        const tags = buildTags(product, breadcrumbs, { size });
+                        const comboKey = buildComboKey(null, size);
+                        const variantSku = buildVariantSku(baseSku, null, size);
+
+                        variantRows.push([
+                            handle,
+                            product.name || 'Unnamed Product',
+                            bodyHtml,
+                            vendor,
+                            productType,
+                            tags,
+                            'TRUE',
+                            'Size',
+                            size,
+                            '',
+                            '',
+                            variantSku,
+                            product.weight ? Math.round(product.weight * 453.592) : '0',
+                            'shopify',
+                            '0',
+                            'deny',
+                            'manual',
+                            variantPrice,
+                            '',
+                            'TRUE',
+                            'TRUE',
+                            '',
+                            product.image || '',
+                            imagePosition.toString(),
+                            'FALSE',
+                            'active',
+                            costPerItem,
+                            collectionInfo.collection
+                        ]);
+                        imagePosition++;
                     });
                 } else {
-                    // No variants, single row
-                    rows.push([
+                    // No variants: Default Title
+                    const tags = buildTags(product, breadcrumbs);
+
+                    variantRows.push([
                         handle,
                         product.name || 'Unnamed Product',
                         bodyHtml,
-                        product.vendor || 'SDL',
+                        vendor,
                         productType,
                         tags,
                         'TRUE',
                         'Title',
                         'Default Title',
-                        product.sku || '',
-                        product.weight ? Math.round(product.weight * 453.592) : '', // Convert lbs to grams
+                        '',
+                        '',
+                        baseSku,
+                        product.weight ? Math.round(product.weight * 453.592) : '0',
                         'shopify',
+                        '0',
                         'deny',
                         'manual',
-                        calc.msrpRounded || 0,
-                        '', // Compare At Price (leave blank)
+                        variantPrice,
+                        '',
                         'TRUE',
                         'TRUE',
+                        '',
                         product.image || '',
                         '1',
                         'FALSE',
                         'active',
-                        calc.landedCost || 0,
-                        collectionInfo.uncertain ? 'REVIEW_COLLECTION' : collectionInfo.collection,
-                        collectionInfo.uncertain ? 'TRUE' : 'FALSE'
+                        costPerItem,
+                        collectionInfo.collection
                     ]);
                 }
+
+                console.log(`VARIANT_ROWS: ${variantRows.length} generated`);
+                console.log(`TAGS_SNIPPET: ${buildTags(product, breadcrumbs).split(', ').slice(0, 10).join(', ')}...`);
+
+                // Validations
+                const firstRow = variantRows[0];
+                if (firstRow[3] !== vendor) {
+                    validationErrors.push(`Product ${productIdx + 1}: Vendor mismatch`);
+                }
+                if (firstRow[4] !== productType) {
+                    validationErrors.push(`Product ${productIdx + 1}: Type mismatch`);
+                }
+                if (!firstRow[2].includes('Wayfair product page') && product.url) {
+                    validationErrors.push(`Product ${productIdx + 1}: Missing source link in Body HTML`);
+                }
+                if (!firstRow[5].includes(`SKU:${baseSku}`) && baseSku) {
+                    validationErrors.push(`Product ${productIdx + 1}: Missing SKU tag`);
+                }
+
+                rows.push(...variantRows);
             });
+
+            // Validation Report
+            if (validationErrors.length > 0) {
+                console.error('\n❌ VALIDATION FAILURES:');
+                validationErrors.forEach(err => console.error(`  - ${err}`));
+                alert('CSV generation failed validation. Check console for details.');
+                return;
+            }
+
+            console.log('\n✅ All validations passed!');
+            console.log('========================================\n');
 
             // Convert to CSV
             const csvContent = rows.map(row =>
@@ -1045,15 +1310,20 @@ Paste your product URLs here..."></textarea>
             ).join('\n');
 
             // Download
+            const firstHandle = products[0] ? normalizeHandle(products[0].name) : 'products';
+            const filename = `shopify-products-${firstHandle}-ENRICHED.csv`;
+
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
             const link = document.createElement('a');
             const url = URL.createObjectURL(blob);
             link.setAttribute('href', url);
-            link.setAttribute('download', `shopify-products-${Date.now()}.csv`);
+            link.setAttribute('download', filename);
             link.style.visibility = 'hidden';
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
+
+            console.log(`✅ CSV exported: ${filename}`);
         }
 
         // Clear all
