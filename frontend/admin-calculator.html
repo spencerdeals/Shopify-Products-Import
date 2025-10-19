@@ -4,36 +4,18 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Calculator - SDL Internal Pricing Tool</title>
-    <script>
-        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-                      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-        if (isIOS) {
-            document.documentElement.classList.add('ios-device');
-        }
-    </script>
     <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
-            background: #f5f5f5;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
-            margin: 0;
             padding: 20px;
-        }
-
-        @supports (-webkit-touch-callout: none) {
-            body {
-                overscroll-behavior-y: contain;
-                -webkit-overflow-scrolling: touch;
-                padding-bottom: 100px;
-            }
-        }
-
-        @media screen and (max-width: 768px) {
-            html.ios-device body {
-                overscroll-behavior-y: contain;
-                -webkit-overflow-scrolling: touch;
-                padding-bottom: 100px;
-            }
         }
 
         .container {
@@ -41,41 +23,52 @@
             margin: 0 auto;
             background: white;
             border-radius: 20px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.1);
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
             overflow: hidden;
         }
 
-        .page-title {
-            background: linear-gradient(135deg, #2e7d32 0%, #1b5e20 100%);
+        .header {
+            background: linear-gradient(135deg, #1a2a6c 0%, #b21f1f 50%, #fdbb2d 100%);
             color: white;
-            padding: 30px;
+            padding: 40px;
             text-align: center;
-            font-size: 32px;
+        }
+
+        .header h1 {
+            font-size: 42px;
             font-weight: 700;
-            text-shadow: 0 2px 10px rgba(0,0,0,0.2);
-            letter-spacing: 1px;
+            margin-bottom: 10px;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.3);
+        }
+
+        .header p {
+            font-size: 16px;
+            opacity: 0.9;
         }
 
         .content {
             padding: 40px;
         }
 
-        .section {
-            margin-bottom: 40px;
-            padding: 30px;
-            background: #f8f9fa;
-            border-radius: 15px;
-            border-left: 5px solid #2e7d32;
+        .screen {
+            display: none;
         }
 
-        .section h2 {
-            color: #2e7d32;
-            margin-top: 0;
-            font-size: 1.5em;
+        .screen.active {
+            display: block;
+        }
+
+        .section-title {
+            font-size: 24px;
+            font-weight: 700;
+            color: #1a2a6c;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 3px solid #667eea;
         }
 
         .form-group {
-            margin-bottom: 20px;
+            margin-bottom: 25px;
         }
 
         .form-group label {
@@ -83,336 +76,424 @@
             margin-bottom: 8px;
             font-weight: 600;
             color: #333;
+            font-size: 14px;
         }
 
-        .form-group input, .form-group textarea {
+        .form-group textarea {
             width: 100%;
-            padding: 12px;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 14px;
+            font-family: 'Courier New', monospace;
+            transition: all 0.3s;
+            resize: vertical;
+        }
+
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .form-group input[type="number"],
+        .form-group input[type="text"] {
+            width: 100%;
+            padding: 10px;
             border: 2px solid #e0e0e0;
             border-radius: 8px;
-            font-size: 16px;
-            transition: border-color 0.3s;
-            box-sizing: border-box;
+            font-size: 14px;
+            transition: all 0.3s;
         }
 
-        .form-group input:focus, .form-group textarea:focus {
+        .form-group input:focus {
             outline: none;
-            border-color: #2e7d32;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
         }
 
         .btn {
-            background: linear-gradient(135deg, #2e7d32 0%, #1b5e20 100%);
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
             border: none;
-            padding: 15px 30px;
+            padding: 15px 35px;
             border-radius: 25px;
             font-size: 16px;
             font-weight: 600;
             cursor: pointer;
-            transition: transform 0.2s, box-shadow 0.2s;
+            transition: all 0.3s;
             margin-right: 10px;
             margin-bottom: 10px;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
         }
 
         .btn:hover {
             transform: translateY(-2px);
-            box-shadow: 0 10px 25px rgba(46, 125, 50, 0.3);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
         }
 
         .btn-secondary {
             background: linear-gradient(135deg, #6c757d 0%, #495057 100%);
+            box-shadow: 0 4px 15px rgba(108, 117, 125, 0.4);
         }
 
-        .btn-export {
-            background: linear-gradient(135deg, #4caf50 0%, #388e3c 100%);
+        .btn-success {
+            background: linear-gradient(135deg, #56ab2f 0%, #a8e063 100%);
+            box-shadow: 0 4px 15px rgba(86, 171, 47, 0.4);
         }
 
-        .btn-small {
-            padding: 8px 16px;
-            font-size: 14px;
-            border-radius: 15px;
+        .loading {
+            text-align: center;
+            padding: 60px 20px;
         }
 
-        .product-analysis {
-            background: white;
+        .loading-spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .error {
+            background: #fee;
+            color: #c33;
+            padding: 15px;
             border-radius: 10px;
-            padding: 20px;
-            margin-top: 20px;
-            border: 1px solid #e0e0e0;
+            margin: 20px 0;
+            border-left: 4px solid #c33;
         }
 
-        .product-item {
+        .product-card {
             background: #f8f9fa;
-            border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 20px;
-            border-left: 4px solid #2e7d32;
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 25px;
+            border: 2px solid #e0e0e0;
+            transition: all 0.3s;
+        }
+
+        .product-card:hover {
+            border-color: #667eea;
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.2);
         }
 
         .product-header {
             display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            margin-bottom: 15px;
+            gap: 20px;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #e0e0e0;
         }
 
-        .product-name {
-            font-weight: 600;
-            color: #333;
-            font-size: 16px;
+        .product-thumbnail {
+            width: 100px;
+            height: 100px;
+            object-fit: cover;
+            border-radius: 10px;
+            border: 2px solid #ddd;
+        }
+
+        .product-info {
             flex: 1;
-            margin-right: 20px;
         }
 
-        .product-retailer {
-            background: #2e7d32;
-            color: white;
-            padding: 4px 12px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: 600;
+        .product-title {
+            font-size: 18px;
+            font-weight: 700;
+            color: #1a2a6c;
+            margin-bottom: 8px;
+        }
+
+        .product-meta {
+            font-size: 13px;
+            color: #666;
+            margin-bottom: 5px;
         }
 
         .boxes-section {
             background: #fff3e0;
-            padding: 15px;
-            border-radius: 8px;
-            margin: 15px 0;
-            border-left: 4px solid #ff9800;
+            padding: 20px;
+            border-radius: 12px;
+            margin: 20px 0;
+            border-left: 5px solid #ff9800;
         }
 
         .boxes-section h4 {
-            margin-top: 0;
             color: #e65100;
-            font-size: 14px;
+            margin-bottom: 15px;
+            font-size: 16px;
         }
 
         .box-item {
             background: white;
-            padding: 12px;
-            border-radius: 6px;
-            margin-bottom: 10px;
-            border: 1px solid #ddd;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+            border: 2px solid #ffcc80;
             position: relative;
+        }
+
+        .box-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .box-label {
+            font-weight: 600;
+            color: #e65100;
+        }
+
+        .btn-remove-box {
+            background: #f44336;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            cursor: pointer;
+            font-weight: 600;
         }
 
         .box-dimensions {
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 10px;
-            margin-bottom: 10px;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
         }
 
-        .dimension-input {
+        .dimension-field {
             display: flex;
             flex-direction: column;
         }
 
-        .dimension-input label {
+        .dimension-field label {
             font-size: 11px;
             color: #666;
-            margin-bottom: 3px;
+            margin-bottom: 5px;
             font-weight: 600;
         }
 
-        .dimension-input input {
-            padding: 6px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
+        .dimension-field input {
+            padding: 8px;
+            border: 2px solid #ddd;
+            border-radius: 6px;
             font-size: 13px;
-        }
-
-        .btn-remove-box {
-            position: absolute;
-            top: 8px;
-            right: 8px;
-            background: #f44336;
-            color: white;
-            border: none;
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-size: 11px;
-            cursor: pointer;
-            font-weight: 600;
         }
 
         .btn-add-box {
             background: #ff9800;
             color: white;
             border: none;
-            padding: 8px 16px;
-            border-radius: 15px;
-            font-size: 13px;
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 14px;
             cursor: pointer;
             font-weight: 600;
-            margin-top: 5px;
+            margin-top: 10px;
         }
 
         .btn-add-box:hover {
             background: #f57c00;
         }
 
-        .price-input-section {
-            margin: 15px 0;
-        }
-
-        .price-input-section label {
-            font-size: 12px;
-            color: #666;
-            margin-bottom: 5px;
-            display: block;
-            font-weight: 600;
-        }
-
-        .price-input-section input {
-            width: 200px;
-            padding: 8px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            font-size: 14px;
-        }
-
-        .calculations {
+        .pricing-section {
             background: #e8f5e9;
-            padding: 15px;
-            border-radius: 8px;
-            margin-top: 15px;
+            padding: 20px;
+            border-radius: 12px;
+            margin: 20px 0;
         }
 
-        .calc-row {
+        .price-row {
             display: flex;
             justify-content: space-between;
-            margin-bottom: 8px;
+            padding: 8px 0;
             font-size: 14px;
         }
 
-        .calc-row.total {
-            font-weight: 700;
-            font-size: 18px;
-            border-top: 2px solid #4caf50;
-            padding-top: 12px;
-            margin-top: 12px;
-            color: #1b5e20;
-        }
-
-        .calc-row.landed {
-            font-weight: 600;
-            font-size: 15px;
-            padding: 8px 0;
+        .price-row.highlight {
             background: #c8e6c9;
-            padding: 8px;
-            border-radius: 4px;
+            padding: 12px;
+            border-radius: 8px;
+            font-weight: 600;
             margin: 8px 0;
         }
 
-        .calc-row.margin-tier {
-            font-size: 13px;
-            font-style: italic;
-            color: #666;
+        .price-row.total {
+            font-size: 20px;
+            font-weight: 700;
+            color: #1b5e20;
+            border-top: 3px solid #4caf50;
+            padding-top: 15px;
+            margin-top: 15px;
         }
 
         .margin-editor {
             background: #fff9e6;
-            padding: 12px;
-            border-radius: 6px;
+            padding: 15px;
+            border-radius: 10px;
             margin: 15px 0;
-            border-left: 4px solid #ffc107;
+            border-left: 5px solid #ffc107;
         }
 
         .margin-editor label {
-            font-size: 12px;
+            font-size: 13px;
             font-weight: 600;
             color: #f57c00;
             display: block;
-            margin-bottom: 5px;
+            margin-bottom: 8px;
         }
 
-        .margin-editor input {
+        .margin-input-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .margin-input-group input {
             width: 120px;
-            padding: 8px;
+            padding: 10px;
             border: 2px solid #ffc107;
-            border-radius: 4px;
+            border-radius: 8px;
             font-size: 14px;
             font-weight: 600;
         }
 
-        .margin-editor small {
-            display: block;
-            margin-top: 5px;
-            font-size: 11px;
+        .margin-suggestion {
+            font-size: 12px;
             color: #666;
+            font-style: italic;
         }
 
-        .loading {
-            text-align: center;
-            padding: 40px;
-            color: #666;
+        .review-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            background: white;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
         }
 
-        .error {
-            background: #ffebee;
-            color: #c62828;
+        .review-table th {
+            background: linear-gradient(135deg, #1a2a6c 0%, #b21f1f 100%);
+            color: white;
             padding: 15px;
-            border-radius: 8px;
-            margin: 10px 0;
-            border-left: 4px solid #f44336;
+            text-align: left;
+            font-weight: 600;
+            font-size: 13px;
         }
 
-        .success {
-            background: #e8f5e9;
-            color: #2e7d32;
-            padding: 15px;
-            border-radius: 8px;
-            margin: 10px 0;
-            border-left: 4px solid #4caf50;
+        .review-table td {
+            padding: 12px 15px;
+            border-bottom: 1px solid #e0e0e0;
+            font-size: 13px;
         }
 
-        .collection-tag {
+        .review-table tr:hover {
+            background: #f5f5f5;
+        }
+
+        .review-table input {
+            width: 100%;
+            padding: 6px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+
+        .collection-badge {
             display: inline-block;
             background: #e3f2fd;
             color: #1976d2;
-            padding: 4px 10px;
+            padding: 4px 12px;
             border-radius: 12px;
             font-size: 11px;
             font-weight: 600;
-            margin: 4px 2px;
         }
 
-        .collection-tag.uncertain {
+        .collection-badge.uncertain {
             background: #fff3e0;
             color: #f57c00;
             border: 2px dashed #ff9800;
         }
 
         @media (max-width: 768px) {
-            .container {
-                margin: 10px;
-                border-radius: 15px;
-            }
-
             .content {
                 padding: 20px;
+            }
+
+            .box-dimensions {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .review-table {
+                font-size: 11px;
+            }
+
+            .review-table th,
+            .review-table td {
+                padding: 8px;
             }
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="page-title">🏛️ ADMIN CALCULATOR</div>
+        <div class="header">
+            <h1>Admin Calculator</h1>
+            <p>Internal Pricing Tool for SDL</p>
+        </div>
 
         <div class="content">
-            <!-- Product URL Input -->
-            <div class="section">
-                <h2>📦 Paste Product Links</h2>
+            <!-- Screen 1: Paste Links -->
+            <div id="screen1" class="screen active">
+                <h2 class="section-title">Paste Product Links</h2>
                 <div class="form-group">
-                    <label for="productUrls">Product URLs (one per line):</label>
-                    <textarea id="productUrls" rows="8" placeholder="https://www.amazon.com/product-link&#10;https://www.wayfair.com/product-link&#10;https://www.target.com/product-link&#10;&#10;Paste your product URLs here..."></textarea>
+                    <label for="productUrls">Product URLs (one per line)</label>
+                    <textarea id="productUrls" rows="12" placeholder="https://www.amazon.com/product-link
+https://www.wayfair.com/product-link
+https://www.target.com/product-link
+
+Paste your product URLs here..."></textarea>
                 </div>
+                <button class="btn" onclick="fetchProducts()">Fetch Products</button>
+                <button class="btn btn-secondary" onclick="clearAll()">Clear</button>
+                <div id="fetchError"></div>
+            </div>
 
-                <button class="btn" onclick="analyzeProducts()">🔍 Scrape & Analyze</button>
-                <button class="btn btn-secondary" onclick="clearAnalysis()">🗑️ Clear All</button>
+            <!-- Screen 2: Dimensions & Costs -->
+            <div id="screen2" class="screen">
+                <h2 class="section-title">Dimensions & Costs</h2>
+                <div id="productsContainer"></div>
+                <div style="margin-top: 30px; padding-top: 30px; border-top: 2px solid #e0e0e0;">
+                    <button class="btn btn-secondary" onclick="goToScreen(1)">Back</button>
+                    <button class="btn btn-success" onclick="goToScreen(3)">Review & Export</button>
+                </div>
+            </div>
 
-                <div id="analysisResult"></div>
+            <!-- Screen 3: Review & Export -->
+            <div id="screen3" class="screen">
+                <h2 class="section-title">Review & Shopify Export</h2>
+                <div id="reviewContainer"></div>
+                <div style="margin-top: 30px;">
+                    <button class="btn btn-secondary" onclick="goToScreen(2)">Back</button>
+                    <button class="btn btn-success" onclick="exportShopifyCSV()">Download Shopify Products CSV</button>
+                </div>
             </div>
         </div>
     </div>
@@ -420,9 +501,9 @@
     <script>
         let products = [];
 
-        // Dynamic margin tiers based on landed cost
-        function getMarginPercent(landedCost) {
-            if (landedCost < 200) return 57.5; // Average of 55-60%
+        // Dynamic margin rules
+        function getDefaultMargin(landedCost) {
+            if (landedCost < 200) return 60;
             if (landedCost < 500) return 50;
             if (landedCost < 1000) return 45;
             if (landedCost < 2500) return 40;
@@ -430,57 +511,46 @@
         }
 
         function getMarginTierLabel(landedCost) {
-            if (landedCost < 200) return 'Under $200: 55-60% margin';
+            if (landedCost < 200) return 'Under $200: 60% margin';
             if (landedCost < 500) return '$200-$499: 50% margin';
             if (landedCost < 1000) return '$500-$999: 45% margin';
             if (landedCost < 2500) return '$1,000-$2,499: 40% margin';
             return 'Over $2,500: 38% margin';
         }
 
-        // Round up to nearest $5
-        function roundToNearest5(price) {
+        // Round up to next $5
+        function roundToNext5(price) {
             return Math.ceil(price / 5) * 5;
         }
 
-        // Categorize product for Shopify collections
-        function categorizeProduct(product) {
-            const name = (product.name || '').toLowerCase();
-            const category = (product.category || '').toLowerCase();
-            const combined = name + ' ' + category;
+        // Auto-assign collection
+        function autoAssignCollection(product) {
+            const text = `${product.name || ''} ${product.category || ''} ${product.retailer || ''}`.toLowerCase();
 
-            const collections = [];
-            let uncertain = false;
+            if (text.match(/sofa|sectional|couch|loveseat/)) return { collection: 'Sofas & Sectionals', uncertain: false };
+            if (text.match(/chair|armchair|recliner|seating/)) return { collection: 'Chairs & Seating', uncertain: false };
+            if (text.match(/table|coffee table|end table|dining table|desk/)) return { collection: 'Tables', uncertain: false };
+            if (text.match(/bed|mattress|headboard|nightstand|dresser/)) return { collection: 'Bedroom', uncertain: false };
+            if (text.match(/lamp|lighting|chandelier/)) return { collection: 'Lighting', uncertain: false };
+            if (text.match(/rug|carpet/)) return { collection: 'Rugs', uncertain: false };
+            if (text.match(/decor|mirror|art|vase/)) return { collection: 'Home Decor', uncertain: false };
+            if (text.match(/outdoor|patio|garden/)) return { collection: 'Outdoor', uncertain: false };
 
-            // Furniture categories
-            if (combined.match(/sofa|couch|sectional|loveseat/)) {
-                collections.push('Sofas & Sectionals');
-            } else if (combined.match(/chair|armchair|accent chair|dining chair|recliner/)) {
-                collections.push('Chairs & Seating');
-            } else if (combined.match(/table|coffee table|end table|side table|console table|dining table/)) {
-                collections.push('Tables');
-            } else if (combined.match(/bed|mattress|headboard|bedframe/)) {
-                collections.push('Bedroom');
-            } else if (combined.match(/dresser|nightstand|armoire|wardrobe|chest/)) {
-                collections.push('Bedroom');
-            } else if (combined.match(/desk|office|bookshelf|bookcase/)) {
-                collections.push('Office Furniture');
-            } else if (combined.match(/rug|carpet|mat/)) {
-                collections.push('Rugs');
-            } else if (combined.match(/lamp|lighting|chandelier|sconce/)) {
-                collections.push('Lighting');
-            } else if (combined.match(/decor|decorative|wall art|mirror|vase|sculpture/)) {
-                collections.push('Home Decor');
-            } else if (combined.match(/outdoor|patio|garden/)) {
-                collections.push('Outdoor');
-            } else {
-                collections.push('Uncategorized');
-                uncertain = true;
-            }
-
-            return { collections, uncertain };
+            return { collection: 'Uncategorized', uncertain: true };
         }
 
-        async function analyzeProducts() {
+        // Screen navigation
+        function goToScreen(screenNumber) {
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            document.getElementById(`screen${screenNumber}`).classList.add('active');
+
+            if (screenNumber === 3) {
+                renderReviewScreen();
+            }
+        }
+
+        // Fetch products
+        async function fetchProducts() {
             const urls = document.getElementById('productUrls').value.trim();
             if (!urls) {
                 alert('Please enter at least one product URL');
@@ -488,9 +558,8 @@
             }
 
             const urlList = urls.split('\n').filter(url => url.trim());
-            const resultDiv = document.getElementById('analysisResult');
-
-            resultDiv.innerHTML = '<div class="loading">🔄 Scraping products... This may take a moment...</div>';
+            const errorDiv = document.getElementById('fetchError');
+            errorDiv.innerHTML = '<div class="loading"><div class="loading-spinner"></div><p>Scraping products... This may take a moment...</p></div>';
 
             try {
                 const response = await fetch('/api/scrape', {
@@ -499,165 +568,167 @@
                     body: JSON.stringify({ urls: urlList })
                 });
 
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
                 const data = await response.json();
-                products = (data.products || []).map(p => {
-                    // Initialize with scraped dimensions or defaults
-                    const dims = p.dimensions || { length: 24, width: 18, height: 12 };
-                    return {
-                        ...p,
-                        boxes: [{
-                            length: dims.length || 24,
-                            width: dims.width || 18,
-                            height: dims.height || 12
-                        }]
-                    };
-                });
+                products = (data.products || []).map(p => ({
+                    ...p,
+                    boxes: [{
+                        length: p.dimensions?.length || 24,
+                        width: p.dimensions?.width || 18,
+                        height: p.dimensions?.height || 12,
+                        weight: p.weight || 10
+                    }],
+                    vendor: p.retailer || 'Unknown',
+                    basePrice: p.price || 0,
+                    customMargin: null
+                }));
 
-                displayProductAnalysis();
+                errorDiv.innerHTML = '';
+                goToScreen(2);
+                renderProductsScreen();
 
             } catch (error) {
-                console.error('Error analyzing products:', error);
-                resultDiv.innerHTML = `<div class="error">❌ Error: ${error.message}</div>`;
+                console.error('Error fetching products:', error);
+                errorDiv.innerHTML = `<div class="error">Error: ${error.message}</div>`;
             }
         }
 
-        function displayProductAnalysis() {
-            const container = document.getElementById('analysisResult');
-
-            if (!products || products.length === 0) {
+        // Render products screen
+        function renderProductsScreen() {
+            const container = document.getElementById('productsContainer');
+            if (!products.length) {
                 container.innerHTML = '<div class="error">No products found</div>';
                 return;
             }
 
-            let html = '<div style="margin: 20px 0;"><button class="btn btn-export" onclick="exportToShopifyCSV()">📥 Download Shopify CSV</button></div>';
-            html += '<div class="product-analysis">';
-
-            products.forEach((product, index) => {
-                const { collections, uncertain } = categorizeProduct(product);
-                const collectionTags = collections.map(c =>
-                    `<span class="collection-tag ${uncertain ? 'uncertain' : ''}">${c}</span>`
-                ).join('');
-
-                html += `
-                    <div class="product-item" data-index="${index}">
-                        <div class="product-header">
-                            <div class="product-name">${product.name || 'Unnamed Product'}</div>
-                            <div class="product-retailer">${product.retailer || 'Unknown'}</div>
-                        </div>
-
-                        <div style="margin-bottom: 10px;">
-                            <strong>Collections:</strong> ${collectionTags}
-                        </div>
-
-                        <div class="price-input-section">
-                            <label>Product Price ($)</label>
-                            <input type="number" value="${product.price || 0}" step="0.01" min="0"
-                                   onchange="updatePrice(${index}, this.value)">
-                        </div>
-
-                        <div class="boxes-section">
-                            <h4>📦 Shipping Boxes (Add multiple if item ships in multiple boxes)</h4>
-                            <div id="boxes-${index}"></div>
-                            <button class="btn-add-box" onclick="addBox(${index})">+ Add Box</button>
-                        </div>
-
-                        <div class="margin-editor">
-                            <label>✏️ Profit Margin (%)</label>
-                            <input type="number" id="margin-${index}" value="" step="0.5" min="0" max="100"
-                                   onchange="updateMargin(${index}, this.value)">
-                            <small id="margin-suggestion-${index}"></small>
-                        </div>
-
-                        <div class="calculations" id="calc-${index}"></div>
-                    </div>
-                `;
-            });
-
-            html += '</div>';
-            container.innerHTML = html;
-
-            // Render boxes and calculate
-            products.forEach((product, index) => {
-                renderBoxes(index);
-                calculateProduct(index);
-            });
-        }
-
-        function renderBoxes(productIndex) {
-            const product = products[productIndex];
-            const container = document.getElementById(`boxes-${productIndex}`);
-
-            let html = '';
-            product.boxes.forEach((box, boxIndex) => {
-                html += `
-                    <div class="box-item">
-                        ${product.boxes.length > 1 ? `<button class="btn-remove-box" onclick="removeBox(${productIndex}, ${boxIndex})">✕</button>` : ''}
-                        <div style="font-weight: 600; font-size: 12px; margin-bottom: 8px;">Box ${boxIndex + 1}</div>
-                        <div class="box-dimensions">
-                            <div class="dimension-input">
-                                <label>Length (in)</label>
-                                <input type="number" value="${box.length}" step="0.1" min="0"
-                                       onchange="updateBoxDimension(${productIndex}, ${boxIndex}, 'length', this.value)">
+            container.innerHTML = products.map((product, idx) => `
+                <div class="product-card">
+                    <div class="product-header">
+                        <img src="${product.image || 'https://placehold.co/100x100?text=No+Image'}"
+                             alt="${product.name}" class="product-thumbnail">
+                        <div class="product-info">
+                            <div class="product-title">${product.name || 'Unnamed Product'}</div>
+                            <div class="product-meta">
+                                <strong>Vendor:</strong>
+                                <input type="text" value="${product.vendor}"
+                                       onchange="updateProductField(${idx}, 'vendor', this.value)"
+                                       style="width: 200px; display: inline-block;">
                             </div>
-                            <div class="dimension-input">
-                                <label>Width (in)</label>
-                                <input type="number" value="${box.width}" step="0.1" min="0"
-                                       onchange="updateBoxDimension(${productIndex}, ${boxIndex}, 'width', this.value)">
-                            </div>
-                            <div class="dimension-input">
-                                <label>Height (in)</label>
-                                <input type="number" value="${box.height}" step="0.1" min="0"
-                                       onchange="updateBoxDimension(${productIndex}, ${boxIndex}, 'height', this.value)">
+                            <div class="product-meta"><strong>Source:</strong> ${product.url}</div>
+                            <div class="product-meta">
+                                <strong>Base Price:</strong> $
+                                <input type="number" value="${product.basePrice}" step="0.01" min="0"
+                                       onchange="updateProductField(${idx}, 'basePrice', parseFloat(this.value))"
+                                       style="width: 100px; display: inline-block;">
                             </div>
                         </div>
                     </div>
-                `;
+
+                    <div class="boxes-section">
+                        <h4>Shipping Boxes</h4>
+                        <div id="boxes-${idx}"></div>
+                        <button class="btn-add-box" onclick="addBox(${idx})">+ Add Box</button>
+                    </div>
+
+                    <div class="margin-editor">
+                        <label>Profit Margin (%)</label>
+                        <div class="margin-input-group">
+                            <input type="number" id="margin-${idx}" step="0.5" min="0" max="100"
+                                   onchange="updateMargin(${idx}, parseFloat(this.value))">
+                            <span class="margin-suggestion" id="margin-suggestion-${idx}"></span>
+                        </div>
+                    </div>
+
+                    <div class="pricing-section" id="pricing-${idx}"></div>
+                </div>
+            `).join('');
+
+            // Render boxes and calculate pricing for each product
+            products.forEach((_, idx) => {
+                renderBoxes(idx);
+                calculatePricing(idx);
             });
-
-            container.innerHTML = html;
         }
 
-        function addBox(productIndex) {
-            products[productIndex].boxes.push({ length: 24, width: 18, height: 12 });
-            renderBoxes(productIndex);
-            calculateProduct(productIndex);
+        // Render boxes
+        function renderBoxes(productIdx) {
+            const product = products[productIdx];
+            const container = document.getElementById(`boxes-${productIdx}`);
+
+            container.innerHTML = product.boxes.map((box, boxIdx) => `
+                <div class="box-item">
+                    <div class="box-header">
+                        <span class="box-label">Box ${boxIdx + 1}</span>
+                        ${product.boxes.length > 1 ? `
+                            <button class="btn-remove-box" onclick="removeBox(${productIdx}, ${boxIdx})">Remove</button>
+                        ` : ''}
+                    </div>
+                    <div class="box-dimensions">
+                        <div class="dimension-field">
+                            <label>Length (in)</label>
+                            <input type="number" value="${box.length}" step="0.1" min="0"
+                                   onchange="updateBoxDimension(${productIdx}, ${boxIdx}, 'length', parseFloat(this.value))">
+                        </div>
+                        <div class="dimension-field">
+                            <label>Width (in)</label>
+                            <input type="number" value="${box.width}" step="0.1" min="0"
+                                   onchange="updateBoxDimension(${productIdx}, ${boxIdx}, 'width', parseFloat(this.value))">
+                        </div>
+                        <div class="dimension-field">
+                            <label>Height (in)</label>
+                            <input type="number" value="${box.height}" step="0.1" min="0"
+                                   onchange="updateBoxDimension(${productIdx}, ${boxIdx}, 'height', parseFloat(this.value))">
+                        </div>
+                        <div class="dimension-field">
+                            <label>Weight (lbs)</label>
+                            <input type="number" value="${box.weight}" step="0.1" min="0"
+                                   onchange="updateBoxDimension(${productIdx}, ${boxIdx}, 'weight', parseFloat(this.value))">
+                        </div>
+                    </div>
+                </div>
+            `).join('');
         }
 
-        function removeBox(productIndex, boxIndex) {
-            if (products[productIndex].boxes.length > 1) {
-                products[productIndex].boxes.splice(boxIndex, 1);
-                renderBoxes(productIndex);
-                calculateProduct(productIndex);
+        // Add/remove boxes
+        function addBox(productIdx) {
+            products[productIdx].boxes.push({ length: 24, width: 18, height: 12, weight: 10 });
+            renderBoxes(productIdx);
+            calculatePricing(productIdx);
+        }
+
+        function removeBox(productIdx, boxIdx) {
+            if (products[productIdx].boxes.length > 1) {
+                products[productIdx].boxes.splice(boxIdx, 1);
+                renderBoxes(productIdx);
+                calculatePricing(productIdx);
             }
         }
 
-        function updateBoxDimension(productIndex, boxIndex, dimension, value) {
-            products[productIndex].boxes[boxIndex][dimension] = parseFloat(value) || 0;
-            calculateProduct(productIndex);
+        // Update box dimension
+        function updateBoxDimension(productIdx, boxIdx, field, value) {
+            products[productIdx].boxes[boxIdx][field] = value || 0;
+            calculatePricing(productIdx);
         }
 
-        function updatePrice(index, value) {
-            products[index].price = parseFloat(value) || 0;
-            calculateProduct(index);
-        }
-
-        function updateMargin(index, value) {
-            const marginValue = parseFloat(value);
-            if (marginValue > 0) {
-                products[index].customMargin = marginValue;
-            } else {
-                delete products[index].customMargin;
+        // Update product field
+        function updateProductField(productIdx, field, value) {
+            products[productIdx][field] = value;
+            if (field === 'basePrice') {
+                calculatePricing(productIdx);
             }
-            calculateProduct(index);
         }
 
-        function calculateProduct(index) {
-            const product = products[index];
-            const price = product.price || 0;
+        // Update margin
+        function updateMargin(productIdx, value) {
+            products[productIdx].customMargin = value > 0 ? value : null;
+            calculatePricing(productIdx);
+        }
+
+        // Calculate pricing
+        function calculatePricing(productIdx) {
+            const product = products[productIdx];
+            const basePrice = product.basePrice || 0;
 
             // Calculate total cubic feet from all boxes
             let totalCubicFeet = 0;
@@ -666,42 +737,28 @@
                 totalCubicFeet += cubicInches / 1728;
             });
 
-            // Freight calculation (simplified - $8.50 per cubic foot, $30 minimum)
+            // Freight: $8.50 per cubic foot, $30 minimum
             const freightCost = Math.max(30, totalCubicFeet * 8.5);
 
-            // Duty calculation (25% of item price)
-            const dutyAmount = price * 0.25;
+            // Duty: 25% of item price
+            const dutyAmount = basePrice * 0.25;
 
-            // Wharfage (1.5% of item price)
-            const wharfage = price * 0.015;
+            // Wharfage: 1.5% of item price
+            const wharfage = basePrice * 0.015;
 
             // Total landed cost
-            const landedCost = price + freightCost + dutyAmount + wharfage;
+            const landedCost = basePrice + freightCost + dutyAmount + wharfage;
 
-            // Determine margin to use (custom or dynamic)
-            const suggestedMargin = getMarginPercent(landedCost);
-            const marginPercent = product.customMargin !== undefined ? product.customMargin : suggestedMargin;
+            // Determine margin
+            const defaultMargin = getDefaultMargin(landedCost);
+            const marginPercent = product.customMargin !== null ? product.customMargin : defaultMargin;
             const marginAmount = landedCost * (marginPercent / 100);
-
-            // Update margin input and suggestion
-            const marginInput = document.getElementById(`margin-${index}`);
-            const marginSuggestion = document.getElementById(`margin-suggestion-${index}`);
-            if (marginInput && !marginInput.value) {
-                marginInput.value = suggestedMargin.toFixed(1);
-            }
-            if (marginSuggestion) {
-                if (product.customMargin !== undefined) {
-                    marginSuggestion.textContent = `Suggested: ${suggestedMargin.toFixed(1)}% (${getMarginTierLabel(landedCost)})`;
-                } else {
-                    marginSuggestion.textContent = `Auto: ${getMarginTierLabel(landedCost)}`;
-                }
-            }
 
             // MSRP before rounding
             const msrpBeforeRounding = landedCost + marginAmount;
 
-            // Round up to nearest $5
-            const msrp = roundToNearest5(msrpBeforeRounding);
+            // Round UP to next $5
+            const msrpRounded = roundToNext5(msrpBeforeRounding);
 
             // Store calculated values
             product.calculated = {
@@ -713,141 +770,173 @@
                 marginPercent,
                 marginAmount,
                 msrpBeforeRounding,
-                msrp
+                msrpRounded
             };
 
-            // Display calculations
-            const calcDiv = document.getElementById(`calc-${index}`);
-            const isCustomMargin = product.customMargin !== undefined;
-            calcDiv.innerHTML = `
-                <div class="calc-row">
-                    <span>Total Cubic Feet (${product.boxes.length} box${product.boxes.length > 1 ? 'es' : ''}):</span>
-                    <span>${totalCubicFeet.toFixed(3)} ft³</span>
-                </div>
-                <div class="calc-row">
-                    <span>Product Price:</span>
-                    <span>$${price.toFixed(2)}</span>
-                </div>
-                <div class="calc-row">
-                    <span>Freight Cost:</span>
-                    <span>$${freightCost.toFixed(2)}</span>
-                </div>
-                <div class="calc-row">
-                    <span>Duty (25%):</span>
-                    <span>$${dutyAmount.toFixed(2)}</span>
-                </div>
-                <div class="calc-row">
-                    <span>Wharfage (1.5%):</span>
-                    <span>$${wharfage.toFixed(2)}</span>
-                </div>
-                <div class="calc-row landed">
-                    <span>Total Landed Cost:</span>
-                    <span>$${landedCost.toFixed(2)}</span>
-                </div>
-                <div class="calc-row">
-                    <span>Profit Margin (${marginPercent.toFixed(1)}%)${isCustomMargin ? ' 📝' : ' ✨'}:</span>
-                    <span>$${marginAmount.toFixed(2)}</span>
-                </div>
-                <div class="calc-row">
-                    <span>MSRP (before rounding):</span>
-                    <span>$${msrpBeforeRounding.toFixed(2)}</span>
-                </div>
-                <div class="calc-row total">
-                    <span>FINAL MSRP (rounded to $5):</span>
-                    <span>$${msrp.toFixed(2)}</span>
-                </div>
+            // Update margin input
+            const marginInput = document.getElementById(`margin-${productIdx}`);
+            const marginSuggestion = document.getElementById(`margin-suggestion-${productIdx}`);
+            if (marginInput && !marginInput.value) {
+                marginInput.value = defaultMargin.toFixed(1);
+            }
+            if (marginSuggestion) {
+                marginSuggestion.textContent = product.customMargin !== null
+                    ? `Suggested: ${defaultMargin.toFixed(1)}% (${getMarginTierLabel(landedCost)})`
+                    : `Auto: ${getMarginTierLabel(landedCost)}`;
+            }
+
+            // Update pricing display
+            const pricingDiv = document.getElementById(`pricing-${productIdx}`);
+            if (pricingDiv) {
+                pricingDiv.innerHTML = `
+                    <div class="price-row">
+                        <span>Total Cubic Feet (${product.boxes.length} box${product.boxes.length > 1 ? 'es' : ''}):</span>
+                        <span>${totalCubicFeet.toFixed(3)} ft³</span>
+                    </div>
+                    <div class="price-row">
+                        <span>Product Price:</span>
+                        <span>$${basePrice.toFixed(2)}</span>
+                    </div>
+                    <div class="price-row">
+                        <span>Freight Cost:</span>
+                        <span>$${freightCost.toFixed(2)}</span>
+                    </div>
+                    <div class="price-row">
+                        <span>Duty (25%):</span>
+                        <span>$${dutyAmount.toFixed(2)}</span>
+                    </div>
+                    <div class="price-row">
+                        <span>Wharfage (1.5%):</span>
+                        <span>$${wharfage.toFixed(2)}</span>
+                    </div>
+                    <div class="price-row highlight">
+                        <span>Total Landed Cost:</span>
+                        <span>$${landedCost.toFixed(2)}</span>
+                    </div>
+                    <div class="price-row">
+                        <span>Profit Margin (${marginPercent.toFixed(1)}%):</span>
+                        <span>$${marginAmount.toFixed(2)}</span>
+                    </div>
+                    <div class="price-row">
+                        <span>MSRP (before rounding):</span>
+                        <span>$${msrpBeforeRounding.toFixed(2)}</span>
+                    </div>
+                    <div class="price-row total">
+                        <span>FINAL MSRP (rounded to $5):</span>
+                        <span>$${msrpRounded.toFixed(2)}</span>
+                    </div>
+                `;
+            }
+        }
+
+        // Render review screen
+        function renderReviewScreen() {
+            const container = document.getElementById('reviewContainer');
+
+            const tableRows = products.map((product, idx) => {
+                const calc = product.calculated || {};
+                const collectionInfo = autoAssignCollection(product);
+
+                return `
+                    <tr>
+                        <td>${product.name || 'Unnamed'}</td>
+                        <td><input type="text" value="${product.vendor}" onchange="products[${idx}].vendor = this.value"></td>
+                        <td><input type="text" value="Furniture" onchange="products[${idx}].type = this.value"></td>
+                        <td><input type="text" value="" onchange="products[${idx}].tags = this.value"></td>
+                        <td>$${(calc.landedCost || 0).toFixed(2)}</td>
+                        <td>${(calc.marginPercent || 0).toFixed(1)}%</td>
+                        <td><input type="number" value="${(calc.msrpRounded || 0).toFixed(2)}" step="5" onchange="products[${idx}].calculated.msrpRounded = parseFloat(this.value)"></td>
+                        <td><input type="text" value="${product.sku || ''}" onchange="products[${idx}].sku = this.value"></td>
+                        <td>
+                            <span class="collection-badge ${collectionInfo.uncertain ? 'uncertain' : ''}">
+                                ${collectionInfo.collection}
+                            </span>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+
+            container.innerHTML = `
+                <table class="review-table">
+                    <thead>
+                        <tr>
+                            <th>Title</th>
+                            <th>Vendor</th>
+                            <th>Type</th>
+                            <th>Tags</th>
+                            <th>Landed Cost</th>
+                            <th>Margin</th>
+                            <th>Price</th>
+                            <th>SKU</th>
+                            <th>Collection</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${tableRows}
+                    </tbody>
+                </table>
             `;
         }
 
-        function exportToShopifyCSV() {
-            if (!products || products.length === 0) {
+        // Export Shopify CSV
+        function exportShopifyCSV() {
+            if (!products.length) {
                 alert('No products to export');
                 return;
             }
 
-            // Shopify CSV headers
             const headers = [
-                'Handle', 'Title', 'Body (HTML)', 'Vendor', 'Type',
-                'Tags', 'Published', 'Option1 Name', 'Option1 Value',
-                'Variant SKU', 'Variant Grams', 'Variant Inventory Tracker',
-                'Variant Inventory Policy', 'Variant Fulfillment Service',
+                'Handle', 'Title', 'Body (HTML)', 'Vendor', 'Type', 'Tags', 'Published',
+                'Option1 Name', 'Option1 Value', 'Variant SKU', 'Variant Grams',
+                'Variant Inventory Tracker', 'Variant Inventory Policy', 'Variant Fulfillment Service',
                 'Variant Price', 'Variant Compare At Price', 'Variant Requires Shipping',
-                'Variant Taxable', 'Variant Barcode', 'Image Src', 'Image Position',
-                'Image Alt Text', 'Gift Card', 'SEO Title', 'SEO Description',
-                'Google Shopping / Google Product Category', 'Google Shopping / Gender',
-                'Google Shopping / Age Group', 'Google Shopping / MPN',
-                'Google Shopping / AdWords Grouping', 'Google Shopping / AdWords Labels',
-                'Google Shopping / Condition', 'Google Shopping / Custom Product',
-                'Google Shopping / Custom Label 0', 'Google Shopping / Custom Label 1',
-                'Google Shopping / Custom Label 2', 'Google Shopping / Custom Label 3',
-                'Google Shopping / Custom Label 4', 'Variant Image', 'Variant Weight Unit',
-                'Variant Tax Code', 'Cost per item', 'Status', 'Collection'
+                'Variant Taxable', 'Image Src', 'Image Position', 'Gift Card',
+                'Status', 'Cost per item', 'Collection'
             ];
 
             const rows = [headers];
 
             products.forEach(product => {
                 const calc = product.calculated || {};
-                const { collections, uncertain } = categorizeProduct(product);
-                const collectionStr = uncertain ? `⚠️ ${collections.join(', ')}` : collections.join(', ');
+                const collectionInfo = autoAssignCollection(product);
 
-                // Create handle from title
                 const handle = (product.name || 'product')
                     .toLowerCase()
                     .replace(/[^a-z0-9]+/g, '-')
                     .replace(/^-|-$/g, '');
 
-                const row = [
-                    handle, // Handle
-                    product.name || 'Unnamed Product', // Title
-                    product.description || '', // Body (HTML)
-                    product.retailer || 'SDL', // Vendor
-                    'Furniture', // Type
-                    '', // Tags
-                    'TRUE', // Published
-                    'Title', // Option1 Name
-                    'Default Title', // Option1 Value
-                    product.sku || '', // Variant SKU
-                    '', // Variant Grams
-                    'shopify', // Variant Inventory Tracker
-                    'deny', // Variant Inventory Policy
-                    'manual', // Variant Fulfillment Service
-                    calc.msrp || 0, // Variant Price
-                    '', // Variant Compare At Price
-                    'TRUE', // Variant Requires Shipping
-                    'TRUE', // Variant Taxable
-                    '', // Variant Barcode
-                    product.image || '', // Image Src
-                    '1', // Image Position
-                    '', // Image Alt Text
-                    'FALSE', // Gift Card
-                    product.name || '', // SEO Title
-                    '', // SEO Description
-                    'Furniture', // Google Shopping / Google Product Category
-                    '', // Google Shopping / Gender
-                    '', // Google Shopping / Age Group
-                    '', // Google Shopping / MPN
-                    '', // Google Shopping / AdWords Grouping
-                    '', // Google Shopping / AdWords Labels
-                    'new', // Google Shopping / Condition
-                    'FALSE', // Google Shopping / Custom Product
-                    '', '', '', '', '', // Custom Labels 0-4
-                    '', // Variant Image
-                    'kg', // Variant Weight Unit
-                    '', // Variant Tax Code
-                    calc.landedCost || 0, // Cost per item
-                    'active', // Status
-                    collectionStr // Collection
-                ];
-
-                rows.push(row);
+                rows.push([
+                    handle,
+                    product.name || 'Unnamed Product',
+                    product.description || '',
+                    product.vendor || 'SDL',
+                    product.type || 'Furniture',
+                    product.tags || '',
+                    'TRUE',
+                    'Title',
+                    'Default Title',
+                    product.sku || '',
+                    '',
+                    'shopify',
+                    'deny',
+                    'manual',
+                    calc.msrpRounded || 0,
+                    '',
+                    'TRUE',
+                    'TRUE',
+                    product.image || '',
+                    '1',
+                    'FALSE',
+                    'active',
+                    calc.landedCost || 0,
+                    collectionInfo.uncertain ? `REVIEW_COLLECTION: ${collectionInfo.collection}` : collectionInfo.collection
+                ]);
             });
 
             // Convert to CSV
             const csvContent = rows.map(row =>
                 row.map(cell => {
                     const str = String(cell || '');
-                    // Escape quotes and wrap in quotes if contains comma or quote
                     if (str.includes(',') || str.includes('"') || str.includes('\n')) {
                         return '"' + str.replace(/"/g, '""') + '"';
                     }
@@ -867,10 +956,11 @@
             document.body.removeChild(link);
         }
 
-        function clearAnalysis() {
+        // Clear all
+        function clearAll() {
             products = [];
             document.getElementById('productUrls').value = '';
-            document.getElementById('analysisResult').innerHTML = '';
+            goToScreen(1);
         }
     </script>
 </body>
