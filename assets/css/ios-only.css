@@ -1,0 +1,55 @@
+/* iOS-only rules (active only when html.ios is present) */
+html.ios, html.ios body {
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  height: auto !important;
+  max-width: 100vw;
+  overscroll-behavior: none; /* reduce bounce/ping-back */
+}
+
+/* Break out of theme containers ONLY on iOS */
+html.ios #imports-root.imports-uncontained {
+  width: 100vw;
+  margin-left: calc(50% - 50vw);
+  margin-right: calc(50% - 50vw);
+}
+html.ios .content-for-layout,
+html.ios .page-width,
+html.ios .container,
+html.ios #MainContent,
+html.ios #app {
+  overflow: visible !important;
+  max-height: none !important;
+  height: auto !important;
+  contain: none !important;
+}
+
+/* Convert fixed viewport traps into growth-friendly height */
+html.ios [style*="height:100vh"],
+html.ios [style*="height: 100vh"],
+html.ios [style*="height:calc(100vh"],
+html.ios [style*="height: calc(100vh"],
+html.ios .vh-100,
+html.ios .h-screen,
+html.ios .full-viewport,
+html.ios .page-viewport {
+  height: auto !important;
+  min-height: 100dvh !important;  /* dynamic viewport height for iOS toolbars */
+  overflow: visible !important;
+}
+
+/* Bottom CTA should always be reachable on iOS */
+html.ios .sticky-cta {
+  position: sticky;
+  bottom: env(safe-area-inset-bottom, 0);
+}
+html.ios .page-end-spacer {
+  height: clamp(24px, 6vh, 72px);
+}
+
+
+/* Optional: guard against accidental horizontal scroll on iOS */
+html.ios * {
+  max-width: 100vw;
+  box-sizing: border-box;
+}

@@ -1,0 +1,72 @@
+/* Activate ONLY when <html> has class "ios" */
+html.ios, html.ios body {
+  overflow-y: auto !important;   /* page owns vertical scroll */
+  overflow-x: hidden !important;
+  height: auto !important;       /* never clamp document height */
+  max-width: 100vw;
+  overscroll-behavior: none;     /* reduce bounce/ping-back */
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Break out of host/theme containers ONLY on iOS */
+html.ios #imports-root.imports-uncontained {
+  width: 100vw;
+  margin-left: calc(50% - 50vw);
+  margin-right: calc(50% - 50vw);
+}
+html.ios .content-for-layout,
+html.ios .page-width,
+html.ios .container,
+html.ios #MainContent,
+html.ios #app,
+html.ios #imports-root {
+  overflow: visible !important;
+  max-height: none !important;
+  height: auto !important;
+  contain: none !important;
+  max-width: 100vw !important;
+}
+
+/* Convert any full-viewport traps into growth-friendly layout */
+html.ios [style*="height:100vh"],
+html.ios [style*="height: 100vh"],
+html.ios [style*="height:calc(100vh"],
+html.ios [style*="height: calc(100vh"],
+html.ios .vh-100,
+html.ios .h-screen,
+html.ios .full-viewport,
+html.ios .page-viewport {
+  height: auto !important;
+  /* prefer small/dynamic viewport units to handle toolbar collapse */
+  min-height: 100svh !important;
+  overflow: visible !important;
+}
+
+/* Main content wrappers must never clip on iOS */
+html.ios .calculator-page,
+html.ios .calculator-content,
+html.ios .quote-page,
+html.ios .quote-content {
+  width: 100%;
+  box-sizing: border-box;
+  overflow: visible !important;
+  height: auto !important;
+  min-height: 100svh !important;
+}
+
+/* Bottom CTA must always be reachable on iOS */
+html.ios .sticky-cta {
+  position: sticky;
+  bottom: env(safe-area-inset-bottom, 0);
+}
+
+/* Add breathing room at the end so iOS can scroll past the last element */
+html.ios .page-end-spacer {
+  height: clamp(24px, 6vh, 96px);
+}
+
+/* Safety: avoid accidental horizontal scroll from wide children */
+html.ios * {
+  box-sizing: border-box;
+  max-width: 100vw;
+}

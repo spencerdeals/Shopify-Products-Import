@@ -1,0 +1,65 @@
+/* --- GLOBAL SCROLL UNLOCK --- */
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  max-width: 100vw;
+  overflow-x: hidden !important;   /* prevent sideways scroll */
+  overflow-y: auto !important;     /* PAGE owns vertical scroll */
+  height: auto !important;         /* never clamp document to viewport */
+  min-height: 0 !important;
+  -webkit-text-size-adjust: 100%;
+  overscroll-behavior: none;       /* avoid iOS bounce ping-back */
+}
+
+/* dynamic viewport variable (handles iOS toolbars) */
+:root { --vvh: 100dvh; }
+@supports (height: 100svh) { :root { --vvh: 100svh; } }
+
+/* Kill fixed 100vh traps on content wrappers */
+[style*="height:100vh"], [style*="height: 100vh"],
+[style*="height:calc(100vh"], [style*="height: calc(100vh"],
+.vh-100, .h-screen, .full-viewport, .page-viewport {
+  height: auto !important;
+  min-height: var(--vvh) !important;
+  overflow: visible !important;
+}
+
+/* Nuke nested scroll areas except true modals/carousels */
+*[style*="overflow:auto"], *[style*="overflow: auto"],
+*[style*="overflow:scroll"], *[style*="overflow: scroll"],
+.scroll-area, .content-scroll, .panel-scroll {
+  overflow: visible !important;
+  max-height: none !important;
+}
+
+/* Full-bleed breakout from host/theme containers */
+#imports-root.imports-uncontained{
+  width: 100vw;
+  margin-left: calc(50% - 50vw);
+  margin-right: calc(50% - 50vw);
+}
+#imports-root.imports-uncontained .container,
+#imports-root.imports-uncontained .page-width,
+#imports-root.imports-uncontained .content-for-layout{
+  max-width: 100vw !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  margin: 0 !important;
+}
+
+/* Main content wrappers should never clip */
+.calculator-page, .calculator-content, .quote-page, .quote-content {
+  width: 100%;
+  box-sizing: border-box;
+  overflow: visible !important;
+  height: auto !important;
+  min-height: var(--vvh) !important;
+}
+
+/* Safe-area friendly sticky CTA + spacer so it's always reachable */
+.sticky-cta {
+  position: sticky;
+  bottom: env(safe-area-inset-bottom, 0);
+}
+.page-end-spacer { height: clamp(24px, 6vh, 72px); }

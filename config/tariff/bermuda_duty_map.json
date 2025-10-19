@@ -1,0 +1,50 @@
+{
+  "_meta": {
+    "version": 1,
+    "defaultDutyPct": 26.5,
+    "description": "Bermuda Customs Tariff 2024 - Conservative mappings for common import categories"
+  },
+  "rules": [
+    {
+      "match": {
+        "hs": ["94"],
+        "keywordsAny": [],
+        "vendorsAny": []
+      },
+      "dutyPct": 25.0,
+      "note": "Furniture & parts (Section XX, ch. 94)"
+    },
+    {
+      "match": {
+        "keywordsAny": ["mattress", "memory foam", "hybrid mattress", "box spring", "bed mattress"],
+        "vendorsAny": []
+      },
+      "dutyPct": 25.0,
+      "note": "Mattresses - furniture category"
+    },
+    {
+      "match": {
+        "vendorsAny": ["ikea"],
+        "keywordsAny": ["kallax", "billy", "pax", "hemnes", "ivar", "malm", "brimnes", "ektorp", "poäng", "lack"]
+      },
+      "dutyPct": 25.0,
+      "note": "Common IKEA furniture lines"
+    },
+    {
+      "match": {
+        "keywordsAny": ["sofa", "couch", "sectional", "loveseat", "chair", "recliner", "armchair", "dining table", "coffee table", "desk", "bookshelf", "dresser", "nightstand", "wardrobe", "cabinet"],
+        "vendorsAny": []
+      },
+      "dutyPct": 25.0,
+      "note": "Common furniture items"
+    },
+    {
+      "match": {
+        "keywordsAny": ["appliance", "refrigerator", "washer", "dryer", "range", "microwave", "dishwasher", "oven", "stove"],
+        "vendorsAny": []
+      },
+      "dutyPct": 0.0,
+      "note": "Large household appliances - typically low/exempt (verify per item)"
+    }
+  ]
+}

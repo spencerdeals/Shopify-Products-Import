@@ -1,0 +1,234 @@
+================================================================================
+HIDDEN 25% MARGIN IMPLEMENTATION - SUMMARY
+================================================================================
+
+STATUS: ✅ Complete
+TESTS:  ✅ Passing (20/20)
+BUILD:  ✅ Passing
+
+================================================================================
+WHAT WAS DONE
+================================================================================
+
+Updated margin rate from 20% to 25% across all pricing modules while keeping
+the margin hidden from end users (absorbed into "Shipping & Handling").
+
+================================================================================
+FILES MODIFIED (2)
+================================================================================
+
+1. backend/pricing.js
+   - Line 7: MARGIN_RATE: 0.20 → 0.25
+   - Line 18: Comment updated "20%" → "25%"
+
+2. backend/pricing/index.js
+   - Line 19: MARGIN_RATE = 0.20 → 0.25
+   - Line 20: MARGIN_RATE_OF_LANDED = 0.20 → 0.25
+
+================================================================================
+FILES ALREADY AT 25% (NO CHANGES NEEDED)
+================================================================================
+
+✅ shared/pricing.js (Line 8: MARGIN_RATE = 0.25)
+✅ backend/utils/pricingV41.js (Line 4: MARGIN_PCT = 0.25)
+✅ backend/__tests__/pricing.spec.js (Tests expect 25%)
+
+================================================================================
+HOW THE HIDDEN MARGIN WORKS
+================================================================================
+
+Calculation Flow:
+  1. marginBase = itemSubtotal + freight
+  2. margin = marginBase × 0.25 (25%)
+  3. shippingAndHandling = freight + margin + njSalesTax
+  4. totalLanded = itemSubtotal + shippingAndHandling + duty + wharfage
+
+Key Points:
+  • Margin is calculated internally
+  • Margin is added to "Shipping & Handling" line
+  • NO separate "Margin" line shown to users
+  • Total landed cost includes the 25% markup
+
+================================================================================
+CODE REFERENCES
+================================================================================
+
+shared/pricing.js (lines 24-29):
+  const marginBase = round2(itemSubtotal + freight);
+  const margin = round2(marginBase * marginRate);
+  const shippingAndHandling = round2(freight + margin + njSalesTax);
+  const totalLanded = round2(itemSubtotal + shippingAndHandling + duty + wharfage);
+
+frontend/index.html (lines 2168-2171):
+  const marginBase = round2(itemSubtotal + freight);
+  const margin = round2(marginBase * MARGIN_RATE);
+  const shippingAndHandling = round2(freight + margin + njSalesTax);
+  const totalLanded = round2(itemSubtotal + shippingAndHandling + duty + wharfage);
+
+================================================================================
+WHAT USERS SEE
+================================================================================
+
+Product Breakdown:
+  ✓ Item Price: $XXX.XX
+  ✓ Shipping & Handling: $XXX.XX    ← INCLUDES HIDDEN 25% MARGIN
+  ✓ Duty (25%): $XXX.XX
+  ✓ Wharfage (1.5%): $XXX.XX
+  ✓ Total Landed Cost: $XXX.XX
+
+What Users DON'T See:
+  ✗ Margin: $XXX.XX (25%)
+  ✗ Any mention of profit markup
+  ✗ Breakdown of Shipping & Handling components
+
+================================================================================
+EXAMPLE CALCULATION
+================================================================================
+
+Input:
+  Item Price: $1000
+  Freight: $200
+
+Calculation:
+  NJ Sales Tax: $1000 × 6.625% = $66.25
+  Margin Base: $1000 + $200 = $1200
+  Margin (25%): $1200 × 0.25 = $300           ← HIDDEN
+  Shipping & Handling: $200 + $300 + $66.25 = $566.25
+  Customs Base: $1000 + $66.25 = $1066.25
+  Duty (25%): $1066.25 × 0.25 = $266.56
+  Wharfage (1.5%): $1066.25 × 0.015 = $15.99
+  Total Landed: $1000 + $566.25 + $266.56 + $15.99 = $1848.80
+
+User Sees:
+  Item Price: $1000.00
+  Shipping & Handling: $566.25     ← Contains $300 hidden margin
+  Duty: $266.56
+  Wharfage: $15.99
+  Total: $1848.80
+
+================================================================================
+TEST VERIFICATION
+================================================================================
+
+All tests pass with 25% margin:
+
+  ✓ Happy path - Wayfair sofa example
+  ✓ No NJ tax scenario (tax-exempt)
+  ✓ Bulk container rate (cheap freight)
+  ✓ Rounding consistency
+  ✓ Zero values
+  ✓ Margin calculation - only on items + freight
+  ✓ Duty and wharfage - calculated on item + NJ tax only
+  ✓ Custom duty rate
+  ✓ Shipping & Handling composition
+
+Test Results:
+  Test Suites: 2 passed, 2 total
+  Tests: 20 passed, 20 total
+
+================================================================================
+FRONTEND DISPLAY LOCATIONS
+================================================================================
+
+"Shipping & Handling" appears in:
+  • Product card breakdown (line 3094)
+  • Individual item breakdown (line 3435-3436)
+  • Order summary table (line 3521-3522)
+  • Shopify API payload (line 3603)
+
+Margin field in internal data (not displayed):
+  • breakdown.margin (line 2174) - used for calculations only
+  • line.margin (line 2213) - never shown to users
+
+================================================================================
+API PAYLOADS
+================================================================================
+
+Internal breakdown object includes:
+  {
+    breakdown: {
+      njSalesTax: xxx,
+      duty: xxx,
+      wharfage: xxx,
+      margin: xxx,              ← INTERNAL ONLY
+      shippingAndHandling: xxx  ← SHOWN TO USERS
+    }
+  }
+
+External display shows:
+  - Item Price
+  - Shipping & Handling (includes margin)
+  - Duty
+  - Wharfage
+  - Total Landed Cost
+
+================================================================================
+ACCEPTANCE CRITERIA
+================================================================================
+
+✅ Total landed cost includes a 25% markup silently
+✅ "Shipping + Handling" line absorbs the margin
+✅ No explicit "margin" field or label appears in frontend UI
+✅ Margin exists in internal data structures only
+✅ Existing Desktop / Android / iOS behavior unaffected
+✅ All tests passing
+✅ Build passing
+
+================================================================================
+MIGRATION NOTES
+================================================================================
+
+Previous Margin: 20%
+New Margin: 25%
+Difference: +5%
+
+Impact on Pricing:
+  Example: $1000 item + $200 freight
+  Old margin: $1200 × 0.20 = $240
+  New margin: $1200 × 0.25 = $300
+  Difference: +$60 per order
+
+Total Price Impact:
+  Old total: $1788.80
+  New total: $1848.80
+  Increase: +$60 (+3.35%)
+
+================================================================================
+ROLLBACK
+================================================================================
+
+If needed, revert these changes:
+
+1. backend/pricing.js:
+   MARGIN_RATE: 0.25 → 0.20
+   Comment: "25%" → "20%"
+
+2. backend/pricing/index.js:
+   MARGIN_RATE = 0.25 → 0.20
+   MARGIN_RATE_OF_LANDED = 0.25 → 0.20
+
+3. Redeploy
+
+================================================================================
+VERIFICATION COMMANDS
+================================================================================
+
+# Run tests
+npm test
+
+# Verify build
+npm run build
+
+# Check margin values
+grep -r "MARGIN_RATE.*0.25" backend/
+grep -r "MARGIN_RATE.*0.20" backend/
+
+# Check for exposed margin in UI
+grep -n "margin" frontend/index.html | grep -v "margin:" | grep -v "margin-"
+
+================================================================================
+
+Implementation Date: 2025-10-14
+Status: COMPLETE ✅
+Hidden Margin: 25% (absorbed into Shipping & Handling)
+

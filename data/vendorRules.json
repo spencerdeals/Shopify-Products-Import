@@ -1,0 +1,47 @@
+{
+  "assembledVendors": [
+    "pottery barn",
+    "west elm",
+    "crate & barrel",
+    "crate and barrel",
+    "restoration hardware",
+    "rh",
+    "cb2",
+    "serena & lily",
+    "serena and lily",
+    "anthropologie",
+    "arhaus",
+    "ethan allen",
+    "ashley furniture",
+    "bassett",
+    "la-z-boy",
+    "lazy boy",
+    "norwalk",
+    "havertys",
+    "design within reach",
+    "room & board",
+    "room and board"
+  ],
+  "flatpackVendors": [
+    "wayfair",
+    "ikea",
+    "amazon",
+    "overstock",
+    "temu",
+    "walmart",
+    "target",
+    "home depot",
+    "lowe's",
+    "lowes",
+    "allmodern",
+    "birch lane",
+    "joss & main",
+    "joss and main"
+  ],
+  "vendorMultiplier": {
+    "flatpack": 0.6,
+    "assembled": 1.0,
+    "premium": 1.0,
+    "neutral": 1.0
+  }
+}
