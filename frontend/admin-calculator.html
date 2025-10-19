@@ -579,9 +579,18 @@ Paste your product URLs here..."></textarea>
                         height: p.dimensions?.height || 12,
                         weight: p.weight || 10
                     }],
-                    vendor: p.retailer || 'Unknown',
+                    vendor: p.brand || p.retailer || 'Unknown',
                     basePrice: p.price || 0,
-                    customMargin: null
+                    customMargin: null,
+                    // Store additional ZEITS data for CSV export
+                    breadcrumbs: p.breadcrumbs || [],
+                    descriptionHtml: p.description || '',
+                    sku: p.sku || '',
+                    variants: p.variantOptions || [],
+                    allVariants: p.allVariants || [],
+                    rating: p.rating || null,
+                    reviews: p.reviews || null,
+                    images: p.images || []
                 }));
 
                 errorDiv.innerHTML = '';
@@ -837,12 +846,27 @@ Paste your product URLs here..."></textarea>
                 const calc = product.calculated || {};
                 const collectionInfo = autoAssignCollection(product);
 
+                // Determine Type from breadcrumbs
+                const breadcrumbs = product.breadcrumbs || [];
+                const productType = breadcrumbs.length > 0
+                    ? (typeof breadcrumbs[breadcrumbs.length - 1] === 'object'
+                        ? breadcrumbs[breadcrumbs.length - 1].name
+                        : breadcrumbs[breadcrumbs.length - 1])
+                    : 'Furniture';
+
+                // Build tags from breadcrumbs and reviews
+                let tags = breadcrumbs.map(b => typeof b === 'object' ? b.name : b).join(', ');
+                if (product.rating && product.reviews) {
+                    tags += tags ? `, ` : '';
+                    tags += `Rating: ${product.rating} (${product.reviews} reviews)`;
+                }
+
                 return `
                     <tr>
                         <td>${product.name || 'Unnamed'}</td>
                         <td><input type="text" value="${product.vendor}" onchange="products[${idx}].vendor = this.value"></td>
-                        <td><input type="text" value="Furniture" onchange="products[${idx}].type = this.value"></td>
-                        <td><input type="text" value="" onchange="products[${idx}].tags = this.value"></td>
+                        <td><input type="text" value="${productType}" onchange="products[${idx}].type = this.value"></td>
+                        <td><input type="text" value="${tags}" onchange="products[${idx}].tags = this.value"></td>
                         <td>$${(calc.landedCost || 0).toFixed(2)}</td>
                         <td>${(calc.marginPercent || 0).toFixed(1)}%</td>
                         <td><input type="number" value="${(calc.msrpRounded || 0).toFixed(2)}" step="5" onchange="products[${idx}].calculated.msrpRounded = parseFloat(this.value)"></td>
@@ -905,33 +929,108 @@ Paste your product URLs here..."></textarea>
                     .replace(/[^a-z0-9]+/g, '-')
                     .replace(/^-|-$/g, '');
 
-                rows.push([
-                    handle,
-                    product.name || 'Unnamed Product',
-                    product.description || '',
-                    product.vendor || 'SDL',
-                    product.type || 'Furniture',
-                    product.tags || '',
-                    'TRUE',
-                    'Title',
-                    'Default Title',
-                    product.sku || '',
-                    '',
-                    'shopify',
-                    'deny',
-                    'manual',
-                    calc.msrpRounded || 0,
-                    '',
-                    'TRUE',
-                    'TRUE',
-                    product.image || '',
-                    '1',
-                    'FALSE',
-                    'active',
-                    calc.landedCost || 0,
-                    collectionInfo.uncertain ? 'REVIEW_COLLECTION' : collectionInfo.collection,
-                    collectionInfo.uncertain ? 'TRUE' : 'FALSE'
-                ]);
+                // Determine Type from breadcrumbs (leaf node)
+                const breadcrumbs = product.breadcrumbs || [];
+                const productType = breadcrumbs.length > 0
+                    ? (typeof breadcrumbs[breadcrumbs.length - 1] === 'object'
+                        ? breadcrumbs[breadcrumbs.length - 1].name
+                        : breadcrumbs[breadcrumbs.length - 1])
+                    : 'Furniture';
+
+                // Build Tags from full breadcrumb path + rating/reviews
+                let tags = breadcrumbs.map(b => typeof b === 'object' ? b.name : b).join(', ');
+                if (product.rating && product.reviews) {
+                    tags += tags ? ', ' : '';
+                    tags += `Rating: ${product.rating} (${product.reviews} reviews)`;
+                }
+
+                // Build Body (HTML) with description + canonical link
+                let bodyHtml = product.descriptionHtml || product.description || '';
+                if (product.url) {
+                    bodyHtml += bodyHtml ? '<br><br>' : '';
+                    bodyHtml += `<p>Original product: <a href="${product.url}" target="_blank">${product.url}</a></p>`;
+                }
+
+                // Extract color variants if available
+                const colorVariants = [];
+                if (product.variants && product.variants.colors && Array.isArray(product.variants.colors)) {
+                    colorVariants.push(...product.variants.colors.map(c => c.value || c));
+                } else if (product.allVariants && Array.isArray(product.allVariants)) {
+                    // Parse allVariants for color options
+                    product.allVariants.forEach(v => {
+                        const colorMatch = v.match(/(?:Color|Colour):\s*([^,•|]+)/i);
+                        if (colorMatch) {
+                            colorVariants.push(colorMatch[1].trim());
+                        }
+                    });
+                }
+
+                // If we have color variants, create multiple rows
+                if (colorVariants.length > 0) {
+                    colorVariants.forEach((color, colorIdx) => {
+                        const variantSku = product.sku ? `${product.sku}-${color.toUpperCase().replace(/\s+/g, '')}` : '';
+                        const variantImage = product.images && product.images[colorIdx]
+                            ? (product.images[colorIdx].url || product.images[colorIdx])
+                            : product.image || '';
+
+                        rows.push([
+                            handle,
+                            product.name || 'Unnamed Product',
+                            bodyHtml,
+                            product.vendor || 'SDL',
+                            productType,
+                            tags,
+                            'TRUE',
+                            'Color',
+                            color,
+                            variantSku,
+                            product.weight ? Math.round(product.weight * 453.592) : '', // Convert lbs to grams
+                            'shopify',
+                            'deny',
+                            'manual',
+                            calc.msrpRounded || 0,
+                            '', // Compare At Price (leave blank)
+                            'TRUE',
+                            'TRUE',
+                            variantImage,
+                            (colorIdx + 1).toString(),
+                            'FALSE',
+                            'active',
+                            calc.landedCost || 0,
+                            collectionInfo.uncertain ? 'REVIEW_COLLECTION' : collectionInfo.collection,
+                            collectionInfo.uncertain ? 'TRUE' : 'FALSE'
+                        ]);
+                    });
+                } else {
+                    // No variants, single row
+                    rows.push([
+                        handle,
+                        product.name || 'Unnamed Product',
+                        bodyHtml,
+                        product.vendor || 'SDL',
+                        productType,
+                        tags,
+                        'TRUE',
+                        'Title',
+                        'Default Title',
+                        product.sku || '',
+                        product.weight ? Math.round(product.weight * 453.592) : '', // Convert lbs to grams
+                        'shopify',
+                        'deny',
+                        'manual',
+                        calc.msrpRounded || 0,
+                        '', // Compare At Price (leave blank)
+                        'TRUE',
+                        'TRUE',
+                        product.image || '',
+                        '1',
+                        'FALSE',
+                        'active',
+                        calc.landedCost || 0,
+                        collectionInfo.uncertain ? 'REVIEW_COLLECTION' : collectionInfo.collection,
+                        collectionInfo.uncertain ? 'TRUE' : 'FALSE'
+                    ]);
+                }
             });
 
             // Convert to CSV
