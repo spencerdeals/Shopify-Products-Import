@@ -1,1 +1,0 @@
-require('./backend/fastScraper.js');
