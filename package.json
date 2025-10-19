@@ -2,10 +2,10 @@
   "name": "bermuda-import-calculator",
   "version": "1.0.0",
   "description": "Bermuda import cost calculator with Shopify integration",
-  "main": "backend/fastScraper.js",
+  "main": "index.js",
   "scripts": {
-    "start": "node backend/fastScraper.js",
-    "dev": "node backend/fastScraper.js",
+    "start": "node index.js",
+    "dev": "node index.js",
     "test": "jest",
     "build": "node -e \"console.log('Build check: OK')\""
   },
