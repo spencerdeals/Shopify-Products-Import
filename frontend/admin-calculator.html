@@ -311,6 +311,38 @@
             color: #666;
         }
 
+        .margin-editor {
+            background: #fff9e6;
+            padding: 12px;
+            border-radius: 6px;
+            margin: 15px 0;
+            border-left: 4px solid #ffc107;
+        }
+
+        .margin-editor label {
+            font-size: 12px;
+            font-weight: 600;
+            color: #f57c00;
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        .margin-editor input {
+            width: 120px;
+            padding: 8px;
+            border: 2px solid #ffc107;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .margin-editor small {
+            display: block;
+            margin-top: 5px;
+            font-size: 11px;
+            color: #666;
+        }
+
         .loading {
             text-align: center;
             padding: 40px;
@@ -533,6 +565,13 @@
                             <button class="btn-add-box" onclick="addBox(${index})">+ Add Box</button>
                         </div>
 
+                        <div class="margin-editor">
+                            <label>✏️ Profit Margin (%)</label>
+                            <input type="number" id="margin-${index}" value="" step="0.5" min="0" max="100"
+                                   onchange="updateMargin(${index}, this.value)">
+                            <small id="margin-suggestion-${index}"></small>
+                        </div>
+
                         <div class="calculations" id="calc-${index}"></div>
                     </div>
                 `;
@@ -606,6 +645,16 @@
             calculateProduct(index);
         }
 
+        function updateMargin(index, value) {
+            const marginValue = parseFloat(value);
+            if (marginValue > 0) {
+                products[index].customMargin = marginValue;
+            } else {
+                delete products[index].customMargin;
+            }
+            calculateProduct(index);
+        }
+
         function calculateProduct(index) {
             const product = products[index];
             const price = product.price || 0;
@@ -629,9 +678,24 @@
             // Total landed cost
             const landedCost = price + freightCost + dutyAmount + wharfage;
 
-            // Dynamic margin based on landed cost
-            const marginPercent = getMarginPercent(landedCost);
+            // Determine margin to use (custom or dynamic)
+            const suggestedMargin = getMarginPercent(landedCost);
+            const marginPercent = product.customMargin !== undefined ? product.customMargin : suggestedMargin;
             const marginAmount = landedCost * (marginPercent / 100);
+
+            // Update margin input and suggestion
+            const marginInput = document.getElementById(`margin-${index}`);
+            const marginSuggestion = document.getElementById(`margin-suggestion-${index}`);
+            if (marginInput && !marginInput.value) {
+                marginInput.value = suggestedMargin.toFixed(1);
+            }
+            if (marginSuggestion) {
+                if (product.customMargin !== undefined) {
+                    marginSuggestion.textContent = `Suggested: ${suggestedMargin.toFixed(1)}% (${getMarginTierLabel(landedCost)})`;
+                } else {
+                    marginSuggestion.textContent = `Auto: ${getMarginTierLabel(landedCost)}`;
+                }
+            }
 
             // MSRP before rounding
             const msrpBeforeRounding = landedCost + marginAmount;
@@ -654,6 +718,7 @@
 
             // Display calculations
             const calcDiv = document.getElementById(`calc-${index}`);
+            const isCustomMargin = product.customMargin !== undefined;
             calcDiv.innerHTML = `
                 <div class="calc-row">
                     <span>Total Cubic Feet (${product.boxes.length} box${product.boxes.length > 1 ? 'es' : ''}):</span>
@@ -679,12 +744,8 @@
                     <span>Total Landed Cost:</span>
                     <span>$${landedCost.toFixed(2)}</span>
                 </div>
-                <div class="calc-row margin-tier">
-                    <span>${getMarginTierLabel(landedCost)}</span>
-                    <span></span>
-                </div>
                 <div class="calc-row">
-                    <span>Margin (${marginPercent}%):</span>
+                    <span>Profit Margin (${marginPercent.toFixed(1)}%)${isCustomMargin ? ' 📝' : ' ✨'}:</span>
                     <span>$${marginAmount.toFixed(2)}</span>
                 </div>
                 <div class="calc-row">
