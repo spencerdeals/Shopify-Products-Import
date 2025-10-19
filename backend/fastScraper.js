@@ -201,22 +201,9 @@ app.get('/admin-calculator', requireAdmin, (req, res) => {
   res.sendFile(path.join(__dirname, '../frontend/admin-calculator.html'));
 });
 
-// Root route - serve frontend HTML
+// Root route - redirect to admin calculator
 app.get('/', (req, res) => {
-  const frontendPath = path.join(__dirname, '../frontend', 'index.html');
-  res.sendFile(frontendPath, (err) => {
-    if (err) {
-      console.error('Error serving frontend:', err);
-      res.json({
-        message: 'Frontend not found - API is running',
-        endpoints: {
-          health: '/health',
-          scrape: 'POST /api/scrape',
-          createOrder: 'POST /apps/instant-import/create-draft-order'
-        }
-      });
-    }
-  });
+  res.redirect('/admin-calculator');
 });
 
 // REMOVED: complete-order page (now redirecting directly to Shopify checkoutUrl)
