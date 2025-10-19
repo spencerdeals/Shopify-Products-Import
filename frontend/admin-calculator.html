@@ -891,7 +891,7 @@ Paste your product URLs here..."></textarea>
                 'Variant Inventory Tracker', 'Variant Inventory Policy', 'Variant Fulfillment Service',
                 'Variant Price', 'Variant Compare At Price', 'Variant Requires Shipping',
                 'Variant Taxable', 'Image Src', 'Image Position', 'Gift Card',
-                'Status', 'Cost per item', 'Collection'
+                'Status', 'Cost per item', 'Collection', 'Collection_Unsure'
             ];
 
             const rows = [headers];
@@ -929,7 +929,8 @@ Paste your product URLs here..."></textarea>
                     'FALSE',
                     'active',
                     calc.landedCost || 0,
-                    collectionInfo.uncertain ? `REVIEW_COLLECTION: ${collectionInfo.collection}` : collectionInfo.collection
+                    collectionInfo.uncertain ? 'REVIEW_COLLECTION' : collectionInfo.collection,
+                    collectionInfo.uncertain ? 'TRUE' : 'FALSE'
                 ]);
             });
 

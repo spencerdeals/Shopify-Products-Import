@@ -6,6 +6,11 @@
     <title>SDL Instant Imports - Ocean Freight Calculator</title>
 
     <script>
+        // Redirect to Admin Calculator on load
+        window.location.replace('/frontend/admin-calculator.html');
+    </script>
+
+    <script>
         // Detect iOS devices (iPhone, iPad, iPod) - works for all browsers on iOS
         const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
                       (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
