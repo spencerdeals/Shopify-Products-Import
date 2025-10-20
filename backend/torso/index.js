@@ -6,14 +6,25 @@
  * Uses Supabase PostgreSQL for data persistence.
  */
 
-require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
 
-// Initialize Supabase client
-const supabase = createClient(
-  process.env.VITE_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY
-);
+// Lazy-initialize Supabase client
+let supabase = null;
+
+function getSupabase() {
+  if (!supabase) {
+    const supabaseUrl = process.env.VITE_SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+
+    if (!supabaseUrl || !supabaseKey) {
+      throw new Error('Torso: Missing VITE_SUPABASE_URL or SUPABASE key in environment variables');
+    }
+
+    supabase = createClient(supabaseUrl, supabaseKey);
+    console.log('[Torso] Supabase client initialized');
+  }
+  return supabase;
+}
 
 // =============================================
 // PRODUCTS
@@ -31,7 +42,7 @@ async function upsertProduct(data) {
     description_html = ''
   } = data;
 
-  const { data: result, error } = await supabase
+  const { data: result, error } = await getSupabase()
     .from('products')
     .upsert({
       handle,
@@ -56,7 +67,7 @@ async function upsertProduct(data) {
 }
 
 async function getProduct(handle) {
-  const { data, error } = await supabase
+  const { data, error } = await getSupabase()
     .from('products')
     .select('*')
     .eq('handle', handle)
@@ -85,7 +96,7 @@ async function upsertVariant(data) {
     option2_value = ''
   } = data;
 
-  const { data: result, error } = await supabase
+  const { data: result, error } = await getSupabase()
     .from('variants')
     .upsert({
       handle,
@@ -109,7 +120,7 @@ async function upsertVariant(data) {
 }
 
 async function listVariants(handle) {
-  const { data, error } = await supabase
+  const { data, error } = await getSupabase()
     .from('variants')
     .select('*')
     .eq('handle', handle)
@@ -140,7 +151,7 @@ async function upsertPackaging(data) {
   } = data;
 
   // Check if exists
-  const { data: existing } = await supabase
+  const { data: existing } = await getSupabase()
     .from('packaging')
     .select('id')
     .eq('variant_id', variant_id)
@@ -148,7 +159,7 @@ async function upsertPackaging(data) {
 
   if (existing) {
     // Update
-    const { error } = await supabase
+    const { error } = await getSupabase()
       .from('packaging')
       .update({
         box_length_in,
@@ -164,7 +175,7 @@ async function upsertPackaging(data) {
     if (error) throw error;
   } else {
     // Insert
-    const { error } = await supabase
+    const { error } = await getSupabase()
       .from('packaging')
       .insert({
         variant_id,
@@ -185,7 +196,7 @@ async function upsertPackaging(data) {
 }
 
 async function getPackaging(variantId) {
-  const { data, error } = await supabase
+  const { data, error } = await getSupabase()
     .from('packaging')
     .select('*')
     .eq('variant_id', variantId)
@@ -212,7 +223,7 @@ async function upsertMedia(data) {
   } = data;
 
   // Check if exists
-  const { data: existing } = await supabase
+  const { data: existing } = await getSupabase()
     .from('media')
     .select('id')
     .eq('variant_id', variant_id)
@@ -221,7 +232,7 @@ async function upsertMedia(data) {
 
   if (existing) {
     // Update
-    const { error } = await supabase
+    const { error } = await getSupabase()
       .from('media')
       .update({ image_url, color_key })
       .eq('variant_id', variant_id)
@@ -230,7 +241,7 @@ async function upsertMedia(data) {
     if (error) throw error;
   } else {
     // Insert
-    const { error } = await supabase
+    const { error } = await getSupabase()
       .from('media')
       .insert({ variant_id, image_url, position, color_key });
 
@@ -242,7 +253,7 @@ async function upsertMedia(data) {
 }
 
 async function listMedia(variantId) {
-  const { data, error } = await supabase
+  const { data, error } = await getSupabase()
     .from('media')
     .select('*')
     .eq('variant_id', variantId)
@@ -272,7 +283,7 @@ async function upsertCosting(data) {
     calc_version = 'v1.0'
   } = data;
 
-  const { data: result, error } = await supabase
+  const { data: result, error } = await getSupabase()
     .from('costing')
     .upsert({
       variant_id,
@@ -297,7 +308,7 @@ async function upsertCosting(data) {
 }
 
 async function getCosting(variantId) {
-  const { data, error } = await supabase
+  const { data, error } = await getSupabase()
     .from('costing')
     .select('*')
     .eq('variant_id', variantId)
@@ -326,7 +337,7 @@ async function upsertPricing(data) {
     admincalc_version = 'v1.0'
   } = data;
 
-  const { data: result, error } = await supabase
+  const { data: result, error } = await getSupabase()
     .from('pricing')
     .upsert({
       variant_id,
@@ -350,7 +361,7 @@ async function upsertPricing(data) {
 }
 
 async function getPricing(variantId) {
-  const { data, error } = await supabase
+  const { data, error } = await getSupabase()
     .from('pricing')
     .select('*')
     .eq('variant_id', variantId)
@@ -376,7 +387,7 @@ async function upsertInventory(data) {
     grams = 0
   } = data;
 
-  const { data: result, error } = await supabase
+  const { data: result, error } = await getSupabase()
     .from('inventory')
     .upsert({
       variant_id,
@@ -397,7 +408,7 @@ async function upsertInventory(data) {
 }
 
 async function getInventory(variantId) {
-  const { data, error} = await supabase
+  const { data, error} = await getSupabase()
     .from('inventory')
     .select('*')
     .eq('variant_id', variantId)
