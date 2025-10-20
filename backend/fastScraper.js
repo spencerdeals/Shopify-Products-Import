@@ -237,6 +237,11 @@ const shopifyRouter = require('./routes/shopify');
 app.use('/api/shopify', shopifyRouter);
 console.log('[Shopify] Routes mounted at /api/shopify');
 
+// Mount batch routes
+const batchRoutes = require('./routes/batch');
+app.use('/api/batch', batchRoutes);
+console.log('[Batch] Routes mounted at /api/batch');
+
 // Mount version route
 const versionRoutes = require('./routes/version');
 app.use('/version', versionRoutes);
