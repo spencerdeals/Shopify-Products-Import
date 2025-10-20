@@ -7,6 +7,8 @@
 
 const torso = require('../torso');
 const { computePricing } = require('../utils/pricing');
+const { extractDimensionsFromZyte } = require('../lib/dimensionUtils');
+const { insertObservationAndReconcile } = require('../lib/dimensionReconciliation');
 
 const ADMIN_CALC_VERSION = 'v1.0';
 
@@ -247,14 +249,31 @@ async function processProduct(zyteData, options = {}) {
 
     variantIds.push(variant_id);
 
-    // 3. Upsert packaging
-    const packaging = extractPackaging(zyteData, combo);
-    await torso.upsertPackaging({
-      variant_id,
-      ...packaging,
-      source: 'zyte',
-      conf_level: zyteData.confidence || 0.99
-    });
+    // 3. Extract and insert dimension observations
+    const observations = extractDimensionsFromZyte(zyteData);
+
+    if (observations && observations.length > 0) {
+      for (const obs of observations) {
+        if (obs.length && obs.width && obs.height) {
+          try {
+            await insertObservationAndReconcile(variant_id, obs);
+            console.log(`[Batch] Inserted dimension observation for ${variant_sku}: ${obs.length}×${obs.width}×${obs.height}`);
+          } catch (err) {
+            console.error(`[Batch] Failed to insert observation for ${variant_sku}:`, err.message);
+          }
+        }
+      }
+    } else {
+      // Fallback: Use extracted packaging directly
+      const packaging = extractPackaging(zyteData, combo);
+      await torso.upsertPackaging({
+        variant_id,
+        ...packaging,
+        reconciled_source: 'zyte',
+        reconciled_conf_level: zyteData.confidence || 0.80
+      });
+      console.log(`[Batch] Used fallback packaging for ${variant_sku}`);
+    }
 
     // 4. Upsert media
     const imageUrl = pickVariantImage(normalized.images, combo.color) ||

@@ -278,4 +278,117 @@ router.get('/quotes', requireAdminKey, async (req, res) => {
   }
 });
 
+const { refreshCategoryPatterns } = require('../lib/categoryPatternLearning');
+const { calculateCubicFeet } = require('../lib/dimensionUtils');
+
+function getSupabase() {
+  const { createClient } = require('@supabase/supabase-js');
+  const supabaseUrl = process.env.VITE_SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseKey) {
+    throw new Error('Missing Supabase credentials');
+  }
+
+  return createClient(supabaseUrl, supabaseKey);
+}
+
+router.post('/refresh-patterns', requireAdminKey, async (req, res) => {
+  try {
+    console.log('[Admin] Starting category pattern refresh...');
+    const result = await refreshCategoryPatterns();
+
+    res.json({
+      ok: true,
+      ...result
+    });
+  } catch (err) {
+    console.error('Pattern refresh error:', err);
+    res.status(500).json({ error: 'Failed to refresh patterns' });
+  }
+});
+
+router.get('/packaging-report', requireAdminKey, async (req, res) => {
+  try {
+    const supabase = getSupabase();
+    const sourceFilter = req.query.source;
+    const limit = Number(req.query.limit) || 100;
+
+    let query = supabase
+      .from('packaging')
+      .select(`
+        variant_id,
+        box_length_in,
+        box_width_in,
+        box_height_in,
+        box_weight_lb,
+        boxes_per_unit,
+        reconciled_source,
+        reconciled_conf_level,
+        updated_at,
+        variants (
+          variant_sku,
+          products (
+            title
+          )
+        )
+      `)
+      .order('updated_at', { ascending: false })
+      .limit(limit);
+
+    if (sourceFilter) {
+      query = query.eq('reconciled_source', sourceFilter);
+    }
+
+    const { data: packagingData, error } = await query;
+
+    if (error) throw error;
+
+    const { data: sourceCounts } = await supabase
+      .from('packaging')
+      .select('reconciled_source')
+      .not('reconciled_source', 'is', null);
+
+    const sourceBreakdown = {};
+    if (sourceCounts) {
+      sourceCounts.forEach(row => {
+        const source = row.reconciled_source || 'unknown';
+        sourceBreakdown[source] = (sourceBreakdown[source] || 0) + 1;
+      });
+    }
+
+    const formatted = packagingData.map(pkg => ({
+      variantSku: pkg.variants?.variant_sku || 'unknown',
+      productTitle: pkg.variants?.products?.title || 'Unknown Product',
+      dimensions: {
+        length: pkg.box_length_in,
+        width: pkg.box_width_in,
+        height: pkg.box_height_in,
+        weight: pkg.box_weight_lb,
+        boxesPerUnit: pkg.boxes_per_unit
+      },
+      cuft: calculateCubicFeet(
+        pkg.box_length_in,
+        pkg.box_width_in,
+        pkg.box_height_in,
+        pkg.boxes_per_unit || 1
+      ),
+      source: pkg.reconciled_source,
+      confLevel: pkg.reconciled_conf_level,
+      updatedAt: pkg.updated_at
+    }));
+
+    res.json({
+      ok: true,
+      total: formatted.length,
+      sourceBreakdown,
+      data: formatted
+    });
+
+  } catch (err) {
+    console.error('Packaging report error:', err);
+    res.status(500).json({ error: 'Failed to generate packaging report' });
+  }
+});
+
 module.exports = router;

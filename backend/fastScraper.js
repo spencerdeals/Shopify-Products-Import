@@ -242,6 +242,11 @@ const batchRoutes = require('./routes/batch');
 app.use('/api/batch', batchRoutes);
 console.log('[Batch] Routes mounted at /api/batch');
 
+// Mount dimensions routes
+const dimensionsRoutes = require('./routes/dimensions');
+app.use('/api/quote', dimensionsRoutes);
+console.log('[Dimensions] Routes mounted at /api/quote');
+
 // Mount version route
 const versionRoutes = require('./routes/version');
 app.use('/version', versionRoutes);
