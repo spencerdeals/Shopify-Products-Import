@@ -206,10 +206,25 @@ function synthesizeDescription(features, specs) {
 function buildBodyHtml(product, options = {}) {
   const { sourceUrl = null, domain = null } = options;
 
+  console.log('[DescBuilder] Building Body HTML for:', product.name);
+  console.log('[DescBuilder] Input fields:', {
+    hasDescription: !!product.description,
+    hasDescriptionHtml: !!product.descriptionHtml,
+    hasFeatures: !!product.features,
+    hasAdditionalProps: !!product.additionalProperties,
+    hasBrowserHtml: !!product.browserHtml
+  });
+
   // Extract all components
   const description = extractDescription(product, product.browserHtml);
   const features = extractFeatures(product, product.browserHtml);
   const specs = extractSpecs(product);
+
+  console.log('[DescBuilder] Extracted:', {
+    descriptionLength: description ? description.length : 0,
+    featuresCount: features ? features.length : 0,
+    specsCount: specs ? specs.length : 0
+  });
 
   let parts = [];
 
@@ -221,12 +236,15 @@ function buildBodyHtml(product, options = {}) {
 
   // Main description
   if (description) {
+    console.log('[DescBuilder] Using vendor description');
     parts.push(description);
   } else if (features || specs) {
     // Synthesize from features/specs if no description
+    console.log('[DescBuilder] Synthesizing from features/specs');
     parts.push(synthesizeDescription(features, specs));
   } else {
     // Absolute fallback
+    console.log('[DescBuilder] Using fallback description');
     parts.push('<p>Premium quality furniture item. Contact us for details.</p>');
   }
 
