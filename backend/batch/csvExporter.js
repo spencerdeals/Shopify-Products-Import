@@ -10,6 +10,141 @@ const { classifyCollection } = require('../lib/collectionClassifier');
 const { ceilToNext5 } = require('../lib/pricingHelpers');
 
 /**
+ * Generate Body (HTML) from product data at CSV export time
+ * Sanitizes vendor description or synthesizes from available fields
+ */
+function generateBodyHtml(product) {
+  const parts = [];
+
+  // Title
+  parts.push(`<h2>${product.title || 'Product'}</h2>`);
+
+  // Special order notice
+  parts.push('<p><strong>Special Order (3–4 weeks)</strong>. Tax included.</p>');
+
+  // Use existing description if available and sufficient
+  if (product.description_html && product.description_html.trim().length > 120) {
+    // Already has good description, use it
+    return product.description_html;
+  }
+
+  // Synthesize from available data
+  const typeLeaf = extractLeafType(product.breadcrumbs);
+  const vendor = product.brand || 'SDL';
+
+  // Generate intro paragraph
+  const intro = `Premium ${typeLeaf.toLowerCase()} from ${vendor}. ${product.title} combines quality craftsmanship with modern design, perfect for any home or office.`;
+  parts.push(`<p>${intro}</p>`);
+
+  // Source link
+  if (product.canonical_url) {
+    const domain = new URL(product.canonical_url).hostname.replace('www.', '');
+    parts.push(`<p><small>Source: <a href="${product.canonical_url}" target="_blank" rel="nofollow">${domain}</a></small></p>`);
+  }
+
+  return parts.join('\n');
+}
+
+/**
+ * Generate smart tags from product data at CSV export time
+ * Returns 5-10 normalized tags based on title, vendor, type, and category
+ */
+function generateSmartTags(product) {
+  const tags = new Set();
+
+  // Use GPT tags if available
+  if (product.gpt_tags) {
+    const gptTags = product.gpt_tags.split(',').map(t => t.trim());
+    gptTags.forEach(tag => {
+      if (tag) tags.add(tag.toLowerCase());
+    });
+    return tags;
+  }
+
+  // Extract from title - look for key product terms
+  const title = (product.title || '').toLowerCase();
+  const titleWords = title.split(/\s+/);
+
+  // Function tags from title
+  const functionKeywords = ['desk', 'table', 'chair', 'sofa', 'bed', 'cabinet', 'shelf', 'rack', 'stand', 'storage', 'seating', 'dining', 'adjustable', 'sectional', 'ottoman', 'bench'];
+  functionKeywords.forEach(kw => {
+    if (title.includes(kw)) tags.add(kw);
+  });
+
+  // Multi-word function tags
+  if (title.includes('standing desk')) tags.add('standing desk');
+  if (title.includes('adjustable desk')) tags.add('adjustable desk');
+  if (title.includes('height adjustable')) tags.add('height adjustable');
+  if (title.includes('dining set')) tags.add('dining set');
+  if (title.includes('dining table')) tags.add('dining table');
+  if (title.includes('patio set')) tags.add('patio set');
+  if (title.includes('outdoor dining')) tags.add('outdoor dining');
+  if (title.includes('coffee table')) tags.add('coffee table');
+  if (title.includes('side table')) tags.add('side table');
+  if (title.includes('seating set')) tags.add('seating set');
+
+  // Special features from title
+  if (title.includes('cushion')) tags.add('cushions');
+  if (title.includes('ergonomic')) tags.add('ergonomic furniture');
+  if (title.includes('rectangular')) tags.add('rectangular table');
+
+  // Room/usage tags from title and breadcrumbs
+  const roomKeywords = ['office', 'bedroom', 'living room', 'dining room', 'kitchen', 'bathroom', 'outdoor', 'patio', 'home', 'workspace'];
+  roomKeywords.forEach(kw => {
+    if (title.includes(kw)) tags.add(kw);
+  });
+  if (title.includes('home office')) tags.add('home office');
+
+  // Style/material tags from title
+  const styleKeywords = ['modern', 'contemporary', 'rustic', 'industrial', 'traditional', 'farmhouse', 'minimalist', 'mid-century'];
+  const materialKeywords = ['wood', 'metal', 'glass', 'leather', 'fabric', 'plastic', 'wicker', 'rattan', 'all-weather'];
+  [...styleKeywords, ...materialKeywords].forEach(kw => {
+    if (title.includes(kw)) tags.add(kw);
+  });
+
+  // Add vendor/brand
+  if (product.brand) {
+    tags.add(product.brand.toLowerCase());
+  }
+
+  // Add product type from breadcrumbs
+  const typeLeaf = extractLeafType(product.breadcrumbs);
+  if (typeLeaf && typeLeaf !== 'Furniture') {
+    tags.add(typeLeaf.toLowerCase());
+  }
+
+  // Infer context tags based on product type
+  if (title.includes('desk') && title.includes('office')) {
+    tags.add('home office');
+  } else if (title.includes('desk')) {
+    tags.add('office furniture');
+  }
+
+  if (title.includes('standing desk') || title.includes('adjustable desk')) {
+    tags.add('ergonomic furniture');
+  }
+
+  if (title.includes('outdoor') || title.includes('patio')) {
+    tags.add('all-weather');
+  }
+
+  if (title.includes('dining set')) {
+    tags.add('seating set');
+  }
+
+  if (title.includes('outdoor') && title.includes('dining')) {
+    tags.add('patio set');
+  }
+
+  // Add source
+  if (product.canonical_url && product.canonical_url.includes('wayfair')) {
+    tags.add('wayfair');
+  }
+
+  return tags;
+}
+
+/**
  * Extract leaf type from breadcrumbs (skip SKU: patterns)
  */
 function extractLeafType(breadcrumbs) {
@@ -28,23 +163,12 @@ function extractLeafType(breadcrumbs) {
 
 /**
  * Build tags from product data and variant
- * Prioritizes GPT-generated tags, then adds supplemental tags
+ * Generates smart tags at CSV export time
  */
 function buildTags(product, variant) {
-  const tags = new Set();
-
-  // Priority 1: Use GPT-generated tags if available
-  if (product.gpt_tags) {
-    const gptTags = product.gpt_tags.split(',').map(t => t.trim());
-    gptTags.forEach(tag => {
-      if (tag) tags.add(tag);
-    });
-  }
-
-  // Add source tag if Wayfair (not in GPT tags)
-  if (product.canonical_url && product.canonical_url.includes('wayfair')) {
-    tags.add('Wayfair');
-  }
+  // Start with smart tags generated from product data
+  const smartTags = generateSmartTags(product);
+  const tags = new Set(smartTags);
 
   // Add variant-specific tags (Color, Size)
   if (variant.option1_name === 'Color' && variant.option1_value) {
@@ -68,16 +192,6 @@ function buildTags(product, variant) {
   }
   if (product.reviews) {
     tags.add(`Reviews:${product.reviews}`);
-  }
-
-  // Fallback: Add breadcrumbs only if no GPT tags
-  if (!product.gpt_tags && product.breadcrumbs && Array.isArray(product.breadcrumbs)) {
-    product.breadcrumbs.forEach(b => {
-      const crumb = typeof b === 'object' ? b.name : b;
-      if (crumb && !/^SKU:/i.test(crumb)) {
-        tags.add(crumb);
-      }
-    });
   }
 
   return Array.from(tags).join(', ');
@@ -115,10 +229,9 @@ async function buildProductRows(handle, options = {}) {
   const typeLeaf = extractLeafType(product.breadcrumbs);
   const productCategory = extractProductCategory(product.breadcrumbs);
 
-  // Use the enhanced Body (HTML) that was already built during scraping
-  // The batch processor calls buildBodyHtml with full features/specs from Zyte
-  // and stores the result in product.description_html
-  const bodyHtmlEnhanced = product.description_html || '';
+  // Generate Body (HTML) at CSV export time
+  // Uses existing description_html if available, otherwise synthesizes
+  const bodyHtmlEnhanced = generateBodyHtml(product);
 
   // Classify collection
   const collectionData = classifyCollection({
@@ -274,5 +387,7 @@ module.exports = {
   buildProductRows,
   extractLeafType,
   extractProductCategory,
-  buildTags
+  buildTags,
+  generateBodyHtml,
+  generateSmartTags
 };
