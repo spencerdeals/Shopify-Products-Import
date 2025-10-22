@@ -9,6 +9,7 @@ const torso = require('../torso');
 const { computePricing } = require('../utils/pricing');
 const { extractDimensionsFromZyte } = require('../lib/dimensionUtils');
 const { insertObservationAndReconcile } = require('../lib/dimensionReconciliation');
+const { buildBodyHtml: buildEnhancedBodyHtml } = require('../lib/descriptionBuilder');
 
 const ADMIN_CALC_VERSION = 'v1.0';
 
@@ -25,8 +26,21 @@ function normalizeZyteProduct(zyteData) {
     ? zyteData.breadcrumbs
     : String(zyteData.breadcrumbs || '').split('/').map(s => s.trim()).filter(Boolean);
 
-  const description_html = zyteData.descriptionHtml ||
-    (zyteData.description ? `<p>${zyteData.description}</p>` : '');
+  // Build enhanced description using descriptionBuilder
+  const description_html = buildEnhancedBodyHtml(
+    {
+      name: zyteData.name,
+      description: zyteData.description,
+      descriptionHtml: zyteData.descriptionHtml,
+      features: zyteData.features,
+      additionalProperties: zyteData.additionalProperties,
+      browserHtml: zyteData.browserHtml
+    },
+    {
+      sourceUrl: zyteData.canonicalUrl || zyteData.url,
+      domain: null // Will be extracted from sourceUrl in buildBodyHtml
+    }
+  );
 
   // Extract variant axes
   const colors = new Set();

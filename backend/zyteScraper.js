@@ -253,7 +253,11 @@ class ZyteScraper {
       variant: null,
       allVariants: [],
       variantOptions: null,
-      confidence: null
+      confidence: null,
+      description: null,
+      descriptionHtml: null,
+      features: null,
+      additionalProperties: null
     };
 
     // Priority 1: Use Zyte's automatic product extraction
@@ -340,6 +344,27 @@ class ZyteScraper {
         console.log('   📦 In Stock:', productData.inStock);
       }
 
+
+      // Description and features
+      if (product.description) {
+        productData.description = product.description;
+        console.log('   📝 Description extracted:', productData.description.substring(0, 100) + '...');
+      }
+
+      if (product.descriptionHtml) {
+        productData.descriptionHtml = product.descriptionHtml;
+        console.log('   📝 Description HTML extracted');
+      }
+
+      if (product.features && Array.isArray(product.features)) {
+        productData.features = product.features;
+        console.log('   ✨ Features extracted:', productData.features.length, 'items');
+      }
+
+      if (product.additionalProperties && Array.isArray(product.additionalProperties)) {
+        productData.additionalProperties = product.additionalProperties;
+        console.log('   📊 Additional properties extracted:', productData.additionalProperties.length, 'items');
+      }
 
       // Confidence score
       if (product.metadata && product.metadata.probability) {

@@ -6,6 +6,9 @@
  */
 
 const torso = require('../torso');
+const { buildBodyHtml } = require('../lib/descriptionBuilder');
+const { classifyCollection } = require('../lib/collectionClassifier');
+const { ceilToNext5 } = require('../lib/pricingHelpers');
 
 /**
  * Extract leaf type from breadcrumbs (skip SKU: patterns)
@@ -73,24 +76,27 @@ function buildTags(product, variant) {
 }
 
 /**
- * Build Body HTML with source link
+ * Extract product category from breadcrumbs (full path)
  */
-function buildBodyHtml(product) {
-  let html = product.description_html || '';
+function extractProductCategory(breadcrumbs) {
+  if (!breadcrumbs || breadcrumbs.length === 0) return '';
 
-  // Append source link if not already present
-  if (product.canonical_url && !html.includes(product.canonical_url)) {
-    const sourceLink = `<p><small>Source: <a href="${product.canonical_url}" target="_blank" rel="nofollow">Wayfair product page</a></small></p>`;
-    html += html ? '<br><br>' + sourceLink : sourceLink;
-  }
+  const crumbs = typeof breadcrumbs === 'string'
+    ? JSON.parse(breadcrumbs)
+    : breadcrumbs;
 
-  return html;
+  return crumbs
+    .map(c => typeof c === 'object' ? c.name : c)
+    .filter(c => c && !/^SKU:/i.test(c))
+    .join(' > ');
 }
 
 /**
  * Build CSV rows for a single product from Torso
  */
-async function buildProductRows(handle) {
+async function buildProductRows(handle, options = {}) {
+  const { customMargin = null } = options;
+
   // Get complete product data from Torso
   const product = await torso.getProductComplete(handle);
   if (!product) {
@@ -99,7 +105,32 @@ async function buildProductRows(handle) {
 
   const rows = [];
   const typeLeaf = extractLeafType(product.breadcrumbs);
-  const bodyHtml = buildBodyHtml(product);
+  const productCategory = extractProductCategory(product.breadcrumbs);
+
+  // Build enhanced Body (HTML) using descriptionBuilder
+  const bodyHtmlEnhanced = buildBodyHtml(
+    {
+      name: product.title,
+      description: product.description_html,
+      descriptionHtml: product.description_html,
+      features: null, // These would come from scraper if stored
+      additionalProperties: null
+    },
+    {
+      sourceUrl: product.canonical_url,
+      domain: product.canonical_url ? new URL(product.canonical_url).hostname.replace('www.', '') : null
+    }
+  );
+
+  // Classify collection
+  const collectionData = classifyCollection({
+    title: product.title,
+    vendor: product.brand,
+    category: productCategory,
+    type: typeLeaf,
+    tags: product.breadcrumbs ? product.breadcrumbs.join(' ') : '',
+    breadcrumbs: product.breadcrumbs
+  });
 
   // Process each variant
   product.variants.forEach((variant, idx) => {
@@ -118,12 +149,19 @@ async function buildProductRows(handle) {
 
     const imagePosition = idx + 1;
 
-    // Build CSV row
+    // Calculate final price with rounding
+    const landedCost = variant.costing.landed_cost_usd;
+    const marginPercent = customMargin || 40; // Default 40% margin
+    const rawRetailPrice = landedCost * (1 + marginPercent / 100);
+    const retailPrice = ceilToNext5(rawRetailPrice);
+
+    // Build CSV row with new columns
     rows.push([
       handle,                                          // Handle
       product.title,                                   // Title
-      bodyHtml,                                        // Body (HTML)
+      bodyHtmlEnhanced,                                // Body (HTML) - enhanced
       product.brand || 'SDL',                          // Vendor
+      productCategory,                                 // Product Category - NEW
       typeLeaf,                                        // Type
       tags,                                            // Tags
       'TRUE',                                          // Published
@@ -137,17 +175,18 @@ async function buildProductRows(handle) {
       variant.inventory?.quantity || 0,                // Variant Inventory Qty
       'deny',                                          // Variant Inventory Policy
       'manual',                                        // Variant Fulfillment Service
-      variant.pricing.retail_price_usd,                // Variant Price
+      retailPrice,                                     // Variant Price - rounded to next $5
       variant.pricing.compare_at_price_usd || '',      // Variant Compare At Price
       'TRUE',                                          // Variant Requires Shipping
       'TRUE',                                          // Variant Taxable
       variant.inventory?.barcode || '',                // Variant Barcode
+      landedCost,                                      // Cost per item - landed cost
       imageUrl,                                        // Image Src
       imagePosition.toString(),                        // Image Position
       'FALSE',                                         // Gift Card
       'active',                                        // Status
-      variant.costing.landed_cost_usd,                 // Cost per item
-      ''                                               // Collection (empty for now)
+      collectionData.collection,                       // Collection - NEW
+      collectionData.unsure ? 'TRUE' : 'FALSE'         // Collection_Unsure - NEW
     ]);
   });
 
@@ -157,18 +196,18 @@ async function buildProductRows(handle) {
 /**
  * Export batch of products to single Shopify CSV
  */
-async function exportBatchCSV(handles) {
+async function exportBatchCSV(handles, options = {}) {
   console.log(`\n[CSV] Building Shopify CSV for ${handles.length} products`);
 
   const headers = [
-    'Handle', 'Title', 'Body (HTML)', 'Vendor', 'Type', 'Tags', 'Published',
+    'Handle', 'Title', 'Body (HTML)', 'Vendor', 'Product Category', 'Type', 'Tags', 'Published',
     'Option1 Name', 'Option1 Value', 'Option2 Name', 'Option2 Value',
     'Variant SKU', 'Variant Grams', 'Variant Inventory Tracker', 'Variant Inventory Qty',
     'Variant Inventory Policy', 'Variant Fulfillment Service',
     'Variant Price', 'Variant Compare At Price', 'Variant Requires Shipping', 'Variant Taxable',
-    'Variant Barcode',
+    'Variant Barcode', 'Cost per item',
     'Image Src', 'Image Position', 'Gift Card', 'Status',
-    'Cost per item', 'Collection'
+    'Collection', 'Collection_Unsure'
   ];
 
   const allRows = [headers];
@@ -177,13 +216,17 @@ async function exportBatchCSV(handles) {
   // Build rows for each product
   for (const handle of handles) {
     try {
-      const productRows = await buildProductRows(handle);
+      const productRows = await buildProductRows(handle, options);
 
       // Validate each row
       productRows.forEach((row, idx) => {
-        const variantPrice = row[17]; // Variant Price
-        const costPerItem = row[26];  // Cost per item
+        const bodyHtml = row[2];      // Body (HTML)
+        const variantPrice = row[18]; // Variant Price (after adding Product Category)
+        const costPerItem = row[23];  // Cost per item (after reordering)
 
+        if (!bodyHtml || bodyHtml.trim().length === 0) {
+          validationErrors.push(`${handle}: Row ${idx + 1} missing Body (HTML)`);
+        }
         if (!variantPrice || variantPrice === 0) {
           validationErrors.push(`${handle}: Row ${idx + 1} missing Variant Price`);
         }
@@ -232,6 +275,6 @@ module.exports = {
   exportBatchCSV,
   buildProductRows,
   extractLeafType,
-  buildTags,
-  buildBodyHtml
+  extractProductCategory,
+  buildTags
 };
