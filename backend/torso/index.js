@@ -39,7 +39,8 @@ async function upsertProduct(data) {
     breadcrumbs = [],
     rating = null,
     reviews = null,
-    description_html = ''
+    description_html = '',
+    gpt_tags = null
   } = data;
 
   const { data: result, error } = await getSupabase()
@@ -52,7 +53,8 @@ async function upsertProduct(data) {
       breadcrumbs,
       rating,
       reviews,
-      description_html
+      description_html,
+      gpt_tags
     }, { onConflict: 'handle' })
     .select()
     .single();
@@ -62,7 +64,7 @@ async function upsertProduct(data) {
     throw error;
   }
 
-  console.log(`[Torso] Product upserted: ${handle}`);
+  console.log(`[Torso] Product upserted: ${handle} ${gpt_tags ? '(with GPT tags)' : ''}`);
   return handle;
 }
 

@@ -6,7 +6,6 @@
  */
 
 const torso = require('../torso');
-const { buildBodyHtml } = require('../lib/descriptionBuilder');
 const { classifyCollection } = require('../lib/collectionClassifier');
 const { ceilToNext5 } = require('../lib/pricingHelpers');
 
@@ -116,20 +115,10 @@ async function buildProductRows(handle, options = {}) {
   const typeLeaf = extractLeafType(product.breadcrumbs);
   const productCategory = extractProductCategory(product.breadcrumbs);
 
-  // Build enhanced Body (HTML) using descriptionBuilder
-  const bodyHtmlEnhanced = buildBodyHtml(
-    {
-      name: product.title,
-      description: product.description_html,
-      descriptionHtml: product.description_html,
-      features: null, // These would come from scraper if stored
-      additionalProperties: null
-    },
-    {
-      sourceUrl: product.canonical_url,
-      domain: product.canonical_url ? new URL(product.canonical_url).hostname.replace('www.', '') : null
-    }
-  );
+  // Use the enhanced Body (HTML) that was already built during scraping
+  // The batch processor calls buildBodyHtml with full features/specs from Zyte
+  // and stores the result in product.description_html
+  const bodyHtmlEnhanced = product.description_html || '';
 
   // Classify collection
   const collectionData = classifyCollection({
