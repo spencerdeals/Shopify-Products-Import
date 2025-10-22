@@ -10,6 +10,7 @@ const { computePricing } = require('../utils/pricing');
 const { extractDimensionsFromZyte } = require('../lib/dimensionUtils');
 const { insertObservationAndReconcile } = require('../lib/dimensionReconciliation');
 const { buildBodyHtml: buildEnhancedBodyHtml } = require('../lib/descriptionBuilder');
+const { generateTags } = require('../lib/gptTagGenerator');
 
 const ADMIN_CALC_VERSION = 'v1.0';
 
@@ -204,6 +205,26 @@ async function processProduct(zyteData, options = {}) {
 
   console.log(`[Batch] AXES: ${axis} (${combos.length} combinations)`);
 
+  // Generate GPT tags
+  let generatedTags = [];
+  try {
+    console.log('[Batch] Generating GPT tags...');
+    const tagResult = await generateTags({
+      title: normalized.title,
+      vendor: normalized.brand,
+      type: normalized.typeLeaf,
+      description: zyteData.description,
+      features: zyteData.features,
+      category: normalized.typeLeaf,
+      breadcrumbs: normalized.breadcrumbs
+    });
+    generatedTags = tagResult.tags;
+    console.log(`[Batch] GPT_TAGS: ${generatedTags.join(', ')}`);
+  } catch (error) {
+    console.error('[Batch] Tag generation failed:', error.message);
+    generatedTags = []; // Continue without tags
+  }
+
   // 1. Upsert product to Torso
   await torso.upsertProduct({
     handle: normalized.handle,
@@ -213,7 +234,8 @@ async function processProduct(zyteData, options = {}) {
     breadcrumbs: normalized.breadcrumbs,
     rating: normalized.rating,
     reviews: normalized.reviews,
-    description_html: normalized.description_html
+    description_html: normalized.description_html,
+    gpt_tags: generatedTags.length > 0 ? generatedTags.join(', ') : null
   });
 
   console.log(`[Batch] TORSO_UPSERT: ${normalized.handle}`);

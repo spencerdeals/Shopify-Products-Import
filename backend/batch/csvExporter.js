@@ -29,39 +29,25 @@ function extractLeafType(breadcrumbs) {
 
 /**
  * Build tags from product data and variant
+ * Prioritizes GPT-generated tags, then adds supplemental tags
  */
 function buildTags(product, variant) {
   const tags = new Set();
 
-  // Add source tag if Wayfair
+  // Priority 1: Use GPT-generated tags if available
+  if (product.gpt_tags) {
+    const gptTags = product.gpt_tags.split(',').map(t => t.trim());
+    gptTags.forEach(tag => {
+      if (tag) tags.add(tag);
+    });
+  }
+
+  // Add source tag if Wayfair (not in GPT tags)
   if (product.canonical_url && product.canonical_url.includes('wayfair')) {
     tags.add('Wayfair');
   }
 
-  // Add breadcrumbs (exclude SKU: patterns)
-  if (product.breadcrumbs && Array.isArray(product.breadcrumbs)) {
-    product.breadcrumbs.forEach(b => {
-      const crumb = typeof b === 'object' ? b.name : b;
-      if (crumb && !/^SKU:/i.test(crumb)) {
-        tags.add(crumb);
-      }
-    });
-  }
-
-  // Add SKU tag
-  if (variant.sku_base) {
-    tags.add(`SKU:${variant.sku_base}`);
-  }
-
-  // Add rating/reviews
-  if (product.rating) {
-    tags.add(`Rating:${product.rating}`);
-  }
-  if (product.reviews) {
-    tags.add(`Reviews:${product.reviews}`);
-  }
-
-  // Add variant-specific tags
+  // Add variant-specific tags (Color, Size)
   if (variant.option1_name === 'Color' && variant.option1_value) {
     tags.add(`Color:${variant.option1_value}`);
   }
@@ -72,7 +58,30 @@ function buildTags(product, variant) {
     tags.add(`Size:${variant.option1_value}`);
   }
 
-  return Array.from(tags).sort().join(', ');
+  // Add SKU tag
+  if (variant.sku_base) {
+    tags.add(`SKU:${variant.sku_base}`);
+  }
+
+  // Add rating/reviews if available
+  if (product.rating) {
+    tags.add(`Rating:${product.rating}`);
+  }
+  if (product.reviews) {
+    tags.add(`Reviews:${product.reviews}`);
+  }
+
+  // Fallback: Add breadcrumbs only if no GPT tags
+  if (!product.gpt_tags && product.breadcrumbs && Array.isArray(product.breadcrumbs)) {
+    product.breadcrumbs.forEach(b => {
+      const crumb = typeof b === 'object' ? b.name : b;
+      if (crumb && !/^SKU:/i.test(crumb)) {
+        tags.add(crumb);
+      }
+    });
+  }
+
+  return Array.from(tags).join(', ');
 }
 
 /**
