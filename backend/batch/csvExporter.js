@@ -3,11 +3,13 @@
  *
  * Builds a single Shopify-compatible CSV from Torso data for multiple products.
  * Source of truth: Torso database only (not in-memory data).
+ * Automatically enriches descriptions and tags via Zyte when needed.
  */
 
 const torso = require('../torso');
 const { classifyCollection } = require('../lib/collectionClassifier');
 const { ceilToNext5 } = require('../lib/pricingHelpers');
+const ZyteEnricher = require('../lib/zyteEnricher');
 
 /**
  * Get Body (HTML) from product data
@@ -209,7 +211,7 @@ function extractProductCategory(breadcrumbs) {
  * Build CSV rows for a single product from Torso
  */
 async function buildProductRows(handle, options = {}) {
-  const { customMargin = null } = options;
+  const { customMargin = null, enricher = null } = options;
 
   // Get complete product data from Torso
   const product = await torso.getProductComplete(handle);
@@ -223,7 +225,23 @@ async function buildProductRows(handle, options = {}) {
 
   // Generate Body (HTML) at CSV export time
   // Uses existing description_html if available, otherwise synthesizes
-  const bodyHtmlEnhanced = generateBodyHtml(product);
+  let bodyHtmlEnhanced = generateBodyHtml(product);
+  let enrichedTags = null;
+
+  // Try Zyte enrichment if enabled and description is insufficient
+  if (enricher && enricher.enabled) {
+    try {
+      const enrichment = await enricher.enrichProduct(product);
+      if (enrichment) {
+        bodyHtmlEnhanced = enrichment.bodyHtml;
+        enrichedTags = enrichment.tags;
+        console.log(`[CSV] ✅ Enriched ${handle} via Zyte`);
+      }
+    } catch (error) {
+      console.log(`[CSV] ⚠️  Enrichment failed for ${handle}: ${error.message}`);
+      // Continue with existing description
+    }
+  }
 
   // Classify collection
   const collectionData = classifyCollection({
@@ -243,7 +261,13 @@ async function buildProductRows(handle, options = {}) {
       return;
     }
 
-    const tags = buildTags(product, variant);
+    // Build tags, merging enriched tags if available
+    let tags = buildTags(product, variant);
+    if (enrichedTags && enrichedTags.length > 0) {
+      const existingTags = tags.split(',').map(t => t.trim());
+      const allTags = [...new Set([...enrichedTags, ...existingTags])];
+      tags = allTags.join(', ');
+    }
 
     // Get image from media
     const imageUrl = variant.media && variant.media.length > 0
@@ -302,6 +326,10 @@ async function buildProductRows(handle, options = {}) {
 async function exportBatchCSV(handles, options = {}) {
   console.log(`\n[CSV] Building Shopify CSV for ${handles.length} products`);
 
+  // Initialize Zyte enricher
+  const enricher = new ZyteEnricher();
+  let enrichedCount = 0;
+
   const headers = [
     'Handle', 'Title', 'Body (HTML)', 'Vendor', 'Product Category', 'Type', 'Tags', 'Published',
     'Option1 Name', 'Option1 Value', 'Option2 Name', 'Option2 Value',
@@ -319,7 +347,12 @@ async function exportBatchCSV(handles, options = {}) {
   // Build rows for each product
   for (const handle of handles) {
     try {
-      const productRows = await buildProductRows(handle, options);
+      const productRows = await buildProductRows(handle, { ...options, enricher });
+
+      // Track enrichment
+      if (productRows.length > 0 && productRows[0]._enriched) {
+        enrichedCount++;
+      }
 
       // Validate each row
       productRows.forEach((row, idx) => {
@@ -344,6 +377,11 @@ async function exportBatchCSV(handles, options = {}) {
       console.error(`[CSV] Error building rows for ${handle}:`, error);
       validationErrors.push(`${handle}: ${error.message}`);
     }
+  }
+
+  // Log enrichment summary
+  if (enricher.enabled && enrichedCount > 0) {
+    console.log(`[CSV] 🎯 Enriched ${enrichedCount}/${handles.length} products via Zyte`);
   }
 
   // Fail-fast validation

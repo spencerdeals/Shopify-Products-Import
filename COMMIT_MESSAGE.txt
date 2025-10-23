@@ -1,0 +1,44 @@
+Add Zyte enrichment to Shopify CSV export
+
+Automatically enriches product descriptions and tags via Zyte Universal Extractor API
+when Body (HTML) is insufficient (<150 chars or link-only).
+
+IMPLEMENTATION:
+- Created backend/lib/zyteEnricher.js (306 lines)
+  • Detects when descriptions need enrichment
+  • Calls Zyte API to fetch rich product data
+  • Sanitizes HTML (safe tags only, rel="nofollow" on links)
+  • Generates 5-10 smart tags from product attributes
+  • Fails gracefully if Zyte unavailable
+
+- Modified backend/batch/csvExporter.js (+35 lines)
+  • Integrated ZyteEnricher into CSV export flow
+  • Enriches each product before writing CSV rows
+  • Merges enriched tags with existing tags
+  • Logs enrichment stats: "Enriched X/Y products via Zyte"
+
+- Updated .env (+4 lines)
+  • Documented ZYTE_APIKEY environment variable
+  • Works automatically on Railway when env var is set
+
+FEATURES:
+✅ Enriches descriptions with features, specifications, and structured HTML
+✅ Generates 5-10 contextual tags (type, material, style, room, brand)
+✅ Sanitizes HTML (keeps <p>, <ul>, <li>, <table>, <h2>, <h3>, <strong>, <em>, <a>)
+✅ Graceful fallback if Zyte API fails or URL missing
+✅ Non-blocking - CSV export always succeeds
+✅ Minimal logging: "Enriched X/Y rows"
+✅ Backend/export layer only - no UI or pricing changes
+
+TESTING:
+✅ Build passes: npm run build
+✅ Test script: test-zyte-enrichment.js
+✅ No regression in calculator logic or margins
+
+USAGE:
+1. Set ZYTE_APIKEY in Railway environment variables
+2. Export CSV via batch API: POST /api/batch/process, GET /api/batch/csv/:batchId
+3. CSV now contains rich descriptions and smart tags
+4. Import to Shopify as usual
+
+See ZYTE_CSV_ENRICHMENT.md and ZYTE_ENRICHMENT_COMPLETE.md for full documentation.
