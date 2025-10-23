@@ -10,33 +10,25 @@ const { classifyCollection } = require('../lib/collectionClassifier');
 const { ceilToNext5 } = require('../lib/pricingHelpers');
 
 /**
- * Generate Body (HTML) from product data at CSV export time
- * Sanitizes vendor description or synthesizes from available fields
+ * Get Body (HTML) from product data
+ * Uses stored description_html from Torso (already enhanced during scraping)
+ * Falls back to minimal synthesis only if description is missing
  */
 function generateBodyHtml(product) {
-  const parts = [];
-
-  // Title
-  parts.push(`<h2>${product.title || 'Product'}</h2>`);
-
-  // Special order notice
-  parts.push('<p><strong>Special Order (3–4 weeks)</strong>. Tax included.</p>');
-
-  // Use existing description if available and sufficient
-  if (product.description_html && product.description_html.trim().length > 120) {
-    // Already has good description, use it
+  // Use stored description_html if available (already enhanced by descriptionBuilder during scraping)
+  if (product.description_html && product.description_html.trim().length > 0) {
     return product.description_html;
   }
 
-  // Synthesize from available data
+  // Fallback: synthesize minimal description if somehow missing
+  const parts = [];
   const typeLeaf = extractLeafType(product.breadcrumbs);
   const vendor = product.brand || 'SDL';
 
-  // Generate intro paragraph
-  const intro = `Premium ${typeLeaf.toLowerCase()} from ${vendor}. ${product.title} combines quality craftsmanship with modern design, perfect for any home or office.`;
-  parts.push(`<p>${intro}</p>`);
+  parts.push(`<h2>${product.title || 'Product'}</h2>`);
+  parts.push('<p><strong>Special Order (3–4 weeks)</strong>. Tax included.</p>');
+  parts.push(`<p>Premium ${typeLeaf.toLowerCase()} from ${vendor}. ${product.title} combines quality craftsmanship with modern design, perfect for any home or office.</p>`);
 
-  // Source link
   if (product.canonical_url) {
     const domain = new URL(product.canonical_url).hostname.replace('www.', '');
     parts.push(`<p><small>Source: <a href="${product.canonical_url}" target="_blank" rel="nofollow">${domain}</a></small></p>`);
