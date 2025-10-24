@@ -245,6 +245,7 @@ class ZyteScraper {
       name: null,
       price: null,
       image: null,
+      images: [],
       dimensions: null,
       weight: null,
       brand: null,
@@ -278,17 +279,24 @@ class ZyteScraper {
         console.log('   💰 Final Price: $' + productData.price);
       }
 
-      // Enhanced image extraction - prefer high-quality variant images
+      // Enhanced image extraction - store ALL images
       if (product.images && product.images.length > 0) {
+        // Store all images for later use
+        productData.images = product.images.map(img => {
+          if (typeof img === 'string') return img;
+          return img.url || img;
+        }).filter(url => url && url.startsWith('http'));
+
         // Use the main image (highest quality) from Zyte
         const mainImageUrl = product.mainImage?.url || product.images[0]?.url || product.images[0];
         if (mainImageUrl && mainImageUrl.startsWith('http')) {
           productData.image = mainImageUrl;
-          console.log('   🖼️ Main Image: Found');
+          console.log(`   🖼️ Images: ${productData.images.length} stored (Main: ${mainImageUrl.substring(0, 60)}...)`);
         }
       } else if (product.mainImage && product.mainImage.url) {
         productData.image = product.mainImage.url;
-        console.log('   🖼️ Main Image: Found');
+        productData.images = [product.mainImage.url];
+        console.log('   🖼️ Main Image: Found (single image)');
       }
 
       // Brand
