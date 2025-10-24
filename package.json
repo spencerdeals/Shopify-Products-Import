@@ -2,14 +2,13 @@
   "name": "bermuda-import-calculator",
   "version": "1.0.0",
   "description": "Bermuda import cost calculator with Shopify integration",
-  "type": "module",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
     "dev": "node index.js",
     "test": "jest",
     "build": "node -e \"console.log('Build check: OK')\"",
-    "enrich": "node enrich-csv.js \"$ENRICH_INPUT\""
+    "enrich": "node generate-putnam-csv.js \"$ENRICH_INPUT\""
   },
   "dependencies": {
     "@libsql/client": "^0.14.0",
@@ -23,10 +22,7 @@
     "express-rate-limit": "^7.4.1",
     "helmet": "^8.1.0",
     "openai": "^4.77.3",
-    "pdfkit": "^0.17.2",
-    "node-fetch": "^3.3.2",
-    "papaparse": "5.5.3",
-    "he": "1.2.0"
+    "pdfkit": "^0.17.2"
   },
   "engines": {
     "node": ">=20 <21"
