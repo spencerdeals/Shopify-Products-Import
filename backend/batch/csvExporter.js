@@ -269,7 +269,7 @@ async function buildProductRows(handle, options = {}) {
       tags = allTags.join(', ');
     }
 
-    // Get image from media
+    // Get primary image from variant media
     const imageUrl = variant.media && variant.media.length > 0
       ? variant.media[0].image_url
       : '';
@@ -316,6 +316,56 @@ async function buildProductRows(handle, options = {}) {
       collectionData.unsure ? 'TRUE' : 'FALSE'         // Collection_Unsure - NEW
     ]);
   });
+
+  // Add additional images (images 2-12) as separate rows
+  // In Shopify CSV format, additional images are added with just Handle and Image Src filled
+  if (product.variants.length > 0 && product.variants[0].media) {
+    const allImages = product.variants[0].media;
+
+    // Start from image 2 (index 1) since image 1 is already in the first variant row
+    for (let imgIdx = 1; imgIdx < allImages.length; imgIdx++) {
+      const imageUrl = allImages[imgIdx].image_url;
+      const imagePosition = product.variants.length + imgIdx;
+
+      // Shopify image-only row: Handle, empty fields, Image Src, Image Position
+      rows.push([
+        handle,                                          // Handle
+        '',                                              // Title (empty for image rows)
+        '',                                              // Body (HTML) (empty)
+        '',                                              // Vendor (empty)
+        '',                                              // Product Category (empty)
+        '',                                              // Type (empty)
+        '',                                              // Tags (empty)
+        '',                                              // Published (empty)
+        '',                                              // Option1 Name (empty)
+        '',                                              // Option1 Value (empty)
+        '',                                              // Option2 Name (empty)
+        '',                                              // Option2 Value (empty)
+        '',                                              // Variant SKU (empty)
+        '',                                              // Variant Grams (empty)
+        '',                                              // Variant Inventory Tracker (empty)
+        '',                                              // Variant Inventory Qty (empty)
+        '',                                              // Variant Inventory Policy (empty)
+        '',                                              // Variant Fulfillment Service (empty)
+        '',                                              // Variant Price (empty)
+        '',                                              // Variant Compare At Price (empty)
+        '',                                              // Variant Requires Shipping (empty)
+        '',                                              // Variant Taxable (empty)
+        '',                                              // Variant Barcode (empty)
+        '',                                              // Cost per item (empty)
+        imageUrl,                                        // Image Src
+        imagePosition.toString(),                        // Image Position
+        '',                                              // Gift Card (empty)
+        '',                                              // Status (empty)
+        '',                                              // Collection (empty)
+        ''                                               // Collection_Unsure (empty)
+      ]);
+    }
+
+    if (allImages.length > 1) {
+      console.log(`[CSV] Added ${allImages.length - 1} additional images for ${handle}`);
+    }
+  }
 
   return rows;
 }
