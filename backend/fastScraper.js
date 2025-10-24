@@ -27,6 +27,7 @@ const { extractCartons } = require('./utils/cartonExtractors');
 const { computePricing, computeFreight, computeDutyWharfage } = require('./utils/pricing');
 const { calcFreightSmart } = require('./lib/freightEngine');
 const { computeTotalsV41 } = require('./utils/pricingV41');
+const torso = require('./torso');
 
 // Simple, working scraper approach
 const MAX_CONCURRENT = 1; // Process one at a time to avoid issues
@@ -1300,6 +1301,25 @@ async function scrapeProduct(url) {
   };
 
   console.log(`💰 V4.1 pricing: retail $${v41.finalRetail} | S&H $${v41.shippingHandling} (incl hidden 25% margin) | NJ tax $${v41.njSalesTax}`);
+
+  // Store in Torso database
+  try {
+    const handle = url.split('/').pop().split('?')[0].replace(/[^a-z0-9-]/g, '-').toLowerCase();
+    await torso.upsertProduct({
+      handle,
+      title: product.title,
+      brand: product.brand,
+      canonical_url: url,
+      description_html: product.descriptionHtml || `<p>${product.description || ''}</p>`,
+      breadcrumbs: product.category ? [product.category] : [],
+      rating: null,
+      reviews: null,
+      main_image_url: product.image
+    });
+    console.log(`   💾 Stored in Torso: ${handle}`);
+  } catch (err) {
+    console.warn(`   ⚠️  Torso storage failed: ${err.message}`);
+  }
 
   console.log(`   ✅ Product processed\n`);
 
