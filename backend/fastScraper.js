@@ -1083,6 +1083,9 @@ async function scrapeProduct(url) {
     scrapingMethod: scrapingMethod,
     confidence: confidence,
     variant: (productData && productData.variant) ? productData.variant : null,
+    description: (productData && productData.description) ? productData.description : null,
+    descriptionHtml: (productData && productData.descriptionHtml) ? productData.descriptionHtml : null,
+    features: (productData && productData.features) ? productData.features : null,
     dataCompleteness: {
       hasName: !!(productData && productData.name),
       hasImage: !!(productData && productData.image),
