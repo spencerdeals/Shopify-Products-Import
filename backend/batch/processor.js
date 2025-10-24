@@ -199,8 +199,11 @@ function pickVariantImage(images, color) {
 async function processProduct(zyteData, options = {}) {
   console.log(`\n[Batch] Processing: ${zyteData.name}`);
   console.log(`[Batch] ZYTE_KEYS: ${Object.keys(zyteData).join(', ')}`);
+  console.log(`[Batch] ZYTE_IMAGES: ${zyteData.images ? zyteData.images.length : 0} images from scraper`);
 
   const normalized = normalizeZyteProduct(zyteData);
+  console.log(`[Batch] NORMALIZED_IMAGES: ${normalized.images ? normalized.images.length : 0} images after normalization`);
+
   const { axis, combos } = buildVariantCombos(normalized);
 
   console.log(`[Batch] AXES: ${axis} (${combos.length} combinations)`);
@@ -312,17 +315,38 @@ async function processProduct(zyteData, options = {}) {
     }
 
     // 4. Upsert media
-    const imageUrl = pickVariantImage(normalized.images, combo.color) ||
-      normalized.mainImage ||
-      (normalized.images[0] && (typeof normalized.images[0] === 'string' ? normalized.images[0] : normalized.images[0].url));
+    // For the first variant, add ALL images from Zyte
+    // For subsequent variants, add color-matched image
+    const isFirstVariant = variantIds.length === 1; // Just added first variant above
 
-    if (imageUrl) {
-      await torso.upsertMedia({
-        variant_id,
-        image_url: imageUrl,
-        position: imagePosition++,
-        color_key: combo.color || null
-      });
+    if (isFirstVariant && normalized.images && normalized.images.length > 0) {
+      // First variant: add all images
+      console.log(`[Batch] Adding ${normalized.images.length} images to first variant`);
+      for (const img of normalized.images) {
+        const imageUrl = typeof img === 'string' ? img : img.url;
+        if (imageUrl && imageUrl.startsWith('http')) {
+          await torso.upsertMedia({
+            variant_id,
+            image_url: imageUrl,
+            position: imagePosition++,
+            color_key: combo.color || null
+          });
+        }
+      }
+    } else {
+      // Subsequent variants: use color-matched or first image
+      const imageUrl = pickVariantImage(normalized.images, combo.color) ||
+        normalized.mainImage ||
+        (normalized.images[0] && (typeof normalized.images[0] === 'string' ? normalized.images[0] : normalized.images[0].url));
+
+      if (imageUrl) {
+        await torso.upsertMedia({
+          variant_id,
+          image_url: imageUrl,
+          position: imagePosition++,
+          color_key: combo.color || null
+        });
+      }
     }
   }
 
