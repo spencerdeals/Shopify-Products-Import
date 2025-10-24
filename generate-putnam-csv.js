@@ -158,6 +158,12 @@ async function enrichCsv(inputPath) {
     const bodyTooShort = body.replace(/\s+/g, " ").trim().length < 150 || /Source:\s*<a/i.test(body);
     let url = extractUrlFromBody(body);
 
+    // If URL not in body, try to use a provided URL from CLI
+    if (!url && process.env.ENRICH_URL) {
+      url = process.env.ENRICH_URL;
+      console.log(`ℹ️  Using URL from ENRICH_URL: ${url.substring(0, 60)}...`);
+    }
+
     let zyteDescription = "";
     let zyteFeatures = [];
     let zyteSpecs = [];
