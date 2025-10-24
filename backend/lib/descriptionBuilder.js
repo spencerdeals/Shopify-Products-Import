@@ -112,13 +112,35 @@ function extractFeatures(product, browserHtml = null) {
   // If we have browserHtml and no features yet, try to extract bullets
   if (features.length === 0 && browserHtml) {
     const $ = cheerio.load(browserHtml);
-    const bullets = $('ul li, .features li, .bullets li').slice(0, 10);
-    bullets.each((i, elem) => {
-      const text = $(elem).text().trim();
-      if (text.length > 10 && text.length < 500) {
-        features.push(text);
+
+    // Try multiple selectors for feature lists
+    const selectors = [
+      'ul li',                    // Generic list items
+      '.features li',             // Features list
+      '.bullets li',              // Bullets list
+      '[class*="feature"] li',    // Any class containing "feature"
+      '[class*="bullet"] li',     // Any class containing "bullet"
+      '[id*="feature"] li',       // Any ID containing "feature"
+      '.product-details li',      // Product details
+      '.specifications li',       // Specifications
+      '#details li'               // Details section
+    ];
+
+    for (const selector of selectors) {
+      const bullets = $(selector).slice(0, 15); // Get up to 15 items
+      bullets.each((i, elem) => {
+        const text = $(elem).text().trim();
+        // Filter out navigation items, short text, very long text
+        if (text.length > 10 && text.length < 500 && !text.toLowerCase().includes('add to cart') && !text.toLowerCase().includes('sign in')) {
+          features.push(text);
+        }
+      });
+
+      // If we found enough features, stop looking
+      if (features.length >= 5) {
+        break;
       }
-    });
+    }
   }
 
   return features.length > 0 ? features : null;
@@ -212,7 +234,8 @@ function buildBodyHtml(product, options = {}) {
     hasDescriptionHtml: !!product.descriptionHtml,
     hasFeatures: !!product.features,
     hasAdditionalProps: !!product.additionalProperties,
-    hasBrowserHtml: !!product.browserHtml
+    hasBrowserHtml: !!product.browserHtml,
+    browserHtmlLength: product.browserHtml ? product.browserHtml.length : 0
   });
 
   // Extract all components
@@ -225,6 +248,13 @@ function buildBodyHtml(product, options = {}) {
     featuresCount: features ? features.length : 0,
     specsCount: specs ? specs.length : 0
   });
+
+  // Log first few features for debugging
+  if (features && features.length > 0) {
+    console.log('[DescBuilder] First 3 features:', features.slice(0, 3));
+  } else {
+    console.log('[DescBuilder] ⚠️  No features extracted! This may result in minimal description.');
+  }
 
   let parts = [];
 
