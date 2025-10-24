@@ -38,22 +38,49 @@ class ZyteEnricher {
       return true;
     }
 
+    // FIRST: Check for rich content markers - if present, never enrich
+    const hasFeatures = /<h3[^>]*>features<\/h3>/i.test(bodyHtml);
+    const hasSpecifications = /<h3[^>]*>specifications<\/h3>/i.test(bodyHtml);
+    const hasDetails = /<h3[^>]*>details<\/h3>/i.test(bodyHtml);
+    const hasTable = /<table[^>]*>/i.test(bodyHtml);
+    const hasList = /<ul[^>]*>/i.test(bodyHtml);
+
+    // If it already has rich content markers (features, specs, structured data), don't enrich
+    if (hasFeatures || hasSpecifications || hasDetails || hasTable || hasList) {
+      return false;
+    }
+
+    // SECOND: Check text length
     const text = bodyHtml.replace(/<[^>]+>/g, '').trim();
 
-    // Too short
+    // Too short - needs enrichment
     if (text.length < 150) {
       return true;
     }
 
-    // Only contains a link (minimal content)
+    // THIRD: Check if content is mostly boilerplate (Special Order notice, generic text, source link)
+    const hasSpecialOrder = /special\s+order/i.test(text);
+    const hasContactUs = /contact\s+us\s+for\s+details/i.test(text);
+    const hasPremiumQuality = /premium\s+quality\s+furniture/i.test(text);
+    const hasSourceLink = /<a[^>]*href=[^>]*>source:/i.test(bodyHtml.toLowerCase());
+
+    // If it's mostly boilerplate, enrich it
+    const isBoilerplate = (hasSpecialOrder || hasContactUs || hasPremiumQuality) && hasSourceLink;
+    if (isBoilerplate) {
+      return true;
+    }
+
+    // FOURTH: Check for link-only minimal content
     const linkPattern = /<a[^>]*href=/i;
     const hasLink = linkPattern.test(bodyHtml);
     const textWithoutSpaces = text.replace(/\s/g, '');
 
-    if (hasLink && textWithoutSpaces.length < 100) {
+    // Increased threshold to 200 to catch more minimal descriptions
+    if (hasLink && textWithoutSpaces.length < 200) {
       return true;
     }
 
+    // Otherwise, content is sufficient - don't enrich
     return false;
   }
 
