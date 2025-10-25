@@ -836,6 +836,11 @@ function mergeProductData(primary, secondary) {
 
 // Main product scraping function
 async function scrapeProduct(url) {
+  // Normalize URL - ensure it has a protocol
+  if (url && !url.match(/^https?:\/\//i)) {
+    url = 'https://' + url;
+  }
+
   const productId = generateProductId();
   const retailer = detectRetailer(url);
 
