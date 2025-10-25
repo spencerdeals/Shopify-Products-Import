@@ -582,6 +582,7 @@ Paste your product URLs here..."></textarea>
                     vendor: p.brand || p.retailer || 'Unknown',
                     basePrice: p.price || 0,
                     customMargin: null,
+                    totalCuft: 0,
                     // Store additional ZEITS data for CSV export
                     breadcrumbs: p.breadcrumbs || [],
                     descriptionHtml: p.description || '',
@@ -638,6 +639,17 @@ Paste your product URLs here..."></textarea>
                         <h4>Shipping Boxes</h4>
                         <div id="boxes-${idx}"></div>
                         <button class="btn-add-box" onclick="addBox(${idx})">+ Add Box</button>
+
+                        <div class="total-cuft-input" style="margin-top: 20px; padding: 20px; background: #f8f9fa; border-radius: 10px; border: 2px solid #e0e0e0;">
+                            <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #333; font-size: 14px;">
+                                Total Cubic Footage (Optional - overrides box dimensions)
+                            </label>
+                            <input type="number" id="total-cuft-${idx}" step="0.01" min="0"
+                                   placeholder="Enter total cu.ft."
+                                   onchange="updateTotalCuft(${idx}, parseFloat(this.value) || 0)"
+                                   style="width: 200px; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 14px;">
+                            <span style="margin-left: 10px; color: #666; font-size: 13px;">cu.ft.</span>
+                        </div>
                     </div>
 
                     <div class="margin-editor">
@@ -734,17 +746,27 @@ Paste your product URLs here..."></textarea>
             calculatePricing(productIdx);
         }
 
+        // Update total cubic footage
+        function updateTotalCuft(productIdx, value) {
+            products[productIdx].totalCuft = value > 0 ? value : 0;
+            calculatePricing(productIdx);
+        }
+
         // Calculate pricing
         function calculatePricing(productIdx) {
             const product = products[productIdx];
             const basePrice = product.basePrice || 0;
 
-            // Calculate total cubic feet from all boxes
+            // Use manual total cubic feet if provided, otherwise calculate from boxes
             let totalCubicFeet = 0;
-            product.boxes.forEach(box => {
-                const cubicInches = box.length * box.width * box.height;
-                totalCubicFeet += cubicInches / 1728;
-            });
+            if (product.totalCuft && product.totalCuft > 0) {
+                totalCubicFeet = product.totalCuft;
+            } else {
+                product.boxes.forEach(box => {
+                    const cubicInches = box.length * box.width * box.height;
+                    totalCubicFeet += cubicInches / 1728;
+                });
+            }
 
             // Freight: $8.50 per cubic foot, $30 minimum
             const freightCost = Math.max(30, totalCubicFeet * 8.5);
