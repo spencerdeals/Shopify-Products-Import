@@ -1079,6 +1079,7 @@ async function scrapeProduct(url) {
     price: itemPrice,
     brand: (productData && productData.brand) ? productData.brand : null,
     image: (productData && productData.image) ? productData.image : 'https://placehold.co/400x400/7CB342/FFFFFF/png?text=SDL',
+    images: (productData && productData.images && Array.isArray(productData.images)) ? productData.images : [],
     category: category,
     retailer: retailer,
     dimensions: productData.dimensions,
