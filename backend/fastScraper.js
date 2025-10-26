@@ -1317,7 +1317,7 @@ async function scrapeProduct(url) {
       title: product.title,
       price: product.price,
       dutyPct: product.dutyPct,
-      cubic_feet: cuft,
+      cubic_feet: freightResult.cuft,
       carton: product.carton,
       dimension_source: product.dimensions ? 'scraped' : 'estimated',
       estimation_notes: product.carton?.source || null
