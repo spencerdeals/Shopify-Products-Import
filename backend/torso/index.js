@@ -12,18 +12,20 @@ const { createClient } = require('@supabase/supabase-js');
 let supabase = null;
 
 function getSupabase() {
-  if (!supabase) {
+  if (supabase === null) {
     const supabaseUrl = process.env.VITE_SUPABASE_URL;
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
 
     if (!supabaseUrl || !supabaseKey) {
-      throw new Error('Torso: Missing VITE_SUPABASE_URL or SUPABASE key in environment variables');
+      console.warn('[Torso] Supabase credentials not found - storage disabled');
+      supabase = false; // Mark as attempted but unavailable
+      return null;
     }
 
     supabase = createClient(supabaseUrl, supabaseKey);
     console.log('[Torso] Supabase client initialized');
   }
-  return supabase;
+  return supabase === false ? null : supabase;
 }
 
 // =============================================
@@ -31,6 +33,11 @@ function getSupabase() {
 // =============================================
 
 async function upsertProduct(data) {
+  const supabase = getSupabase();
+  if (!supabase) {
+    return { data: null, error: null }; // Silently skip if not available
+  }
+
   const {
     handle,
     title,
@@ -43,7 +50,7 @@ async function upsertProduct(data) {
     gpt_tags = null
   } = data;
 
-  const { data: result, error } = await getSupabase()
+  const { data: result, error } = await supabase
     .from('products')
     .upsert({
       handle,
