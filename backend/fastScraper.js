@@ -1326,7 +1326,8 @@ async function scrapeProduct(url) {
     console.warn(`   ⚠️  Torso storage failed: ${err.message}`);
   }
 
-  console.log(`   ✅ Product processed\n`);
+  console.log(`   ✅ Product processed`);
+  console.log(`   🖼️ Returning ${product.images ? product.images.length : 0} images to frontend\n`);
 
   return product;
 }

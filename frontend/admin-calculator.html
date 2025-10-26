@@ -1290,6 +1290,10 @@ Paste your product URLs here..."></textarea>
 
                 console.log(`VARIANT_ROWS: ${variantRows.length} generated`);
                 console.log(`TAGS_SNIPPET: ${buildTags(product, breadcrumbs).split(', ').slice(0, 10).join(', ')}...`);
+                console.log(`IMAGES_DEBUG: product.images = ${product.images ? `[${product.images.length} images]` : 'undefined/null'}`);
+                if (product.images && product.images.length > 0) {
+                    console.log(`  First image: ${typeof product.images[0] === 'string' ? product.images[0].substring(0, 60) : JSON.stringify(product.images[0]).substring(0, 60)}`);
+                }
 
                 // Add additional images (images 2-12) as separate rows
                 // In Shopify CSV format, additional images are added with just Handle and Image Src filled
