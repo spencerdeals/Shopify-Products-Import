@@ -1291,6 +1291,59 @@ Paste your product URLs here..."></textarea>
                 console.log(`VARIANT_ROWS: ${variantRows.length} generated`);
                 console.log(`TAGS_SNIPPET: ${buildTags(product, breadcrumbs).split(', ').slice(0, 10).join(', ')}...`);
 
+                // Add additional images (images 2-12) as separate rows
+                // In Shopify CSV format, additional images are added with just Handle and Image Src filled
+                if (product.images && Array.isArray(product.images) && product.images.length > 1) {
+                    const startIdx = variantRows.length;
+
+                    // Start from image 2 (index 1) since image 1 is already in the variant rows
+                    for (let imgIdx = 1; imgIdx < Math.min(product.images.length, 12); imgIdx++) {
+                        const imgUrl = typeof product.images[imgIdx] === 'string'
+                            ? product.images[imgIdx]
+                            : (product.images[imgIdx].url || product.images[imgIdx]);
+
+                        if (imgUrl && imgUrl.startsWith('http')) {
+                            const imgPosition = startIdx + imgIdx;
+
+                            // Shopify image-only row: Handle, empty fields, Image Src, Image Position
+                            variantRows.push([
+                                handle,                                          // Handle
+                                '',                                              // Title (empty for image rows)
+                                '',                                              // Body (HTML) (empty)
+                                '',                                              // Vendor (empty)
+                                '',                                              // Type (empty)
+                                '',                                              // Tags (empty)
+                                '',                                              // Published (empty)
+                                '',                                              // Option1 Name (empty)
+                                '',                                              // Option1 Value (empty)
+                                '',                                              // Option2 Name (empty)
+                                '',                                              // Option2 Value (empty)
+                                '',                                              // Variant SKU (empty)
+                                '',                                              // Variant Grams (empty)
+                                '',                                              // Variant Inventory Tracker (empty)
+                                '',                                              // Variant Inventory Qty (empty)
+                                '',                                              // Variant Inventory Policy (empty)
+                                '',                                              // Variant Fulfillment Service (empty)
+                                '',                                              // Variant Price (empty)
+                                '',                                              // Variant Compare At Price (empty)
+                                '',                                              // Variant Requires Shipping (empty)
+                                '',                                              // Variant Taxable (empty)
+                                '',                                              // Variant Barcode (empty)
+                                imgUrl,                                          // Image Src
+                                imgPosition.toString(),                          // Image Position
+                                '',                                              // Gift Card (empty)
+                                '',                                              // Status (empty)
+                                '',                                              // Cost per item (empty)
+                                ''                                               // Collection (empty)
+                            ]);
+                        }
+                    }
+
+                    if (product.images.length > 1) {
+                        console.log(`ADDITIONAL_IMAGES: Added ${Math.min(product.images.length - 1, 11)} additional images`);
+                    }
+                }
+
                 // Validations
                 const firstRow = variantRows[0];
                 if (firstRow[3] !== vendor) {
