@@ -27,7 +27,7 @@ const { extractCartons } = require('./utils/cartonExtractors');
 const { computePricing, computeFreight, computeDutyWharfage } = require('./utils/pricing');
 const { calcFreightSmart } = require('./lib/freightEngine');
 const { computeTotalsV41 } = require('./utils/pricingV41');
-const torso = require('./torso');
+const turso = require('./utils/db');
 
 // Simple, working scraper approach
 const MAX_CONCURRENT = 1; // Process one at a time to avoid issues
@@ -1308,23 +1308,23 @@ async function scrapeProduct(url) {
 
   console.log(`💰 V4.1 pricing: retail $${v41.finalRetail} | S&H $${v41.shippingHandling} (incl hidden 25% margin) | NJ tax $${v41.njSalesTax}`);
 
-  // Store in Torso database
+  // Store in Turso database for dimension learning
   try {
-    const handle = url.split('/').pop().split('?')[0].replace(/[^a-z0-9-]/g, '-').toLowerCase();
-    await torso.upsertProduct({
-      handle,
+    await turso.saveScrape({
+      retailer: product.retailer,
+      sku: productId,
+      url: url,
       title: product.title,
-      brand: product.brand,
-      canonical_url: url,
-      description_html: product.descriptionHtml || `<p>${product.description || ''}</p>`,
-      breadcrumbs: product.category ? [product.category] : [],
-      rating: null,
-      reviews: null,
-      main_image_url: product.image
+      price: product.price,
+      dutyPct: product.dutyPct,
+      cubic_feet: cuft,
+      carton: product.carton,
+      dimension_source: product.dimensions ? 'scraped' : 'estimated',
+      estimation_notes: product.carton?.source || null
     });
-    console.log(`   💾 Stored in Torso: ${handle}`);
+    console.log(`   💾 Stored in Turso for dimension learning`);
   } catch (err) {
-    console.warn(`   ⚠️  Torso storage failed: ${err.message}`);
+    console.warn(`   ⚠️  Turso storage failed: ${err.message}`);
   }
 
   console.log(`   ✅ Product processed`);
