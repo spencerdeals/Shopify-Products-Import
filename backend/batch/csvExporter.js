@@ -32,8 +32,13 @@ function generateBodyHtml(product) {
   parts.push(`<p>Premium ${typeLeaf.toLowerCase()} from ${vendor}. ${product.title} combines quality craftsmanship with modern design, perfect for any home or office.</p>`);
 
   if (product.canonical_url) {
-    const domain = new URL(product.canonical_url).hostname.replace('www.', '');
-    parts.push(`<p><small>Source: <a href="${product.canonical_url}" target="_blank" rel="nofollow">${domain}</a></small></p>`);
+    // Detect actual domain from URL
+    const url = new URL(product.canonical_url);
+    const actualDomain = url.hostname.replace('www.', '');
+    const displayName = actualDomain.includes('amazon.') ? 'Amazon' :
+                        actualDomain.includes('wayfair.') ? 'Wayfair' :
+                        actualDomain;
+    parts.push(`<p><small>Source: <a href="${product.canonical_url}" target="_blank" rel="nofollow">${displayName} product page</a></small></p>`);
   }
 
   return parts.join('\n');
