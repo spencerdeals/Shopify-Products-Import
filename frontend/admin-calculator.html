@@ -791,6 +791,12 @@ Paste your product URLs here..."></textarea>
             // Round UP to next $5
             const msrpRounded = roundToNext5(msrpBeforeRounding);
 
+            // Check for manual override
+            const msrpOverrideInput = document.getElementById('msrpOverride');
+            const finalMsrp = (msrpOverrideInput && msrpOverrideInput.value && parseFloat(msrpOverrideInput.value) > 0)
+                ? parseFloat(msrpOverrideInput.value)
+                : msrpRounded;
+
             // Store calculated values
             product.calculated = {
                 totalCubicFeet,
@@ -801,7 +807,7 @@ Paste your product URLs here..."></textarea>
                 marginPercent,
                 marginAmount,
                 msrpBeforeRounding,
-                msrpRounded
+                msrpRounded: finalMsrp
             };
 
             // Update margin input
@@ -855,6 +861,16 @@ Paste your product URLs here..."></textarea>
                     <div class="price-row total">
                         <span>FINAL MSRP (rounded to $5):</span>
                         <span>$${msrpRounded.toFixed(2)}</span>
+                    </div>
+                    <div class="price-row">
+                        <span>Override MSRP (optional):</span>
+                        <input type="number"
+                               id="msrpOverride"
+                               placeholder="Enter custom MSRP"
+                               step="0.01"
+                               min="0"
+                               oninput="calculatePricing(${productIdx})"
+                               style="width: 150px; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
                     </div>
                 `;
             }
